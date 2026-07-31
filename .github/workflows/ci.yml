@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: maher
+          POSTGRES_PASSWORD: maher
+          POSTGRES_DB: maher_erp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maher -d maher_erp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://maher:maher@localhost:5432/maher_erp?schema=public
+      JWT_ACCESS_SECRET: ci-access-secret-change-me-min-32-chars!
+      JWT_REFRESH_SECRET: ci-refresh-secret-change-me-min-32-chars!
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @maher/database generate
+      - run: pnpm --filter @maher/database exec prisma db push
+      - run: pnpm --filter @maher/types build
+      - run: pnpm --filter @maher/permissions build
+      - run: pnpm --filter @maher/validation build
+      - run: pnpm --filter @maher/logging build
+      - run: pnpm --filter @maher/config build
+      - run: pnpm --filter @maher/i18n build
+      - run: pnpm --filter @maher/ui build
+      - run: pnpm --filter @maher/database build
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm --filter @maher/api build

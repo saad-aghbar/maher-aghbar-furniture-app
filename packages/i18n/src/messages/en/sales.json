@@ -1,0 +1,12 @@
+{
+  "title": "Sales orders",
+  "list": "Sales order list",
+  "detail": "Sales order details",
+  "number": "Order number",
+  "customer": "Customer",
+  "orderDate": "Order date",
+  "deliveryDate": "Delivery date",
+  "total": "Total",
+  "empty": "No sales orders",
+  "tracking": "Order tracking"
+}

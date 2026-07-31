@@ -1,0 +1,19 @@
+{
+  "dashboard": "لوحة التحكم",
+  "customers": "العملاء",
+  "quotations": "عروض الأسعار",
+  "salesOrders": "أوامر البيع",
+  "production": "الإنتاج",
+  "inventory": "المخزون",
+  "invoices": "الفواتير",
+  "aiIntake": "استقبال ذكي",
+  "settings": "الإعدادات",
+  "orders": "الطلبات",
+  "myQuotes": "عروضي",
+  "requestQuote": "طلب عرض سعر",
+  "tasks": "المهام",
+  "users": "المستخدمون",
+  "audit": "التدقيق",
+  "reports": "التقارير",
+  "statement": "كشف حساب"
+}

@@ -1,0 +1,11 @@
+{
+  "title": "Accounting",
+  "invoices": "Invoices",
+  "payments": "Payments",
+  "invoiceNumber": "Invoice number",
+  "amount": "Amount",
+  "dueDate": "Due date",
+  "paid": "Paid",
+  "unpaid": "Unpaid",
+  "empty": "No invoices"
+}

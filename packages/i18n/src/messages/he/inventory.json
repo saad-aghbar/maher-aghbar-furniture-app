@@ -1,0 +1,12 @@
+{
+  "title": "מלאי",
+  "items": "פריטי מלאי",
+  "warehouses": "מחסנים",
+  "balances": "יתרות",
+  "sku": "מק״ט",
+  "quantity": "כמות",
+  "available": "זמין",
+  "reserved": "שמור",
+  "empty": "אין פריטי מלאי",
+  "lowStock": "מלאי נמוך"
+}

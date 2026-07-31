@@ -1,0 +1,18 @@
+{
+  "title": "Quotations",
+  "list": "Quotation list",
+  "detail": "Quotation details",
+  "number": "Quote number",
+  "customer": "Customer",
+  "total": "Total",
+  "validUntil": "Valid until",
+  "approve": "Approve",
+  "send": "Send to customer",
+  "accept": "Accept quote",
+  "reject": "Reject",
+  "empty": "No quotations found",
+  "requestQuotation": "Request quotation",
+  "stepDetails": "Request details",
+  "stepItems": "Items & specifications",
+  "stepReview": "Review & submit"
+}

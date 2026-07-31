@@ -1,0 +1,17 @@
+{
+  "title": "Customers",
+  "list": "Customer list",
+  "detail": "Customer details",
+  "name": "Customer name",
+  "code": "Customer code",
+  "type": "Customer type",
+  "phone": "Phone",
+  "email": "Email",
+  "status": "Status",
+  "individual": "Individual",
+  "company": "Company",
+  "contacts": "Contacts",
+  "addresses": "Addresses",
+  "empty": "No customers registered",
+  "searchPlaceholder": "Search by name or code…"
+}

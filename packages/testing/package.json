@@ -1,0 +1,17 @@
+{
+  "name": "@maher/testing",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'lint stub'",
+    "test": "node -e \"console.log('@maher/testing stub ok')\""
+  },
+  "devDependencies": {
+    "@maher/tsconfig": "workspace:*",
+    "typescript": "^5.7.2"
+  }
+}

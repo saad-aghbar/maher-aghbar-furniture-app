@@ -1,0 +1,19 @@
+{
+  "dashboard": "Dashboard",
+  "customers": "Customers",
+  "quotations": "Quotations",
+  "salesOrders": "Sales orders",
+  "production": "Production",
+  "inventory": "Inventory",
+  "invoices": "Invoices",
+  "aiIntake": "AI intake",
+  "settings": "Settings",
+  "orders": "Orders",
+  "myQuotes": "My quotes",
+  "requestQuote": "Request quote",
+  "tasks": "Tasks",
+  "users": "Users",
+  "audit": "Audit",
+  "reports": "Reports",
+  "statement": "Statement"
+}

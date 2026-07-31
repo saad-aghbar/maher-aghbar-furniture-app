@@ -1,0 +1,102 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: maher
+      POSTGRES_PASSWORD: maher
+      POSTGRES_DB: maher_erp
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maher -d maher_erp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api/Dockerfile
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: postgresql://maher:maher@postgres:5432/maher_erp?schema=public
+      REDIS_URL: redis://redis:6379
+      LOCAL_UPLOAD_DIR: /app/uploads
+      COOKIE_SECURE: "false"
+      CORS_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:3002
+    ports:
+      - "4000:4000"
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  admin-web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web/Dockerfile
+      args:
+        APP_NAME: admin-web
+        PORT: "3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  customer-portal:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web/Dockerfile
+      args:
+        APP_NAME: customer-portal
+        PORT: "3001"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports:
+      - "3001:3001"
+    depends_on:
+      - api
+
+  employee-portal:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web/Dockerfile
+      args:
+        APP_NAME: employee-portal
+        PORT: "3002"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports:
+      - "3002:3002"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  miniodata:
+  uploads:

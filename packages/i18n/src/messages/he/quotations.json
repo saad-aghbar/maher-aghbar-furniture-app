@@ -1,0 +1,18 @@
+{
+  "title": "הצעות מחיר",
+  "list": "רשימת הצעות מחיר",
+  "detail": "פרטי הצעת מחיר",
+  "number": "מספר הצעה",
+  "customer": "לקוח",
+  "total": "סה״כ",
+  "validUntil": "תקף עד",
+  "approve": "אשר",
+  "send": "שלח ללקוח",
+  "accept": "קבל הצעה",
+  "reject": "דחה",
+  "empty": "אין הצעות מחיר",
+  "requestQuotation": "בקש הצעת מחיר",
+  "stepDetails": "פרטי הבקשה",
+  "stepItems": "פריטים ומפרט",
+  "stepReview": "סקירה ושליחה"
+}

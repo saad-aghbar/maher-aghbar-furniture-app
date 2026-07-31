@@ -1,0 +1,16 @@
+{
+  "title": "Production",
+  "orders": "Production orders",
+  "tasks": "Tasks",
+  "stages": "Production stages",
+  "todayTasks": "Today's tasks",
+  "start": "Start",
+  "pause": "Pause",
+  "complete": "Complete",
+  "block": "Block",
+  "blockedReason": "Block reason",
+  "empty": "No tasks for today",
+  "taskDetail": "Task details",
+  "stage": "Stage",
+  "assignedTo": "Assigned to"
+}

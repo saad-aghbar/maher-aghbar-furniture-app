@@ -1,0 +1,19 @@
+{
+  "dashboard": "לוח בקרה",
+  "customers": "לקוחות",
+  "quotations": "הצעות מחיר",
+  "salesOrders": "הזמנות מכירה",
+  "production": "ייצור",
+  "inventory": "מלאי",
+  "invoices": "חשבוניות",
+  "aiIntake": "קליטה חכמה",
+  "settings": "הגדרות",
+  "orders": "הזמנות",
+  "myQuotes": "ההצעות שלי",
+  "requestQuote": "בקש הצעת מחיר",
+  "tasks": "משימות",
+  "users": "משתמשים",
+  "audit": "ביקורת",
+  "reports": "דוחות",
+  "statement": "דף חשבון"
+}

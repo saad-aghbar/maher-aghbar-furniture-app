@@ -1,0 +1,11 @@
+{
+  "name": "@maher/eslint-config",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "lint": "echo 'eslint-config stub'",
+    "typecheck": "echo 'typecheck stub'",
+    "test": "echo 'test stub'"
+  }
+}

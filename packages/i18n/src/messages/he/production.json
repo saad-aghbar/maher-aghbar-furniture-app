@@ -1,0 +1,16 @@
+{
+  "title": "ייצור",
+  "orders": "הזמנות ייצור",
+  "tasks": "משימות",
+  "stages": "שלבי ייצור",
+  "todayTasks": "משימות היום",
+  "start": "התחל",
+  "pause": "השהה",
+  "complete": "השלם",
+  "block": "חסום",
+  "blockedReason": "סיבת חסימה",
+  "empty": "אין משימות להיום",
+  "taskDetail": "פרטי משימה",
+  "stage": "שלב",
+  "assignedTo": "משויך ל"
+}

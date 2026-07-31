@@ -1,0 +1,12 @@
+{
+  "title": "Inventory",
+  "items": "Inventory items",
+  "warehouses": "Warehouses",
+  "balances": "Balances",
+  "sku": "SKU",
+  "quantity": "Quantity",
+  "available": "Available",
+  "reserved": "Reserved",
+  "empty": "No inventory items",
+  "lowStock": "Low stock"
+}
