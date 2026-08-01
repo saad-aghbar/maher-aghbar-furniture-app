@@ -19,14 +19,17 @@ export class InvoicesController {
 
   @Get()
   @RequirePermissions('invoice.read')
-  list(@Query() query: PaginationDto) {
-    return this.invoices.list(query);
+  list(@Query() query: PaginationDto, @CurrentUser() user: AuthUser) {
+    return this.invoices.list({
+      ...query,
+      customerId: user.customerId ?? undefined,
+    });
   }
 
   @Get(':id')
   @RequirePermissions('invoice.read')
-  get(@Param('id') id: string) {
-    return this.invoices.get(id);
+  get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.invoices.get(id, user);
   }
 
   @Post()

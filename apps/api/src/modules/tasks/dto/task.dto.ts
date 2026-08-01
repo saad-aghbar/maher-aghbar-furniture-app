@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BlockerCategory, TaskStatus } from '@maher/database';
+import { BlockerCategory, Priority, TaskStatus } from '@maher/database';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   Min,
   MinLength,
@@ -44,4 +45,33 @@ export class TaskBlockDto {
   @IsString()
   @MinLength(1)
   reason!: string;
+}
+
+export class AssignTaskDto {
+  @ApiProperty()
+  @IsUUID()
+  employeeId!: string;
+
+  @ApiPropertyOptional({ enum: Priority })
+  @IsOptional()
+  @IsEnum(Priority)
+  priority?: Priority;
+}
+
+export class CompleteTaskDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsUUID('4', { each: true })
+  photoDocumentIds?: string[];
+}
+
+export class UpdateTaskNotesDto {
+  @ApiProperty()
+  @IsString()
+  notes!: string;
 }

@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
 
 export class LoginDto {
   @ValidateIf((o: LoginDto) => !o.phone)
@@ -12,9 +12,24 @@ export class LoginDto {
   @IsString()
   @MinLength(8)
   password!: string;
+
+  /** web keeps cookie-only JSON; mobile also receives tokens in the body */
+  @IsOptional()
+  @IsIn(['web', 'mobile'])
+  client?: 'web' | 'mobile';
 }
 
 export class RefreshDto {
+  @IsOptional()
+  @IsString()
+  refreshToken?: string;
+
+  @IsOptional()
+  @IsIn(['web', 'mobile'])
+  client?: 'web' | 'mobile';
+}
+
+export class LogoutDto {
   @IsOptional()
   @IsString()
   refreshToken?: string;

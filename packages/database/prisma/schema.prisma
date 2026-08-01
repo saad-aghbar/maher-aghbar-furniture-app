@@ -418,6 +418,8 @@ model Customer {
   code              String         @unique
   name              String
   nameAr            String?
+  nameEn            String?
+  nameHe            String?
   customerType      CustomerType   @default(COMPANY)
   companyName       String?
   commercialRegNo   String?
@@ -425,6 +427,7 @@ model Customer {
   industry          String?
   preferredLanguage Locale         @default(ar)
   phone             String?
+  fax               String?
   alternativePhone  String?
   email             String?
   website           String?
@@ -611,6 +614,7 @@ model ColorReference {
   code      String   @unique
   nameAr    String
   nameEn    String
+  nameHe    String?
   hex       String?
   createdAt DateTime @default(now())
 
@@ -623,6 +627,9 @@ model Supplier {
   id              String    @id @default(uuid())
   code            String    @unique
   name            String
+  nameAr          String?
+  nameEn          String?
+  nameHe          String?
   companyName     String?
   registrationNo  String?
   taxNumber       String?
@@ -640,6 +647,7 @@ model Supplier {
 
   contacts       SupplierContact[]
   purchaseOrders PurchaseOrder[]
+  quoteOffers    SupplierQuoteOffer[]
 
   @@map("suppliers")
 }
@@ -669,13 +677,33 @@ model PurchaseRequest {
   priority         Priority              @default(NORMAL)
   status           PurchaseRequestStatus @default(DRAFT)
   reason           String?
+  purchaseOrderId  String?               @unique
+  purchaseOrder    PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id])
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   archivedAt       DateTime?
 
-  lines PurchaseRequestLine[]
+  lines  PurchaseRequestLine[]
+  offers SupplierQuoteOffer[]
 
   @@map("purchase_requests")
+}
+
+model SupplierQuoteOffer {
+  id                String          @id @default(uuid())
+  purchaseRequestId String
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  supplierId        String
+  supplier          Supplier        @relation(fields: [supplierId], references: [id])
+  unitPrice         Decimal         @db.Decimal(18, 3)
+  currency          String          @default("JOD")
+  leadTimeDays      Int?
+  notes             String?
+  isSelected        Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+
+  @@index([purchaseRequestId])
+  @@map("supplier_quote_offers")
 }
 
 model PurchaseRequestLine {
@@ -713,8 +741,9 @@ model PurchaseOrder {
   updatedAt            DateTime            @updatedAt
   archivedAt           DateTime?
 
-  lines         PurchaseOrderLine[]
-  goodsReceipts GoodsReceipt[]
+  lines           PurchaseOrderLine[]
+  goodsReceipts   GoodsReceipt[]
+  purchaseRequest PurchaseRequest?
 
   @@index([supplierId])
   @@index([status])
@@ -1158,6 +1187,8 @@ model SalesOrderLine {
   deliveryRequired   Boolean    @default(true)
   sortOrder          Int        @default(0)
 
+  productionOrders ProductionOrder[]
+
   @@index([salesOrderId])
   @@map("sales_order_lines")
 }
@@ -1200,6 +1231,8 @@ model ProductionStageDefinition {
   requiresInspection    Boolean  @default(false)
   requiresPhotos        Boolean  @default(false)
   responsibleDepartment String?
+  /// Stage codes that must be COMPLETED before this stage can become READY
+  dependsOnCodes        String[] @default([])
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -1215,6 +1248,8 @@ model ProductionOrder {
   number                String                @unique
   salesOrderId          String?
   salesOrder            SalesOrder?           @relation(fields: [salesOrderId], references: [id])
+  salesOrderLineId      String?
+  salesOrderLine        SalesOrderLine?       @relation(fields: [salesOrderLineId], references: [id])
   customerId            String?
   productId             String?
   product               Product?              @relation(fields: [productId], references: [id])
@@ -1489,6 +1524,10 @@ model Invoice {
   paidAmount        Decimal       @default(0) @db.Decimal(18, 3)
   outstandingAmount Decimal       @default(0) @db.Decimal(18, 3)
   notes             String?
+  jofotaraUuid      String?
+  jofotaraQr        String?
+  jofotaraStatus    String?
+  jofotaraClearedAt DateTime?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   createdById       String?

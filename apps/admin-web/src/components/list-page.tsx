@@ -1,7 +1,21 @@
 'use client';
 
-import { EmptyState, ErrorState, Skeleton, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from '@maher/ui';
+import { PageHeader } from '@/components/admin/page-header';
+import { apiFetch } from '@/lib/api-client';
+import {
+  EmptyState,
+  ErrorState,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  TableSkeleton,
+} from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 
 interface Column<T> {
@@ -19,6 +33,8 @@ interface ListPageProps<T> {
   emptyDescription?: string;
   rowHref?: (row: T) => string;
   rowLink?: (row: T) => ReactNode;
+  toolbar?: ReactNode;
+  actions?: ReactNode;
 }
 
 export function ListPage<T extends { id: string }>({
@@ -29,37 +45,47 @@ export function ListPage<T extends { id: string }>({
   emptyTitle,
   emptyDescription,
   rowLink,
+  toolbar,
+  actions,
 }: ListPageProps<T>) {
+  const tCommon = useTranslations('common');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey,
     queryFn: async () => {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}${fetchPath}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error('Failed to fetch');
-      const json = (await res.json()) as { data?: T[] } | T[];
+      const json = await apiFetch<{ data?: T[] } | T[]>(fetchPath);
       return Array.isArray(json) ? json : (json.data ?? []);
     },
   });
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
+      <div className="space-y-6">
+        <div className="border-b border-border pb-5">
+          <Skeleton className="h-8 w-52" />
+        </div>
+        {toolbar ? <Skeleton className="h-10 w-full max-w-lg" /> : null}
+        <TableSkeleton columns={columns.length} />
       </div>
     );
   }
 
   if (isError) {
-    return <ErrorState title={title} description="Failed to load data" onRetry={() => refetch()} />;
+    return (
+      <ErrorState
+        title={title}
+        description={tCommon('loadFailed')}
+        onRetry={() => refetch()}
+        retryLabel={tCommon('retry')}
+      />
+    );
   }
 
   const rows = data ?? [];
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-text-primary">{title}</h1>
+      <PageHeader title={title} actions={actions} />
+      {toolbar}
       {rows.length === 0 ? (
         <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : (
@@ -75,9 +101,7 @@ export function ListPage<T extends { id: string }>({
             {rows.map((row) => (
               <TableRow key={row.id}>
                 {columns.map((col) => (
-                  <TableCell key={col.key}>
-                    {rowLink ? rowLink(row) : col.render(row)}
-                  </TableCell>
+                  <TableCell key={col.key}>{rowLink ? rowLink(row) : col.render(row)}</TableCell>
                 ))}
               </TableRow>
             ))}

@@ -1,9 +1,17 @@
 'use client';
 
 import { Link } from '@/i18n/navigation';
-import { EmptyState, ErrorState, Skeleton, StatusBadge } from '@maher/ui';
+import { apiFetch } from '@/lib/api-client';
+import {
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Skeleton,
+  StatusBadge,
+} from '@maher/ui';
+import { localizedName } from '@maher/i18n';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 interface Task {
   id: string;
@@ -12,55 +20,107 @@ interface Task {
   status: string;
   priority: string;
   progressPercent: number;
-  plannedCompletion?: string;
+  productionOrder?: {
+    number: string;
+    productDescription?: string;
+  };
+  stageDefinition?: {
+    code: string;
+    nameEn: string;
+    nameAr?: string;
+    dependsOnCodes?: string[];
+  };
 }
 
 export default function TasksPage() {
+  const locale = useLocale();
   const t = useTranslations('production');
+  const tCommon = useTranslations('common');
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['my-tasks'],
-    queryFn: async () => {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}/api/v1/tasks?mine=true`,
-        { credentials: 'include' },
-      );
-      if (!res.ok) throw new Error('failed');
-      const json = (await res.json()) as { data?: Task[] } | Task[];
-      return Array.isArray(json) ? json : (json.data ?? []);
-    },
+    queryFn: () =>
+      apiFetch<{ data: Task[] }>('/api/v1/tasks?mine=true&pageSize=50').then((r) => r.data ?? []),
   });
 
-  if (isLoading) return <Skeleton className="h-64 w-full" />;
-  if (isError) return <ErrorState title={t('todayTasks')} onRetry={() => refetch()} />;
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-40" />
+        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-28 w-full" />
+      </div>
+    );
+  }
 
-  const tasks = data ?? [];
-  if (tasks.length === 0) return <EmptyState title={t('empty')} />;
+  if (isError) {
+    return <ErrorState title={t('todayTasks')} onRetry={() => refetch()} />;
+  }
+
+  const tasks = (data ?? []).filter((task) => task.status !== 'COMPLETED');
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t('todayTasks')}</h1>
-      {tasks.map((task) => (
-        <Link
-          key={task.id}
-          href={`/tasks/${task.id}`}
-          className="block rounded-lg border border-border bg-surface p-4 shadow-sm"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold">{task.name}</p>
-              <p className="text-xs text-[var(--maher-text-secondary)]">{task.number}</p>
-            </div>
-            <StatusBadge status={task.status} />
-          </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-background">
-            <div className="h-full bg-brand" style={{ width: `${task.progressPercent}%` }} />
-          </div>
-          <p className="mt-2 text-xs text-[var(--maher-text-secondary)]">
-            {task.priority} · {task.progressPercent}%
-          </p>
-        </Link>
-      ))}
+      <PageHeader title={t('todayTasks')} description={tCommon('employeeTasksSubtitle')} />
+
+      {tasks.length === 0 ? (
+        <EmptyState title={t('empty')} description={tCommon('employeeTasksEmptyHint')} />
+      ) : (
+        <div className="space-y-3">
+          {tasks.map((task) => {
+            const locked = task.status === 'NOT_STARTED';
+            const waiting = task.stageDefinition?.dependsOnCodes?.length
+              ? task.stageDefinition.dependsOnCodes.join(', ')
+              : null;
+            return (
+              <Link
+                key={task.id}
+                href={`/tasks/${task.id}`}
+                className="block rounded-[var(--maher-radius-lg)] border border-border bg-surface p-4 shadow-card transition-all active:scale-[0.99] hover:border-border-strong hover:shadow-elevated"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-text-primary">
+                      {task.stageDefinition
+                        ? localizedName(locale, task.stageDefinition, task.name)
+                        : task.name}
+                    </p>
+                    <p className="mt-0.5 text-xs text-text-tertiary">
+                      {task.productionOrder?.number ?? '—'} · {task.number}
+                    </p>
+                    {task.productionOrder?.productDescription ? (
+                      <p className="mt-1 truncate text-xs text-text-secondary">
+                        {task.productionOrder.productDescription}
+                      </p>
+                    ) : null}
+                    {task.stageDefinition ? (
+                      <p className="mt-1 truncate text-xs text-text-secondary">
+                        {t('stage')}: {localizedName(locale, task.stageDefinition)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <StatusBadge status={task.status} />
+                </div>
+                {locked && waiting ? (
+                  <p className="mt-3 text-xs text-[var(--maher-warning)]">
+                    {t('waitingFor')}: {waiting}
+                  </p>
+                ) : null}
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-muted">
+                  <div
+                    className="h-full rounded-full bg-brand transition-all"
+                    style={{ width: `${task.progressPercent}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs tabular-nums text-text-secondary">
+                  {t('priority')}: {task.priority} · {task.progressPercent}%
+                </p>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

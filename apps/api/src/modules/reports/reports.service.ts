@@ -27,6 +27,10 @@ export class ReportsService {
       lowStock,
       criticalBlockers,
       dailyCompletions,
+      revenueAgg,
+      receivablesAgg,
+      completedSalesOrders,
+      openPurchases,
     ] = await Promise.all([
       this.prisma.salesOrder.count({
         where: {
@@ -107,6 +111,44 @@ export class ReportsService {
           },
         },
       }),
+      this.prisma.invoice.aggregate({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [
+              InvoiceStatus.ISSUED,
+              InvoiceStatus.PARTIALLY_PAID,
+              InvoiceStatus.PAID,
+              InvoiceStatus.OVERDUE,
+            ],
+          },
+        },
+        _sum: { total: true },
+      }),
+      this.prisma.invoice.aggregate({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE],
+          },
+          outstandingAmount: { gt: 0 },
+        },
+        _sum: { outstandingAmount: true },
+      }),
+      this.prisma.salesOrder.count({
+        where: {
+          archivedAt: null,
+          status: { in: [SalesOrderStatus.COMPLETED, SalesOrderStatus.DELIVERED] },
+        },
+      }),
+      this.prisma.purchaseOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            notIn: ['RECEIVED', 'CANCELLED', 'CLOSED'],
+          },
+        },
+      }),
     ]);
 
     return {
@@ -119,6 +161,10 @@ export class ReportsService {
       lowStock,
       criticalBlockers,
       dailyCompletions,
+      revenueInvoiced: roundMoney(Number(revenueAgg._sum.total ?? 0)),
+      receivablesAmount: roundMoney(Number(receivablesAgg._sum.outstandingAmount ?? 0)),
+      completedSalesOrders,
+      openPurchases,
       generatedAt: new Date().toISOString(),
     };
   }
@@ -171,6 +217,7 @@ export class ReportsService {
         status: q.status,
         total: q.total,
         customer: q.customer.name,
+        createdAt: q.createdAt.toISOString(),
       })),
     };
   }
@@ -239,7 +286,13 @@ export class ReportsService {
       lowStock: lowStock
         .map((item) => {
           const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
-          return { sku: item.sku, nameEn: item.nameEn, available, minStock: Number(item.minStock) };
+          return {
+            sku: item.sku,
+            nameEn: item.nameEn,
+            nameAr: item.nameAr,
+            available,
+            minStock: Number(item.minStock),
+          };
         })
         .filter((i) => i.available <= i.minStock),
     };
@@ -299,6 +352,7 @@ export class ReportsService {
         older: roundMoney(buckets.older),
       },
       openInvoices: aging.map((inv) => ({
+        id: inv.id,
         number: inv.number,
         customer: inv.customer.name,
         dueDate: inv.dueDate,

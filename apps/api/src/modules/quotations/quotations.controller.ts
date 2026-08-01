@@ -3,7 +3,13 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@maher/types';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { CreateQuotationDto, ListQuotationsDto, RejectQuotationDto } from './dto/quotation.dto';
+import {
+  AcceptQuotationDto,
+  CreateQuotationDto,
+  ListQuotationsDto,
+  RejectQuotationDto,
+  RequestRevisionDto,
+} from './dto/quotation.dto';
 import { QuotationsService } from './quotations.service';
 
 @ApiTags('quotations')
@@ -13,8 +19,8 @@ export class QuotationsController {
 
   @RequirePermissions('quotation.read')
   @Get()
-  list(@Query() query: ListQuotationsDto) {
-    return this.quotations.list(query);
+  list(@Query() query: ListQuotationsDto, @CurrentUser() user: AuthUser) {
+    return this.quotations.list(query, user);
   }
 
   @RequirePermissions('quotation.create')
@@ -25,8 +31,8 @@ export class QuotationsController {
 
   @RequirePermissions('quotation.read')
   @Get(':id')
-  getById(@Param('id') id: string) {
-    return this.quotations.getById(id);
+  getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.quotations.getById(id, user);
   }
 
   @RequirePermissions('quotation.update')
@@ -42,7 +48,7 @@ export class QuotationsController {
     @Body() dto: RejectQuotationDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.quotations.approve(id, user.id, dto.comment);
+    return this.quotations.approve(id, user, dto.comment);
   }
 
   @RequirePermissions('quotation.send')
@@ -53,8 +59,12 @@ export class QuotationsController {
 
   @RequirePermissions('quotation.accept')
   @Post(':id/accept')
-  accept(@Param('id') id: string) {
-    return this.quotations.accept(id);
+  accept(
+    @Param('id') id: string,
+    @Body() dto: AcceptQuotationDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.quotations.accept(id, dto.signatureData, user.id);
   }
 
   @RequirePermissions('quotation.reject')
@@ -65,6 +75,16 @@ export class QuotationsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.quotations.reject(id, user.id, dto.comment);
+  }
+
+  @RequirePermissions('quotation.accept')
+  @Post(':id/request-revision')
+  requestRevision(
+    @Param('id') id: string,
+    @Body() dto: RequestRevisionDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.quotations.requestRevision(id, user, dto.comment);
   }
 
   @RequirePermissions('quotation.update')

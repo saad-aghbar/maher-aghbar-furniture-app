@@ -50,8 +50,8 @@ export class PaymentsController {
 
   @Get()
   @RequirePermissions('payment.read')
-  list(@Query() query: PaginationDto) {
-    return this.payments.list(query);
+  list(@Query() query: PaginationDto, @CurrentUser() user: AuthUser) {
+    return this.payments.list(query, user);
   }
 
   @Post()

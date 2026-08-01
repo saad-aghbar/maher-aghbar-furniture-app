@@ -20,6 +20,11 @@ export class ListQuotationsDto extends PaginationDto {
   @IsOptional()
   @IsEnum(QuotationStatus)
   status?: QuotationStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 }
 
 export class QuotationLineDto {
@@ -83,6 +88,27 @@ export class QuotationLineDto {
   @IsOptional()
   @IsString()
   color?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  width?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  height?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  depth?: number;
 }
 
 export class CreateQuotationDto {
@@ -128,6 +154,20 @@ export class CreateQuotationDto {
 }
 
 export class RejectQuotationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  comment?: string;
+}
+
+export class AcceptQuotationDto {
+  @ApiPropertyOptional({ description: 'Base64 signature image or typed name' })
+  @IsOptional()
+  @IsString()
+  signatureData?: string;
+}
+
+export class RequestRevisionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

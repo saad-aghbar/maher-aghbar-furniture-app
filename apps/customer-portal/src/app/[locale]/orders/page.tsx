@@ -5,32 +5,53 @@ import { Link } from '@/i18n/navigation';
 import { StatusBadge } from '@maher/ui';
 import { useTranslations } from 'next-intl';
 
-interface Row {
+interface OrderRow {
   id: string;
   number: string;
   status: string;
+  productionOrders?: Array<{ currentStageCode?: string; progressPercent?: number }>;
 }
 
 export default function OrdersPage() {
   const t = useTranslations('sales');
+  const tNav = useTranslations('navigation');
+  const tCommon = useTranslations('common');
 
   return (
-    <ListPage<Row>
-      title={t('title')}
-      queryKey={['customer-orders-list']}
-      fetchPath="/api/v1/sales-orders"
+    <ListPage<OrderRow>
+      title={tNav('orders')}
+      description={tCommon('ordersSubtitle')}
+      queryKey={['customer-orders']}
+      fetchPath="/api/v1/sales-orders?pageSize=50"
       emptyTitle={t('empty')}
       columns={[
         {
           key: 'number',
           header: t('number'),
-          render: (r) => (
-            <Link href={`/orders/${r.id}`} className="font-medium text-brand hover:underline">
-              {r.number}
+          render: (row) => (
+            <Link href={`/orders/${row.id}`} className="font-medium text-brand hover:underline">
+              {row.number}
             </Link>
           ),
         },
-        { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+        {
+          key: 'status',
+          header: tCommon('status'),
+          render: (row) => <StatusBadge status={row.status} />,
+        },
+        {
+          key: 'stage',
+          header: t('tracking'),
+          render: (row) => {
+            const po = row.productionOrders?.[0];
+            if (!po) return '—';
+            return (
+              <span className="text-sm">
+                {po.currentStageCode ?? '—'} · {po.progressPercent ?? 0}%
+              </span>
+            );
+          },
+        },
       ]}
     />
   );

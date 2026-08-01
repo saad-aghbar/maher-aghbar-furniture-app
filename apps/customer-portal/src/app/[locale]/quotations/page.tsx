@@ -15,10 +15,12 @@ interface Row {
 
 export default function CustomerQuotationsPage() {
   const t = useTranslations('quotations');
+  const tCommon = useTranslations('common');
 
   return (
     <ListPage<Row>
       title={t('title')}
+      description={tCommon('quotesSubtitle')}
       queryKey={['customer-quotations-list']}
       fetchPath="/api/v1/quotations"
       emptyTitle={t('empty')}
@@ -33,7 +35,11 @@ export default function CustomerQuotationsPage() {
           ),
         },
         { key: 'total', header: t('total'), render: (r) => String(r.total ?? '—') },
-        { key: 'status', header: t('status'), render: (r) => <StatusBadge status={r.status} /> },
+        {
+          key: 'status',
+          header: tCommon('status'),
+          render: (r) => <StatusBadge status={r.status} />,
+        },
       ]}
     />
   );

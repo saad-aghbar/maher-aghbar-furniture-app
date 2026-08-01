@@ -1,56 +1,64 @@
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Param, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { roundMoney } from '../../common/helpers/money.util';
+import { buildSimplePdf, sendPdf } from '../../common/helpers/pdf.util';
 
 @ApiTags('statements')
 @Controller('statements')
 export class StatementsController {
   constructor(private readonly prisma: PrismaService) {}
 
+  private assertAccess(user: AuthUser, customerId: string) {
+    if (user.customerId && user.customerId !== customerId) {
+      throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Not your statement.' });
+    }
+  }
+
   @Get(':customerId/pdf')
   @RequirePermissions('statement.read')
   async pdf(
     @Param('customerId') customerId: string,
+    @CurrentUser() user: AuthUser,
     @Res() res: Response,
     @Query('asOf') asOf?: string,
   ) {
-    const statement = await this.get(customerId, asOf);
-    const company = process.env.COMPANY_NAME_AR ?? 'مفروشات ماهر الأغبر وأولاده';
-    const rows = statement.entries
-      .map(
-        (e) =>
-          `<tr><td>${e.date.slice(0, 10)}</td><td>${e.reference}</td><td>${e.description}</td><td>${e.debit}</td><td>${e.credit}</td><td>${e.balance}</td></tr>`,
-      )
-      .join('');
-
-    const html = `<!doctype html>
-<html lang="ar" dir="rtl">
-<head><meta charset="utf-8"/><title>Statement ${statement.customer.code}</title>
-<style>
-body{font-family:"IBM Plex Sans Arabic",Arial,sans-serif;margin:40px;color:#1a1a1a}
-h1{color:#e03c31}table{width:100%;border-collapse:collapse;margin-top:20px}
-th,td{border:1px solid #e5e2de;padding:8px;text-align:right;font-size:13px}th{background:#f7f7f5}
-</style></head>
-<body>
-<h1>${company}</h1>
-<p>كشف حساب — ${statement.customer.name} (${statement.customer.code})</p>
-<p>حتى تاريخ: ${statement.asOf.slice(0, 10)} | الرصيد الختامي: ${statement.closingBalance} ${statement.currency}</p>
-<table>
-<thead><tr><th>التاريخ</th><th>المرجع</th><th>الوصف</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
-<tbody>${rows}</tbody>
-</table>
-</body></html>`;
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(html);
+    this.assertAccess(user, customerId);
+    const statement = await this.get(customerId, user, asOf);
+    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
+    const buffer = await buildSimplePdf({
+      title: company,
+      subtitle: `Statement of Account — ${statement.customer.name} (${statement.customer.code})`,
+      meta: [
+        `As of: ${statement.asOf.slice(0, 10)}`,
+        `Closing balance: ${statement.closingBalance} ${statement.currency}`,
+      ],
+      columns: ['Date', 'Ref', 'Description', 'Debit', 'Credit', 'Balance'],
+      rows: statement.entries.map((e) => [
+        e.date.slice(0, 10),
+        e.reference,
+        e.description,
+        e.debit,
+        e.credit,
+        e.balance,
+      ]),
+      footerLines: [`Closing: ${statement.closingBalance} ${statement.currency}`],
+    });
+    sendPdf(res, `SOA-${statement.customer.code}.pdf`, buffer);
   }
 
   @Get(':customerId')
   @RequirePermissions('statement.read')
-  async get(@Param('customerId') customerId: string, @Query('asOf') asOf?: string) {
+  async get(
+    @Param('customerId') customerId: string,
+    @CurrentUser() user: AuthUser,
+    @Query('asOf') asOf?: string,
+  ) {
+    this.assertAccess(user, customerId);
     const customer = await this.prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
     const asOfDate = asOf ? new Date(asOf) : new Date();
 

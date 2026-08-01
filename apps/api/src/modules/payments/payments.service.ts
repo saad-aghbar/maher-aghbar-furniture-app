@@ -4,33 +4,41 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InvoiceStatus, PaymentMethod, Prisma } from '@maher/database';
+import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
-import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
+import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { roundMoney } from '../../common/helpers/money.util';
+import { customerScopeFilter } from '../../common/helpers/customer-scope';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    private readonly notifications: NotificationsService,
   ) {}
 
-  async list(query: PaginationDto) {
-    const where: Prisma.PaymentWhereInput = query.q
-      ? { OR: [{ number: { contains: query.q, mode: 'insensitive' } }] }
-      : {};
+  async list(query: PaginationDto, user?: AuthUser) {
+    const { page, pageSize, skip, take } = pageSkipTake(query);
+    const where: Prisma.PaymentWhereInput = {
+      ...customerScopeFilter(user),
+      ...(query.q
+        ? { OR: [{ number: { contains: query.q, mode: 'insensitive' } }] }
+        : {}),
+    };
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.payment.count({ where }),
       this.prisma.payment.findMany({
         where,
         include: { customer: true, invoice: true },
         orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
+        skip,
+        take,
       }),
     ]);
-    return { data, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
   }
 
   async record(
@@ -117,6 +125,15 @@ export class PaymentsService {
         },
       });
 
+      return payment;
+    }).then(async (payment) => {
+      const customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
+      await this.notifications.sendFromTemplate({
+        templateCode: 'PAYMENT_RECEIVED',
+        channel: 'WHATSAPP',
+        to: { email: customer?.email, phone: customer?.phone },
+        vars: { amount: String(dto.amount), number: payment.number },
+      });
       return payment;
     });
   }

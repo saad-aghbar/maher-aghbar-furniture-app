@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -15,6 +17,98 @@ import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import type { AuthUser } from '@maher/types';
+
+class CreateInventoryItemDto {
+  @IsString()
+  @MinLength(1)
+  sku!: string;
+
+  @IsString()
+  @MinLength(1)
+  nameAr!: string;
+
+  @IsString()
+  @MinLength(1)
+  nameEn!: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  minStock?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  maxStock?: number;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsUUID()
+  materialId?: string;
+
+  @IsOptional()
+  @IsString()
+  color?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+class UpdateInventoryItemDto {
+  @IsOptional()
+  @IsString()
+  nameAr?: string;
+
+  @IsOptional()
+  @IsString()
+  nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  minStock?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  maxStock?: number;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  color?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
 
 class StockMovementDto {
   @IsUUID()
@@ -102,6 +196,28 @@ export class InventoryController {
   @RequirePermissions('inventory.read')
   list(@Query() query: PaginationDto) {
     return this.inventory.listItems(query);
+  }
+
+  @Post('items')
+  @RequirePermissions('inventory.adjust')
+  createItem(@Body() dto: CreateInventoryItemDto, @CurrentUser() user: AuthUser) {
+    return this.inventory.createItem(dto, user.id);
+  }
+
+  @Patch('items/:id')
+  @RequirePermissions('inventory.adjust')
+  updateItem(
+    @Param('id') id: string,
+    @Body() dto: UpdateInventoryItemDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.inventory.updateItem(id, dto, user.id);
+  }
+
+  @Post('items/sync-from-materials')
+  @RequirePermissions('inventory.adjust')
+  syncFromMaterials(@CurrentUser() user: AuthUser) {
+    return this.inventory.syncFromMaterials(user.id);
   }
 
   @Get('items/by-code/:code')

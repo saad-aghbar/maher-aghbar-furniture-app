@@ -9,6 +9,9 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --passWithNoTests"
   },
+  "dependencies": {
+    "@maher/types": "workspace:*"
+  },
   "devDependencies": {
     "@maher/tsconfig": "workspace:*",
     "typescript": "^5.7.2",

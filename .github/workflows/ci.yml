@@ -50,5 +50,6 @@ jobs:
       - run: pnpm --filter @maher/ui build
       - run: pnpm --filter @maher/database build
       - run: pnpm typecheck
+      - run: pnpm --filter @maher/mobile typecheck
       - run: pnpm test
       - run: pnpm --filter @maher/api build

@@ -1,7 +1,18 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { CustomerStatus, CustomerType, Locale } from '@maher/database';
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  Matches,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+
+/** E.164-style: +country code then national number (e.g. +970599123456). */
+export const PHONE_E164_PATTERN = /^\+[1-9]\d{7,14}$/;
 
 export class ListCustomersDto extends PaginationDto {
   @ApiPropertyOptional({ enum: CustomerStatus })
@@ -11,10 +22,30 @@ export class ListCustomersDto extends PaginationDto {
 }
 
 export class CreateCustomerDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  name!: string;
+  nameAr?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  nameEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  nameHe?: string;
+
+  /** Legacy single-name field; used if multilingual fields are omitted. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  name?: string;
 
   @ApiPropertyOptional({ enum: CustomerType })
   @IsOptional()
@@ -27,12 +58,23 @@ export class CreateCustomerDto {
   companyName?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
+  @Matches(PHONE_E164_PATTERN, {
+    message: 'Phone must start with +country code then digits (e.g. +970599123456).',
+  })
   phone?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
+  @IsString()
+  @Matches(PHONE_E164_PATTERN, {
+    message: 'Fax must start with +country code then digits (e.g. +97022991234).',
+  })
+  fax?: string;
+
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsEmail()
   email?: string;
 
@@ -56,7 +98,21 @@ export class UpdateCustomerDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @MinLength(1)
+  nameAr?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nameEn?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  nameHe?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   name?: string;
 
   @ApiPropertyOptional({ enum: CustomerType })
@@ -70,12 +126,23 @@ export class UpdateCustomerDto {
   companyName?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
+  @Matches(PHONE_E164_PATTERN, {
+    message: 'Phone must start with +country code then digits (e.g. +970599123456).',
+  })
   phone?: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
+  @IsString()
+  @Matches(PHONE_E164_PATTERN, {
+    message: 'Fax must start with +country code then digits (e.g. +97022991234).',
+  })
+  fax?: string;
+
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsEmail()
   email?: string;
 

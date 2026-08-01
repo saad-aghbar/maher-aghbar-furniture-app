@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -59,11 +59,15 @@ export class ContractsController {
 
   @Get()
   @RequirePermissions('contract.read')
-  async list(@Query() query: PaginationDto) {
+  async list(@Query() query: PaginationDto, @CurrentUser() user: AuthUser) {
+    const where = {
+      archivedAt: null,
+      ...(user.customerId ? { customerId: user.customerId } : {}),
+    };
     const [totalItems, data] = await this.prisma.$transaction([
-      this.prisma.contract.count({ where: { archivedAt: null } }),
+      this.prisma.contract.count({ where }),
       this.prisma.contract.findMany({
-        where: { archivedAt: null },
+        where,
         include: { customer: true, salesOrder: true },
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
@@ -105,11 +109,18 @@ export class ContractsController {
 
   @Get(':id')
   @RequirePermissions('contract.read')
-  get(@Param('id') id: string) {
-    return this.prisma.contract.findUniqueOrThrow({
+  async get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const contract = await this.prisma.contract.findUniqueOrThrow({
       where: { id },
       include: { customer: true, salesOrder: true },
     });
+    if (user.customerId && contract.customerId !== user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Not your contract.',
+      });
+    }
+    return contract;
   }
 
   @Post(':id/activate')

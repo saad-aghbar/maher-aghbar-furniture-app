@@ -6,7 +6,8 @@ import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
+import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
+import { StagePipelineService } from '../production/stage-pipeline.service';
 import type { AuthUser } from '@maher/types';
 
 class CreateInspectionDto {
@@ -33,6 +34,9 @@ class SubmitInspectionDto {
   @IsOptional()
   @IsString()
   defectDescription?: string;
+
+  @IsOptional()
+  checklistResults?: { checklistCode: string; result: string; note?: string }[];
 }
 
 @ApiTags('quality')
@@ -41,27 +45,41 @@ export class QualityController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    private readonly pipeline: StagePipelineService,
   ) {}
 
   @Get()
   @RequirePermissions('quality-inspection.read')
   async list(@Query() query: PaginationDto) {
+    const { page, pageSize, skip, take } = pageSkipTake(query);
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.qualityInspection.count(),
       this.prisma.qualityInspection.findMany({
         include: { productionOrder: true, inspector: true, defects: true },
         orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
+        skip,
+        take,
       }),
     ]);
-    return { data, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
   }
 
   @Post()
   @RequirePermissions('quality-inspection.perform')
   async create(@Body() dto: CreateInspectionDto, @CurrentUser() user: AuthUser) {
     const number = await this.sequences.next('QC', 'QC');
+    const template = await this.prisma.qualityChecklistTemplate.findFirst({
+      where: {
+        isActive: true,
+        OR: [
+          ...(dto.stageCode ? [{ stageCode: dto.stageCode }] : []),
+          { code: 'FINAL_QC' },
+        ],
+      },
+      include: { items: { orderBy: { sortOrder: 'asc' } } },
+      orderBy: { code: 'asc' },
+    });
+
     return this.prisma.qualityInspection.create({
       data: {
         number,
@@ -69,7 +87,80 @@ export class QualityController {
         stageCode: dto.stageCode,
         inspectorId: user.id,
         notes: dto.notes,
+        items: template?.items.length
+          ? {
+              create: template.items.map((i) => ({
+                checklistCode: i.code,
+                label: i.labelEn,
+              })),
+            }
+          : undefined,
       },
+      include: { items: true, productionOrder: true },
+    });
+  }
+
+  @Post('rework/:reworkId/complete')
+  @RequirePermissions('quality-inspection.perform')
+  async completeRework(
+    @Param('reworkId') reworkId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const rework = await this.prisma.reworkRequest.findUniqueOrThrow({
+      where: { id: reworkId },
+      include: { inspection: true },
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.reworkRequest.update({
+        where: { id: reworkId },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+
+      const stageCode = rework.inspection?.stageCode ?? 'INSPECTION';
+      const stage = await tx.productionStageInstance.findFirst({
+        where: {
+          productionOrderId: rework.productionOrderId,
+          stageDefinition: { code: stageCode },
+        },
+        include: { tasks: true },
+      });
+
+      if (stage) {
+        await tx.productionStageInstance.update({
+          where: { id: stage.id },
+          data: { status: 'READY', progressPercent: 0, actualEnd: null },
+        });
+        for (const task of stage.tasks) {
+          await tx.productionTask.update({
+            where: { id: task.id },
+            data: {
+              status: 'READY',
+              progressPercent: 0,
+              actualCompletion: null,
+            },
+          });
+        }
+      }
+
+      await tx.productionOrder.update({
+        where: { id: rework.productionOrderId },
+        data: { status: 'QUALITY_CHECK', currentStageCode: stageCode },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          userId: user.id,
+          action: 'quality.rework.complete',
+          entityType: 'ReworkRequest',
+          entityId: reworkId,
+        },
+      });
+
+      return tx.reworkRequest.findUniqueOrThrow({
+        where: { id: reworkId },
+        include: { inspection: true },
+      });
     });
   }
 
@@ -91,9 +182,22 @@ export class QualityController {
   ) {
     const inspection = await this.prisma.qualityInspection.findUniqueOrThrow({ where: { id } });
     return this.prisma.$transaction(async (tx) => {
+      if (dto.checklistResults?.length) {
+        for (const item of dto.checklistResults) {
+          await tx.qualityInspectionItem.updateMany({
+            where: { inspectionId: id, checklistCode: item.checklistCode },
+            data: {
+              result: item.result as never,
+              note: item.note,
+            },
+          });
+        }
+      }
+
       const updated = await tx.qualityInspection.update({
         where: { id },
         data: { result: dto.result, notes: dto.notes ?? inspection.notes },
+        include: { items: true, defects: true },
       });
 
       if (
@@ -123,6 +227,48 @@ export class QualityController {
           where: { id: inspection.productionOrderId },
           data: { status: 'ON_HOLD' },
         });
+      }
+
+      if (
+        dto.result === QualityResult.PASSED ||
+        dto.result === QualityResult.PASSED_WITH_NOTES
+      ) {
+        const stageCode = inspection.stageCode ?? 'INSPECTION';
+        const stage = await tx.productionStageInstance.findFirst({
+          where: {
+            productionOrderId: inspection.productionOrderId,
+            stageDefinition: { code: stageCode },
+          },
+          include: { tasks: true, stageDefinition: true },
+        });
+        if (stage) {
+          for (const task of stage.tasks) {
+            if (task.status !== 'COMPLETED') {
+              await tx.productionTask.update({
+                where: { id: task.id },
+                data: {
+                  status: 'COMPLETED',
+                  progressPercent: 100,
+                  actualCompletion: new Date(),
+                },
+              });
+            }
+          }
+          await this.pipeline.onTaskComplete(
+            inspection.productionOrderId,
+            stage.id,
+            tx,
+          );
+        } else {
+          await this.pipeline.unlockReadyStages(inspection.productionOrderId, tx);
+          await this.pipeline.rollupProgress(inspection.productionOrderId, tx);
+        }
+
+        await tx.productionOrder.update({
+          where: { id: inspection.productionOrderId },
+          data: { status: 'IN_PROGRESS' },
+        });
+        await this.pipeline.rollupProgress(inspection.productionOrderId, tx);
       }
 
       await tx.auditEvent.create({

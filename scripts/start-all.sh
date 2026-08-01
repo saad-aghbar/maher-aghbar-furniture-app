@@ -38,6 +38,9 @@ export JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me-mi
 export CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002}"
 export COOKIE_SECURE="${COOKIE_SECURE:-false}"
 export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-http://localhost:4000}"
+export NEXT_PUBLIC_ADMIN_WEB_URL="${NEXT_PUBLIC_ADMIN_WEB_URL:-http://localhost:3000}"
+export NEXT_PUBLIC_CUSTOMER_PORTAL_URL="${NEXT_PUBLIC_CUSTOMER_PORTAL_URL:-http://localhost:3001}"
+export NEXT_PUBLIC_EMPLOYEE_PORTAL_URL="${NEXT_PUBLIC_EMPLOYEE_PORTAL_URL:-http://localhost:3002}"
 # Next.js `next start` requires NODE_ENV=production
 export NODE_ENV=production
 export COMPANY_NAME_AR="${COMPANY_NAME_AR:-مفروشات ماهر الأغبر وأولاده}"
@@ -177,5 +180,12 @@ curl -sf -o /dev/null -w "Customer   %{http_code}  http://localhost:3001/ar/logi
 curl -sf -o /dev/null -w "Employee   %{http_code}  http://localhost:3002/ar/login\n" http://localhost:3002/ar/login || echo "Employee   DOWN — see logs/employee.log"
 echo ""
 echo "Demo password: Admin@12345!"
-echo "  admin@maher-aghbar.jo | sales@maher-aghbar.jo | worker@maher-aghbar.jo | customer@cedar-hotel.jo"
-echo "Stop with: pnpm stop:all"
+echo "  admin@maher-aghbar.jo | sales@maher-aghbar.jo | customer@cedar-hotel.jo"
+echo "  Workers: worker@ | carpenter@ | painter@ | upholsterer@ | assembler@ | packer@ (…@maher-aghbar.jo)"
+echo ""
+echo "Mobile app:  pnpm mobile:start"
+LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+if [[ -n "${LAN_IP:-}" ]]; then
+  echo "Phone API:   http://${LAN_IP}:4000  (set EXPO_PUBLIC_API_BASE_URL)"
+fi
+echo "Stop with:   pnpm stop:all"

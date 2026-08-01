@@ -55,6 +55,140 @@ export class InventoryService {
     return item;
   }
 
+  async createItem(
+    dto: {
+      sku: string;
+      nameAr: string;
+      nameEn: string;
+      unit?: string;
+      category?: string;
+      minStock?: number;
+      maxStock?: number;
+      barcode?: string;
+      materialId?: string;
+      color?: string;
+      description?: string;
+    },
+    userId: string,
+  ) {
+    const item = await this.prisma.inventoryItem.create({
+      data: {
+        sku: dto.sku.trim(),
+        nameAr: dto.nameAr.trim(),
+        nameEn: dto.nameEn.trim(),
+        unit: dto.unit?.trim() || 'pcs',
+        category: (dto.category as never) || undefined,
+        minStock: roundMoney(dto.minStock ?? 0),
+        maxStock: dto.maxStock != null ? roundMoney(dto.maxStock) : undefined,
+        barcode: dto.barcode?.trim() || undefined,
+        materialId: dto.materialId,
+        color: dto.color,
+        description: dto.description,
+      },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'inventory-item.create',
+        entityType: 'InventoryItem',
+        entityId: item.id,
+        newValues: { sku: item.sku },
+      },
+    });
+    return item;
+  }
+
+  async updateItem(
+    id: string,
+    dto: Partial<{
+      nameAr: string;
+      nameEn: string;
+      unit: string;
+      category: string;
+      minStock: number;
+      maxStock: number;
+      barcode: string;
+      isActive: boolean;
+      color: string;
+      description: string;
+    }>,
+    userId: string,
+  ) {
+    await this.prisma.inventoryItem.findFirstOrThrow({ where: { id, archivedAt: null } });
+    const item = await this.prisma.inventoryItem.update({
+      where: { id },
+      data: {
+        ...(dto.nameAr !== undefined ? { nameAr: dto.nameAr.trim() } : {}),
+        ...(dto.nameEn !== undefined ? { nameEn: dto.nameEn.trim() } : {}),
+        ...(dto.unit !== undefined ? { unit: dto.unit.trim() } : {}),
+        ...(dto.category !== undefined ? { category: dto.category as never } : {}),
+        ...(dto.minStock !== undefined ? { minStock: roundMoney(dto.minStock) } : {}),
+        ...(dto.maxStock !== undefined ? { maxStock: roundMoney(dto.maxStock) } : {}),
+        ...(dto.barcode !== undefined ? { barcode: dto.barcode.trim() || null } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.color !== undefined ? { color: dto.color } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+      },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'inventory-item.update',
+        entityType: 'InventoryItem',
+        entityId: item.id,
+        newValues: dto as object,
+      },
+    });
+    return item;
+  }
+
+  async syncFromMaterials(userId: string) {
+    const materials = await this.prisma.material.findMany({
+      where: { archivedAt: null, isActive: true },
+    });
+    let created = 0;
+    for (const material of materials) {
+      const existing = await this.prisma.inventoryItem.findFirst({
+        where: {
+          OR: [{ materialId: material.id }, { sku: material.sku }],
+          archivedAt: null,
+        },
+      });
+      if (existing) {
+        if (!existing.materialId) {
+          await this.prisma.inventoryItem.update({
+            where: { id: existing.id },
+            data: { materialId: material.id },
+          });
+        }
+        continue;
+      }
+      await this.prisma.inventoryItem.create({
+        data: {
+          sku: material.sku,
+          nameAr: material.nameAr,
+          nameEn: material.nameEn,
+          unit: material.unit,
+          category: material.category,
+          materialId: material.id,
+          minStock: material.minStock ?? 0,
+          color: material.color ?? undefined,
+        },
+      });
+      created += 1;
+    }
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'inventory-item.sync-materials',
+        entityType: 'InventoryItem',
+        entityId: 'bulk',
+        newValues: { created },
+      },
+    });
+    return { created, scanned: materials.length };
+  }
+
   private async applyMovement(params: {
     type: InventoryTxType;
     inventoryItemId: string;

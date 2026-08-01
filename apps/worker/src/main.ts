@@ -1,11 +1,24 @@
 import { createLogger } from '@maher/logging';
+import { Queue, Worker } from 'bullmq';
+import IORedis from 'ioredis';
 
 const logger = createLogger('worker');
 
-const queues = ['emails', 'sms', 'whatsapp', 'pdf', 'ai', 'ocr', 'translation', 'reports', 'notifications', 'file-processing'];
+const QUEUE_NAMES = [
+  'emails',
+  'sms',
+  'whatsapp',
+  'pdf',
+  'ai',
+  'ocr',
+  'translation',
+  'reports',
+  'notifications',
+  'file-processing',
+] as const;
 
 async function main() {
-  logger.info('Maher ERP worker starting', { queues });
+  logger.info('Maher ERP worker starting', { queues: QUEUE_NAMES });
   logger.info('Providers', {
     email: process.env.EMAIL_PROVIDER ?? 'console',
     sms: process.env.SMS_PROVIDER ?? 'console',
@@ -14,18 +27,39 @@ async function main() {
     ocr: process.env.OCR_PROVIDER ?? 'mock',
   });
 
-  // Local/dev: idle process that documents job contract.
-  // Production wires BullMQ workers against REDIS_URL.
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
     logger.warn('REDIS_URL not set — worker idle (mock mode)');
-  } else {
-    logger.info('Redis configured', { redisUrl: redisUrl.replace(/:[^:@]+@/, ':***@') });
+    setInterval(() => logger.debug('worker heartbeat'), 60_000);
+    return;
   }
 
-  setInterval(() => {
-    logger.debug('worker heartbeat');
-  }, 60_000);
+  const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+  logger.info('Redis configured', { redisUrl: redisUrl.replace(/:[^:@]+@/, ':***@') });
+
+  for (const name of QUEUE_NAMES) {
+    // Ensure queue exists for producers
+    // eslint-disable-next-line no-new
+    new Queue(name, { connection });
+
+    const worker = new Worker(
+      name,
+      async (job) => {
+        logger.info(`[${name}] job ${job.id} ${job.name}`, { data: job.data });
+        if (name === 'emails' || name === 'sms' || name === 'whatsapp' || name === 'notifications') {
+          logger.info(`[${name}:console] delivered`, job.data);
+        }
+        return { ok: true, queue: name, at: new Date().toISOString() };
+      },
+      { connection },
+    );
+
+    worker.on('failed', (job, err) => {
+      logger.error(`[${name}] failed`, { jobId: job?.id, err: String(err) });
+    });
+  }
+
+  setInterval(() => logger.debug('worker heartbeat'), 60_000);
 }
 
 main().catch((err) => {

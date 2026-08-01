@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { buildSimplePdf, sendPdf } from '../../common/helpers/pdf.util';
 
 @ApiTags('pdf')
 @Controller()
@@ -16,46 +17,25 @@ export class PdfController {
       where: { id },
       include: { customer: true, lines: true },
     });
-
-    const company = process.env.COMPANY_NAME_AR ?? 'مفروشات ماهر الأغبر وأولاده';
-    const rows = q.lines
-      .map(
-        (l) =>
-          `<tr><td>${escapeHtml(l.description)}</td><td>${l.quantity}</td><td>${l.unitPrice}</td><td>${l.lineTotal}</td></tr>`,
-      )
-      .join('');
-
-    const html = `<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(q.number)} v${q.version}</title>
-  <style>
-    body { font-family: "IBM Plex Sans Arabic", Arial, sans-serif; color: #1a1a1a; margin: 40px; }
-    h1 { color: #e03c31; margin-bottom: 4px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th, td { border: 1px solid #e5e2de; padding: 8px; text-align: right; }
-    th { background: #f7f7f5; }
-    .meta { color: #5c5c5c; font-size: 14px; }
-    .total { font-size: 18px; font-weight: 700; margin-top: 16px; }
-  </style>
-</head>
-<body>
-  <h1>${escapeHtml(company)}</h1>
-  <p class="meta">عرض سعر ${escapeHtml(q.number)} — الإصدار ${q.version}</p>
-  <p class="meta">العميل: ${escapeHtml(q.customer.name)}</p>
-  <p class="meta">الحالة: ${escapeHtml(q.status)} | العملة: ${escapeHtml(q.currency)}</p>
-  <table>
-    <thead><tr><th>الوصف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <p class="total">الإجمالي: ${q.total} ${q.currency}</p>
-</body>
-</html>`;
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Content-Disposition', `inline; filename="${q.number}-v${q.version}.html"`);
-    res.send(html);
+    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
+    const buffer = await buildSimplePdf({
+      title: company,
+      subtitle: `Quotation ${q.number} v${q.version}`,
+      meta: [
+        `Customer: ${q.customer.name}`,
+        `Status: ${q.status}`,
+        `Currency: ${q.currency}`,
+      ],
+      columns: ['Description', 'Qty', 'Unit price', 'Line total'],
+      rows: q.lines.map((l) => [
+        l.description,
+        String(l.quantity),
+        String(l.unitPrice),
+        String(l.lineTotal),
+      ]),
+      footerLines: [`Total: ${q.total} ${q.currency}`],
+    });
+    sendPdf(res, `${q.number}-v${q.version}.pdf`, buffer);
   }
 
   @Get('invoices/:id/pdf')
@@ -65,50 +45,47 @@ export class PdfController {
       where: { id },
       include: { customer: true, lines: true },
     });
-    const company = process.env.COMPANY_NAME_AR ?? 'مفروشات ماهر الأغبر وأولاده';
-    const rows = inv.lines
-      .map(
-        (l) =>
-          `<tr><td>${escapeHtml(l.description)}</td><td>${l.quantity}</td><td>${l.unitPrice}</td><td>${l.lineTotal}</td></tr>`,
-      )
-      .join('');
-
-    const html = `<!doctype html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(inv.number)}</title>
-  <style>
-    body { font-family: "IBM Plex Sans Arabic", Arial, sans-serif; color: #1a1a1a; margin: 40px; }
-    h1 { color: #e03c31; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th, td { border: 1px solid #e5e2de; padding: 8px; text-align: right; }
-    th { background: #f7f7f5; }
-  </style>
-</head>
-<body>
-  <h1>${escapeHtml(company)}</h1>
-  <p>فاتورة ${escapeHtml(inv.number)}</p>
-  <p>العميل: ${escapeHtml(inv.customer.name)}</p>
-  <table>
-    <thead><tr><th>الوصف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-  <p><strong>الإجمالي:</strong> ${inv.total} ${inv.currency}</p>
-  <p><strong>المتبقي:</strong> ${inv.outstandingAmount} ${inv.currency}</p>
-</body>
-</html>`;
-
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Content-Disposition', `inline; filename="${inv.number}.html"`);
-    res.send(html);
+    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
+    const buffer = await buildSimplePdf({
+      title: company,
+      subtitle: `Invoice ${inv.number}`,
+      meta: [`Customer: ${inv.customer.name}`, `Status: ${inv.status}`],
+      columns: ['Description', 'Qty', 'Unit price', 'Line total'],
+      rows: inv.lines.map((l) => [
+        l.description,
+        String(l.quantity),
+        String(l.unitPrice),
+        String(l.lineTotal),
+      ]),
+      footerLines: [
+        `Total: ${inv.total} ${inv.currency}`,
+        `Outstanding: ${inv.outstandingAmount} ${inv.currency}`,
+      ],
+    });
+    sendPdf(res, `${inv.number}.pdf`, buffer);
   }
-}
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  @Get('inventory/items/:id/label')
+  @RequirePermissions('inventory.read')
+  async inventoryLabel(@Param('id') id: string, @Res() res: Response) {
+    const item = await this.prisma.inventoryItem.findUniqueOrThrow({ where: { id } });
+    const buffer = await buildSimplePdf({
+      title: item.nameAr || item.nameEn,
+      subtitle: item.nameEn && item.nameAr ? item.nameEn : undefined,
+      meta: [
+        `SKU: ${item.sku}`,
+        `Barcode: ${item.barcode ?? '—'}`,
+        `QR: ${item.qrCode ?? item.sku}`,
+        `Unit: ${item.unit}`,
+      ],
+      columns: ['Field', 'Value'],
+      rows: [
+        ['SKU', item.sku],
+        ['Barcode', item.barcode ?? '—'],
+        ['Min stock', String(item.minStock)],
+      ],
+      footerLines: ['Scan barcode / QR at warehouse stations'],
+    });
+    sendPdf(res, `label-${item.sku}.pdf`, buffer);
+  }
 }

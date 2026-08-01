@@ -134,6 +134,14 @@ export class AuthService {
       },
     });
 
+    if (dto.client === 'mobile') {
+      return {
+        user: authUser,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+    }
+
     return { user: authUser };
   }
 
@@ -157,7 +165,12 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  async refresh(refreshToken: string | undefined, res: Response, meta: { ip?: string; userAgent?: string }) {
+  async refresh(
+    refreshToken: string | undefined,
+    res: Response,
+    meta: { ip?: string; userAgent?: string },
+    client?: 'web' | 'mobile',
+  ) {
     if (!refreshToken) {
       throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Refresh token required.' });
     }
@@ -177,6 +190,13 @@ export class AuthService {
     const tokens = await this.issueTokens(session.userId, meta);
     this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
     const user = await this.loadAuthUser(session.userId);
+    if (client === 'mobile') {
+      return {
+        user,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+    }
     return { user };
   }
 

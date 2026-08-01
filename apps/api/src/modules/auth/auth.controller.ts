@@ -6,6 +6,8 @@ import {
   ForgotPasswordDto,
   InviteUserDto,
   LoginDto,
+  LogoutDto,
+  RefreshDto,
   ResetPasswordDto,
 } from './dto/auth.dto';
 import { Public, RequirePermissions } from '../../common/decorators/auth.decorators';
@@ -32,14 +34,22 @@ export class AuthController {
 
   @Public()
   @Post('refresh')
-  refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  refresh(
+    @Body() dto: RefreshDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const token =
-      (req.cookies as { refresh_token?: string } | undefined)?.refresh_token ??
-      (req.body as { refreshToken?: string })?.refreshToken;
-    return this.auth.refresh(token, res, {
-      ip: req.ip,
-      userAgent: req.headers['user-agent'],
-    });
+      (req.cookies as { refresh_token?: string } | undefined)?.refresh_token ?? dto.refreshToken;
+    return this.auth.refresh(
+      token,
+      res,
+      {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+      dto.client,
+    );
   }
 
   @Public()
@@ -56,11 +66,13 @@ export class AuthController {
 
   @Post('logout')
   logout(
+    @Body() dto: LogoutDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
     @CurrentUser() user?: AuthUser,
   ) {
-    const token = (req.cookies as { refresh_token?: string } | undefined)?.refresh_token;
+    const token =
+      (req.cookies as { refresh_token?: string } | undefined)?.refresh_token ?? dto.refreshToken;
     return this.auth.logout(token, user?.id, res);
   }
 

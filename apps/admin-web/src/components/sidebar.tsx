@@ -1,72 +1,77 @@
 'use client';
 
-import { Link, usePathname, useRouter } from '@/i18n/navigation';
-import { apiFetch } from '@/lib/api-client';
-import { Button, cn } from '@maher/ui';
+import { Link, usePathname } from '@/i18n/navigation';
+import { cn } from '@maher/ui';
 import { useTranslations } from 'next-intl';
+import { BrandMark } from './brand-mark';
+import { navGroups } from './nav-items';
 
-const navItems = [
-  { href: '/dashboard', key: 'dashboard' },
-  { href: '/customers', key: 'customers' },
-  { href: '/quotations', key: 'quotations' },
-  { href: '/sales-orders', key: 'salesOrders' },
-  { href: '/production', key: 'production' },
-  { href: '/inventory', key: 'inventory' },
-  { href: '/invoices', key: 'invoices' },
-  { href: '/reports', key: 'reports' },
-  { href: '/ai-intake', key: 'aiIntake' },
-  { href: '/users', key: 'users' },
-  { href: '/audit', key: 'audit' },
-  { href: '/settings', key: 'settings' },
-] as const;
+interface SidebarProps {
+  onNavigate?: () => void;
+}
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: SidebarProps) {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
-  const tAuth = useTranslations('auth');
   const pathname = usePathname();
-  const router = useRouter();
-
-  async function logout() {
-    try {
-      await apiFetch('/api/v1/auth/logout', { method: 'POST', body: '{}' });
-    } catch {
-      /* ignore */
-    }
-    router.push('/login');
-    router.refresh();
-  }
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-e border-border bg-surface">
-      <div className="border-b border-border px-5 py-6">
-        <p className="text-lg font-bold text-brand">{tCommon('appName')}</p>
-        <p className="mt-1 text-xs text-[var(--maher-text-secondary)]">ERP Admin</p>
+    <div className="flex h-full flex-col bg-surface">
+      <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+        <BrandMark />
+        <div className="min-w-0">
+          <p className="text-[13px] font-bold leading-snug text-text-primary">
+            {tCommon('appName')}
+          </p>
+          <p className="text-[11px] uppercase tracking-[0.08em] text-text-tertiary">ERP Admin</p>
+        </div>
       </div>
-      <nav className="flex flex-1 flex-col gap-1 p-3">
-        {navItems.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
-                active
-                  ? 'bg-brand/10 text-brand'
-                  : 'text-[var(--maher-text-secondary)] hover:bg-background hover:text-text-primary',
-              )}
-            >
-              {t(item.key)}
-            </Link>
-          );
-        })}
+
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
+        {navGroups.map((group) => (
+          <div key={group.key} className="mb-5 last:mb-0">
+            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
+              {t(group.key)}
+            </p>
+            <ul className="space-y-0.5">
+              {group.items.map((item) => {
+                const active =
+                  pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'group relative flex items-center gap-3 rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium transition-colors',
+                        active
+                          ? 'bg-brand-soft text-brand'
+                          : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+                      )}
+                    >
+                      {active ? (
+                        <span
+                          aria-hidden="true"
+                          className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-brand"
+                        />
+                      ) : null}
+                      <Icon
+                        className={cn(
+                          'h-[18px] w-[18px] shrink-0 transition-colors',
+                          active ? 'text-brand' : 'text-text-tertiary group-hover:text-text-secondary',
+                        )}
+                      />
+                      <span className="truncate">{t(item.key)}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
-      <div className="border-t border-border p-3">
-        <Button variant="secondary" className="w-full" onClick={logout}>
-          {tAuth('logout')}
-        </Button>
-      </div>
-    </aside>
+    </div>
   );
 }

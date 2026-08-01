@@ -38,6 +38,25 @@ export class UploadsController {
     private readonly prisma: PrismaService,
   ) {}
 
+  @Get()
+  @RequirePermissions('document.read')
+  listDocuments(@CurrentUser() user: AuthUser) {
+    return this.prisma.document.findMany({
+      where: user.customerId
+        ? {
+            customerId: user.customerId,
+            visibility: DocumentVisibility.CUSTOMER_VISIBLE,
+            archivedAt: null,
+          }
+        : { archivedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        uploadedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    });
+  }
+
   @Post()
   @RequirePermissions('document.manage')
   @UseInterceptors(
@@ -51,23 +70,38 @@ export class UploadsController {
     @CurrentUser() user: AuthUser,
     @Query('category') category?: string,
     @Query('visibility') visibility?: string,
+    @Query('requestId') requestId?: string,
+    @Query('productionOrderId') productionOrderId?: string,
+    @Query('taskId') taskId?: string,
   ) {
     if (!file) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'File required.' });
     if (!ALLOWED.has(file.mimetype)) {
       throw new BadRequestException({ code: 'INVALID_FILE_TYPE', message: 'File type not allowed.' });
     }
 
+    const isCustomer = Boolean(user.customerId);
     const stored = await this.storage.putObject(file.originalname, file.mimetype, file.buffer);
+    const resolvedCategory =
+      category ??
+      (taskId
+        ? `TASK_PHOTO:${taskId}`
+        : isCustomer
+          ? 'CUSTOMER_ATTACHMENT'
+          : 'GENERAL');
     const doc = await this.prisma.document.create({
       data: {
         fileName: file.originalname,
         mimeType: file.mimetype,
         sizeBytes: stored.sizeBytes,
         storageKey: stored.key,
-        category: category ?? 'GENERAL',
-        visibility:
-          (visibility as DocumentVisibility | undefined) ?? DocumentVisibility.INTERNAL,
+        category: resolvedCategory,
+        visibility: isCustomer
+          ? DocumentVisibility.CUSTOMER_VISIBLE
+          : ((visibility as DocumentVisibility | undefined) ?? DocumentVisibility.INTERNAL),
         uploadedById: user.id,
+        customerId: user.customerId ?? undefined,
+        requestId: requestId || undefined,
+        productionOrderId: productionOrderId || undefined,
       },
     });
 

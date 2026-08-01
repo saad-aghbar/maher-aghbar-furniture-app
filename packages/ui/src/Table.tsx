@@ -1,9 +1,18 @@
 import type { HTMLAttributes, TableHTMLAttributes } from 'react';
 import { cn } from './cn';
 
-export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElement>) {
+export interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
+  wrapperClassName?: string;
+}
+
+export function Table({ className, wrapperClassName, ...props }: TableProps) {
   return (
-    <div className="w-full overflow-x-auto rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)]">
+    <div
+      className={cn(
+        'w-full overflow-x-auto rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-sm)]',
+        wrapperClassName,
+      )}
+    >
       <table
         className={cn('w-full min-w-[640px] border-collapse text-sm', className)}
         {...props}
@@ -15,7 +24,11 @@ export function Table({ className, ...props }: TableHTMLAttributes<HTMLTableElem
 export function TableHead({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <thead
-      className={cn('bg-[var(--maher-background)] text-[var(--maher-text-secondary)]', className)}
+      className={cn(
+        'sticky top-0 z-10 bg-[var(--maher-surface-muted)] text-[var(--maher-text-secondary)]',
+        '[&_tr]:border-b [&_tr]:border-[var(--maher-border)]',
+        className,
+      )}
       {...props}
     />
   );
@@ -28,7 +41,7 @@ export function TableBody({ className, ...props }: HTMLAttributes<HTMLTableSecti
 export function TableRow({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
-      className={cn('hover:bg-[var(--maher-background)]/60 transition-colors', className)}
+      className={cn('transition-colors hover:bg-[var(--maher-surface-muted)]', className)}
       {...props}
     />
   );
@@ -38,7 +51,7 @@ export function TableHeaderCell({ className, ...props }: HTMLAttributes<HTMLTabl
   return (
     <th
       className={cn(
-        'px-4 py-3 text-start text-xs font-semibold uppercase tracking-wide',
+        'whitespace-nowrap px-4 py-3 text-start text-[11px] font-semibold uppercase tracking-[0.06em]',
         className,
       )}
       {...props}
@@ -48,6 +61,9 @@ export function TableHeaderCell({ className, ...props }: HTMLAttributes<HTMLTabl
 
 export function TableCell({ className, ...props }: HTMLAttributes<HTMLTableCellElement>) {
   return (
-    <td className={cn('px-4 py-3 text-[var(--maher-text-primary)]', className)} {...props} />
+    <td
+      className={cn('px-4 py-3 align-middle text-[var(--maher-text-primary)]', className)}
+      {...props}
+    />
   );
 }

@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "Maher Al-Aghbar Furniture",
+    "slug": "maher-aghbar-furniture",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "maher",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#E03C31"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "jo.maheraghbar.furniture"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#E03C31"
+      },
+      "package": "jo.maheraghbar.furniture",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-localization",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow Maher Al-Aghbar Furniture to take photos of completed work.",
+          "photosPermission": "Allow Maher Al-Aghbar Furniture to attach photos from your library."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "autolinkingModuleResolution": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "replace-before-eas-build"
+      }
+    }
+  }
+}

@@ -149,6 +149,7 @@ pnpm --filter @maher/logging build
 pnpm --filter @maher/config build
 pnpm --filter @maher/i18n build
 pnpm --filter @maher/ui build
+pnpm --filter @maher/integrations build
 pnpm --filter @maher/database generate
 pnpm --filter @maher/database build
 
@@ -157,13 +158,48 @@ echo "==> Database schema + seed"
 (cd packages/database && DATABASE_URL="$DATABASE_URL" pnpm exec tsx prisma/seed.ts)
 
 echo "==> Building apps"
+# Next.js prerender breaks if NODE_ENV is set to "development" during build
+unset NODE_ENV || true
+export NODE_ENV=production
 pnpm --filter @maher/api build
 pnpm --filter @maher/worker build
 NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/admin-web build
 NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/customer-portal build
 NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/employee-portal build
+unset NODE_ENV || true
+
+echo "==> Mobile typecheck"
+pnpm --filter @maher/mobile typecheck
+
+# Keep the API URL unpinned for local Expo development. The mobile app derives
+# the Mac's LAN host from Metro, so physical devices do not call themselves.
+python3 - <<PY
+from pathlib import Path
+root = Path("$ROOT")
+mobile_env = root / "apps" / "mobile" / ".env"
+lines = [
+    "EXPO_PUBLIC_ENVIRONMENT=local",
+]
+mobile_env.write_text("\n".join(lines) + "\n")
+# Keep only the environment marker in the root env as well.
+env = root / ".env"
+text = env.read_text()
+out = [
+    line
+    for line in text.splitlines()
+    if not line.startswith("EXPO_PUBLIC_API_BASE_URL=")
+]
+keys = {l.split("=",1)[0] for l in out if "=" in l and not l.strip().startswith("#")}
+if "EXPO_PUBLIC_ENVIRONMENT" not in keys:
+    out.append("EXPO_PUBLIC_ENVIRONMENT=local")
+env.write_text("\n".join(out) + "\n")
+print(f"Wrote {mobile_env}")
+PY
 
 echo ""
 echo "==> Launch ready"
-echo "Start everything with:  pnpm start:all"
-echo "Stop everything with:   pnpm stop:all"
+echo "Web stack:   pnpm start:all"
+echo "Mobile:      pnpm mobile:start"
+echo "Stop web:    pnpm stop:all"
+echo "One-shot:    pnpm launch"
+

@@ -1,15 +1,16 @@
 'use client';
 
-import { useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
+import { redirectAfterLogin } from '@/lib/post-login';
 import { Button, Input, Alert } from '@maher/ui';
 import type { AuthUser } from '@maher/types';
-import { useTranslations } from 'next-intl';
+import { Lock, Mail } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
 import { useState, type FormEvent } from 'react';
 
 export function LoginForm() {
   const t = useTranslations('auth');
-  const router = useRouter();
+  const locale = useLocale();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -20,21 +21,19 @@ export function LoginForm() {
     setError(null);
     setLoading(true);
     try {
-      await apiFetch<{ user: AuthUser }>('/api/v1/auth/login', {
+      const res = await apiFetch<{ user: AuthUser }>('/api/v1/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
-      router.push('/tasks');
-      router.refresh();
+      redirectAfterLogin(res.user, locale);
     } catch {
       setError(t('loginError'));
-    } finally {
       setLoading(false);
     }
   }
 
   return (
-    <form onSubmit={onSubmit} className="mx-auto w-full max-w-md space-y-4">
+    <form onSubmit={onSubmit} className="space-y-4">
       {error ? <Alert variant="error">{error}</Alert> : null}
       <Input
         label={t('email')}
@@ -43,6 +42,8 @@ export function LoginForm() {
         onChange={(e) => setEmail(e.target.value)}
         required
         autoComplete="email"
+        placeholder="name@example.com"
+        leadingIcon={<Mail className="h-4 w-4" />}
       />
       <Input
         label={t('password')}
@@ -51,8 +52,10 @@ export function LoginForm() {
         onChange={(e) => setPassword(e.target.value)}
         required
         autoComplete="current-password"
+        placeholder="••••••••"
+        leadingIcon={<Lock className="h-4 w-4" />}
       />
-      <Button type="submit" loading={loading} className="w-full">
+      <Button type="submit" size="lg" loading={loading} className="w-full">
         {t('login')}
       </Button>
     </form>

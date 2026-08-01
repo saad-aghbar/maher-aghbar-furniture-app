@@ -20,6 +20,16 @@ export class ListRequestsDto extends PaginationDto {
   @IsOptional()
   @IsEnum(RequestStatus)
   status?: RequestStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
+  @ApiPropertyOptional({ enum: RequestSource })
+  @IsOptional()
+  @IsEnum(RequestSource)
+  source?: RequestSource;
 }
 
 export class RequestItemDto {
@@ -89,9 +99,10 @@ export class RequestItemDto {
 }
 
 export class CreateRequestDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsUUID()
-  customerId!: string;
+  customerId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

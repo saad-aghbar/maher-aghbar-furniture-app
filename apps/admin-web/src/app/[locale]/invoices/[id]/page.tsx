@@ -1,0 +1,398 @@
+'use client';
+
+import { PageHeader } from '@/components/admin/page-header';
+import { Link } from '@/i18n/navigation';
+import { apiFetch, ApiClientError, API_URL } from '@/lib/api-client';
+import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  Input,
+  Select,
+  Skeleton,
+  StatusBadge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from '@maher/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
+import { useState } from 'react';
+
+const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'CARD', 'OTHER'] as const;
+
+interface InvoiceDetail {
+  id: string;
+  number: string;
+  status: string;
+  invoiceDate?: string;
+  dueDate?: string | null;
+  currency?: string;
+  subtotal?: string | number;
+  taxTotal?: string | number;
+  total?: string | number;
+  paidAmount?: string | number;
+  outstandingAmount?: string | number;
+  jofotaraUuid?: string | null;
+  jofotaraQr?: string | null;
+  jofotaraStatus?: string | null;
+  jofotaraClearedAt?: string | null;
+  customerId?: string;
+  customer?: { id: string; name: string; code?: string };
+  salesOrderId?: string | null;
+  salesOrder?: { id: string; number: string; status: string } | null;
+  lines?: Array<{
+    id: string;
+    description: string;
+    quantity: string | number;
+    unitPrice: string | number;
+    taxRate?: string | number;
+    lineTotal: string | number;
+  }>;
+  payments?: Array<{
+    id: string;
+    number: string;
+    paymentDate?: string;
+    amount: string | number;
+    method: string;
+    referenceNumber?: string | null;
+  }>;
+}
+
+function money(value: string | number | undefined | null) {
+  return Number(value ?? 0).toFixed(2);
+}
+
+function qrImageSrc(qr: string): string | null {
+  if (qr.startsWith('data:image/')) return qr;
+  if (/^[A-Za-z0-9+/=]+$/.test(qr) && qr.length > 100) {
+    return `data:image/png;base64,${qr}`;
+  }
+  return null;
+}
+
+export default function InvoiceDetailPage({ params }: { params: { id: string } }) {
+  const ta = useTranslations('accounting');
+  const tc = useTranslations('catalog');
+  const tCommon = useTranslations('common');
+  const queryClient = useQueryClient();
+
+  const [banner, setBanner] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState<string>('BANK_TRANSFER');
+  const [reference, setReference] = useState('');
+
+  const detailQuery = useQuery({
+    queryKey: ['invoice', params.id],
+    queryFn: () => apiFetch<InvoiceDetail>(`/api/v1/invoices/${params.id}`),
+  });
+
+  const payMutation = useMutation({
+    mutationFn: async () => {
+      const invoice = detailQuery.data;
+      if (!invoice) return;
+      const customerId = invoice.customerId ?? invoice.customer?.id;
+      const payAmount = Number(amount) || Number(invoice.outstandingAmount ?? 0);
+      if (!customerId || !(payAmount > 0)) {
+        throw new ApiClientError(tc('amountCustomerRequired'), 400);
+      }
+      return apiFetch('/api/v1/payments', {
+        method: 'POST',
+        body: JSON.stringify({
+          customerId,
+          invoiceId: invoice.id,
+          amount: payAmount,
+          method,
+          ...(reference.trim() ? { referenceNumber: reference.trim() } : {}),
+        }),
+      });
+    },
+    onSuccess: async () => {
+      setFormError(null);
+      setBanner(ta('paymentRecorded'));
+      setAmount('');
+      setReference('');
+      await queryClient.invalidateQueries({ queryKey: ['invoice', params.id] });
+      await queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: (err) => setFormError(mutationErrorMessage(err)),
+  });
+
+  if (detailQuery.isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+
+  if (detailQuery.isError || !detailQuery.data) {
+    return (
+      <ErrorState
+        title={ta('detail')}
+        onRetry={() => detailQuery.refetch()}
+        retryLabel={tCommon('retry')}
+      />
+    );
+  }
+
+  const invoice = detailQuery.data;
+  const lines = invoice.lines ?? [];
+  const payments = invoice.payments ?? [];
+  const outstanding = Number(invoice.outstandingAmount ?? 0);
+  const methodOptions = PAYMENT_METHODS.map((m) => ({
+    value: m,
+    label: ta(`method${m}` as 'methodCASH'),
+  }));
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={invoice.number}
+        description={invoice.customer?.name}
+        actions={
+          <>
+            <StatusBadge status={invoice.status} />
+            <Button
+              variant="ghost"
+              onClick={() => {
+                window.open(`${API_URL}/api/v1/invoices/${params.id}/pdf`, '_blank');
+              }}
+            >
+              {ta('downloadPdf')}
+            </Button>
+          </>
+        }
+      />
+
+      {banner ? <Alert variant="success">{banner}</Alert> : null}
+      {formError ? <Alert variant="error">{formError}</Alert> : null}
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="p-4">
+          <p className="text-xs text-text-secondary">{ta('customer')}</p>
+          <p className="mt-1 font-semibold">
+            {invoice.customer ? (
+              <Link
+                href={`/customers/${invoice.customer.id}`}
+                className="text-brand hover:underline"
+              >
+                {invoice.customer.name}
+              </Link>
+            ) : (
+              '—'
+            )}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-text-secondary">{ta('salesOrder')}</p>
+          <p className="mt-1 font-semibold">
+            {invoice.salesOrder ? (
+              <Link
+                href={`/sales-orders/${invoice.salesOrder.id}`}
+                className="text-brand hover:underline"
+              >
+                {invoice.salesOrder.number}
+              </Link>
+            ) : (
+              '—'
+            )}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-text-secondary">{ta('invoiceDate')}</p>
+          <p className="mt-1 font-semibold" dir="ltr">
+            {invoice.invoiceDate?.slice(0, 10) ?? '—'}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-text-secondary">{ta('dueDate')}</p>
+          <p className="mt-1 font-semibold" dir="ltr">
+            {invoice.dueDate?.slice(0, 10) ?? '—'}
+          </p>
+        </Card>
+      </div>
+
+      <Card title={ta('jofotara')} className="space-y-3">
+        {invoice.jofotaraUuid || invoice.jofotaraStatus || invoice.jofotaraQr ? (
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-text-secondary">{ta('jofotaraUuid')}</dt>
+              <dd className="mt-1 break-all font-mono text-sm" dir="ltr">
+                {invoice.jofotaraUuid ?? '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-secondary">{ta('jofotaraStatus')}</dt>
+              <dd className="mt-1 font-semibold" dir="ltr">
+                {invoice.jofotaraStatus ?? '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-secondary">{ta('jofotaraClearedAt')}</dt>
+              <dd className="mt-1 font-semibold" dir="ltr">
+                {invoice.jofotaraClearedAt?.slice(0, 19).replace('T', ' ') ?? '—'}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="mb-2 text-xs text-text-secondary">{ta('jofotaraQr')}</dt>
+              <dd>
+                {invoice.jofotaraQr ? (
+                  (() => {
+                    const imgSrc = qrImageSrc(invoice.jofotaraQr);
+                    return imgSrc ? (
+                      <img
+                        src={imgSrc}
+                        alt={ta('jofotaraQr')}
+                        className="h-32 w-32 rounded border border-[var(--maher-border)] bg-white p-2"
+                      />
+                    ) : (
+                      <p className="break-all rounded border border-[var(--maher-border)] bg-[var(--maher-surface-muted)] p-2 font-mono text-xs" dir="ltr">
+                        {invoice.jofotaraQr}
+                      </p>
+                    );
+                  })()
+                ) : (
+                  '—'
+                )}
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <EmptyState title={ta('jofotaraNotCleared')} description={ta('jofotaraNotClearedHint')} />
+        )}
+      </Card>
+
+      <Card title={ta('total')} className="space-y-0">
+        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div>
+            <dt className="text-xs text-text-secondary">{ta('subtotal')}</dt>
+            <dd className="mt-1 font-semibold" dir="ltr">
+              {money(invoice.subtotal)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-text-secondary">{ta('tax')}</dt>
+            <dd className="mt-1 font-semibold" dir="ltr">
+              {money(invoice.taxTotal)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-text-secondary">{ta('total')}</dt>
+            <dd className="mt-1 font-semibold" dir="ltr">
+              {money(invoice.total)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-text-secondary">{ta('paidAmount')}</dt>
+            <dd className="mt-1 font-semibold" dir="ltr">
+              {money(invoice.paidAmount)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-text-secondary">{ta('balance')}</dt>
+            <dd className="mt-1 font-semibold" dir="ltr">
+              {money(invoice.outstandingAmount)}
+            </dd>
+          </div>
+        </dl>
+      </Card>
+
+      <Card title={ta('lines')}>
+        {lines.length === 0 ? (
+          <EmptyState title={ta('noLines')} />
+        ) : (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta('description')}</TableHeaderCell>
+                <TableHeaderCell>{ta('qty')}</TableHeaderCell>
+                <TableHeaderCell>{ta('unitPrice')}</TableHeaderCell>
+                <TableHeaderCell>{ta('lineTotal')}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {lines.map((line) => (
+                <TableRow key={line.id}>
+                  <TableCell>{line.description}</TableCell>
+                  <TableCell dir="ltr">{Number(line.quantity)}</TableCell>
+                  <TableCell dir="ltr">{money(line.unitPrice)}</TableCell>
+                  <TableCell dir="ltr">{money(line.lineTotal)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
+
+      <Card title={ta('paymentHistory')}>
+        {payments.length === 0 ? (
+          <EmptyState title={ta('noPayments')} />
+        ) : (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{ta('paymentNumber')}</TableHeaderCell>
+                <TableHeaderCell>{ta('paymentDate')}</TableHeaderCell>
+                <TableHeaderCell>{ta('paymentMethod')}</TableHeaderCell>
+                <TableHeaderCell>{ta('reference')}</TableHeaderCell>
+                <TableHeaderCell>{ta('amount')}</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {payments.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell>{p.number}</TableCell>
+                  <TableCell dir="ltr">{p.paymentDate?.slice(0, 10) ?? '—'}</TableCell>
+                  <TableCell>
+                    {ta(`method${p.method}` as 'methodCASH')}
+                  </TableCell>
+                  <TableCell dir="ltr">{p.referenceNumber ?? '—'}</TableCell>
+                  <TableCell dir="ltr">{money(p.amount)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
+
+      {outstanding > 0 ? (
+        <Card title={ta('recordPayment')}>
+          <div className="grid max-w-xl gap-3">
+            <Input
+              label={ta('amountJod')}
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={String(outstanding)}
+            />
+            <Select
+              label={ta('paymentMethod')}
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+              options={methodOptions}
+            />
+            <Input
+              label={ta('referenceOptional')}
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+            />
+            <div>
+              <Button loading={payMutation.isPending} onClick={() => payMutation.mutate()}>
+                {ta('recordPayment')}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+    </div>
+  );
+}

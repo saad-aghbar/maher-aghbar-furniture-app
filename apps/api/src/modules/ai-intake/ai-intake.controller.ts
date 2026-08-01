@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 import { AiIntakeService } from './ai-intake.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 import type { AuthUser } from '@maher/types';
 
 class CreateAiJobDto {
@@ -32,10 +33,22 @@ class ApproveAiJobDto {
   fieldOverrides?: Record<string, string>;
 }
 
+class RejectAiJobDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
 @ApiTags('ai-intake')
 @Controller('ai-intake')
 export class AiIntakeController {
   constructor(private readonly ai: AiIntakeService) {}
+
+  @Get('jobs')
+  @RequirePermissions('ai-intake.read')
+  list(@Query() query: PaginationDto) {
+    return this.ai.list(query);
+  }
 
   @Post('jobs')
   @RequirePermissions('ai-intake.manage')
@@ -57,5 +70,15 @@ export class AiIntakeController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.ai.approve(id, dto, user.id);
+  }
+
+  @Post('jobs/:id/reject')
+  @RequirePermissions('ai-intake.manage')
+  reject(
+    @Param('id') id: string,
+    @Body() dto: RejectAiJobDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ai.reject(id, user.id, dto.reason);
   }
 }

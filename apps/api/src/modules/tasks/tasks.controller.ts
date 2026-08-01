@@ -1,9 +1,16 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@maher/types';
 import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ListTasksDto, TaskBlockDto, TaskProgressDto } from './dto/task.dto';
+import {
+  AssignTaskDto,
+  CompleteTaskDto,
+  ListTasksDto,
+  TaskBlockDto,
+  TaskProgressDto,
+  UpdateTaskNotesDto,
+} from './dto/task.dto';
 import { TasksService } from './tasks.service';
 
 @ApiTags('tasks')
@@ -19,8 +26,14 @@ export class TasksController {
 
   @RequirePermissions('production-task.read')
   @Get(':id')
-  get(@Param('id') id: string) {
-    return this.tasks.getById(id);
+  get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.tasks.getById(id, user.id, user.permissions);
+  }
+
+  @RequirePermissions('production-order.assign')
+  @Post(':id/assign')
+  assign(@Param('id') id: string, @Body() dto: AssignTaskDto) {
+    return this.tasks.assign(id, dto);
   }
 
   @RequireAnyPermissions('production-task.update-own', 'production-task.update-any')
@@ -61,9 +74,29 @@ export class TasksController {
     return this.tasks.block(id, dto, user.id, user.permissions);
   }
 
+  @RequireAnyPermissions('production-task.update-own', 'production-task.update-any')
+  @Post(':id/unblock')
+  unblock(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.tasks.unblock(id, user.id, user.permissions);
+  }
+
+  @RequireAnyPermissions('production-task.update-own', 'production-task.update-any')
+  @Patch(':id/notes')
+  notes(
+    @Param('id') id: string,
+    @Body() dto: UpdateTaskNotesDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.updateNotes(id, dto.notes, user.id, user.permissions);
+  }
+
   @RequirePermissions('production-task.complete')
   @Post(':id/complete')
-  complete(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.tasks.complete(id, user.id, user.permissions);
+  complete(
+    @Param('id') id: string,
+    @Body() dto: CompleteTaskDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.complete(id, user.id, user.permissions, dto);
   }
 }

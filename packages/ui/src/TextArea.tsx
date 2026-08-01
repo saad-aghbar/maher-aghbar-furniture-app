@@ -11,7 +11,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
     const inputId = id ?? (label ? label.replace(/\s+/g, '-').toLowerCase() : undefined);
 
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         {label ? (
           <label htmlFor={inputId} className="text-sm font-medium text-[var(--maher-text-primary)]">
             {label}
@@ -22,8 +22,9 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
           id={inputId}
           aria-invalid={error ? true : undefined}
           className={cn(
-            'min-h-[100px] w-full rounded-[var(--maher-radius-md)] border border-[var(--maher-border)] bg-[var(--maher-surface)] px-3 py-2 text-sm text-[var(--maher-text-primary)]',
-            'placeholder:text-[var(--maher-text-secondary)] focus:border-[var(--maher-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--maher-brand)]/20',
+            'min-h-[100px] w-full rounded-[var(--maher-radius-md)] border border-[var(--maher-border)] bg-[var(--maher-surface)] px-3 py-2 text-sm text-[var(--maher-text-primary)] transition-colors',
+            'placeholder:text-[var(--maher-text-tertiary)] hover:border-[var(--maher-border-strong)]',
+            'focus:border-[var(--maher-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--maher-brand)]/20',
             error && 'border-[var(--maher-error)]',
             className,
           )}

@@ -5,26 +5,36 @@ export type BadgeVariant = 'default' | 'brand' | 'success' | 'warning' | 'error'
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
+  dot?: boolean;
 }
 
 const variantClasses: Record<BadgeVariant, string> = {
-  default: 'bg-[var(--maher-background)] text-[var(--maher-text-primary)] border-[var(--maher-border)]',
-  brand: 'bg-[var(--maher-brand)]/10 text-[var(--maher-brand)] border-[var(--maher-brand)]/20',
-  success: 'bg-emerald-50 text-[var(--maher-success)] border-emerald-200',
-  warning: 'bg-amber-50 text-[var(--maher-warning)] border-amber-200',
-  error: 'bg-red-50 text-[var(--maher-error)] border-red-200',
-  info: 'bg-sky-50 text-[var(--maher-info)] border-sky-200',
+  default:
+    'bg-[var(--maher-surface-muted)] text-[var(--maher-text-secondary)] border-[var(--maher-border)]',
+  brand:
+    'bg-[var(--maher-brand-soft)] text-[var(--maher-brand)] border-[var(--maher-brand-border)]',
+  success:
+    'bg-[var(--maher-success-soft)] text-[var(--maher-success)] border-[var(--maher-success)]/20',
+  warning:
+    'bg-[var(--maher-warning-soft)] text-[var(--maher-warning)] border-[var(--maher-warning)]/20',
+  error: 'bg-[var(--maher-error-soft)] text-[var(--maher-error)] border-[var(--maher-error)]/20',
+  info: 'bg-[var(--maher-info-soft)] text-[var(--maher-info)] border-[var(--maher-info)]/20',
 };
 
-export function Badge({ className, variant = 'default', ...props }: BadgeProps) {
+export function Badge({ className, variant = 'default', dot, children, ...props }: BadgeProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium',
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium',
         variantClasses[variant],
         className,
       )}
       {...props}
-    />
+    >
+      {dot ? (
+        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
+      ) : null}
+      {children}
+    </span>
   );
 }

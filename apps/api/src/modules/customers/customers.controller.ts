@@ -1,10 +1,17 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { IsString, MinLength } from 'class-validator';
 import type { AuthUser } from '@maher/types';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, ListCustomersDto, UpdateCustomerDto } from './dto/customer.dto';
+
+class SuggestTranslationsDto {
+  @IsString()
+  @MinLength(1)
+  name!: string;
+}
 
 @ApiTags('customers')
 @Controller('customers')
@@ -21,6 +28,13 @@ export class CustomersController {
   @Post()
   create(@Body() dto: CreateCustomerDto, @CurrentUser() user: AuthUser) {
     return this.customers.create(dto, user.id);
+  }
+
+  /** AI name suggestions — UI must confirm before save. */
+  @RequireAnyPermissions('customer.create', 'customer.update')
+  @Post('suggest-translations')
+  suggestTranslations(@Body() dto: SuggestTranslationsDto) {
+    return this.customers.suggestTranslations(dto.name);
   }
 
   @RequirePermissions('customer.read')
