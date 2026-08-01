@@ -1,7 +1,7 @@
 import type { HomePersona } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { useI18n } from '../../providers/i18n-provider';
-import { daysUntil, formatDate, formatMoney } from '../../lib/format';
+import { daysUntil, formatDate, formatMoney, relativeDay } from '../../lib/format';
 import { useNav } from '../../lib/nav';
 import { colors } from '../../theme/tokens';
 import { EmptyState } from '../../ui/States';
@@ -24,14 +24,8 @@ export function FocusList({ persona, data }: { persona: HomePersona; data: Data 
   const { t, locale } = useI18n();
   const router = useNav();
 
-  const dueLabel = (value: string | null | undefined) => {
-    const d = daysUntil(value);
-    if (d == null) return undefined;
-    if (d < 0) return t('mobile.overdueByDays', 'Overdue').concat(` · ${Math.abs(d)}d`);
-    if (d === 0) return t('mobile.dueToday', 'Due today');
-    if (d === 1) return t('mobile.dueTomorrow', 'Due tomorrow');
-    return `${t('mobile.dueIn', 'Due in')} ${d}d`;
-  };
+  const dueLabel = (value: string | null | undefined) =>
+    relativeDay(daysUntil(value), t, 'due');
 
   if (persona === 'production_worker' || persona === 'production_supervisor') {
     const rows = [...data.tasks.rows]

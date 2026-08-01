@@ -5,18 +5,10 @@ import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
 import { BrandMark, cn } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
-import {
-  ChevronDown,
-  ClipboardList,
-  Home,
-  Languages,
-  LogOut,
-  User,
-} from 'lucide-react';
-import { useLocale, useTranslations } from 'next-intl';
+import { ChevronDown, ClipboardList, Home, LogOut, User } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-
-const localeNames: Record<string, string> = { ar: 'العربية', en: 'English', he: 'עברית' };
+import { LanguageSwitcher } from './language-switcher';
 
 const navItems = [
   { href: '/dashboard', key: 'dashboard', icon: Home },
@@ -29,7 +21,6 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const tAuth = useTranslations('auth');
   const pathname = usePathname();
   const router = useRouter();
-  const locale = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -70,8 +61,10 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
     <div className="mx-auto min-h-screen max-w-xl bg-background shadow-elevated sm:my-6 sm:rounded-[var(--maher-radius-xl)]">
       <header className="sticky top-0 z-20 border-b border-border bg-surface/90 backdrop-blur-md sm:rounded-t-[var(--maher-radius-xl)]">
         <div className="flex items-center justify-between gap-3 px-4 py-3.5">
-          <div className="flex min-w-0 items-center gap-3">
-            <BrandMark size="md" />
+          <div className="group flex min-w-0 items-center gap-3">
+            <span className="transition-transform duration-500 ease-out group-hover:rotate-6 group-hover:scale-110">
+              <BrandMark size="md" />
+            </span>
             <div className="min-w-0">
               <p className="truncate text-sm font-bold leading-tight text-text-primary">
                 {tCommon('appName')}
@@ -81,23 +74,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-1">
-            <label className="relative flex items-center" title={t('language')}>
-              <Languages className="pointer-events-none absolute start-2 h-3.5 w-3.5 text-text-tertiary" />
-              <span className="sr-only">{t('language')}</span>
-              <select
-                value={locale}
-                onChange={(e) =>
-                  router.replace(pathname, { locale: e.target.value as 'ar' | 'en' | 'he' })
-                }
-                className="h-9 max-w-[7.5rem] appearance-none rounded-[var(--maher-radius-md)] border border-border bg-surface ps-7 pe-6 text-xs text-text-secondary"
-              >
-                {Object.entries(localeNames).map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <LanguageSwitcher />
 
             <div className="relative" ref={menuRef}>
               <button
@@ -106,14 +83,19 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-[var(--maher-radius-md)] py-1 ps-1 pe-1.5 transition-colors hover:bg-surface-muted',
+                  'maher-press group flex items-center gap-1.5 rounded-[var(--maher-radius-md)] py-1 ps-1 pe-1.5 hover:bg-surface-muted',
                   menuOpen && 'bg-surface-muted',
                 )}
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand transition-transform duration-300 ease-out group-hover:scale-105">
                   {initials || <User className="h-4 w-4" />}
                 </span>
-                <ChevronDown className="h-4 w-4 text-text-tertiary" />
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 text-text-tertiary transition-transform duration-300 ease-out',
+                    menuOpen && 'rotate-180 text-brand',
+                  )}
+                />
               </button>
 
               {menuOpen ? (
@@ -136,9 +118,9 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                     type="button"
                     role="menuitem"
                     onClick={logout}
-                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-text-secondary transition-colors hover:bg-surface-muted hover:text-[var(--maher-error)]"
+                    className="group/logout flex w-full items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-surface-muted hover:text-[var(--maher-error)]"
                   >
-                    <LogOut className="h-4 w-4" />
+                    <LogOut className="h-4 w-4 transition-transform duration-300 ease-out group-hover/logout:translate-x-0.5 rtl:group-hover/logout:-translate-x-0.5" />
                     {tAuth('logout')}
                   </button>
                 </div>
@@ -158,20 +140,24 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'inline-flex flex-1 items-center justify-center gap-2 rounded-[var(--maher-radius-md)] px-3 py-2.5 text-sm font-semibold transition-colors',
+                  'maher-press group inline-flex flex-1 items-center justify-center gap-2 rounded-[var(--maher-radius-md)] px-3 py-2.5 text-sm font-semibold',
                   active
                     ? 'bg-brand-soft text-brand'
                     : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
                 )}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-4 w-4 transition-transform duration-300 ease-out group-hover:scale-110" />
                 {t(item.key)}
               </Link>
             );
           })}
         </nav>
       </header>
-      <main className="p-4 pb-24">{children}</main>
+      <main className="p-4 pb-24">
+        <div key={pathname} className="maher-page-enter">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }

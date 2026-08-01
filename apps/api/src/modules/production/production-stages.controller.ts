@@ -23,7 +23,7 @@ import { Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
+import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
 import type { AuthUser } from '@maher/types';
 

@@ -185,6 +185,28 @@ export default function ReportsPage() {
   const financial = useReportQuery<FinancialReport>('financial', '/api/v1/reports/financial');
   const purchasing = useReportQuery<PurchasingReport>('purchasing', '/api/v1/reports/purchasing');
 
+  const filteredRecentQuotes = useMemo(
+    () =>
+      (sales.data?.recentQuotes ?? []).filter((q) =>
+        inDateRange(q.createdAt, dateFrom, dateTo),
+      ),
+    [sales.data?.recentQuotes, dateFrom, dateTo],
+  );
+  const filteredOpenInvoices = useMemo(
+    () =>
+      (financial.data?.openInvoices ?? []).filter((inv) =>
+        inDateRange(inv.dueDate, dateFrom, dateTo),
+      ),
+    [financial.data?.openInvoices, dateFrom, dateTo],
+  );
+  const filteredDelayedOrders = useMemo(
+    () =>
+      (production.data?.delayedOrders ?? []).filter((po) =>
+        inDateRange(po.requiredDeliveryDate, dateFrom, dateTo),
+      ),
+    [production.data?.delayedOrders, dateFrom, dateTo],
+  );
+
   const anyLoading =
     dashboard.isLoading ||
     sales.isLoading ||
@@ -209,28 +231,6 @@ export default function ReportsPage() {
   const showInventory = inventory.isSuccess && !!inventory.data;
   const showFinancial = financial.isSuccess && !!financial.data;
   const showPurchasing = purchasing.isSuccess && !!purchasing.data;
-
-  const filteredRecentQuotes = useMemo(
-    () =>
-      (sales.data?.recentQuotes ?? []).filter((q) =>
-        inDateRange(q.createdAt, dateFrom, dateTo),
-      ),
-    [sales.data?.recentQuotes, dateFrom, dateTo],
-  );
-  const filteredOpenInvoices = useMemo(
-    () =>
-      (financial.data?.openInvoices ?? []).filter((inv) =>
-        inDateRange(inv.dueDate, dateFrom, dateTo),
-      ),
-    [financial.data?.openInvoices, dateFrom, dateTo],
-  );
-  const filteredDelayedOrders = useMemo(
-    () =>
-      (production.data?.delayedOrders ?? []).filter((po) =>
-        inDateRange(po.requiredDeliveryDate, dateFrom, dateTo),
-      ),
-    [production.data?.delayedOrders, dateFrom, dateTo],
-  );
 
   return (
     <div className="space-y-8">

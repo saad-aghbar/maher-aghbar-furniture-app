@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { Search } from 'lucide-react-native';
 import { useListQuery } from '../../api/hooks';
+import { humaniseEnum } from '../../lib/format';
 import { useI18n } from '../../providers/i18n-provider';
 import { colors, spacing } from '../../theme/tokens';
 import { Chip, ChipGroup } from '../../ui/Chip';
@@ -138,7 +139,8 @@ export function statusFilters(...values: string[]): StatusFilter[] {
     ...values.map((value) => ({
       value,
       labelKey: `statuses.${value}`,
-      labelFallback: value,
+      // Never surface the raw enum if a translation is missing.
+      labelFallback: humaniseEnum(value),
     })),
   ];
 }

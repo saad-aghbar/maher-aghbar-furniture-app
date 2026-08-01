@@ -194,7 +194,7 @@ export default function QualityPage() {
   });
 
   const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
+    return (listQuery.data ?? []).filter((row) => {
       if (resultFilter === 'pending' && row.result) return false;
       if (resultFilter && resultFilter !== 'pending' && row.result !== resultFilter) return false;
       if (stageFilter && !(row.stageCode ?? '').toLowerCase().includes(stageFilter.toLowerCase())) {
@@ -210,7 +210,7 @@ export default function QualityPage() {
       }
       return true;
     });
-  }, [rows, resultFilter, stageFilter, search]);
+  }, [listQuery.data, resultFilter, stageFilter, search]);
 
   if (listQuery.isLoading) {
     return (

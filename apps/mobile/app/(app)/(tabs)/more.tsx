@@ -1,6 +1,6 @@
 import type { Locale } from '@maher/types';
 import { ChevronLeft, ChevronRight, LogOut } from 'lucide-react-native';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import Constants from 'expo-constants';
 import { resolveHomePersona } from '../../../src/permissions/can';
 import { visibleLinks } from '../../../src/permissions/workspace';
@@ -9,7 +9,7 @@ import { useI18n } from '../../../src/providers/i18n-provider';
 import { initials } from '../../../src/lib/format';
 import { useNav } from '../../../src/lib/nav';
 import { colors, radius, spacing } from '../../../src/theme/tokens';
-import { Button, Card, Chip, Screen, Section, Text } from '../../../src/ui';
+import { Button, Card, Chip, PressableScale, Screen, Section, Text } from '../../../src/ui';
 
 const LOCALES: { code: Locale; label: string }[] = [
   { code: 'ar', label: 'العربية' },
@@ -86,19 +86,16 @@ export default function MoreScreen() {
         <Section title={t('common.workspace', 'Workspace')}>
           <Card padded={false}>
             {links.map((link, index) => (
-              <Pressable
+              <PressableScale
                 key={link.key}
                 accessibilityRole="button"
                 onPress={() => router.push(link.href)}
-                style={({ pressed }) => [
-                  styles.link,
-                  index > 0 && styles.linkDivider,
-                  pressed && styles.pressed,
-                ]}
+                scaleTo={0.99}
+                style={[styles.link, index > 0 && styles.linkDivider]}
               >
-                <Text variant="body">{t(link.labelKey, link.key)}</Text>
+                <Text variant="body">{t(link.labelKey)}</Text>
                 <Chevron size={18} color={colors.textTertiary} />
-              </Pressable>
+              </PressableScale>
             ))}
           </Card>
         </Section>
@@ -149,7 +146,6 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   linkDivider: { borderTopWidth: 1, borderTopColor: colors.border },
-  pressed: { backgroundColor: colors.surfaceMuted },
   logout: { borderColor: colors.error },
   version: { textAlign: 'center', marginTop: spacing.sm },
 });

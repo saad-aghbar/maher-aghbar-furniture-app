@@ -13,15 +13,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const inputId = id ?? (label ? label.replace(/\s+/g, '-').toLowerCase() : undefined);
 
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="group flex flex-col gap-1.5">
         {label ? (
-          <label htmlFor={inputId} className="text-sm font-medium text-[var(--maher-text-primary)]">
+          <label
+            htmlFor={inputId}
+            className="text-sm font-medium text-[var(--maher-text-primary)] transition-colors duration-200 group-focus-within:text-[var(--maher-brand)]"
+          >
             {label}
           </label>
         ) : null}
         <div className="relative">
           {leadingIcon ? (
-            <span className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--maher-text-tertiary)]">
+            <span className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-[var(--maher-text-tertiary)] transition-colors duration-200 peer-focus:text-[var(--maher-brand)] group-focus-within:text-[var(--maher-brand)]">
               {leadingIcon}
             </span>
           ) : null}
@@ -31,8 +34,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
             className={cn(
-              'h-10 w-full rounded-[var(--maher-radius-md)] border border-[var(--maher-border)] bg-[var(--maher-surface)]',
-              'px-3 text-sm text-[var(--maher-text-primary)] transition-colors',
+              'peer h-10 w-full rounded-[var(--maher-radius-md)] border border-[var(--maher-border)] bg-[var(--maher-surface)]',
+              'px-3 text-sm text-[var(--maher-text-primary)]',
               'placeholder:text-[var(--maher-text-tertiary)] hover:border-[var(--maher-border-strong)]',
               'focus:border-[var(--maher-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--maher-brand)]/20',
               'disabled:cursor-not-allowed disabled:bg-[var(--maher-surface-muted)] disabled:opacity-60',
@@ -49,7 +52,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           </p>
         ) : null}
         {error ? (
-          <p id={`${inputId}-error`} role="alert" className="text-xs text-[var(--maher-error)]">
+          <p
+            id={`${inputId}-error`}
+            role="alert"
+            className="maher-animate-drop text-xs text-[var(--maher-error)]"
+          >
             {error}
           </p>
         ) : null}

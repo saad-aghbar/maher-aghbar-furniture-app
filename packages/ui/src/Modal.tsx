@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { cn } from './cn';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -34,9 +34,22 @@ export function Modal({
   className,
 }: ModalProps) {
   const titleId = useId();
+  // Keep the dialog mounted briefly after `open` flips so the exit animation can play.
+  const [mounted, setMounted] = useState(open);
+  const closing = mounted && !open;
 
   useEffect(() => {
-    if (!open) return;
+    if (open) {
+      setMounted(true);
+      return undefined;
+    }
+    if (!mounted) return undefined;
+    const timer = setTimeout(() => setMounted(false), 150);
+    return () => clearTimeout(timer);
+  }, [open, mounted]);
+
+  useEffect(() => {
+    if (!open) return undefined;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -48,7 +61,7 @@ export function Modal({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return (
     <div
@@ -58,7 +71,10 @@ export function Modal({
       <button
         type="button"
         aria-label="Close"
-        className="maher-animate-fade absolute inset-0 bg-[#1c1917]/45 backdrop-blur-[2px]"
+        className={cn(
+          'absolute inset-0 bg-[#1c1917]/45 backdrop-blur-[2px]',
+          closing ? 'maher-animate-fade-out' : 'maher-animate-fade',
+        )}
         onClick={onClose}
       />
       <div
@@ -66,7 +82,8 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         className={cn(
-          'maher-animate-pop relative z-10 flex max-h-[90vh] w-full flex-col rounded-[var(--maher-radius-xl)]',
+          closing ? 'maher-animate-pop-out' : 'maher-animate-pop',
+          'relative z-10 flex max-h-[90vh] w-full flex-col rounded-[var(--maher-radius-xl)]',
           'border border-[var(--maher-border)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-lg)]',
           // A caller-supplied max-width wins over the size preset (cn does not merge conflicts)
           !className?.includes('max-w-') && sizeClasses[size],
@@ -88,7 +105,7 @@ export function Modal({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="-me-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--maher-radius-md)] text-[var(--maher-text-tertiary)] transition-colors hover:bg-[var(--maher-surface-muted)] hover:text-[var(--maher-text-primary)]"
+            className="maher-press -me-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--maher-radius-md)] text-[var(--maher-text-tertiary)] hover:rotate-90 hover:bg-[var(--maher-surface-muted)] hover:text-[var(--maher-text-primary)]"
           >
             <svg
               viewBox="0 0 20 20"

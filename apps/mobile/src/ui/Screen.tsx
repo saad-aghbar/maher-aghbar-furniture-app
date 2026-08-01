@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { colors, spacing } from '../theme/tokens';
+import { FadeInView } from './motion';
 import { Text } from './Text';
 
 /** Scrollable page container with pull-to-refresh and consistent gutters. */
@@ -48,7 +49,7 @@ export function ScreenHeader({
   actions?: ReactNode;
 }) {
   return (
-    <View style={styles.header}>
+    <FadeInView style={styles.header}>
       <View style={styles.headerText}>
         <Text variant="title">{title}</Text>
         {subtitle ? (
@@ -58,7 +59,7 @@ export function ScreenHeader({
         ) : null}
       </View>
       {actions}
-    </View>
+    </FadeInView>
   );
 }
 
@@ -72,7 +73,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <View style={styles.section}>
+    <FadeInView style={styles.section}>
       {title || action ? (
         <View style={styles.sectionHead}>
           {title ? <Text variant="heading">{title}</Text> : <View />}
@@ -80,7 +81,7 @@ export function Section({
         </View>
       ) : null}
       <View style={styles.sectionBody}>{children}</View>
-    </View>
+    </FadeInView>
   );
 }
 

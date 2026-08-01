@@ -9,7 +9,7 @@ export function Skeleton({ className }: SkeletonProps) {
     <div
       aria-hidden="true"
       className={cn(
-        'animate-pulse rounded-[var(--maher-radius-md)] bg-[var(--maher-border)]/70',
+        'maher-shimmer rounded-[var(--maher-radius-md)] bg-[var(--maher-border)]/70',
         className,
       )}
     />
@@ -27,7 +27,7 @@ export function TableSkeleton({ rows = 6, columns = 5, className }: TableSkeleto
     <div
       aria-hidden="true"
       className={cn(
-        'overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)]',
+        'maher-animate-fade overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)]',
         className,
       )}
     >

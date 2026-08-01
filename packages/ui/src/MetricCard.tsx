@@ -54,18 +54,25 @@ export function MetricCard({
   return (
     <div
       className={cn(
-        'group relative overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)] p-5',
-        'shadow-[var(--maher-shadow-sm)] transition-shadow duration-200 hover:shadow-[var(--maher-shadow-md)]',
+        'maher-lift group relative overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)] p-5',
+        'shadow-[var(--maher-shadow-sm)] hover:border-[var(--maher-border-strong)]',
         className,
       )}
     >
-      <span className={cn('absolute inset-y-0 start-0 w-1', tones.accent)} aria-hidden="true" />
+      <span
+        className={cn(
+          'absolute inset-y-0 start-0 w-1 origin-left transition-transform duration-300 ease-out rtl:origin-right group-hover:scale-x-[2.5]',
+          tones.accent,
+        )}
+        aria-hidden="true"
+      />
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-medium text-[var(--maher-text-secondary)]">{label}</p>
         {icon ? (
           <span
             className={cn(
               'flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--maher-radius-md)]',
+              'transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:scale-110',
               tones.icon,
             )}
           >
@@ -74,7 +81,7 @@ export function MetricCard({
         ) : null}
       </div>
       <div className="mt-3 flex items-end justify-between gap-2">
-        <p className="text-3xl font-semibold tracking-tight text-[var(--maher-text-primary)]">
+        <p className="maher-animate-bounce-in text-3xl font-semibold tracking-tight text-[var(--maher-text-primary)]">
           {value}
         </p>
         {trend ? <div className="text-sm text-[var(--maher-text-secondary)]">{trend}</div> : null}

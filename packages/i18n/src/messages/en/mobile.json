@@ -137,5 +137,11 @@
   "unblock": "Resolve blocker",
   "unread": "unread",
   "updateProgress": "Update progress",
-  "waitingMaterials": "Waiting materials"
+  "waitingMaterials": "Waiting materials",
+  "day": "day",
+  "days": "days",
+  "more": "More",
+  "relativeDueIn": "Due in {n} {unit}",
+  "relativeExpiresIn": "Expires in {n} {unit}",
+  "relativeOverdue": "Overdue by {n} {unit}"
 }

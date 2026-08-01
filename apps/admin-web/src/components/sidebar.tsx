@@ -17,8 +17,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
   return (
     <div className="flex h-full flex-col bg-surface">
-      <div className="flex items-center gap-3 border-b border-border px-5 py-4">
-        <BrandMark />
+      <div className="group flex items-center gap-3 border-b border-border px-5 py-4">
+        <span className="transition-transform duration-500 ease-out group-hover:rotate-6 group-hover:scale-110">
+          <BrandMark />
+        </span>
         <div className="min-w-0">
           <p className="text-[13px] font-bold leading-snug text-text-primary">
             {tCommon('appName')}
@@ -28,8 +30,12 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {navGroups.map((group) => (
-          <div key={group.key} className="mb-5 last:mb-0">
+        {navGroups.map((group, groupIndex) => (
+          <div
+            key={group.key}
+            className="maher-animate-in-start mb-5 last:mb-0"
+            style={{ animationDelay: `${groupIndex * 60}ms` }}
+          >
             <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
               {t(group.key)}
             </p>
@@ -45,22 +51,26 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                       onClick={onNavigate}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
-                        'group relative flex items-center gap-3 rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium transition-colors',
+                        'group relative flex items-center gap-3 rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium',
+                        'transition-[background-color,color,transform] duration-200 ease-out active:scale-[0.98]',
                         active
                           ? 'bg-brand-soft text-brand'
-                          : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+                          : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary hover:ps-4',
                       )}
                     >
-                      {active ? (
-                        <span
-                          aria-hidden="true"
-                          className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-brand"
-                        />
-                      ) : null}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'absolute inset-y-1.5 start-0 w-0.5 origin-center rounded-full bg-brand transition-transform duration-300 ease-out',
+                          active ? 'scale-y-100' : 'scale-y-0',
+                        )}
+                      />
                       <Icon
                         className={cn(
-                          'h-[18px] w-[18px] shrink-0 transition-colors',
-                          active ? 'text-brand' : 'text-text-tertiary group-hover:text-text-secondary',
+                          'h-[18px] w-[18px] shrink-0 transition-[color,transform] duration-300 ease-out group-hover:scale-110',
+                          active
+                            ? 'text-brand'
+                            : 'text-text-tertiary group-hover:text-text-secondary',
                         )}
                       />
                       <span className="truncate">{t(item.key)}</span>

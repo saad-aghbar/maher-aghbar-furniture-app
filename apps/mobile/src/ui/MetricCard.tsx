@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { colors, radius, shadow, spacing, toneColor, type Tone } from '../theme/tokens';
+import { FadeInView, PressableScale, staggerDelay } from './motion';
 import { Text } from './Text';
 
 export function MetricCard({
@@ -9,6 +10,7 @@ export function MetricCard({
   tone = 'neutral',
   icon,
   onPress,
+  index = 0,
 }: {
   label: string;
   value: string | number;
@@ -16,6 +18,7 @@ export function MetricCard({
   tone?: Tone;
   icon?: React.ReactNode;
   onPress?: () => void;
+  index?: number;
 }) {
   const palette = toneColor[tone];
   const body = (
@@ -38,29 +41,33 @@ export function MetricCard({
     </>
   );
 
-  if (onPress) {
-    return (
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={`${label}: ${value}`}
-        style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-      >
-        {body}
-      </Pressable>
-    );
-  }
-  return (
+  const card = onPress ? (
+    <PressableScale
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value}`}
+      scaleTo={0.98}
+      style={styles.card}
+    >
+      {body}
+    </PressableScale>
+  ) : (
     <View style={styles.card} accessibilityLabel={`${label}: ${value}`}>
       {body}
     </View>
   );
+
+  return (
+    <FadeInView delay={staggerDelay(index)} style={styles.wrap}>
+      {card}
+    </FadeInView>
+  );
 }
 
 const styles = StyleSheet.create({
+  wrap: { flex: 1, minWidth: '45%' },
   card: {
     flex: 1,
-    minWidth: '45%',
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -69,7 +76,6 @@ const styles = StyleSheet.create({
     gap: 2,
     ...(shadow.card as object),
   },
-  pressed: { opacity: 0.9, transform: [{ scale: 0.99 }] },
   top: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
   iconWrap: {
     width: 34,

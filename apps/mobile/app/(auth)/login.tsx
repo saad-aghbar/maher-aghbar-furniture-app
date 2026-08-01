@@ -14,7 +14,7 @@ import { ApiClientError } from '../../src/api/client';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useI18n } from '../../src/providers/i18n-provider';
 import { colors, radius, spacing } from '../../src/theme/tokens';
-import { Button, Card, Chip, Text, TextField } from '../../src/ui';
+import { Button, Card, Chip, FadeInView, Text, TextField } from '../../src/ui';
 
 const LOCALES: { code: Locale; label: string }[] = [
   { code: 'ar', label: 'العربية' },
@@ -61,7 +61,7 @@ export default function LoginScreen() {
         contentContainerStyle={[styles.scroll, { paddingTop: insets.top + spacing.xl }]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.brandBlock}>
+        <FadeInView style={styles.brandBlock}>
           <View style={styles.logo}>
             <Text variant="display" color="inverse" latin>
               M
@@ -73,9 +73,9 @@ export default function LoginScreen() {
           <Text variant="caption" color="secondary" style={styles.brandTagline}>
             {t('mobile.signInSubtitle', 'One login for every role.')}
           </Text>
-        </View>
+        </FadeInView>
 
-        <Card>
+        <Card delay={80}>
           <Text variant="heading" style={styles.formTitle}>
             {t('auth.login', 'Sign in')}
           </Text>
@@ -141,7 +141,7 @@ export default function LoginScreen() {
           />
         </Card>
 
-        <View style={styles.localeRow}>
+        <FadeInView delay={120} style={styles.localeRow}>
           {LOCALES.map(({ code, label }) => (
             <Chip
               key={code}
@@ -150,7 +150,7 @@ export default function LoginScreen() {
               onPress={() => setLocale(code)}
             />
           ))}
-        </View>
+        </FadeInView>
       </ScrollView>
     </KeyboardAvoidingView>
   );

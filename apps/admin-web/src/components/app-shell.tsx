@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="maher-animate-fade absolute inset-0 bg-[#1c1917]/45 backdrop-blur-[2px]"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="absolute inset-y-0 start-0 w-[264px] shadow-float">
+          <div className="maher-animate-in-start absolute inset-y-0 start-0 w-[264px] shadow-float">
             <Sidebar onNavigate={() => setMobileOpen(false)} />
           </div>
         </div>
@@ -43,7 +43,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onOpenSidebar={() => setMobileOpen(true)} />
         <main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">
-          <div className="mx-auto w-full max-w-[1440px]">{children}</div>
+          <div key={pathname} className="maher-page-enter mx-auto w-full max-w-[1440px]">
+            {children}
+          </div>
         </main>
       </div>
     </div>

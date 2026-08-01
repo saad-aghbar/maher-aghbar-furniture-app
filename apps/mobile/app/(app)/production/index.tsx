@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 import { View } from 'react-native';
 import { ListScreen, statusFilters } from '../../../src/features/shared/ListScreen';
-import { daysUntil } from '../../../src/lib/format';
+import {daysUntil, relativeDay} from '../../../src/lib/format';
 import { useNav } from '../../../src/lib/nav';
 import { useI18n } from '../../../src/providers/i18n-provider';
 import { colors } from '../../../src/theme/tokens';
@@ -65,12 +65,7 @@ export default function ProductionScreen() {
           const completion = row.plannedCompletion ?? row.plannedCompletionDate;
           const due = daysUntil(completion);
           const overdue = due != null && due < 0 && row.status !== 'COMPLETED';
-          let dueHint: string | undefined;
-          if (due != null) {
-            if (due < 0) dueHint = t('mobile.overdue', 'Overdue');
-            else if (due === 0) dueHint = t('mobile.dueToday', 'Due today');
-            else dueHint = `${t('mobile.dueIn', 'Due in')} ${due}d`;
-          }
+          const dueHint = relativeDay(due, t, due != null && due < 0 ? 'overdue' : 'due');
           const percent = Math.round(progressOf(row));
           return (
             <ListRow

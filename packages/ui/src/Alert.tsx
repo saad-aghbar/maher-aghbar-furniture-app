@@ -31,13 +31,15 @@ export function Alert({ variant = 'info', title, icon, children, className, ...p
     <div
       role="alert"
       className={cn(
-        'flex items-start gap-3 rounded-[var(--maher-radius-md)] border px-4 py-3 text-sm',
+        'maher-animate-drop flex items-start gap-3 rounded-[var(--maher-radius-md)] border px-4 py-3 text-sm',
         variantClasses[variant],
         className,
       )}
       {...props}
     >
-      <span className="mt-0.5 shrink-0">
+      <span
+        className={cn('mt-0.5 shrink-0', variant === 'error' && 'maher-animate-shake')}
+      >
         {icon ?? (
           <svg
             viewBox="0 0 20 20"

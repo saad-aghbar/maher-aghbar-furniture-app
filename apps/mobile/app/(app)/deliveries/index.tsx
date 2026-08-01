@@ -2,7 +2,7 @@ import { localizedName } from '@maher/i18n';
 import { Stack } from 'expo-router';
 import { ListScreen, statusFilters } from '../../../src/features/shared/ListScreen';
 import type { DeliveryRow as HomeDeliveryRow } from '../../../src/features/home/use-home-data';
-import { daysUntil, formatDate } from '../../../src/lib/format';
+import {daysUntil, formatDate, relativeDay} from '../../../src/lib/format';
 import { useNav } from '../../../src/lib/nav';
 import { useI18n } from '../../../src/providers/i18n-provider';
 import { colors } from '../../../src/theme/tokens';
@@ -49,12 +49,7 @@ export default function DeliveriesScreen() {
         renderItem={(row) => {
           const due = daysUntil(row.scheduledDate);
           const overdue = due != null && due < 0 && row.status !== 'DELIVERED';
-          let description: string | undefined;
-          if (due != null) {
-            if (due < 0) description = t('mobile.overdueByDays', 'Overdue');
-            else if (due === 0) description = t('mobile.dueToday', 'Due today');
-            else description = `${t('mobile.dueIn', 'Due in')} ${due}d`;
-          }
+          const description = relativeDay(due, t, due != null && due < 0 ? 'overdue' : 'due');
           return (
             <ListRow
               title={localizedName(locale, row.customer, row.number)}

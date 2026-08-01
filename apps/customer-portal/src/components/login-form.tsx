@@ -33,7 +33,7 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="maher-stagger space-y-4">
       {error ? <Alert variant="error">{error}</Alert> : null}
       <Input
         label={t('email')}

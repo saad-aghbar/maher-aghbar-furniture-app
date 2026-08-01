@@ -2,7 +2,7 @@ import { localizedName } from '@maher/i18n';
 import { Stack } from 'expo-router';
 import { View } from 'react-native';
 import { ListScreen } from '../../../src/features/shared/ListScreen';
-import { daysUntil, formatMoney } from '../../../src/lib/format';
+import {daysUntil, formatMoney, relativeDay} from '../../../src/lib/format';
 import { useNav } from '../../../src/lib/nav';
 import { useI18n } from '../../../src/providers/i18n-provider';
 import { colors } from '../../../src/theme/tokens';
@@ -44,12 +44,7 @@ export default function InvoicesScreen() {
           const paid = Number(row.paidAmount ?? 0);
           const due = daysUntil(row.dueDate);
           const overdue = due != null && due < 0 && row.status !== 'PAID';
-          let dueHint: string | undefined;
-          if (due != null) {
-            if (due < 0) dueHint = t('mobile.overdue', 'Overdue');
-            else if (due === 0) dueHint = t('mobile.dueToday', 'Due today');
-            else dueHint = `${t('mobile.dueIn', 'Due in')} ${due}d`;
-          }
+          const dueHint = relativeDay(due, t, due != null && due < 0 ? 'overdue' : 'due');
           const showProgress =
             row.paidAmount != null && row.status === 'PARTIALLY_PAID' && total > 0;
           return (

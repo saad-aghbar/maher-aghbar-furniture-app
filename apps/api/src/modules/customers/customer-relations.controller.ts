@@ -13,7 +13,6 @@ import {
   IsEnum,
   IsOptional,
   IsString,
-  IsUUID,
 } from 'class-validator';
 import { CommunicationType, Locale } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';

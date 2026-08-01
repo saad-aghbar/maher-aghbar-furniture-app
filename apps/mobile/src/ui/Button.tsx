@@ -1,5 +1,6 @@
-import { ActivityIndicator, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleSheet, View, type ViewStyle } from 'react-native';
 import { colors, MIN_TOUCH, radius, spacing } from '../theme/tokens';
+import { PressableScale } from './motion';
 import { Text } from './Text';
 
 type Variant = 'primary' | 'secondary' | 'subtle' | 'ghost' | 'danger';
@@ -30,18 +31,18 @@ export function Button({
   const spinnerColor = variant === 'primary' || variant === 'danger' ? '#fff' : colors.brand;
 
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       disabled={isDisabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: isDisabled, busy: loading }}
-      style={({ pressed }) => [
+      scaleTo={0.975}
+      style={[
         styles.base,
         styles[variant],
         size === 'sm' ? styles.sizeSm : styles.sizeMd,
         fullWidth && styles.fullWidth,
-        pressed && !isDisabled && styles.pressed,
         isDisabled && styles.disabled,
         style,
       ]}
@@ -60,7 +61,7 @@ export function Button({
           </Text>
         </View>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -87,6 +88,5 @@ const styles = StyleSheet.create({
   secondary: { backgroundColor: colors.brandSoft, borderColor: colors.brandSoft },
   subtle: { backgroundColor: colors.surface, borderColor: colors.brand },
   ghost: { backgroundColor: 'transparent', borderColor: 'transparent' },
-  pressed: { opacity: 0.85, transform: [{ scale: 0.99 }] },
   disabled: { opacity: 0.5 },
 });

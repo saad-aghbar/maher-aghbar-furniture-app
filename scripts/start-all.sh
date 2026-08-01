@@ -184,8 +184,9 @@ echo "  admin@maher-aghbar.jo | sales@maher-aghbar.jo | customer@cedar-hotel.jo"
 echo "  Workers: worker@ | carpenter@ | painter@ | upholsterer@ | assembler@ | packer@ (…@maher-aghbar.jo)"
 echo ""
 echo "Mobile app:  pnpm mobile:start"
+echo "  (Expo Go · leave EXPO_PUBLIC_API_BASE_URL unset — phone derives LAN host)"
 LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
 if [[ -n "${LAN_IP:-}" ]]; then
-  echo "Phone API:   http://${LAN_IP}:4000  (set EXPO_PUBLIC_API_BASE_URL)"
+  echo "Phone API:   http://${LAN_IP}:4000"
 fi
 echo "Stop with:   pnpm stop:all"

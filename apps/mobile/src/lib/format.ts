@@ -63,6 +63,58 @@ export function daysUntil(value: string | Date | null | undefined): number | nul
   return Math.round((target.getTime() - today.getTime()) / 86_400_000);
 }
 
+type Translate = (key: string, fallback?: string) => string;
+
+/**
+ * Localised relative-day label. Uses proper pluralisation instead of a raw "d"
+ * suffix, and special-cases today / tomorrow.
+ *
+ * `kind` selects the framing: due dates, quote expiry, or overdue.
+ */
+export function relativeDay(
+  days: number | null | undefined,
+  t: Translate,
+  kind: 'due' | 'expires' | 'overdue' = 'due',
+): string | undefined {
+  if (days == null || !Number.isFinite(days)) return undefined;
+  const n = Math.trunc(days);
+
+  if (kind === 'overdue' || n < 0) {
+    const abs = Math.abs(n);
+    if (abs === 0) return t('mobile.dueToday', 'Due today');
+    const unit = abs === 1 ? t('mobile.day', 'day') : t('mobile.days', 'days');
+    return t('mobile.relativeOverdue', 'Overdue by {n} {unit}')
+      .replace('{n}', String(abs))
+      .replace('{unit}', unit);
+  }
+
+  if (n === 0) {
+    return kind === 'expires'
+      ? t('mobile.expiresToday', 'Expires today')
+      : t('mobile.dueToday', 'Due today');
+  }
+  if (n === 1 && kind === 'due') return t('mobile.dueTomorrow', 'Due tomorrow');
+
+  const unit = n === 1 ? t('mobile.day', 'day') : t('mobile.days', 'days');
+  const template =
+    kind === 'expires'
+      ? t('mobile.relativeExpiresIn', 'Expires in {n} {unit}')
+      : t('mobile.relativeDueIn', 'Due in {n} {unit}');
+  return template.replace('{n}', String(n)).replace('{unit}', unit);
+}
+
+/**
+ * Last-resort label for a backend enum that has no translation yet,
+ * e.g. READY_FOR_DELIVERY -> "Ready for delivery". Never show the raw enum.
+ */
+export function humaniseEnum(value: string): string {
+  return value
+    .toLowerCase()
+    .split(/[_-]/)
+    .join(' ')
+    .replace(/^\w/, (c) => c.toUpperCase());
+}
+
 export function initials(name: string | null | undefined): string {
   if (!name) return '—';
   const parts = name.trim().split(/\s+/).slice(0, 2);

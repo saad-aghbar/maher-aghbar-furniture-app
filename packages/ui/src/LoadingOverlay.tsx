@@ -16,7 +16,7 @@ export function LoadingOverlay({ label = 'Loading…', className }: LoadingOverl
       role="status"
       aria-live="polite"
     >
-      <div className="flex flex-col items-center gap-3">
+      <div className="maher-animate-pop flex flex-col items-center gap-3">
         <Spinner className="h-7 w-7 text-[var(--maher-brand)]" />
         <span className="text-sm text-[var(--maher-text-secondary)]">{label}</span>
       </div>

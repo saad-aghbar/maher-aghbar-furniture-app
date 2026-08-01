@@ -2,7 +2,7 @@ import { localizedName } from '@maher/i18n';
 import { Stack } from 'expo-router';
 import { ListScreen, statusFilters } from '../../../src/features/shared/ListScreen';
 import type { SalesOrderRow } from '../../../src/features/home/use-home-data';
-import { daysUntil, formatMoney } from '../../../src/lib/format';
+import {daysUntil, formatMoney, relativeDay} from '../../../src/lib/format';
 import { useNav } from '../../../src/lib/nav';
 import { useI18n } from '../../../src/providers/i18n-provider';
 import { ListRow, StatusBadge } from '../../../src/ui';
@@ -43,13 +43,7 @@ export default function SalesOrdersScreen() {
           const days = daysUntil(delivery);
           const total = row.totalAmount ?? row.total;
           const currency = row.currency ?? 'JOD';
-          let deliveryHint: string | undefined;
-          if (days != null) {
-            if (days < 0) deliveryHint = t('mobile.overdueByDays', 'Overdue').concat(` · ${Math.abs(days)}d`);
-            else if (days === 0) deliveryHint = t('mobile.dueToday', 'Due today');
-            else if (days === 1) deliveryHint = t('mobile.dueTomorrow', 'Due tomorrow');
-            else deliveryHint = `${t('mobile.dueIn', 'Due in')} ${days}d`;
-          }
+          const deliveryHint = relativeDay(days, t, days != null && days < 0 ? 'overdue' : 'due');
           return (
             <ListRow
               title={localizedName(

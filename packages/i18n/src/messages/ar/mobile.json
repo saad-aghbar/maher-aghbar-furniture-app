@@ -137,5 +137,11 @@
   "unblock": "حل المعوق",
   "unread": "غير مقروء",
   "updateProgress": "تحديث التقدم",
-  "waitingMaterials": "بانتظار المواد"
+  "waitingMaterials": "بانتظار المواد",
+  "day": "يوم",
+  "days": "أيام",
+  "more": "المزيد",
+  "relativeDueIn": "مستحق بعد {n} {unit}",
+  "relativeExpiresIn": "ينتهي بعد {n} {unit}",
+  "relativeOverdue": "متأخر بـ {n} {unit}"
 }

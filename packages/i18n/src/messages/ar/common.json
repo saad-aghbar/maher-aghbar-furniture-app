@@ -109,5 +109,6 @@
   "personaAdminTitle": "إدارة النظام",
   "personaAdminBody": "المستخدمون والأدوار وسجل التدقيق والإعدادات وحالة النظام.",
   "personaGenericTitle": "مساحة العمل",
-  "personaGenericBody": "افتح «المزيد» للأدوات المتاحة حسب صلاحياتك."
+  "personaGenericBody": "افتح «المزيد» للأدوات المتاحة حسب صلاحياتك.",
+  "more": "المزيد"
 }

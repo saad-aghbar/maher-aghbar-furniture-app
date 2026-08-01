@@ -1,12 +1,16 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useI18n } from '../providers/i18n-provider';
 import { colors, radius, shadow, spacing } from '../theme/tokens';
+import { PressableScale } from './motion';
 import { Text } from './Text';
 
 /**
  * Tappable summary row used by every list screen.
  * `meta` is rendered LTR because it holds numbers, codes, and dates.
+ *
+ * Rows render immediately with no entrance animation: they mount and unmount
+ * constantly while scrolling, so animating them reads as flicker.
  */
 export function ListRow({
   title,
@@ -56,23 +60,18 @@ export function ListRow({
   );
 
   if (!onPress) {
-    return (
-      <View style={[styles.row, accent ? { borderColor: accent } : null]}>{content}</View>
-    );
+    return <View style={[styles.row, accent ? { borderColor: accent } : null]}>{content}</View>;
   }
 
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.row,
-        accent ? { borderColor: accent } : null,
-        pressed && styles.pressed,
-      ]}
+      scaleTo={0.99}
+      style={[styles.row, accent ? { borderColor: accent } : null]}
     >
       {content}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -85,7 +84,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...(shadow.card as object),
   },
-  pressed: { opacity: 0.9, transform: [{ scale: 0.995 }] },
   main: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   textCol: { flex: 1, minWidth: 0 },
   rightCol: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

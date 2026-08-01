@@ -85,7 +85,7 @@ export default function CustomerDashboard() {
         description={tCommon('customerDashboardSubtitle')}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="maher-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           label={t('myQuotes')}
           value={quotes.data?.data?.length ?? 0}

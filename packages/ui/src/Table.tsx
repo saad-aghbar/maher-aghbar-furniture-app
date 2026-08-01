@@ -35,13 +35,24 @@ export function TableHead({ className, ...props }: HTMLAttributes<HTMLTableSecti
 }
 
 export function TableBody({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
-  return <tbody className={cn('divide-y divide-[var(--maher-border)]', className)} {...props} />;
+  return (
+    <tbody
+      className={cn('maher-stagger-rows divide-y divide-[var(--maher-border)]', className)}
+      {...props}
+    />
+  );
 }
 
 export function TableRow({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
-      className={cn('transition-colors hover:bg-[var(--maher-surface-muted)]', className)}
+      className={cn(
+        'transition-colors duration-200 ease-out hover:bg-[var(--maher-surface-muted)]',
+        'hover:[&>td:first-child]:shadow-[inset_3px_0_0_0_var(--maher-brand)]',
+        'rtl:hover:[&>td:first-child]:shadow-[inset_-3px_0_0_0_var(--maher-brand)]',
+        '[&>td:first-child]:transition-shadow [&>td:first-child]:duration-200',
+        className,
+      )}
       {...props}
     />
   );

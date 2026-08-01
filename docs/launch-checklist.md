@@ -108,7 +108,7 @@ Demo production order `PO-DEMO-001` is mid-pipeline (Material Prep done, Carpent
 - Dashboards, CRM, inventory, invoices, reports, users, audit
 - Admin / customer / employee portals HTTP 200
 - Mobile login + permission shell typechecks
-- Smoke: `pnpm smoke:lifecycle` and `pnpm smoke:workflow`
+- Smoke: `pnpm smoke:lifecycle`, `pnpm smoke:workflow`, and `pnpm smoke:scope`
 
 ## Infra notes
 
@@ -117,4 +117,4 @@ Demo production order `PO-DEMO-001` is mid-pipeline (Material Prep done, Carpent
 - API listens on `0.0.0.0:4000` (LAN-reachable for phones)
 - Quote `COMPANY_NAME_*` in `.env`
 - Logs: `logs/*.log` · PIDs: `.run/*.pid`
-- Smoke: `pnpm smoke:lifecycle` · critical path: `pnpm smoke:workflow`
+- Smoke: `pnpm smoke:lifecycle` · `pnpm smoke:workflow` · `pnpm smoke:scope`

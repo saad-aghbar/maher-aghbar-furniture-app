@@ -22,12 +22,12 @@ export function ErrorState({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-[var(--maher-radius-lg)] border border-[var(--maher-error)]/20 bg-[var(--maher-error-soft)] px-6 py-14 text-center',
+        'maher-animate-rise flex flex-col items-center justify-center rounded-[var(--maher-radius-lg)] border border-[var(--maher-error)]/20 bg-[var(--maher-error-soft)] px-6 py-14 text-center',
         className,
       )}
       role="alert"
     >
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--maher-surface)] text-[var(--maher-error)] shadow-[var(--maher-shadow-sm)]">
+      <div className="maher-animate-shake mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--maher-surface)] text-[var(--maher-error)] shadow-[var(--maher-shadow-sm)]">
         <svg
           viewBox="0 0 24 24"
           className="h-6 w-6"

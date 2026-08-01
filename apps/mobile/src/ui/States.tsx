@@ -3,6 +3,7 @@ import { Animated, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useI18n } from '../providers/i18n-provider';
 import { colors, radius, spacing } from '../theme/tokens';
 import { Button } from './Button';
+import { FadeInView } from './motion';
 import { Text } from './Text';
 
 export function Skeleton({ height = 16, width, style }: { height?: number; width?: number | `${number}%`; style?: ViewStyle }) {
@@ -54,7 +55,7 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <View style={styles.center}>
+    <FadeInView style={styles.center}>
       {icon ? <View style={styles.emptyIcon}>{icon}</View> : null}
       <Text variant="heading" style={styles.centerText}>
         {title}
@@ -65,7 +66,7 @@ export function EmptyState({
         </Text>
       ) : null}
       {action ? <View style={styles.actionWrap}>{action}</View> : null}
-    </View>
+    </FadeInView>
   );
 }
 
@@ -80,7 +81,7 @@ export function ErrorState({
 }) {
   const { t } = useI18n();
   return (
-    <View style={styles.center}>
+    <FadeInView style={styles.center}>
       <Text variant="heading" color="error" style={styles.centerText}>
         {title ?? t('common.loadFailed', 'Failed to load data')}
       </Text>
@@ -94,7 +95,7 @@ export function ErrorState({
           <Button label={t('common.retry', 'Retry')} onPress={onRetry} variant="secondary" />
         </View>
       ) : null}
-    </View>
+    </FadeInView>
   );
 }
 

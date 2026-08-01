@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { colors, radius, shadow, spacing } from '../theme/tokens';
+import { FadeInView } from './motion';
 import { Text } from './Text';
 
 export function Card({
@@ -10,6 +11,7 @@ export function Card({
   children,
   padded = true,
   style,
+  delay = 0,
 }: {
   title?: string;
   subtitle?: string;
@@ -17,25 +19,28 @@ export function Card({
   children?: ReactNode;
   padded?: boolean;
   style?: ViewStyle;
+  delay?: number;
 }) {
   const hasHeader = Boolean(title || subtitle || actions);
   return (
-    <View style={[styles.card, style]}>
-      {hasHeader ? (
-        <View style={[styles.header, !padded && styles.headerPadded]}>
-          <View style={styles.headerText}>
-            {title ? <Text variant="heading">{title}</Text> : null}
-            {subtitle ? (
-              <Text variant="caption" color="secondary" style={styles.subtitle}>
-                {subtitle}
-              </Text>
-            ) : null}
+    <FadeInView delay={delay}>
+      <View style={[styles.card, style]}>
+        {hasHeader ? (
+          <View style={[styles.header, !padded && styles.headerPadded]}>
+            <View style={styles.headerText}>
+              {title ? <Text variant="heading">{title}</Text> : null}
+              {subtitle ? (
+                <Text variant="caption" color="secondary" style={styles.subtitle}>
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+            {actions}
           </View>
-          {actions}
-        </View>
-      ) : null}
-      <View style={padded ? styles.body : undefined}>{children}</View>
-    </View>
+        ) : null}
+        <View style={padded ? styles.body : undefined}>{children}</View>
+      </View>
+    </FadeInView>
   );
 }
 

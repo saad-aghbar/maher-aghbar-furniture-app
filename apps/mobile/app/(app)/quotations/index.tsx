@@ -2,7 +2,7 @@ import { localizedName } from '@maher/i18n';
 import { Stack } from 'expo-router';
 import { ListScreen, statusFilters } from '../../../src/features/shared/ListScreen';
 import type { QuotationRow } from '../../../src/features/home/use-home-data';
-import { daysUntil, formatMoney } from '../../../src/lib/format';
+import {daysUntil, formatMoney, relativeDay} from '../../../src/lib/format';
 import { useNav } from '../../../src/lib/nav';
 import { useI18n } from '../../../src/providers/i18n-provider';
 import { colors } from '../../../src/theme/tokens';
@@ -45,12 +45,10 @@ export default function QuotationsScreen() {
           const total = row.totalAmount ?? row.total;
           const currency = row.currency ?? 'JOD';
           const expiringSoon = days != null && days >= 0 && days <= 3;
-          let expiryHint: string | undefined;
-          if (days != null) {
-            if (days < 0) expiryHint = t('mobile.expired', 'Expired');
-            else if (days === 0) expiryHint = t('mobile.expiresToday', 'Expires today');
-            else expiryHint = `${t('mobile.expiresIn', 'Expires in')} ${days}d`;
-          }
+          const expiryHint =
+            days != null && days < 0
+              ? t('mobile.expired', 'Expired')
+              : relativeDay(days, t, 'expires');
           return (
             <ListRow
               title={localizedName(

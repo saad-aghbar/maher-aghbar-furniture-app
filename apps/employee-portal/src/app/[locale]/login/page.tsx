@@ -2,6 +2,7 @@
 
 import { BrandMark } from '@maher/ui';
 import { LoginForm } from '@/components/login-form';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { ClipboardList, Factory, Wrench } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -19,6 +20,7 @@ export default function LoginPage() {
 
   return (
     <div className="grid min-h-screen w-full lg:grid-cols-[1.1fr_1fr]">
+      <LanguageSwitcher floating />
       <div className="relative hidden flex-col justify-between overflow-hidden bg-[#2a1512] p-12 text-white lg:flex">
         <div
           aria-hidden="true"

@@ -9,3 +9,4 @@ export { StatusBadge } from './StatusBadge';
 export { Text } from './Text';
 export { Chip, ChipGroup } from './Chip';
 export { Field, TextField } from './Field';
+export { FadeInView, PressableScale, Pulse, staggerDelay } from './motion';

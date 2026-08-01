@@ -1,5 +1,6 @@
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { colors, radius, spacing } from '../theme/tokens';
+import { PressableScale } from './motion';
 import { Text } from './Text';
 
 export function Chip({
@@ -14,21 +15,18 @@ export function Chip({
   count?: number;
 }) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      style={({ pressed }) => [
-        styles.chip,
-        active && styles.chipActive,
-        pressed && styles.pressed,
-      ]}
+      scaleTo={0.96}
+      style={[styles.chip, active && styles.chipActive]}
     >
       <Text variant="caption" color={active ? 'inverse' : 'secondary'}>
         {label}
         {count != null ? ` (${count})` : ''}
       </Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -57,7 +55,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  pressed: { opacity: 0.85 },
   group: { paddingVertical: 2 },
   groupInner: { flexDirection: 'row', gap: spacing.sm },
 });

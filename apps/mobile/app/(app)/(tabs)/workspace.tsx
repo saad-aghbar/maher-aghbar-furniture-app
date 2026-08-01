@@ -11,14 +11,14 @@ import {
   Truck,
   Users,
 } from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useNav } from '../../../src/lib/nav';
 import { visibleLinks, type WorkspaceLink } from '../../../src/permissions/workspace';
 import { resolveHomePersona } from '../../../src/permissions/can';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useI18n } from '../../../src/providers/i18n-provider';
 import { colors, radius, shadow, spacing } from '../../../src/theme/tokens';
-import { EmptyState, Screen, ScreenHeader, Text } from '../../../src/ui';
+import { EmptyState, PressableScale, Screen, ScreenHeader, Text } from '../../../src/ui';
 
 const ICONS: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
   tasks: Hammer,
@@ -68,19 +68,16 @@ export default function WorkspaceScreen() {
 function Tile({ link, onPress }: { link: WorkspaceLink; onPress: () => void }) {
   const { t } = useI18n();
   const Icon = ICONS[link.key] ?? FileText;
+  const label = t(link.labelKey);
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
-    >
+    <PressableScale onPress={onPress} accessibilityRole="button" scaleTo={0.98} style={styles.tile}>
       <View style={styles.iconWrap}>
         <Icon size={22} color={colors.brand} />
       </View>
       <Text variant="subheading" numberOfLines={2}>
-        {t(link.labelKey, link.key)}
+        {label}
       </Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -98,7 +95,6 @@ const styles = StyleSheet.create({
     minHeight: 108,
     ...(shadow.card as object),
   },
-  pressed: { opacity: 0.9, transform: [{ scale: 0.99 }] },
   iconWrap: {
     width: 40,
     height: 40,

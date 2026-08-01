@@ -8,6 +8,8 @@ export interface CardProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'>
   icon?: ReactNode;
   footer?: ReactNode;
   padded?: boolean;
+  /** Adds hover lift + stronger elevation for cards that behave like controls. */
+  interactive?: boolean;
 }
 
 export function Card({
@@ -18,13 +20,16 @@ export function Card({
   icon,
   footer,
   padded = true,
+  interactive,
   children,
   ...props
 }: CardProps) {
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-sm)]',
+        'maher-animate-rise group overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-sm)]',
+        'transition-shadow duration-200 ease-out hover:shadow-[var(--maher-shadow-md)]',
+        interactive && 'maher-lift cursor-pointer hover:border-[var(--maher-border-strong)]',
         className,
       )}
       {...props}
@@ -33,7 +38,7 @@ export function Card({
         <div className="flex items-start justify-between gap-4 border-b border-[var(--maher-border)] px-5 py-4">
           <div className="flex min-w-0 items-start gap-3">
             {icon ? (
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--maher-radius-md)] bg-[var(--maher-brand-soft)] text-[var(--maher-brand)]">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--maher-radius-md)] bg-[var(--maher-brand-soft)] text-[var(--maher-brand)] transition-transform duration-300 ease-out group-hover:scale-110 group-hover:-rotate-3">
                 {icon}
               </span>
             ) : null}

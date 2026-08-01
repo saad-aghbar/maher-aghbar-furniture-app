@@ -154,7 +154,7 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <PageHeader title={t('dashboard')} description={tCommon('dashboardSubtitle')} />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {metricSpecs.map(({ field, labelKey, icon: Icon, tone, format, href }) => {
           const raw = data[field] ?? 0;
           const value =
@@ -180,12 +180,12 @@ export default function DashboardPage() {
       </div>
 
       <Card title={tCommon('quickActions')}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="maher-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {quickLinks.map(({ href, navKey, icon: Icon }) => (
             <Link
               key={href}
               href={href}
-              className="group flex items-center gap-3 rounded-[var(--maher-radius-md)] border border-border bg-surface px-4 py-3 transition-all hover:border-brand/40 hover:bg-brand-soft"
+              className="maher-press group flex items-center gap-3 rounded-[var(--maher-radius-md)] border border-border bg-surface px-4 py-3 hover:border-brand/40 hover:bg-brand-soft hover:shadow-elevated"
             >
               <span className="flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)] bg-surface-muted text-text-secondary transition-colors group-hover:bg-surface group-hover:text-brand">
                 <Icon className="h-[18px] w-[18px]" />

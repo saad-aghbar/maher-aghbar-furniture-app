@@ -34,8 +34,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             id={selectId}
             aria-invalid={error ? true : undefined}
             className={cn(
-              'h-10 w-full appearance-none rounded-[var(--maher-radius-md)] border border-[var(--maher-border)] bg-[var(--maher-surface)]',
-              'ps-3 pe-9 text-sm text-[var(--maher-text-primary)] transition-colors',
+              'peer h-10 w-full cursor-pointer appearance-none rounded-[var(--maher-radius-md)] border border-[var(--maher-border)] bg-[var(--maher-surface)]',
+              'ps-3 pe-9 text-sm text-[var(--maher-text-primary)]',
               'hover:border-[var(--maher-border-strong)]',
               'focus:border-[var(--maher-brand)] focus:outline-none focus:ring-2 focus:ring-[var(--maher-brand)]/20',
               'disabled:cursor-not-allowed disabled:bg-[var(--maher-surface-muted)] disabled:opacity-60',
@@ -56,7 +56,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           <svg
             aria-hidden="true"
             viewBox="0 0 20 20"
-            className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--maher-text-tertiary)]"
+            className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--maher-text-tertiary)] transition-transform duration-300 ease-out peer-focus:rotate-180 peer-focus:text-[var(--maher-brand)]"
             fill="none"
             stroke="currentColor"
             strokeWidth="1.75"

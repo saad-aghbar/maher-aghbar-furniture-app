@@ -13,11 +13,12 @@ export function EmptyState({ title, description, action, icon, className }: Empt
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-[var(--maher-radius-lg)] border border-dashed border-[var(--maher-border-strong)] bg-[var(--maher-surface)] px-6 py-16 text-center',
+        'maher-animate-rise flex flex-col items-center justify-center rounded-[var(--maher-radius-lg)] border border-dashed border-[var(--maher-border-strong)] bg-[var(--maher-surface)] px-6 py-16 text-center',
+        'transition-colors duration-300 hover:border-[var(--maher-brand-border)]',
         className,
       )}
     >
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--maher-surface-muted)] text-[var(--maher-text-tertiary)]">
+      <div className="maher-animate-float mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--maher-surface-muted)] text-[var(--maher-text-tertiary)]">
         {icon ?? (
           <svg
             viewBox="0 0 24 24"

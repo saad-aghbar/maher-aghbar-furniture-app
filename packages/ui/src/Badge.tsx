@@ -25,14 +25,19 @@ export function Badge({ className, variant = 'default', dot, children, ...props 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium',
+        'maher-animate-bounce-in inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium',
+        'transition-colors duration-200 ease-out',
         variantClasses[variant],
         className,
       )}
       {...props}
     >
       {dot ? (
-        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
+        <span
+          className="h-1.5 w-1.5 rounded-full bg-current opacity-70"
+          style={{ animation: 'maher-pulse-soft 2s ease-in-out infinite' }}
+          aria-hidden="true"
+        />
       ) : null}
       {children}
     </span>

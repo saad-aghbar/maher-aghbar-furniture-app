@@ -23,12 +23,21 @@ export function PageHeader({
       {...props}
     >
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold tracking-tight text-text-primary">{title}</h1>
+        <h1 className="maher-animate-in-start text-2xl font-bold tracking-tight text-text-primary">
+          {title}
+        </h1>
         {description ? (
-          <p className="mt-1.5 max-w-2xl text-sm text-text-secondary">{description}</p>
+          <p
+            className="maher-animate-in-start mt-1.5 max-w-2xl text-sm text-text-secondary"
+            style={{ animationDelay: '70ms' }}
+          >
+            {description}
+          </p>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="maher-animate-in-end flex flex-wrap items-center gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }

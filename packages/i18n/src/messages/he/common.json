@@ -109,5 +109,6 @@
   "personaAdminTitle": "ניהול המערכת",
   "personaAdminBody": "משתמשים, תפקידים, יומן ביקורת, הגדרות ותקינות המערכת.",
   "personaGenericTitle": "סביבת עבודה",
-  "personaGenericBody": "פתח את ״עוד״ לכלים הזמינים לפי ההרשאות שלך."
+  "personaGenericBody": "פתח את ״עוד״ לכלים הזמינים לפי ההרשאות שלך.",
+  "more": "עוד"
 }

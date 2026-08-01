@@ -8,6 +8,7 @@
     "scheme": "maher",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "platforms": ["ios", "android"],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -26,10 +27,6 @@
       },
       "package": "jo.maheraghbar.furniture",
       "edgeToEdgeEnabled": true
-    },
-    "web": {
-      "bundler": "metro",
-      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
