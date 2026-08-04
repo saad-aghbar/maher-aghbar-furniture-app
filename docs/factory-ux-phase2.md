@@ -63,16 +63,14 @@ Sender phone must match a dealer `customer.phone` / contact phone. Creates draft
 
 **Goal:** Delivery planning — geocode addresses, show map on delivery detail, optional ETA for drivers.
 
-**Not yet wired in Phase 1 UI.** When implementing:
+**Shipped without a paid key:** Leaflet + OpenStreetMap tiles + Nominatim reverse/search (portal order form + admin delivery detail). Delivery rows store `latitude` / `longitude`.
 
-1. Choose provider (Google Maps Platform, Mapbox, or OpenRouteService).
-2. Add server-side key only (never `NEXT_PUBLIC_*` for unrestricted keys):
-   - Example: `GOOGLE_MAPS_API_KEY` or `MAPBOX_ACCESS_TOKEN`
-3. Restrict key by IP / HTTP referrer per vendor best practice.
-4. Use for:
-   - Geocoding customer delivery addresses on SO confirm
-   - Static map thumbnail on delivery POD
-   - Optional mobile turn-by-turn deep link (no in-app navigation required for v1)
+**Optional Google upgrade:**
+1. Set `GOOGLE_MAPS_API_KEY` (server-side only — used by `GET /api/v1/geo/reverse` and `/geo/search`).
+2. Restrict key by IP / HTTP referrer.
+3. Settings → Integrations shows maps provider (`nominatim` vs `google`).
+
+Local default remains Nominatim (no key).
 
 ## Checklist before go-live
 

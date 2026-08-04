@@ -1053,6 +1053,7 @@ export async function seedDemoWorld(prisma: PrismaClient, passwordHash: string):
         category: m.category,
         unit: m.unit,
         minStock: money(m.minStock),
+        standardCost: money(m.unitCost),
         materialId: material.id,
         preferredSupplierId: m.preferredSupplierId,
         reorderQty: money(m.minStock * 2),

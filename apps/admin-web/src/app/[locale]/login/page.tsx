@@ -3,6 +3,7 @@
 import { BrandMark } from '@/components/brand-mark';
 import { LoginForm } from '@/components/login-form';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { AppThemeToggle } from '@/components/theme-toggle';
 import { BadgeCheck, Factory, Sparkles, Truck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -19,7 +20,10 @@ export default function LoginPage() {
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      <LanguageSwitcher floating />
+      <div className="fixed end-4 top-4 z-50 flex items-center gap-2 sm:end-6 sm:top-6">
+        <AppThemeToggle />
+        <LanguageSwitcher />
+      </div>
       <div className="relative hidden flex-col justify-between overflow-hidden bg-[#2a1512] p-12 text-white lg:flex">
         <div
           aria-hidden="true"

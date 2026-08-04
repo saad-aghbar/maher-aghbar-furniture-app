@@ -80,8 +80,8 @@ export function LanguageSwitcher({ floating, inverted, className }: LanguageSwit
               ? 'border-white/40 bg-white/15 text-white shadow-elevated'
               : 'border-white/25 bg-white/10 text-white hover:border-white/40 hover:bg-white/15'
             : open
-              ? 'border-brand/50 bg-white/80 text-text-primary shadow-elevated'
-              : 'border-border bg-white/80 text-text-secondary hover:border-brand/40 hover:text-text-primary',
+              ? 'border-brand/50 bg-surface/80 text-text-primary shadow-elevated'
+              : 'border-border bg-surface/80 text-text-secondary hover:border-brand/40 hover:text-text-primary',
         )}
       >
         <Globe

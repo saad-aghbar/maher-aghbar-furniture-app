@@ -10,6 +10,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LanguageSwitcher } from './language-switcher';
 import { allNavItems, navFooterItems, navGroups } from './nav-items';
+import { AppThemeToggle } from './theme-toggle';
 
 interface NotificationItem {
   id: string;
@@ -134,6 +135,7 @@ export function Topbar({ onOpenSidebar }: TopbarProps) {
         )}
       </div>
 
+      <AppThemeToggle className="hidden sm:inline-flex" inverted={overDark} />
       <LanguageSwitcher className="hidden sm:block" inverted={overDark} />
 
       <Link
@@ -205,6 +207,10 @@ export function Topbar({ onOpenSidebar }: TopbarProps) {
                   {me.data.roles.join(' · ')}
                 </p>
               ) : null}
+            </div>
+            <div className="flex items-center gap-2 border-b border-border px-3 py-2 sm:hidden">
+              <AppThemeToggle />
+              <LanguageSwitcher />
             </div>
             <button
               type="button"

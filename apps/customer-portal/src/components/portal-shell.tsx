@@ -23,6 +23,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from './language-switcher';
+import { AppThemeToggle } from './theme-toggle';
 
 const items = [
   { href: '/dashboard', key: 'dashboard', icon: LayoutDashboard },
@@ -133,6 +134,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            <AppThemeToggle className="hidden sm:inline-flex" inverted={overDark} />
             <LanguageSwitcher className="hidden sm:block" inverted={overDark} />
 
             <Link
@@ -204,7 +206,8 @@ export function PortalShell({ children }: { children: ReactNode }) {
                       {me.data?.username ?? me.data?.email}
                     </p>
                   </div>
-                  <div className="border-b border-border px-3 py-2 sm:hidden">
+                  <div className="flex items-center gap-2 border-b border-border px-3 py-2 sm:hidden">
+                    <AppThemeToggle />
                     <LanguageSwitcher />
                   </div>
                   <Link

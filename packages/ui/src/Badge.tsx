@@ -14,11 +14,13 @@ const variantClasses: Record<BadgeVariant, string> = {
   brand:
     'bg-[var(--maher-brand-soft)] text-[var(--maher-brand)] border-[var(--maher-brand-border)]',
   success:
-    'bg-[var(--maher-success-soft)] text-[var(--maher-success)] border-[var(--maher-success)]/20',
+    'bg-[var(--maher-success-soft)] text-[var(--maher-success)] border-[color:color-mix(in_srgb,var(--maher-success)_28%,transparent)]',
   warning:
-    'bg-[var(--maher-warning-soft)] text-[var(--maher-warning)] border-[var(--maher-warning)]/20',
-  error: 'bg-[var(--maher-error-soft)] text-[var(--maher-error)] border-[var(--maher-error)]/20',
-  info: 'bg-[var(--maher-info-soft)] text-[var(--maher-info)] border-[var(--maher-info)]/20',
+    'bg-[var(--maher-warning-soft)] text-[var(--maher-warning)] border-[color:color-mix(in_srgb,var(--maher-warning)_28%,transparent)]',
+  error:
+    'bg-[var(--maher-error-soft)] text-[var(--maher-error)] border-[color:color-mix(in_srgb,var(--maher-error)_28%,transparent)]',
+  info:
+    'bg-[var(--maher-info-soft)] text-[var(--maher-info)] border-[color:color-mix(in_srgb,var(--maher-info)_28%,transparent)]',
 };
 
 export function Badge({ className, variant = 'default', dot, children, ...props }: BadgeProps) {

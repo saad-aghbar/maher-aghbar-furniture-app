@@ -33,6 +33,19 @@ export { Tabs, TabList, Tab, TabPanel, type TabsProps } from './Tabs';
 export { BrandMark, BRAND_LOGO_SRC, type BrandMarkProps } from './BrandMark';
 export { PageHeader, type PageHeaderProps } from './PageHeader';
 export { useHeaderOverDark } from './useHeaderOverDark';
+export {
+  THEME_FOUC_SCRIPT,
+  THEME_STORAGE_KEY,
+  applyTheme,
+  getAppliedTheme,
+  getStoredTheme,
+  getSystemTheme,
+  persistTheme,
+  resolveTheme,
+  type ThemeMode,
+} from './theme';
+export { ThemeProvider, useTheme, type ThemeContextValue, type ThemeProviderProps } from './ThemeProvider';
+export { ThemeToggle, type ThemeToggleProps } from './ThemeToggle';
 
 export {
   useCardMotion,

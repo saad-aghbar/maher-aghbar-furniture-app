@@ -299,19 +299,19 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
       <div className="maher-stagger space-y-6">
       <div className="maher-stagger grid gap-4 sm:grid-cols-3">
-        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+        <div className="maher-list-card rounded-2xl border border-border bg-surface px-5 py-4">
           <p className="text-[11px] text-text-tertiary">{t('ordersWaiting')}</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight" dir="ltr">
             {data.waitingOrdersCount ?? 0}
           </p>
         </div>
-        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+        <div className="maher-list-card rounded-2xl border border-border bg-surface px-5 py-4">
           <p className="text-[11px] text-text-tertiary">{t('ordersInWork')}</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight" dir="ltr">
             {data.inWorkOrdersCount ?? 0}
           </p>
         </div>
-        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+        <div className="maher-list-card rounded-2xl border border-border bg-surface px-5 py-4">
           <p className="text-[11px] text-text-tertiary">{t('ordersDone')}</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight" dir="ltr">
             {data.doneOrdersCount ?? 0}
@@ -320,13 +320,13 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       </div>
 
       <div className="maher-stagger grid gap-4 sm:grid-cols-2">
-        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+        <div className="maher-list-card rounded-2xl border border-border bg-surface px-5 py-4">
           <p className="text-[11px] text-text-tertiary">{t('amountPaid')}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight" dir="ltr">
             {money(data.paidTotal, tCommon('currency'))}
           </p>
         </div>
-        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+        <div className="maher-list-card rounded-2xl border border-border bg-surface px-5 py-4">
           <p className="text-[11px] text-text-tertiary">{t('amountLeft')}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight" dir="ltr">
             {money(data.outstandingTotal, tCommon('currency'))}
@@ -454,7 +454,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       >
         <p className="mb-3 text-sm text-text-secondary">{t('notesHint')}</p>
         {data.notes ? (
-          <div className="mb-4 rounded-xl border border-border/60 bg-[var(--maher-surface-muted)]/50 px-4 py-3">
+          <div className="mb-4 rounded-xl border border-border bg-[var(--maher-surface-muted)]/50 px-4 py-3">
             <p className="text-[11px] font-medium text-text-tertiary">{t('profileNotes')}</p>
             <p className="mt-1 text-sm text-text-primary whitespace-pre-wrap">{data.notes}</p>
           </div>
@@ -473,7 +473,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               return (
                 <li
                   key={note.id}
-                  className="maher-list-card rounded-xl border border-border/60 bg-white px-4 py-3"
+                  className="maher-list-card rounded-xl border border-border bg-surface px-4 py-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-text-tertiary">
                     <span dir="ltr">{when || '—'}</span>

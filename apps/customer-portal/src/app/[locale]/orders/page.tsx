@@ -162,11 +162,11 @@ function OrderCard({
           <img
             src={imageUrl}
             alt={title}
-            className="absolute inset-0 h-full w-full object-cover object-center transition duration-300 group-hover:scale-[1.05]"
+            className="absolute inset-0 h-full w-full object-cover object-center transition duration-500 ease-out group-hover:scale-[1.06]"
           />
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-text-tertiary">
-            <Armchair className="h-7 w-7 opacity-40" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-text-tertiary transition duration-300 group-hover:scale-105 group-hover:text-brand/50">
+            <Armchair className="h-7 w-7 opacity-40 transition group-hover:opacity-70" />
             <Ltr className="text-[10px] font-medium uppercase tracking-wide">{row.number}</Ltr>
           </div>
         )}
@@ -181,7 +181,7 @@ function OrderCard({
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-white/35">
               <div
-                className="h-full rounded-full bg-[var(--maher-brand)] transition-all"
+                className="maher-progress-fill h-full rounded-full bg-[var(--maher-brand)]"
                 style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
               />
             </div>
@@ -204,7 +204,7 @@ function OrderCard({
         </div>
         <Link
           href={detailHref}
-          className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary hover:text-brand"
+          className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary transition-colors hover:text-brand"
         >
           {title}
         </Link>
@@ -212,7 +212,7 @@ function OrderCard({
           <p className="truncate text-[11px] text-text-tertiary">{endCustomer}</p>
         ) : null}
 
-        <div className="mt-auto flex items-center justify-end border-t border-border/60 pt-2">
+        <div className="mt-auto flex items-center justify-end maher-card-rule-t pt-2">
           <Link href={detailHref}>
             <Button size="sm" variant="ghost">
               {tCommon('details')}
@@ -394,9 +394,11 @@ export default function OrdersPage() {
             <button
               key={tab.key}
               type="button"
+              role="tab"
+              aria-selected={section === tab.key}
               onClick={() => setSection(tab.key)}
               className={cn(
-                'inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition',
+                'maher-filter-chip maher-press inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium',
                 section === tab.key
                   ? tab.activeClass
                   : 'border-border bg-surface text-text-secondary hover:border-brand/30 hover:text-text-primary',
@@ -404,17 +406,26 @@ export default function OrdersPage() {
             >
               {tab.icon}
               <span>{tab.label}</span>
-              <Ltr className="rounded-full bg-black/5 px-1.5 text-xs tabular-nums">{tab.count}</Ltr>
+              <Ltr className="maher-filter-chip__count rounded-full bg-black/5 px-1.5 text-xs tabular-nums">
+                {tab.count}
+              </Ltr>
             </button>
           ))}
         </div>
-        <p className="text-xs text-text-tertiary">{tabs.find((t) => t.key === section)?.hint}</p>
+        <p key={section} className="maher-animate-fade text-xs text-text-tertiary">
+          {tabs.find((t) => t.key === section)?.hint}
+        </p>
       </MotionSection>
 
       {activeRows.length === 0 ? (
-        <EmptyState title={t('empty')} description={tc('noOrdersYetHint')} />
+        <div key={`empty-${section}`} className="maher-panel-swap">
+          <EmptyState title={t('empty')} description={tc('noOrdersYetHint')} />
+        </div>
       ) : (
-        <StaggerGrid className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        <StaggerGrid
+          key={section}
+          className="maher-panel-swap grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+        >
           {activeRows.map((row) => (
             <OrderCard
               key={`${row.kind}-${row.id}`}

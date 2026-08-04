@@ -12,24 +12,27 @@ import {
   Input,
   Ltr,
   Modal,
+  MotionSection,
   PageHero,
   Select,
   Skeleton,
   StatusBadge,
-  Table,
-  TableBody,
-  TableCell,
-  TableNumericCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
   cn,
 } from '@maher/ui';
+import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Armchair } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
+
+interface InvoiceCustomer {
+  id: string;
+  name: string;
+  nameAr?: string | null;
+  nameEn?: string | null;
+  nameHe?: string | null;
+}
 
 interface InvoiceRow {
   id: string;
@@ -39,12 +42,20 @@ interface InvoiceRow {
   outstandingAmount?: string | number;
   dueDate?: string | null;
   customerId?: string;
-  customer?: { id: string; name: string };
+  customer?: InvoiceCustomer | null;
   salesOrder?: {
     id: string;
     number: string;
     externalOrderNumber?: string | null;
   } | null;
+}
+
+interface CustomerOption {
+  id: string;
+  name: string;
+  nameAr?: string | null;
+  nameEn?: string | null;
+  nameHe?: string | null;
 }
 
 interface SalesOrderOption {
@@ -90,6 +101,12 @@ function customerLabel(so: SalesOrderOption) {
   return c.nameEn || c.nameAr || c.name || c.nameHe || null;
 }
 
+function money(value: string | number | undefined, currency: string) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return `0.00 ${currency}`;
+  return `${n.toFixed(2)} ${currency}`;
+}
+
 function isOverdue(row: InvoiceRow) {
   if (row.status === 'OVERDUE') return true;
   if (!row.dueDate) return false;
@@ -97,7 +114,15 @@ function isOverdue(row: InvoiceRow) {
   return new Date(row.dueDate).getTime() < Date.now();
 }
 
+function invoiceCustomerName(locale: string, customer?: InvoiceCustomer | null) {
+  if (!customer) return '—';
+  return customer.nameAr || customer.nameEn || customer.nameHe
+    ? localizedName(locale, customer, customer.name)
+    : customer.name;
+}
+
 function InvoicesPageInner() {
+  const locale = useLocale();
   const t = useTranslations('navigation');
   const ta = useTranslations('accounting');
   const tc = useTranslations('catalog');
@@ -106,15 +131,23 @@ function InvoicesPageInner() {
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
+  const currency = tCommon('currency');
 
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
   const [status, setStatus] = useState(() => searchParams.get('status') ?? '');
+  const [customerId, setCustomerId] = useState('');
   const [page, setPage] = useState(1);
   const [banner, setBanner] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [salesOrderId, setSalesOrderId] = useState('');
   const [soSearch, setSoSearch] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQ(q.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [q]);
 
   useEffect(() => {
     const fromUrl = searchParams.get('status') ?? '';
@@ -124,10 +157,11 @@ function InvoicesPageInner() {
 
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: '50' });
-    if (q.trim()) params.set('q', q.trim());
+    if (debouncedQ) params.set('q', debouncedQ);
     if (status) params.set('status', status);
+    if (customerId) params.set('customerId', customerId);
     return params.toString();
-  }, [q, status, page]);
+  }, [debouncedQ, status, customerId, page]);
 
   const listQuery = useQuery({
     queryKey: ['invoices', listParams],
@@ -136,6 +170,12 @@ function InvoicesPageInner() {
         `/api/v1/invoices?${listParams}`,
       ),
     placeholderData: keepPreviousData,
+  });
+
+  const customersQuery = useQuery({
+    queryKey: ['customers-invoice-filter'],
+    queryFn: () =>
+      apiFetch<{ data: CustomerOption[] }>('/api/v1/customers?pageSize=100').then((r) => r.data),
   });
 
   const soQuery = useQuery({
@@ -188,13 +228,18 @@ function InvoicesPageInner() {
     label: tCommon('all'),
   });
 
+  const customers = customersQuery.data ?? [];
   const rows = listQuery.data?.data ?? [];
 
   if (listQuery.isLoading && !listQuery.data) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-8 w-48 maher-animate-fade" />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-52 rounded-2xl maher-animate-rise" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -212,148 +257,225 @@ function InvoicesPageInner() {
 
   return (
     <div className="space-y-6">
-      <PageHero
-        title={t('invoices')}
-        description={ta('emptyHint')}
-        tone="soft"
-        actions={
-          <Button
-            onClick={() => {
-              setSalesOrderId('');
-              setSoSearch('');
-              setFormError(null);
-              setCreateOpen(true);
-            }}
-          >
-            {ta('createFromSalesOrder')}
-          </Button>
-        }
-      />
-      {banner ? <Alert variant="success">{banner}</Alert> : null}
+      <MotionSection enter="rise">
+        <PageHero
+          title={t('invoices')}
+          description={ta('emptyHint')}
+          tone="soft"
+          actions={
+            <Button
+              className="maher-lift"
+              onClick={() => {
+                setSalesOrderId('');
+                setSoSearch('');
+                setFormError(null);
+                setCreateOpen(true);
+              }}
+            >
+              {ta('createFromSalesOrder')}
+            </Button>
+          }
+        />
+      </MotionSection>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="relative min-w-[220px] flex-1">
-          <Input
-            withSearchIcon
-            value={q}
+      {banner ? (
+        <MotionSection enter="drop" className="maher-animate-bounce-in">
+          <Alert variant="success">{banner}</Alert>
+        </MotionSection>
+      ) : null}
+
+      <MotionSection enter="rise" delayMs={40} className="space-y-4">
+        <div className="maher-invoices-filters maher-stagger flex flex-wrap items-end gap-3">
+          <label className="relative min-w-[220px] flex-1">
+            <Input
+              withSearchIcon
+              value={q}
+              onChange={(e) => {
+                setPage(1);
+                setQ(e.target.value);
+              }}
+              placeholder={ta('searchPlaceholder')}
+            />
+          </label>
+          <Select
+            label={tc('customer')}
+            value={customerId}
             onChange={(e) => {
               setPage(1);
-              setQ(e.target.value);
+              setCustomerId(e.target.value);
             }}
-            placeholder={ta('searchPlaceholder')}
+            className="min-w-[180px] w-52"
+          >
+            <option value="">{ta('allCustomers')}</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nameAr || c.nameEn || c.nameHe
+                  ? localizedName(locale, c, c.name)
+                  : c.name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label={tCommon('status')}
+            value={status}
+            onChange={(e) => {
+              setPage(1);
+              setStatus(e.target.value);
+            }}
+            options={statusFilterOptions}
+            className="w-48"
           />
-        </label>
-        <Select
-          value={status}
-          onChange={(e) => {
-            setPage(1);
-            setStatus(e.target.value);
-          }}
-          options={statusFilterOptions}
-          className="w-48"
-        />
-      </div>
+        </div>
 
-      {rows.length === 0 ? (
-        <EmptyState title={ta('empty')} description={ta('emptyHint')} />
-      ) : (
-        <>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{ta('invoiceNumber')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('systemOrderNumber')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('dealerOrderNumber')}</TableHeaderCell>
-                <TableHeaderCell>{tc('customer')}</TableHeaderCell>
-                <TableHeaderCell>{ta('amount')}</TableHeaderCell>
-                <TableHeaderCell>{ta('outstanding')}</TableHeaderCell>
-                <TableHeaderCell>{ta('dueDate')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
+        {rows.length === 0 ? (
+          <div className="maher-invoices-results">
+            <EmptyState title={ta('empty')} description={ta('emptyHint')} />
+          </div>
+        ) : (
+          <>
+            <div
+              className={`maher-invoices-results maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3 ${
+                listQuery.isFetching ? 'opacity-70 transition-opacity' : ''
+              }`}
+            >
               {rows.map((row) => {
                 const overdue = isOverdue(row);
                 return (
-                  <TableRow key={row.id}>
-                    <TableCell>
+                  <div
+                    key={row.id}
+                    className="maher-list-card maher-invoices-card group relative flex flex-col rounded-2xl border border-border bg-surface p-6 transition duration-200 hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-[var(--maher-shadow-md)]"
+                  >
+                    <Link
+                      href={`/invoices/${row.id}`}
+                      className="absolute inset-0 z-0 rounded-2xl"
+                      aria-label={row.number}
+                    />
+
+                    <div className="relative z-[1] flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <Ltr className="block truncate text-xl font-semibold tracking-tight text-text-primary transition-colors group-hover:text-brand">
+                          {row.number}
+                        </Ltr>
+                        <p className="mt-1 truncate text-sm text-text-secondary">
+                          {invoiceCustomerName(locale, row.customer)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <StatusBadge status={row.status} />
+                        {overdue ? (
+                          <span className="text-[11px] font-medium text-red-600">
+                            {ta('overdueHint')}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="relative z-[1] mt-6 maher-card-rule-y py-3">
+                      <div className="grid grid-cols-3">
+                        <div className="flex min-w-0 flex-col items-center gap-1.5 px-2.5 py-0.5 text-center">
+                          <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
+                            {ta('factoryOrderShort')}
+                          </span>
+                          <span
+                            dir="ltr"
+                            className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
+                          >
+                            {row.salesOrder?.number ?? '—'}
+                          </span>
+                        </div>
+                        <div className="flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
+                          <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
+                            {ta('dealerOrderShort')}
+                          </span>
+                          <span
+                            dir="ltr"
+                            className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
+                          >
+                            {row.salesOrder?.externalOrderNumber?.trim() || '—'}
+                          </span>
+                        </div>
+                        <div className="flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
+                          <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
+                            {ta('dueDateShort')}
+                          </span>
+                          <span
+                            dir="ltr"
+                            className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
+                          >
+                            {row.dueDate ? row.dueDate.slice(0, 10) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="relative z-[1] mt-4 flex items-end justify-between gap-4">
+                      <div>
+                        <p className="text-[11px] text-text-tertiary">{ta('amount')}</p>
+                        <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
+                          {money(row.total, currency)}
+                        </Ltr>
+                      </div>
+                      <div className="text-end">
+                        <p className="text-[11px] text-text-tertiary">{ta('outstanding')}</p>
+                        <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
+                          {money(row.outstandingAmount, currency)}
+                        </Ltr>
+                      </div>
+                    </div>
+
+                    <div className="relative z-[1] mt-4 flex flex-wrap items-center gap-2 maher-card-rule-t pt-3">
                       <Link
                         href={`/invoices/${row.id}`}
-                        className="font-medium text-brand hover:underline"
-                        dir="ltr"
+                        className="maher-lift text-sm font-medium text-brand transition hover:underline"
                       >
-                        {row.number}
+                        {ta('viewDetails')}
                       </Link>
-                    </TableCell>
-                    <TableNumericCell>{row.salesOrder?.number ?? '—'}</TableNumericCell>
-                    <TableNumericCell>
-                      {row.salesOrder?.externalOrderNumber?.trim() || '—'}
-                    </TableNumericCell>
-                    <TableCell>{row.customer?.name ?? '—'}</TableCell>
-                    <TableNumericCell>{Number(row.total ?? 0).toFixed(2)}</TableNumericCell>
-                    <TableNumericCell>{Number(row.outstandingAmount ?? 0).toFixed(2)}</TableNumericCell>
-                    <TableCell>
-                      <span dir="ltr">{row.dueDate ? row.dueDate.slice(0, 10) : '—'}</span>
-                      {overdue ? (
-                        <span className="ms-2 text-xs font-medium text-red-600">
-                          {ta('overdueHint')}
-                        </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={row.status} />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Link
-                          href={`/invoices/${row.id}`}
-                          className="text-sm text-brand hover:underline"
-                        >
-                          {ta('viewDetails')}
-                        </Link>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            window.open(`${API_URL}/api/v1/invoices/${row.id}/pdf`, '_blank');
-                          }}
-                        >
-                          {tc('pdf')}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="maher-lift"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          window.open(`${API_URL}/api/v1/invoices/${row.id}/pdf`, '_blank');
+                        }}
+                      >
+                        {tc('pdf')}
+                      </Button>
+                    </div>
+                  </div>
                 );
               })}
-            </TableBody>
-          </Table>
-
-          {meta && meta.totalPages > 1 ? (
-            <div className="flex items-center justify-end gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                {tCommon('previous')}
-              </Button>
-              <span className="text-sm text-text-secondary" dir="ltr">
-                {page} / {meta.totalPages}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={page >= meta.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                {tCommon('next')}
-              </Button>
             </div>
-          ) : null}
-        </>
-      )}
+
+            {meta && meta.totalPages > 1 ? (
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="maher-lift"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  {tCommon('previous')}
+                </Button>
+                <span className="text-sm text-text-secondary" dir="ltr">
+                  {page} / {meta.totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="maher-lift"
+                  disabled={page >= meta.totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  {tCommon('next')}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </MotionSection>
 
       <Modal
         open={createOpen}
@@ -373,6 +495,7 @@ function InvoicesPageInner() {
             <Button
               loading={createMutation.isPending}
               disabled={!salesOrderId}
+              className="maher-lift"
               onClick={() => createMutation.mutate()}
             >
               {tCommon('save')}

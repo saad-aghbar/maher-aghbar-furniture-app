@@ -188,7 +188,7 @@ export default function CatalogPage() {
                       {localizedName(locale, product.category)}
                     </p>
                   ) : null}
-                  <div className="mt-auto flex items-end justify-between gap-2 border-t border-border/60 pt-2.5">
+                  <div className="mt-auto flex items-end justify-between gap-2 maher-card-rule-t pt-2.5">
                     <span className="text-sm font-bold tracking-tight text-text-primary" dir="ltr">
                       {Number.isFinite(priceNum)
                         ? `${priceNum.toFixed(0)} ${tCommon('currency')}`

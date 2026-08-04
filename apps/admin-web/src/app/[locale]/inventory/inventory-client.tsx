@@ -47,6 +47,7 @@ interface Row {
   size?: string | null;
   preferredSupplierId?: string | null;
   minStock?: string | number;
+  standardCost?: string | number;
   balances?: Balance[];
 }
 
@@ -162,10 +163,12 @@ export default function InventoryPage() {
   const [editNameEn, setEditNameEn] = useState('');
   const [editNameAr, setEditNameAr] = useState('');
   const [editMinStock, setEditMinStock] = useState('0');
+  const [editStandardCost, setEditStandardCost] = useState('0');
   const [itemNameEn, setItemNameEn] = useState('');
   const [itemNameAr, setItemNameAr] = useState('');
   const [itemUnit, setItemUnit] = useState('pcs');
   const [itemMinStock, setItemMinStock] = useState('0');
+  const [itemStandardCost, setItemStandardCost] = useState('0');
   const [itemBarcode, setItemBarcode] = useState('');
   const [itemColor, setItemColor] = useState('');
   const [itemMaterialType, setItemMaterialType] = useState('');
@@ -251,6 +254,7 @@ export default function InventoryPage() {
           nameAr: itemNameAr.trim(),
           unit: itemUnit.trim() || 'pcs',
           minStock: Number(itemMinStock) || 0,
+          standardCost: Number(itemStandardCost) || 0,
           barcode: itemBarcode.trim() || undefined,
           color: itemColor.trim() || undefined,
           materialType: itemMaterialType.trim() || undefined,
@@ -291,6 +295,7 @@ export default function InventoryPage() {
           nameEn: editNameEn.trim(),
           nameAr: editNameAr.trim(),
           minStock: Number(editMinStock) || 0,
+          standardCost: Number(editStandardCost) || 0,
           barcode: editBarcode.trim() || undefined,
           color: editColor.trim() || undefined,
           materialType: editMaterialType.trim() || undefined,
@@ -616,6 +621,7 @@ export default function InventoryPage() {
                 setItemNameAr('');
                 setItemUnit('pcs');
                 setItemMinStock('0');
+                setItemStandardCost('0');
                 setItemBarcode('');
                 setItemColor('');
                 setItemMaterialType('');
@@ -640,6 +646,7 @@ export default function InventoryPage() {
                     <TableHeaderCell>{ti('sku')}</TableHeaderCell>
                     <TableHeaderCell>{tc('name')}</TableHeaderCell>
                     <TableHeaderCell>{tc('unit')}</TableHeaderCell>
+                    <TableHeaderCell>{ti('standardCost')}</TableHeaderCell>
                     <TableHeaderCell>{ti('available')}</TableHeaderCell>
                     <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
                   </TableRow>
@@ -680,6 +687,9 @@ export default function InventoryPage() {
                           </TableCell>
                           <TableCell>{localizedName(locale, row)}</TableCell>
                           <TableCell>{row.unit}</TableCell>
+                          <TableCell dir="ltr">
+                            {Number(row.standardCost ?? 0).toFixed(2)}
+                          </TableCell>
                           <TableCell dir="ltr">{String(total)}</TableCell>
                           <TableCell>
                             <div className="flex flex-wrap items-center gap-1.5">
@@ -705,6 +715,7 @@ export default function InventoryPage() {
                                   setEditNameEn(row.nameEn);
                                   setEditNameAr(row.nameAr);
                                   setEditMinStock(String(row.minStock ?? 0));
+                                  setEditStandardCost(String(row.standardCost ?? 0));
                                   setEditBarcode(row.barcode ?? '');
                                   setEditColor(row.color ?? '');
                                   setEditMaterialType(row.materialType ?? '');
@@ -736,7 +747,7 @@ export default function InventoryPage() {
                         </TableRow>
                         {expanded ? (
                           <TableRow>
-                            <td className="px-4 py-3 align-middle" colSpan={7}>
+                            <td className="px-4 py-3 align-middle" colSpan={8}>
                               <div className="space-y-1 ps-8 text-sm text-text-secondary">
                                 <p className="font-medium text-text-primary">
                                   {ti('balancesByWarehouse')}
@@ -1251,6 +1262,13 @@ export default function InventoryPage() {
             dir="ltr"
           />
           <Input
+            label={ti('standardCost')}
+            type="number"
+            value={itemStandardCost}
+            onChange={(e) => setItemStandardCost(e.target.value)}
+            dir="ltr"
+          />
+          <Input
             label={ti('minStock')}
             type="number"
             value={itemMinStock}
@@ -1318,6 +1336,13 @@ export default function InventoryPage() {
             type="number"
             value={editMinStock}
             onChange={(e) => setEditMinStock(e.target.value)}
+            dir="ltr"
+          />
+          <Input
+            label={ti('standardCost')}
+            type="number"
+            value={editStandardCost}
+            onChange={(e) => setEditStandardCost(e.target.value)}
             dir="ltr"
           />
         </div>

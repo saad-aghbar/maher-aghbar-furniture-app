@@ -7,7 +7,7 @@ Status legend: **DONE** | **PARTIAL** | **DEFERRED**
 | Area | Status | Notes |
 |------|--------|-------|
 | Auth (login, refresh, lockout) | DONE | Nest auth + session cookies |
-| Password reset / invite / MFA | DONE | Dev-console email; in-memory reset tokens |
+| Password reset / invite / MFA | DONE | TOTP setup + confirm + login gate; Settings UI |
 | CRM (customers, contacts, addresses) | DONE | Admin CRUD + APIs |
 | Admin RFQ module | DONE | List/detail/create/submit; link to quotation; attachments |
 | Customer RFQ multi-channel + specs | DONE | Portal + API (PORTAL/WHATSAPP/EMAIL/PDF/PHONE) |
@@ -25,22 +25,24 @@ Status legend: **DONE** | **PARTIAL** | **DEFERRED**
 | Delivery POD | DONE | Signature + photo |
 | Delivery closes SO | DONE | DELIVERED → sales order DELIVERED |
 | Driver picker | DONE | Admin delivery driver select |
-| Customer contracts | DONE | Portal `/contracts` list + scoped API |
+| Delivery maps | DONE | Leaflet + Nominatim; admin pin + `Delivery.lat/lng`; `/geo` proxy |
+| Customer contracts | DONE | Portal `/contracts` list + scoped API + contract PDF |
 | Dealer production photos | DONE | Task complete → `CUSTOMER_VISIBLE`; SO detail embeds stage photos |
 | Production stage definitions CRUD | DONE | Admin `/production-stages` MasterCrud + nested nav |
 | Sales report filters | DONE | Period / dealer / product / sales rep on `/reports/sales` |
 | Open & late work orders | DONE | Production report `openOrders` + `daysLate` |
 | Order profit report | DONE | `/reports/order-profit` + CSV export |
+| Period P&L + cash flow | DONE | Proxy P&L + cash inflow/outflow + CSV |
 | Dashboard revenue / receivables / completed SOs / open POs | DONE | Extended `/reports/dashboard` |
-| Invoices / payments / SOA | DONE | Existing |
-| Purchasing PR/PO/GRN | DONE | Existing |
-| Inventory multi-WH | DONE | Existing |
-| AI / OCR (mock) | DONE | Mock extract + human review; OpenAI/HTTP when keys set |
-| Live WhatsApp / Email webhooks | PARTIAL | Email IMAP/webhook DONE; WhatsApp inbound webhook + Meta verify stub |
-| Real OCR / paid LLM | PARTIAL | Mock + local (`pdf-parse`/`tesseract.js`) + OpenAI/HTTP when keyed |
-| Supplier comparison + AP ledger | PARTIAL | PR compare/select + AP aging/ledger report + CSV |
-| Barcode hardware / cycle-count mobile UX | PARTIAL | Scan API + mobile camera barcode (`expo-camera`) + typed fallback |
-| True P&L + productivity scoring | PARTIAL | Order profit + productivity + period P&L proxy (material + labor) |
+| Invoices / payments / SOA | DONE | Customer + supplier statement PDFs |
+| Purchasing PR/PO/GRN | DONE | PO PDF + supplier comparison |
+| Inventory multi-WH | DONE | Existing + camera cycle-count |
+| Binary PDFs | DONE | pdfkit: quote, invoice, SOA, label, contract, PO, supplier SOA |
+| AI / OCR | PARTIAL | Mock + local + OpenAI/HTTP when keys set |
+| Live WhatsApp / Email webhooks | PARTIAL | Email IMAP/webhook DONE; WhatsApp inbound + Meta/Twilio when keyed |
+| Supplier AP + ledger | DONE | PR compare/select + AP aging/ledger + cash flow |
+| Barcode / cycle-count mobile UX | PARTIAL | Scan API + expo-camera + typed fallback (no hardware gun) |
+| True statutory GL | DEFERRED | No CoA / journals — operational AR/AP + management reports only |
 
 ## Critical path (this pass)
 

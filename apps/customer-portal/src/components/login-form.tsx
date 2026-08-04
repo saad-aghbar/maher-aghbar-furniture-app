@@ -1,10 +1,10 @@
 'use client';
 
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { redirectAfterLogin } from '@/lib/post-login';
 import { Button, Input, Alert } from '@maher/ui';
 import type { AuthUser } from '@maher/types';
-import { Lock, User } from 'lucide-react';
+import { Lock, User, Shield } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState, type FormEvent } from 'react';
 
@@ -13,6 +13,8 @@ export function LoginForm() {
   const locale = useLocale();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -23,11 +25,23 @@ export function LoginForm() {
     try {
       const res = await apiFetch<{ user: AuthUser }>('/api/v1/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+          ...(mfaRequired || mfaCode ? { mfaCode: mfaCode.trim() } : {}),
+        }),
       });
       redirectAfterLogin(res.user, locale);
-    } catch {
-      setError(t('loginError'));
+    } catch (err) {
+      if (err instanceof ApiClientError && err.body?.code === 'MFA_REQUIRED') {
+        setMfaRequired(true);
+        setError(t('mfaRequired'));
+      } else if (err instanceof ApiClientError && err.body?.code === 'MFA_INVALID') {
+        setMfaRequired(true);
+        setError(t('mfaInvalid'));
+      } else {
+        setError(t('loginError'));
+      }
       setLoading(false);
     }
   }
@@ -55,6 +69,19 @@ export function LoginForm() {
         placeholder="••••••••"
         leadingIcon={<Lock className="h-4 w-4" />}
       />
+      {mfaRequired ? (
+        <Input
+          label={t('mfaCode')}
+          type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          value={mfaCode}
+          onChange={(e) => setMfaCode(e.target.value)}
+          required
+          placeholder="123456"
+          leadingIcon={<Shield className="h-4 w-4" />}
+        />
+      ) : null}
       <Button type="submit" size="lg" loading={loading} className="w-full">
         {t('login')}
       </Button>

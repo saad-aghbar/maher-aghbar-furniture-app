@@ -35,6 +35,10 @@ a {
   color: var(--maher-brand-active);
 }
 
+:root[data-theme='dark'] ::selection {
+  color: var(--maher-text-primary);
+}
+
 :focus-visible {
   outline: 2px solid var(--maher-brand);
   outline-offset: 2px;
@@ -172,7 +176,7 @@ a {
   margin: 0 !important;
   padding: 2px 8px !important;
   border-radius: 8px 0 0 0;
-  background: rgb(255 255 255 / 0.82) !important;
+  background: color-mix(in srgb, var(--maher-surface) 82%, transparent) !important;
   color: var(--maher-text-tertiary) !important;
   font-size: 10px !important;
   backdrop-filter: blur(6px);

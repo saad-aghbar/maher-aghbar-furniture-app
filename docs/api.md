@@ -134,6 +134,9 @@ All errors follow RFC 7807–inspired structure:
 | POST | `/quotations/:id/reject` | Customer rejection |
 | POST | `/quotations/:id/revise` | New version |
 | GET | `/quotations/:id/pdf` | Generate/download PDF |
+| GET | `/contracts/:id/pdf` | Contract PDF |
+| GET | `/purchasing/orders/:id/pdf` | Purchase order PDF |
+| GET | `/suppliers/:id/statement/pdf` | Supplier statement PDF |
 
 ### `/sales-orders`
 
@@ -144,7 +147,8 @@ All errors follow RFC 7807–inspired structure:
 | POST | `/sales-orders/:id/confirm` | Confirm order |
 | POST | `/sales-orders/:id/cancel` | Cancel (state-gated) |
 | POST | `/sales-orders/:id/deposit` | Record deposit |
-| GET | `/sales-orders/:id/contract` | Contract PDF |
+| GET | `/sales-orders/:id` | Sales order detail |
+| GET | `/contracts/:id/pdf` | Contract PDF (see pdf section) |
 
 ### `/production-orders`
 
@@ -224,7 +228,8 @@ All errors follow RFC 7807–inspired structure:
 | POST | `/invoices/:id/issue` | Issue invoice |
 | GET | `/invoices/:id/pdf` | Invoice PDF |
 | POST | `/payments` | Record payment |
-| GET | `/customers/:id/statement` | Statement of account PDF |
+| GET | `/statements/:customerId` | Statement of account JSON |
+| GET | `/statements/:customerId/pdf` | Statement of account PDF |
 
 ### `/documents`
 
@@ -259,11 +264,22 @@ All errors follow RFC 7807–inspired structure:
 |--------|------|-------------|
 | GET | `/reports/sales` | Sales pipeline, conversion |
 | GET | `/reports/production` | WIP, throughput, blockers |
+| GET | `/reports/order-profit` | Per-order profit |
+| GET | `/reports/productivity` | Worker hours / score |
+| GET | `/reports/ap-ledger` | Supplier AP aging |
+| GET | `/reports/period-pl` | Period P&L proxy |
+| GET | `/reports/cash-flow` | Customer receipts vs supplier payments |
 | GET | `/reports/inventory` | Stock levels, reorder |
 | GET | `/reports/purchasing` | PO status, supplier spend |
 | GET | `/reports/financial` | AR aging, revenue |
-| GET | `/reports/employees` | Task completion metrics |
-| POST | `/reports/export` | Async CSV/PDF export (job) |
+| GET | `/reports/export/*.csv` | CSV downloads (sales, profit, AP, P&L, cash, AR) |
+
+### `/geo`
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/geo/reverse` | Reverse geocode (Nominatim or Google) |
+| GET | `/geo/search` | Forward geocode search |
 
 ### `/audit`
 

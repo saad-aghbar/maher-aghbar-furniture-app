@@ -66,6 +66,12 @@ export class ReportsController {
     return this.reports.periodPl(query);
   }
 
+  @Get('cash-flow')
+  @RequirePermissions('report.financial.read')
+  cashFlow(@Query() query: PeriodReportQueryDto) {
+    return this.reports.cashFlow(query);
+  }
+
   @Get('production-summary')
   @RequirePermissions('production-order.read')
   productionSummary() {
@@ -144,6 +150,57 @@ export class ReportsController {
     );
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="ap-ledger.csv"');
+    res.send(csv);
+  }
+
+  @Get('export/period-pl.csv')
+  @RequirePermissions('report.financial.read')
+  async exportPeriodPl(@Query() query: PeriodReportQueryDto, @Res() res: Response) {
+    const data = await this.reports.periodPl(query);
+    const csv = this.reports.toCsv([
+      {
+        revenueOrders: data.totals.revenueOrders,
+        revenueInvoiced: data.totals.revenueInvoiced,
+        materialCogs: data.totals.materialCogs,
+        supplierSpend: data.totals.supplierSpend,
+        laborHours: data.totals.laborHours,
+        laborCost: data.totals.laborCost,
+        laborRateJod: data.laborRateJod,
+        grossProfit: data.totals.grossProfit,
+        contribution: data.totals.contribution,
+        orderCount: data.totals.orderCount,
+      },
+    ]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="period-pl.csv"');
+    res.send(csv);
+  }
+
+  @Get('export/cash-flow.csv')
+  @RequirePermissions('report.financial.read')
+  async exportCashFlow(@Query() query: PeriodReportQueryDto, @Res() res: Response) {
+    const data = await this.reports.cashFlow(query);
+    const rows = [
+      ...data.recentInflows.map((r) => ({
+        direction: 'IN',
+        number: r.number,
+        party: r.party,
+        method: r.method,
+        amount: r.amount,
+        date: r.date.slice(0, 10),
+      })),
+      ...data.recentOutflows.map((r) => ({
+        direction: 'OUT',
+        number: r.number,
+        party: r.party,
+        method: r.method,
+        amount: r.amount,
+        date: r.date.slice(0, 10),
+      })),
+    ];
+    const csv = this.reports.toCsv(rows);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="cash-flow.csv"');
     res.send(csv);
   }
 

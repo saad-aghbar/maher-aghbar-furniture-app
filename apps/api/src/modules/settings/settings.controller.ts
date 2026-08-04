@@ -69,6 +69,10 @@ const INTEGRATION_DEFAULTS = {
   ),
   whatsappInboundConfigured: Boolean(process.env.WHATSAPP_INBOUND_WEBHOOK_SECRET?.trim()),
   emailInboundConfigured: Boolean(process.env.EMAIL_INBOUND_WEBHOOK_SECRET?.trim()),
+  storageProvider: process.env.STORAGE_PROVIDER === 's3' ? 's3' : 'local',
+  s3Configured: process.env.STORAGE_PROVIDER === 's3',
+  mapsConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY?.trim()) || true,
+  mapsProvider: process.env.GOOGLE_MAPS_API_KEY?.trim() ? 'google' : 'nominatim',
 };
 
 const SECRET_KEYS = new Set([

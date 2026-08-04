@@ -11,12 +11,13 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 const variantClasses: Record<AlertVariant, string> = {
-  info: 'border-[var(--maher-info)]/20 bg-[var(--maher-info-soft)] text-[var(--maher-info)]',
+  info: 'border-[color:color-mix(in_srgb,var(--maher-info)_28%,transparent)] bg-[var(--maher-info-soft)] text-[var(--maher-info)]',
   success:
-    'border-[var(--maher-success)]/20 bg-[var(--maher-success-soft)] text-[var(--maher-success)]',
+    'border-[color:color-mix(in_srgb,var(--maher-success)_28%,transparent)] bg-[var(--maher-success-soft)] text-[var(--maher-success)]',
   warning:
-    'border-[var(--maher-warning)]/20 bg-[var(--maher-warning-soft)] text-[var(--maher-warning)]',
-  error: 'border-[var(--maher-error)]/20 bg-[var(--maher-error-soft)] text-[var(--maher-error)]',
+    'border-[color:color-mix(in_srgb,var(--maher-warning)_28%,transparent)] bg-[var(--maher-warning-soft)] text-[var(--maher-warning)]',
+  error:
+    'border-[color:color-mix(in_srgb,var(--maher-error)_28%,transparent)] bg-[var(--maher-error-soft)] text-[var(--maher-error)]',
 };
 
 const iconPaths: Record<AlertVariant, ReactNode> = {

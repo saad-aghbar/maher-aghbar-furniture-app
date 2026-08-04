@@ -1,6 +1,7 @@
 'use client';
 
 import { PageHeader } from '@/components/admin/page-header';
+import { DeliveryLocationMapLazy } from '@/components/delivery-location-map-lazy';
 import { Link } from '@/i18n/navigation';
 import { apiFetch, apiUpload, apiUploadFromUrl, ApiClientError } from '@/lib/api-client';
 import { DELIVERY_STATUSES } from '@/lib/status-options';
@@ -26,7 +27,7 @@ import {
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface DeliveryItem {
   id: string;
@@ -39,16 +40,28 @@ interface DeliveryDetail {
   number: string;
   status: string;
   deliveryAddress: string;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
   notes?: string | null;
   recipientName?: string | null;
   failureReason?: string | null;
   signatureData?: string | null;
-  customer?: { name: string; phone?: string | null };
+  customer?: {
+    name: string;
+    phone?: string | null;
+    addresses?: Array<{ latitude?: string | number | null; longitude?: string | number | null }>;
+  };
   driver?: { firstName?: string; lastName?: string } | null;
   salesOrder?: {
     id: string;
     number: string;
     externalOrderNumber?: string | null;
+    quotation?: {
+      request?: {
+        deliveryLat?: string | number | null;
+        deliveryLng?: string | number | null;
+      } | null;
+    } | null;
   } | null;
   items?: DeliveryItem[];
 }
@@ -93,10 +106,51 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
   const [driverId, setDriverId] = useState('');
   const [podPhotoDocId, setPodPhotoDocId] = useState<string | undefined>();
   const [podPhotoBusy, setPodPhotoBusy] = useState(false);
+  const [pinLat, setPinLat] = useState<number | null>(null);
+  const [pinLng, setPinLng] = useState<number | null>(null);
 
   const detailQuery = useQuery({
     queryKey: ['delivery', params.id],
     queryFn: () => apiFetch<DeliveryDetail>(`/api/v1/deliveries/${params.id}`),
+  });
+
+  const resolveCoords = useCallback((d: DeliveryDetail) => {
+    const fromDelivery = [d.latitude, d.longitude];
+    const fromRfq = [
+      d.salesOrder?.quotation?.request?.deliveryLat,
+      d.salesOrder?.quotation?.request?.deliveryLng,
+    ];
+    const addr = d.customer?.addresses?.[0];
+    const fromAddr = [addr?.latitude, addr?.longitude];
+    for (const pair of [fromDelivery, fromRfq, fromAddr]) {
+      const lat = Number(pair[0]);
+      const lng = Number(pair[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+    }
+    return { lat: null as number | null, lng: null as number | null };
+  }, []);
+
+  useEffect(() => {
+    if (!detailQuery.data) return;
+    const c = resolveCoords(detailQuery.data);
+    setPinLat(c.lat);
+    setPinLng(c.lng);
+  }, [detailQuery.data, resolveCoords]);
+
+  const saveLocationMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/deliveries/${params.id}/location`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          latitude: pinLat,
+          longitude: pinLng,
+        }),
+      }),
+    onSuccess: async () => {
+      setBanner(tCommon('saved'));
+      await queryClient.invalidateQueries({ queryKey: ['delivery', params.id] });
+    },
+    onError: (err) => setFormError(mutationErrorMessage(err)),
   });
 
   const driversQuery = useQuery({
@@ -256,6 +310,38 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
         ) : null}
       </div>
 
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-text-primary">{tc('deliveryLocation')}</h2>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={pinLat == null || pinLng == null}
+            loading={saveLocationMutation.isPending}
+            onClick={() => saveLocationMutation.mutate()}
+          >
+            {tc('saveLocation')}
+          </Button>
+        </div>
+        <DeliveryLocationMapLazy
+          lat={pinLat}
+          lng={pinLng}
+          disabled={terminal}
+          onChange={(lat, lng) => {
+            setPinLat(lat);
+            setPinLng(lng);
+          }}
+          onAddressSuggest={(address) => {
+            if (!delivery.deliveryAddress?.trim()) {
+              void apiFetch(`/api/v1/deliveries/${params.id}/location`, {
+                method: 'PATCH',
+                body: JSON.stringify({ deliveryAddress: address, latitude: pinLat, longitude: pinLng }),
+              }).then(() => queryClient.invalidateQueries({ queryKey: ['delivery', params.id] }));
+            }
+          }}
+        />
+      </div>
+
       <div className="space-y-2">
         <h2 className="text-lg font-semibold text-text-primary">{tCommon('status')}</h2>
         <div className="flex flex-wrap gap-2">
@@ -272,7 +358,7 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
                     ? 'border-brand bg-brand/10 font-semibold text-brand'
                     : reached && STATUS_FLOW.includes(status as (typeof STATUS_FLOW)[number])
                       ? 'border-border text-text-secondary'
-                      : 'border-border/60 text-text-tertiary'
+                      : 'border-border text-text-tertiary'
                 }`}
               >
                 {tStatus(status as never)}

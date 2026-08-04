@@ -268,7 +268,7 @@ export default function CustomersPage() {
               <Link
                 key={row.id}
                 href={`/customers/${row.id}`}
-                className="maher-list-card group flex flex-col rounded-2xl border border-border/60 bg-white p-6 transition duration-200 hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-[var(--maher-shadow-md)]"
+                className="maher-list-card group flex flex-col rounded-2xl border border-border bg-surface p-6 transition duration-200 hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-[var(--maher-shadow-md)]"
               >
                 <div className="min-w-0">
                   <h2 className="truncate text-xl font-semibold tracking-tight text-text-primary transition-colors group-hover:text-brand">
@@ -286,7 +286,7 @@ export default function CustomersPage() {
                   </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-3 divide-x divide-border/70 border-y border-border/70 py-3 rtl:divide-x-reverse">
+                <div className="mt-6 grid grid-cols-3 maher-card-rule-divide maher-card-rule-y py-3">
                   <div className="px-2 text-center first:ps-0 last:pe-0">
                     <p className="text-[11px] text-text-tertiary">{t('ordersWaiting')}</p>
                     <Ltr className="mt-1 block text-xl font-semibold tracking-tight text-text-primary">

@@ -691,6 +691,7 @@ model Supplier {
   contacts         SupplierContact[]
   purchaseOrders   PurchaseOrder[]
   quoteOffers      SupplierQuoteOffer[]
+  preferredPurchaseRequests PurchaseRequest[] @relation("PurchaseRequestPreferredSupplier")
   supplierInvoices SupplierInvoice[]
   supplierPayments SupplierPayment[]
   preferredForItems InventoryItem[]
@@ -719,6 +720,8 @@ model PurchaseRequest {
   department       String?
   warehouseId      String?
   warehouse        Warehouse?            @relation(fields: [warehouseId], references: [id])
+  preferredSupplierId String?
+  preferredSupplier   Supplier?          @relation("PurchaseRequestPreferredSupplier", fields: [preferredSupplierId], references: [id])
   requiredDate     DateTime?
   priority         Priority              @default(NORMAL)
   status           PurchaseRequestStatus @default(DRAFT)
@@ -732,6 +735,7 @@ model PurchaseRequest {
   lines  PurchaseRequestLine[]
   offers SupplierQuoteOffer[]
 
+  @@index([preferredSupplierId])
   @@map("purchase_requests")
 }
 
@@ -806,6 +810,7 @@ model PurchaseOrderLine {
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   description     String
   quantity        Decimal       @db.Decimal(18, 3)
+  unit            String        @default("pcs")
   unitPrice       Decimal       @db.Decimal(18, 3)
   taxRate         Decimal       @default(0) @db.Decimal(5, 4)
   lineTotal       Decimal       @db.Decimal(18, 3)
@@ -902,6 +907,8 @@ model InventoryItem {
   color       String?
   size        String?
   unit        String            @default("pcs")
+  /// Fixed purchase / catalog unit cost used when creating purchase orders
+  standardCost Decimal          @default(0) @db.Decimal(18, 3)
   materialId  String?           @unique
   material    Material?         @relation(fields: [materialId], references: [id])
   preferredSupplierId String?
@@ -1543,6 +1550,8 @@ model Delivery {
   customerId      String
   customer        Customer       @relation(fields: [customerId], references: [id])
   deliveryAddress String
+  latitude        Decimal?       @db.Decimal(10, 7)
+  longitude       Decimal?       @db.Decimal(10, 7)
   deliveryDate    DateTime?
   deliveryWindow  String?
   driverId        String?

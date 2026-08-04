@@ -3,7 +3,19 @@
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
-import { Alert, Button, ErrorState, Ltr, PageHero, Skeleton, StatusBadge } from '@maher/ui';
+import {
+  Alert,
+  Button,
+  EmptyState,
+  ErrorState,
+  Ltr,
+  MotionSection,
+  PageHero,
+  Skeleton,
+  StatusBadge,
+  StaggerGrid,
+  cn,
+} from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Armchair, CheckCircle2, Factory, Package } from 'lucide-react';
@@ -158,7 +170,7 @@ function OrderCard({
     row.kind === 'sales_order' && row.progressPercent != null ? row.progressPercent : null;
 
   return (
-    <article className="maher-list-card group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition hover:border-brand/40 hover:shadow-sm">
+    <article className="maher-list-card group flex flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-card">
       <Link
         href={detailHref}
         className="relative block aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]"
@@ -168,11 +180,11 @@ function OrderCard({
           <img
             src={imageUrl}
             alt={title}
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.06]"
           />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary">
-            <Armchair className="h-7 w-7 opacity-40" />
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary transition duration-300 group-hover:scale-105 group-hover:text-brand/50">
+            <Armchair className="h-7 w-7 opacity-40 transition group-hover:opacity-70" />
             <Ltr className="text-[10px] font-medium uppercase tracking-wide">{row.number}</Ltr>
           </div>
         )}
@@ -187,7 +199,7 @@ function OrderCard({
             </div>
             <div className="h-1 overflow-hidden rounded-full bg-white/30">
               <div
-                className="h-full rounded-full bg-white transition-all"
+                className="maher-progress-fill h-full rounded-full bg-white"
                 style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
               />
             </div>
@@ -210,7 +222,7 @@ function OrderCard({
         </div>
         <Link
           href={detailHref}
-          className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary hover:text-brand"
+          className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary transition-colors hover:text-brand"
         >
           {title}
         </Link>
@@ -219,7 +231,7 @@ function OrderCard({
           <p className="truncate text-[11px] text-text-tertiary">{endCustomerLabel}</p>
         ) : null}
 
-        <div className="mt-auto flex items-end justify-between gap-2 border-t border-border/60 pt-2">
+        <div className="mt-auto flex items-end justify-between gap-2 maher-card-rule-t pt-2">
           <div className="min-w-0 space-y-0.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-[10px] text-text-tertiary">{tSales('sellerPrice')}</span>
@@ -243,12 +255,12 @@ function OrderCard({
           <div className="shrink-0">
             {row.kind === 'rfq' &&
             RFQ_APPROVE_STATUSES.includes(row.status as (typeof RFQ_APPROVE_STATUSES)[number]) ? (
-              <Button size="sm" loading={approveLoading} onClick={onApprove}>
+              <Button size="sm" className="maher-sheen" loading={approveLoading} onClick={onApprove}>
                 {tCatalog('approve')}
               </Button>
             ) : row.kind === 'sales_order' && row.status === 'DRAFT' ? (
               <Link href={`/sales-orders/${row.id}`}>
-                <Button size="sm" variant="secondary">
+                <Button size="sm" variant="secondary" className="maher-sheen">
                   {tSales('confirm')}
                 </Button>
               </Link>
@@ -368,12 +380,16 @@ export default function OrdersHubPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-56" />
-        <Skeleton className="h-12 w-full max-w-xl" />
+      <div className="space-y-6">
+        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
+        <div className="flex flex-wrap gap-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-40 rounded-xl" />
+          ))}
+        </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 w-full rounded-xl" />
+            <Skeleton key={i} className="aspect-[4/5] w-full rounded-xl" />
           ))}
         </div>
       </div>
@@ -425,51 +441,67 @@ export default function OrdersHubPage() {
     <div className="space-y-6">
       <PageHero title={t('ordersOverview')} description={tCommon('ordersSubtitle')} tone="soft" />
 
-      {banner ? <Alert variant="success">{banner}</Alert> : null}
-      {error ? <Alert variant="error">{error}</Alert> : null}
+      {banner ? (
+        <MotionSection enter="drop" className="maher-animate-bounce-in">
+          <Alert variant="success">{banner}</Alert>
+        </MotionSection>
+      ) : null}
+      {error ? (
+        <MotionSection enter="drop">
+          <Alert variant="error">{error}</Alert>
+        </MotionSection>
+      ) : null}
 
-      <div
-        role="tablist"
-        aria-label={t('ordersOverview')}
-        className="maher-stagger flex flex-wrap gap-2"
-      >
-        {tabs.map((tab) => {
-          const selected = tab.key === activeSection;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => setActiveSection(tab.key)}
-              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
-                selected
-                  ? tab.activeClass
-                  : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:text-text-primary'
-              }`}
-            >
-              {tab.icon}
-              <span>{tab.label}</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
-                  selected ? 'bg-white/70 text-inherit' : 'bg-[var(--maher-surface-muted)]'
-                }`}
+      <MotionSection delayMs={40} className="space-y-2">
+        <div
+          role="tablist"
+          aria-label={t('ordersOverview')}
+          className="maher-stagger flex flex-wrap gap-2"
+        >
+          {tabs.map((tab) => {
+            const selected = tab.key === activeSection;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveSection(tab.key)}
+                className={cn(
+                  'maher-filter-chip maher-press inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium',
+                  selected
+                    ? tab.activeClass
+                    : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:text-text-primary',
+                )}
               >
-                {tab.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <p className="text-sm text-text-secondary">{activeTab.hint}</p>
+                {tab.icon}
+                <span>{tab.label}</span>
+                <span
+                  className={cn(
+                    'maher-filter-chip__count rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
+                    selected ? 'bg-surface/70 text-inherit' : 'bg-[var(--maher-surface-muted)]',
+                  )}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p key={activeSection} className="maher-animate-fade text-sm text-text-secondary">
+          {activeTab.hint}
+        </p>
+      </MotionSection>
 
       {activeRows.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-text-secondary">
-          {tSales('sectionEmpty')}
-        </p>
+        <div key={`empty-${activeSection}`} className="maher-panel-swap">
+          <EmptyState title={tSales('sectionEmpty')} />
+        </div>
       ) : (
-        <div className="maher-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        <StaggerGrid
+          key={activeSection}
+          className="maher-panel-swap grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+        >
           {activeRows.map((row) => (
             <OrderCard
               key={`${row.kind}-${row.id}`}
@@ -485,7 +517,7 @@ export default function OrdersHubPage() {
               tCommon={tCommon}
             />
           ))}
-        </div>
+        </StaggerGrid>
       )}
     </div>
   );

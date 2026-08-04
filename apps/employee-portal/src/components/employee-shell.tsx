@@ -9,6 +9,7 @@ import { CheckCircle2, ChevronDown, ClipboardList, LogOut, User } from 'lucide-r
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from './language-switcher';
+import { AppThemeToggle } from './theme-toggle';
 
 const navItems = [
   { href: '/tasks', key: 'myOrders', icon: ClipboardList },
@@ -97,6 +98,7 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-1">
+            <AppThemeToggle inverted={overDark} />
             <LanguageSwitcher inverted={overDark} />
 
             <div className="relative" ref={menuRef}>

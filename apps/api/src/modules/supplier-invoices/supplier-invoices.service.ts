@@ -42,6 +42,10 @@ export class SupplierInvoicesService {
               { number: { contains: query.q, mode: 'insensitive' } },
               { purchaseOrder: { number: { contains: query.q, mode: 'insensitive' } } },
               { supplier: { name: { contains: query.q, mode: 'insensitive' } } },
+              { supplier: { nameAr: { contains: query.q, mode: 'insensitive' } } },
+              { supplier: { nameEn: { contains: query.q, mode: 'insensitive' } } },
+              { supplier: { nameHe: { contains: query.q, mode: 'insensitive' } } },
+              { supplier: { code: { contains: query.q, mode: 'insensitive' } } },
             ],
           }
         : {}),

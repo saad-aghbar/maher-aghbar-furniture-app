@@ -3,6 +3,7 @@ import { getFontClass, getPrimaryFontFamily } from '@/lib/fonts';
 import { QueryProvider } from '@/providers/query-provider';
 import { StatusI18nProvider } from '@/providers/status-i18n-provider';
 import { getDirection, isValidLocale } from '@maher/i18n';
+import { THEME_FOUC_SCRIPT, ThemeProvider } from '@maher/ui';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
@@ -26,14 +27,19 @@ export default async function LocaleLayout({ children, params }: Props) {
   const dir = getDirection(locale);
 
   return (
-    <html lang={locale} dir={dir} className={getFontClass(locale)}>
+    <html lang={locale} dir={dir} className={getFontClass(locale)} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_FOUC_SCRIPT }} />
+      </head>
       <body style={{ fontFamily: getPrimaryFontFamily(locale) }}>
         <NextIntlClientProvider messages={messages}>
-          <StatusI18nProvider>
-            <QueryProvider>
-              <ConditionalShell>{children}</ConditionalShell>
-            </QueryProvider>
-          </StatusI18nProvider>
+          <ThemeProvider>
+            <StatusI18nProvider>
+              <QueryProvider>
+                <ConditionalShell>{children}</ConditionalShell>
+              </QueryProvider>
+            </StatusI18nProvider>
+          </ThemeProvider>
         </NextIntlClientProvider>
       </body>
     </html>

@@ -10,6 +10,11 @@ import { PrismaService } from '../../common/prisma.service';
 import { LoginDto } from './dto/auth.dto';
 import type { AuthUser } from '@maher/types';
 import type { Response } from 'express';
+import {
+  buildOtpauthUrl,
+  generateTotpSecret,
+  verifyTotp,
+} from '../../common/helpers/totp.util';
 
 @Injectable()
 export class AuthService {
@@ -111,6 +116,21 @@ export class AuthService {
         },
       });
       throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid credentials.' });
+    }
+
+    if (user.mfaEnabled && user.mfaSecret) {
+      if (!dto.mfaCode?.trim()) {
+        throw new UnauthorizedException({
+          code: 'MFA_REQUIRED',
+          message: 'Multi-factor authentication code required.',
+        });
+      }
+      if (!verifyTotp(user.mfaSecret, dto.mfaCode.trim())) {
+        throw new UnauthorizedException({
+          code: 'MFA_INVALID',
+          message: 'Invalid multi-factor authentication code.',
+        });
+      }
     }
 
     await this.prisma.user.update({
@@ -231,7 +251,16 @@ export class AuthService {
   }
 
   async me(userId: string) {
-    return this.loadAuthUser(userId);
+    const authUser = await this.loadAuthUser(userId);
+    const row = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { mfaEnabled: true, mfaSecret: true },
+    });
+    return {
+      ...authUser,
+      mfaEnabled: row.mfaEnabled,
+      mfaPending: Boolean(row.mfaSecret && !row.mfaEnabled),
+    };
   }
 
   /** In-memory reset tokens for local/dev; production should use Redis. */
@@ -382,10 +411,36 @@ export class AuthService {
   }
 
   async enableMfa(userId: string) {
-    const secret = randomBytes(20).toString('hex');
+    const secret = generateTotpSecret();
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     await this.prisma.user.update({
       where: { id: userId },
-      data: { mfaEnabled: true, mfaSecret: secret },
+      // Secret stored; MFA not enforced until confirmMfa succeeds.
+      data: { mfaSecret: secret, mfaEnabled: false },
+    });
+    const account = user.username || user.email || userId;
+    return {
+      mfaEnabled: false,
+      pending: true,
+      secret,
+      otpauthUrl: buildOtpauthUrl({ secret, accountName: account }),
+    };
+  }
+
+  async confirmMfa(userId: string, code: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!user.mfaSecret) {
+      throw new BadRequestException({
+        code: 'MFA_NOT_SETUP',
+        message: 'Call mfa/enable first to receive a secret.',
+      });
+    }
+    if (!verifyTotp(user.mfaSecret, code)) {
+      throw new BadRequestException({ code: 'MFA_INVALID', message: 'Invalid MFA code.' });
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaEnabled: true },
     });
     await this.prisma.auditEvent.create({
       data: {
@@ -395,12 +450,7 @@ export class AuthService {
         entityId: userId,
       },
     });
-    return {
-      mfaEnabled: true,
-      // TOTP secret for authenticator apps (setup QR left to client)
-      secret,
-      otpauthUrl: `otpauth://totp/MaherERP:${userId}?secret=${secret}&issuer=MaherERP`,
-    };
+    return { mfaEnabled: true };
   }
 
   async disableMfa(userId: string) {

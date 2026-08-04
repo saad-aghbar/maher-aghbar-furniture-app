@@ -1,6 +1,7 @@
 'use client';
 
 import { PageHeader } from '@/components/admin/page-header';
+import { BomMaterialPicker, type PickedMaterial } from '@/components/admin/bom-material-picker';
 import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { localizedName } from '@maher/i18n';
@@ -19,7 +20,7 @@ import {
   MotionSection,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Armchair, Plus, Trash2 } from 'lucide-react';
+import { Armchair, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -29,14 +30,6 @@ interface Category {
   code: string;
   nameAr: string;
   nameEn: string;
-}
-
-interface Material {
-  id: string;
-  sku: string;
-  nameAr: string;
-  nameEn: string;
-  category: string;
 }
 
 interface BomLine {
@@ -49,6 +42,14 @@ interface BomLine {
   nameAr?: string;
   materialId?: string | null;
 }
+
+type BomEditLine = {
+  sku: string;
+  qty: string;
+  category: string;
+  nameEn?: string;
+  nameAr?: string;
+};
 
 interface ProductDetail {
   id: string;
@@ -107,8 +108,6 @@ interface CustomerRow {
   nameHe?: string | null;
 }
 
-type BomEditLine = { sku: string; qty: string; category: string };
-
 export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -147,6 +146,8 @@ export default function ProductDetailPage() {
   const [customMeasurements, setCustomMeasurements] = useState<CustomMeasurement[]>([]);
   const [bomLines, setBomLines] = useState<BomEditLine[]>([]);
   const [isActive, setIsActive] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerReplaceIndex, setPickerReplaceIndex] = useState<number | null>(null);
 
   const productQuery = useQuery({
     queryKey: ['product', id],
@@ -157,14 +158,6 @@ export default function ProductDetailPage() {
     queryKey: ['product-categories'],
     queryFn: () =>
       apiFetch<{ data: Category[] }>('/api/v1/product-categories?pageSize=100').then((r) => r.data),
-  });
-
-  const materialsQuery = useQuery({
-    queryKey: ['materials-pick'],
-    queryFn: () =>
-      apiFetch<{ data: Material[] }>('/api/v1/materials?pageSize=100&isActive=true').then(
-        (r) => r.data,
-      ),
   });
 
   const dealerPricesQuery = useQuery({
@@ -180,11 +173,6 @@ export default function ProductDetailPage() {
   });
 
   const data = productQuery.data;
-  const materials = materialsQuery.data ?? [];
-  const materialBySku = useMemo(
-    () => new Map(materials.map((m) => [m.sku, m])),
-    [materials],
-  );
 
   useEffect(() => {
     if (!data) return;
@@ -214,13 +202,17 @@ export default function ProductDetailPage() {
       ? data.bomLines
       : data.bomDefaults?.materials ?? [];
     setBomLines(
-      lines.map((l) => ({
-        sku: l.sku ?? '',
-        qty: String(l.qty ?? ''),
-        category: l.category ?? materialBySku.get(l.sku ?? '')?.category ?? '',
-      })),
+      lines
+        .filter((l) => l.sku)
+        .map((l) => ({
+          sku: l.sku ?? '',
+          qty: String(l.qty ?? ''),
+          category: l.category ?? '',
+          nameEn: l.nameEn,
+          nameAr: l.nameAr,
+        })),
     );
-  }, [data, materialBySku]);
+  }, [data]);
 
   const liveBomCost = useMemo(() => {
     return bomLines.reduce((sum, line) => {
@@ -295,14 +287,11 @@ export default function ProductDetailPage() {
           bomDefaults: {
             materials: bomLines
               .filter((l) => l.sku.trim())
-              .map((l) => {
-                const mat = materialBySku.get(l.sku);
-                return {
-                  sku: l.sku.trim(),
-                  qty: Number(l.qty) || 0,
-                  category: l.category || mat?.category || undefined,
-                };
-              }),
+              .map((l) => ({
+                sku: l.sku.trim(),
+                qty: Number(l.qty) || 0,
+                category: l.category || undefined,
+              })),
           },
         }),
       });
@@ -739,61 +728,61 @@ export default function ProductDetailPage() {
         </div>
       </Modal>
 
-      <MotionSection className="maher-form-section" as="div">
+      <MotionSection enter="rise" className="maher-form-section" as="div">
       <Card
         title={t('bomMaterials')}
         actions={
           <Button
             size="sm"
             variant="secondary"
+            className="maher-animate-bounce-in"
             leadingIcon={<Plus className="h-4 w-4" />}
-            onClick={() =>
-              setBomLines((prev) => [...prev, { sku: '', qty: '1', category: '' }])
-            }
+            onClick={() => {
+              setPickerReplaceIndex(null);
+              setPickerOpen(true);
+            }}
           >
             {t('addMaterial')}
           </Button>
         }
       >
         {bomLines.length === 0 ? (
-          <p className="text-sm text-text-secondary">{t('noBomMaterials')}</p>
+          <p className="maher-animate-fade text-sm text-text-secondary">{t('noBomMaterials')}</p>
         ) : (
-          <div className="space-y-3">
+          <div className="bom-lines">
             {bomLines.map((line, index) => {
               const apiLine = data.bomLines?.find((b) => b.sku === line.sku);
               const unitCost = apiLine?.unitCost ?? 0;
               const lineCost = (Number(line.qty) || 0) * unitCost;
+              const displayName =
+                localizedName(locale, {
+                  nameEn: line.nameEn ?? apiLine?.nameEn,
+                  nameAr: line.nameAr ?? apiLine?.nameAr,
+                }) || line.sku;
               return (
                 <div
                   key={`${line.sku}-${index}`}
-                  className="grid gap-2 rounded-xl border border-border p-3 sm:grid-cols-[minmax(0,2fr)_100px_100px_100px_auto]"
+                  className="bom-line-card grid gap-3 sm:grid-cols-[minmax(0,2fr)_100px_100px_100px_auto] sm:items-end"
                 >
-                  <Select
-                    label={t('material')}
-                    value={line.sku}
-                    onChange={(e) => {
-                      const nextSku = e.target.value;
-                      const mat = materialBySku.get(nextSku);
-                      setBomLines((prev) =>
-                        prev.map((row, i) =>
-                          i === index
-                            ? {
-                                sku: nextSku,
-                                qty: row.qty,
-                                category: mat?.category ?? '',
-                              }
-                            : row,
-                        ),
-                      );
-                    }}
-                    options={[
-                      { value: '', label: t('select') },
-                      ...materials.map((m) => ({
-                        value: m.sku,
-                        label: `${localizedName(locale, m)} (${m.sku})`,
-                      })),
-                    ]}
-                  />
+                  <div className="min-w-0">
+                    <p className="mb-1 text-xs text-text-secondary">{t('material')}</p>
+                    <p className="truncate text-sm font-semibold text-text-primary">{displayName}</p>
+                    <p className="truncate text-xs text-text-secondary" dir="ltr">
+                      {line.sku}
+                      {line.category ? ` · ${line.category}` : ''}
+                    </p>
+                    <button
+                      type="button"
+                      className="bom-change-btn"
+                      onClick={() => {
+                        setPickerReplaceIndex(index);
+                        setPickerOpen(true);
+                      }}
+                    >
+                      <RefreshCw className="bom-change-btn__icon" aria-hidden />
+                      {t('changeMaterial')}
+                    </button>
+                  </div>
                   <Input
                     label={t('qty')}
                     type="number"
@@ -833,7 +822,7 @@ export default function ProductDetailPage() {
                 </div>
               );
             })}
-            <div className="flex justify-end border-t border-border pt-3 text-sm">
+            <div className="maher-animate-rise flex justify-end border-t border-border pt-3 text-sm">
               <span className="text-text-secondary">{tSales('productionPrice')}:&nbsp;</span>
               <span className="font-bold tabular-nums" dir="ltr">
                 {(liveBomCost > 0 ? liveBomCost : productionCost).toFixed(2)}{' '}
@@ -844,6 +833,44 @@ export default function ProductDetailPage() {
         )}
       </Card>
       </MotionSection>
+
+      <BomMaterialPicker
+        open={pickerOpen}
+        onClose={() => {
+          setPickerOpen(false);
+          setPickerReplaceIndex(null);
+        }}
+        excludeSkus={
+          pickerReplaceIndex == null
+            ? bomLines.map((l) => l.sku)
+            : bomLines.filter((_, i) => i !== pickerReplaceIndex).map((l) => l.sku)
+        }
+        onPick={(mat: PickedMaterial) => {
+          const next: BomEditLine = {
+            sku: mat.sku,
+            qty: '1',
+            category: mat.category ?? '',
+            nameEn: mat.nameEn,
+            nameAr: mat.nameAr,
+          };
+          if (pickerReplaceIndex == null) {
+            setBomLines((prev) => [...prev, next]);
+          } else {
+            const idx = pickerReplaceIndex;
+            setBomLines((prev) =>
+              prev.map((row, i) =>
+                i === idx
+                  ? {
+                      ...next,
+                      qty: row.qty || '1',
+                    }
+                  : row,
+              ),
+            );
+          }
+          setPickerReplaceIndex(null);
+        }}
+      />
       </div>
     </div>
   );

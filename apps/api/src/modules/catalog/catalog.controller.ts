@@ -27,7 +27,7 @@ import {
 import { Type } from 'class-transformer';
 import { InventoryCategory, Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { RequirePermissions, RequireAnyPermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListActiveQueryDto, ListQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
@@ -36,8 +36,18 @@ import {
   type BomDefaults,
   type MaterialCostMap,
 } from '../../common/helpers/order-costing.util';
+import { categoriesForGroup } from '../../common/helpers/inventory-category.util';
 import type { AuthUser } from '@maher/types';
 
+class MaterialListQueryDto extends ListActiveQueryDto {
+  @IsOptional()
+  @IsString()
+  categoryGroup?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+}
 class CategoryDto {
   @IsString() @MinLength(1) code!: string;
   @IsString() @MinLength(1) nameAr!: string;
@@ -604,13 +614,18 @@ export class CatalogController {
   // ── Materials ──────────────────────────────────────────────────────────────
 
   @Get('materials')
-  @RequirePermissions('catalog.manage')
-  listMaterials(@Query() query: ListActiveQueryDto) {
+  @RequireAnyPermissions('catalog.manage', 'catalog.read', 'inventory.read')
+  listMaterials(@Query() query: MaterialListQueryDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
+    const groupCategories = categoriesForGroup(query.categoryGroup);
     const where: Prisma.MaterialWhereInput = {
       archivedAt: null,
       ...(query.isActive === 'true' ? { isActive: true } : {}),
       ...(query.isActive === 'false' ? { isActive: false } : {}),
+      ...(groupCategories ? { category: { in: groupCategories } } : {}),
+      ...(query.category && !groupCategories
+        ? { category: query.category as InventoryCategory }
+        : {}),
       ...(query.q
         ? {
             OR: [

@@ -211,7 +211,7 @@ function ProductionCard({
         <p className="truncate text-[11px] text-text-tertiary">{stageLabel}</p>
 
         {canStart ? (
-          <div className="mt-auto border-t border-border/60 pt-2">
+          <div className="mt-auto maher-card-rule-t pt-2">
             <Button
               size="sm"
               className="w-full"
@@ -440,7 +440,7 @@ function ProductionPageInner() {
               <span>{tab.label}</span>
               <span
                 className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
-                  selected ? 'bg-white/70 text-inherit' : 'bg-[var(--maher-surface-muted)]'
+                  selected ? 'bg-surface/70 text-inherit' : 'bg-[var(--maher-surface-muted)]'
                 }`}
               >
                 {tab.count}
@@ -497,7 +497,7 @@ function ProductionPageInner() {
               setPage(1);
               setDealerId('');
             }}
-            className="ms-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/70 text-brand transition hover:scale-105 hover:bg-white active:scale-95"
+            className="ms-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface/70 text-brand transition hover:scale-105 hover:bg-surface active:scale-95"
             aria-label={tp('clearDealerFilter')}
           >
             <X className="h-3.5 w-3.5" />

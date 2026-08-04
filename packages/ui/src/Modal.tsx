@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useId, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from './cn';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -36,7 +37,12 @@ export function Modal({
   const titleId = useId();
   // Keep the dialog mounted briefly after `open` flips so the exit animation can play.
   const [mounted, setMounted] = useState(open);
+  const [canPortal, setCanPortal] = useState(false);
   const closing = mounted && !open;
+
+  useEffect(() => {
+    setCanPortal(true);
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -61,11 +67,11 @@ export function Modal({
     };
   }, [open, onClose]);
 
-  if (!mounted) return null;
+  if (!mounted || !canPortal) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-[1200] flex items-center justify-center p-4 sm:p-6"
       role="presentation"
     >
       <button
@@ -127,6 +133,7 @@ export function Modal({
           </div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

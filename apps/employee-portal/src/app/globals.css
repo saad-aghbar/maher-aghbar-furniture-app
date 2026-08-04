@@ -35,6 +35,10 @@ a {
   color: var(--maher-brand-active);
 }
 
+:root[data-theme='dark'] ::selection {
+  color: var(--maher-text-primary);
+}
+
 :focus-visible {
   outline: 2px solid var(--maher-brand);
   outline-offset: 2px;

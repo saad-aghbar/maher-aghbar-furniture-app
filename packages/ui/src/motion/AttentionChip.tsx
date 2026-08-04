@@ -22,10 +22,11 @@ export function AttentionChip({
 }: AttentionChipProps) {
   const hot = value > 0;
   const styles = {
-    error: 'border-[var(--maher-error)]/30 bg-[var(--maher-error-soft)] text-[var(--maher-error)]',
+    error:
+      'border-[color:color-mix(in_srgb,var(--maher-error)_30%,transparent)] bg-[var(--maher-error-soft)] text-[var(--maher-error)]',
     warning:
-      'border-[var(--maher-warning)]/30 bg-[var(--maher-warning-soft)] text-[var(--maher-warning)]',
-    info: 'border-[var(--maher-info)]/30 bg-[var(--maher-info-soft)] text-[var(--maher-info)]',
+      'border-[color:color-mix(in_srgb,var(--maher-warning)_30%,transparent)] bg-[var(--maher-warning-soft)] text-[var(--maher-warning)]',
+    info: 'border-[color:color-mix(in_srgb,var(--maher-info)_30%,transparent)] bg-[var(--maher-info-soft)] text-[var(--maher-info)]',
   }[tone];
 
   const className = cn(
@@ -38,7 +39,7 @@ export function AttentionChip({
     <>
       {icon}
       <span>{label}</span>
-      <Ltr className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-semibold tabular-nums">
+      <Ltr className="rounded-full bg-surface/70 px-2 py-0.5 text-xs font-semibold tabular-nums">
         {value}
       </Ltr>
     </>

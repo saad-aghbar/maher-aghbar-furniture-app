@@ -39,6 +39,10 @@ export class InvoicesService {
                   externalOrderNumber: { contains: query.q, mode: 'insensitive' },
                 },
               },
+              { customer: { name: { contains: query.q, mode: 'insensitive' } } },
+              { customer: { nameAr: { contains: query.q, mode: 'insensitive' } } },
+              { customer: { nameEn: { contains: query.q, mode: 'insensitive' } } },
+              { customer: { nameHe: { contains: query.q, mode: 'insensitive' } } },
             ],
           }
         : {}),

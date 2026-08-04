@@ -9,10 +9,21 @@ export class LoginDto {
   @MinLength(8)
   password!: string;
 
+  /** Required when the account has MFA enabled. */
+  @IsOptional()
+  @IsString()
+  mfaCode?: string;
+
   /** web keeps cookie-only JSON; mobile also receives tokens in the body */
   @IsOptional()
   @IsIn(['web', 'mobile'])
   client?: 'web' | 'mobile';
+}
+
+export class ConfirmMfaDto {
+  @IsString()
+  @MinLength(6)
+  code!: string;
 }
 
 export class RefreshDto {

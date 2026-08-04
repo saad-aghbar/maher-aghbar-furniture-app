@@ -52,12 +52,20 @@ class CreateInventoryItemDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @Min(0)
   minStock?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @Min(0)
   maxStock?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  standardCost?: number;
 
   @IsOptional()
   @IsString()
@@ -108,12 +116,20 @@ class UpdateInventoryItemDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @Min(0)
   minStock?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @Min(0)
   maxStock?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  standardCost?: number;
 
   @IsOptional()
   @IsString()

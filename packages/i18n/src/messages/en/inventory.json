@@ -14,6 +14,7 @@
   "orderMaterialsCreated": "Purchase request created from low-stock items.",
   "name": "Name",
   "unit": "Unit",
+  "standardCost": "Unit cost",
   "receive": "Receive",
   "issue": "Issue",
   "labelPdf": "Label PDF",

@@ -289,7 +289,7 @@ export default function ProductsPage() {
                       {localizedName(locale, product.category)}
                     </p>
                   ) : null}
-                  <div className="mt-auto space-y-0.5 border-t border-border/60 pt-2">
+                  <div className="mt-auto space-y-0.5 maher-card-rule-t pt-2">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-[10px] text-text-tertiary">{t('basePrice')}</span>
                       <span className="text-sm font-bold tracking-tight text-text-primary" dir="ltr">

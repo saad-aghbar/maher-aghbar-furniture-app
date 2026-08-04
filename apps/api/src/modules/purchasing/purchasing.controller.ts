@@ -19,7 +19,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PurchaseOrderStatus, PurchaseRequestStatus } from '@maher/database';
+import { Prisma, PurchaseOrderStatus, PurchaseRequestStatus } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
@@ -47,6 +47,10 @@ class PurchaseLineDto {
   @IsOptional()
   @IsUUID()
   inventoryItemId?: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
 }
 
 class CreatePurchaseOrderDto {
@@ -75,6 +79,10 @@ class CreatePurchaseRequestDto {
   @IsOptional()
   @IsUUID()
   warehouseId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  preferredSupplierId?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -122,19 +130,48 @@ export class PurchasingController {
 
   @Get('purchase-requests')
   @RequirePermissions('purchase-request.read')
-  async listRequests(@Query() query: PaginationDto & { status?: string; q?: string }) {
+  async listRequests(
+    @Query() query: PaginationDto & { status?: string; q?: string; supplierId?: string },
+  ) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
-    const where = {
+    const mode = 'insensitive' as const;
+    const and: Prisma.PurchaseRequestWhereInput[] = [];
+
+    if (query.supplierId) {
+      and.push({
+        OR: [
+          { preferredSupplierId: query.supplierId },
+          { offers: { some: { supplierId: query.supplierId } } },
+          { purchaseOrder: { is: { supplierId: query.supplierId } } },
+        ],
+      });
+    }
+
+    if (query.q) {
+      const q = query.q;
+      const supplierNameOr = {
+        OR: [
+          { name: { contains: q, mode } },
+          { nameAr: { contains: q, mode } },
+          { nameEn: { contains: q, mode } },
+          { nameHe: { contains: q, mode } },
+          { code: { contains: q, mode } },
+        ],
+      };
+      and.push({
+        OR: [
+          { number: { contains: q, mode } },
+          { reason: { contains: q, mode } },
+          { offers: { some: { supplier: supplierNameOr } } },
+          { purchaseOrder: { is: { supplier: supplierNameOr } } },
+        ],
+      });
+    }
+
+    const where: Prisma.PurchaseRequestWhereInput = {
       archivedAt: null,
       ...(query.status ? { status: query.status as PurchaseRequestStatus } : {}),
-      ...(query.q
-        ? {
-            OR: [
-              { number: { contains: query.q, mode: 'insensitive' as const } },
-              { reason: { contains: query.q, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
+      ...(and.length ? { AND: and } : {}),
     };
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.purchaseRequest.count({ where }),
@@ -143,8 +180,20 @@ export class PurchasingController {
         include: {
           lines: true,
           warehouse: true,
+          preferredSupplier: {
+            select: { id: true, name: true, nameAr: true, nameEn: true, nameHe: true, code: true },
+          },
           offers: { include: { supplier: true } },
-          purchaseOrder: { select: { id: true, number: true, status: true } },
+          purchaseOrder: {
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              supplier: {
+                select: { id: true, name: true, nameAr: true, nameEn: true, nameHe: true },
+              },
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -162,6 +211,7 @@ export class PurchasingController {
       include: {
         lines: { include: { inventoryItem: true } },
         warehouse: true,
+        preferredSupplier: true,
         offers: { include: { supplier: true } },
         purchaseOrder: true,
       },
@@ -177,17 +227,19 @@ export class PurchasingController {
         number,
         requestedById: user.id,
         warehouseId: dto.warehouseId,
+        preferredSupplierId: dto.preferredSupplierId,
         reason: dto.reason,
         status: PurchaseRequestStatus.SUBMITTED,
         lines: {
           create: dto.lines.map((l) => ({
             description: l.description,
             quantity: roundMoney(l.quantity),
+            unit: l.unit?.trim() || 'pcs',
             inventoryItemId: l.inventoryItemId,
           })),
         },
       },
-      include: { lines: true },
+      include: { lines: true, preferredSupplier: true },
     });
   }
 
@@ -409,16 +461,24 @@ export class PurchasingController {
 
   @Get('purchase-orders')
   @RequirePermissions('purchase-order.read')
-  async listOrders(@Query() query: PaginationDto & { status?: string; q?: string }) {
+  async listOrders(
+    @Query() query: PaginationDto & { status?: string; q?: string; supplierId?: string },
+  ) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
-    const where = {
+    const mode = 'insensitive' as const;
+    const where: Prisma.PurchaseOrderWhereInput = {
       archivedAt: null,
       ...(query.status ? { status: query.status as PurchaseOrderStatus } : {}),
+      ...(query.supplierId ? { supplierId: query.supplierId } : {}),
       ...(query.q
         ? {
             OR: [
-              { number: { contains: query.q, mode: 'insensitive' as const } },
-              { supplier: { name: { contains: query.q, mode: 'insensitive' as const } } },
+              { number: { contains: query.q, mode } },
+              { supplier: { name: { contains: query.q, mode } } },
+              { supplier: { nameAr: { contains: query.q, mode } } },
+              { supplier: { nameEn: { contains: query.q, mode } } },
+              { supplier: { nameHe: { contains: query.q, mode } } },
+              { supplier: { code: { contains: query.q, mode } } },
             ],
           }
         : {}),
@@ -447,12 +507,32 @@ export class PurchasingController {
     }
     await this.purchasing.assertSupplierCertified(dto.supplierId);
     const number = await this.sequences.next('PORD', 'PORD');
+
+    const inventoryIds = [
+      ...new Set(dto.lines.map((l) => l.inventoryItemId).filter((id): id is string => Boolean(id))),
+    ];
+    const inventoryUnits = inventoryIds.length
+      ? Object.fromEntries(
+          (
+            await this.prisma.inventoryItem.findMany({
+              where: { id: { in: inventoryIds } },
+              select: { id: true, unit: true },
+            })
+          ).map((i) => [i.id, i.unit]),
+        )
+      : ({} as Record<string, string>);
+
     const lines = dto.lines.map((l) => {
       const unitPrice = Number(l.unitPrice);
       const lineTotal = Number(l.quantity) * unitPrice;
+      const unit =
+        l.unit?.trim() ||
+        (l.inventoryItemId ? inventoryUnits[l.inventoryItemId] : undefined) ||
+        'pcs';
       return {
         description: l.description,
         quantity: roundMoney(l.quantity),
+        unit,
         unitPrice: roundMoney(unitPrice),
         taxRate: roundMoney(0.16),
         lineTotal: roundMoney(lineTotal * 1.16),
@@ -475,7 +555,7 @@ export class PurchasingController {
         total: roundMoney(total),
         lines: { create: lines },
       },
-      include: { lines: true, supplier: true },
+      include: { lines: { include: { inventoryItem: true } }, supplier: true },
     });
 
     await this.prisma.auditEvent.create({
@@ -549,7 +629,7 @@ export class PurchasingController {
       where: { id },
       include: {
         supplier: true,
-        lines: true,
+        lines: { include: { inventoryItem: true } },
         goodsReceipts: { include: { lines: true } },
         purchaseRequest: true,
         supplierInvoices: {

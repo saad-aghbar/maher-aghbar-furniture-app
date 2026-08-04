@@ -238,6 +238,8 @@ export function translateErrorCode(
 /**
  * Resolve a thrown API/client error to a localized user-facing string.
  * Prefers `error.code` from the API body; otherwise uses message / fallback.
+ * When fieldErrors are present, appends the first detail(s) so validation
+ * failures are actionable (e.g. forbidden property / missing field).
  */
 export function translateApiError(
   locale: string,
@@ -249,18 +251,53 @@ export function translateApiError(
 
   if (error && typeof error === 'object') {
     const maybe = error as {
-      body?: { code?: string; message?: string };
+      body?: {
+        code?: string;
+        message?: string;
+        fieldErrors?: Record<string, string[]> | Array<{ field?: string; message?: string }>;
+      };
       code?: string;
       message?: string;
+      fieldErrors?: Record<string, string[]> | Array<{ field?: string; message?: string }>;
     };
     const code = maybe.body?.code ?? maybe.code;
     const message = maybe.body?.message ?? maybe.message;
+    const fieldErrors = maybe.body?.fieldErrors ?? maybe.fieldErrors;
+    const details = formatFieldErrorDetails(fieldErrors);
     if (code || message) {
-      return translateErrorCode(typed, code, message ?? requestFailed);
+      const base = translateErrorCode(typed, code, message ?? requestFailed);
+      return details ? `${base} ${details}` : base;
     }
   }
   if (error instanceof Error && error.message) return error.message;
   return requestFailed;
+}
+
+function formatFieldErrorDetails(
+  fieldErrors:
+    | Record<string, string[]>
+    | Array<{ field?: string; message?: string }>
+    | undefined,
+): string | null {
+  if (!fieldErrors) return null;
+  const parts: string[] = [];
+  if (Array.isArray(fieldErrors)) {
+    for (const err of fieldErrors.slice(0, 3)) {
+      const msg = err.message?.trim();
+      if (msg) parts.push(msg);
+    }
+  } else {
+    for (const [field, messages] of Object.entries(fieldErrors)) {
+      for (const msg of messages.slice(0, 2)) {
+        const text = String(msg).trim();
+        if (!text) continue;
+        parts.push(field === '_' ? text : `${field}: ${text}`);
+        if (parts.length >= 3) break;
+      }
+      if (parts.length >= 3) break;
+    }
+  }
+  return parts.length ? `(${parts.join('; ')})` : null;
 }
 
 /** Best-effort locale from explicit value, runtime override, or `<html lang>`. */

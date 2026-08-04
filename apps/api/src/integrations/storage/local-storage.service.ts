@@ -1,76 +1,40 @@
 import { Injectable } from '@nestjs/common';
-import { createHash, randomUUID } from 'crypto';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, promises as fs } from 'fs';
-import { dirname, join, extname } from 'path';
-import { pipeline } from 'stream/promises';
 import type { Readable } from 'stream';
+import { LocalDiskStorage } from './local-disk.storage';
+import { S3StorageService } from './s3-storage.service';
+import type { ObjectStorage, StoredObject } from './storage.types';
 
-export interface StoredObject {
-  key: string;
-  sizeBytes: number;
-  mimeType: string;
-}
-
+/**
+ * Facade used app-wide. Switches to MinIO/S3 when S3_* env is configured
+ * (and STORAGE_PROVIDER is not forced to `local`).
+ */
 @Injectable()
-export class LocalStorageService {
-  private readonly root = process.env.LOCAL_UPLOAD_DIR
-    ? process.env.LOCAL_UPLOAD_DIR
-    : join(process.cwd(), '../../uploads');
+export class LocalStorageService implements ObjectStorage {
+  private readonly backend: ObjectStorage;
 
   constructor() {
-    if (!existsSync(this.root)) {
-      mkdirSync(this.root, { recursive: true });
-    }
+    this.backend = S3StorageService.isConfigured()
+      ? new S3StorageService()
+      : new LocalDiskStorage();
   }
 
-  async putObject(
-    fileName: string,
-    mimeType: string,
-    data: Buffer | Readable,
-  ): Promise<StoredObject> {
-    const safeExt = extname(fileName).slice(0, 12);
-    const key = `${new Date().toISOString().slice(0, 10)}/${randomUUID()}${safeExt}`;
-    const fullPath = join(this.root, key);
-    mkdirSync(dirname(fullPath), { recursive: true });
-
-    if (Buffer.isBuffer(data)) {
-      await fs.writeFile(fullPath, data);
-      return { key, sizeBytes: data.length, mimeType };
-    }
-
-    await pipeline(data, createWriteStream(fullPath));
-    const stat = await fs.stat(fullPath);
-    return { key, sizeBytes: stat.size, mimeType };
+  putObject(fileName: string, mimeType: string, data: Buffer | Readable): Promise<StoredObject> {
+    return this.backend.putObject(fileName, mimeType, data);
   }
 
-  async getObjectStream(key: string) {
-    const fullPath = join(this.root, key);
-    if (!existsSync(fullPath)) {
-      throw new Error('Object not found');
-    }
-    return createReadStream(fullPath);
+  getObjectStream(key: string) {
+    return this.backend.getObjectStream(key);
   }
 
-  /** Short-lived opaque download token (not a public URL). */
   createAccessToken(key: string, ttlSeconds = 900): string {
-    const exp = Date.now() + ttlSeconds * 1000;
-    const secret = process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me-min-32-chars!!';
-    const payload = `${key}|${exp}`;
-    const sig = createHash('sha256').update(`${payload}|${secret}`).digest('hex').slice(0, 24);
-    return Buffer.from(`${payload}|${sig}`).toString('base64url');
+    return this.backend.createAccessToken(key, ttlSeconds);
   }
 
   verifyAccessToken(token: string): string {
-    const raw = Buffer.from(token, 'base64url').toString('utf8');
-    const [key, expStr, sig] = raw.split('|');
-    if (!key || !expStr || !sig) throw new Error('Invalid token');
-    const secret = process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me-min-32-chars!!';
-    const expected = createHash('sha256')
-      .update(`${key}|${expStr}|${secret}`)
-      .digest('hex')
-      .slice(0, 24);
-    if (sig !== expected) throw new Error('Invalid token signature');
-    if (Date.now() > Number(expStr)) throw new Error('Token expired');
-    return key;
+    return this.backend.verifyAccessToken(token);
+  }
+
+  get providerName(): string {
+    return this.backend instanceof S3StorageService ? 's3' : 'local';
   }
 }

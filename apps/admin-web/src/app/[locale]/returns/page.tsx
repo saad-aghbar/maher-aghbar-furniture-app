@@ -232,7 +232,7 @@ function ReturnCard({
           </p>
         ) : null}
 
-        <div className="mt-auto border-t border-border/60 pt-2">
+        <div className="mt-auto maher-card-rule-t pt-2">
           {pending ? (
             <div className="flex items-center gap-2">
               <Button
@@ -395,7 +395,7 @@ export default function ReturnsPage() {
           <button
             type="button"
             onClick={() => setDealerId('')}
-            className="ms-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/70 text-brand transition hover:scale-105 hover:bg-white active:scale-95"
+            className="ms-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface/70 text-brand transition hover:scale-105 hover:bg-surface active:scale-95"
             aria-label={tc('clearDealerFilter')}
           >
             <X className="h-3.5 w-3.5" />

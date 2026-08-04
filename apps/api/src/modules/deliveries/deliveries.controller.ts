@@ -9,7 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { DeliveryStatus, SalesOrderStatus } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
@@ -40,12 +40,34 @@ class CreateDeliveryDto {
   deliveryAddress!: string;
 
   @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @IsOptional()
   @IsUUID()
   driverId?: string;
 
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+class UpdateDeliveryLocationDto {
+  @IsOptional()
+  @IsString()
+  deliveryAddress?: string;
+
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
 }
 
 class UpdateDeliveryStatusDto {
@@ -160,12 +182,32 @@ export class DeliveriesController {
     }
 
     const number = await this.sequences.next('DEL', 'DEL');
+
+    // Prefer explicit coords; else copy from RFQ linked through quotation.
+    let latitude = dto.latitude;
+    let longitude = dto.longitude;
+    if (latitude == null || longitude == null) {
+      const soWithQuote = await this.prisma.salesOrder.findUnique({
+        where: { id: dto.salesOrderId },
+        include: {
+          quotation: { include: { request: { select: { deliveryLat: true, deliveryLng: true } } } },
+        },
+      });
+      const rfq = soWithQuote?.quotation?.request;
+      if (rfq?.deliveryLat != null && rfq?.deliveryLng != null) {
+        latitude = Number(rfq.deliveryLat);
+        longitude = Number(rfq.deliveryLng);
+      }
+    }
+
     return this.prisma.delivery.create({
       data: {
         number,
         customerId: dto.customerId,
         salesOrderId: dto.salesOrderId,
         deliveryAddress: dto.deliveryAddress,
+        latitude: latitude ?? null,
+        longitude: longitude ?? null,
         driverId: dto.driverId,
         notes: dto.notes,
         status: DeliveryStatus.PLANNED,
@@ -188,12 +230,46 @@ export class DeliveriesController {
     return this.prisma.delivery.findUniqueOrThrow({
       where: { id },
       include: {
-        customer: true,
+        customer: {
+          include: {
+            addresses: {
+              where: { archivedAt: null },
+              take: 5,
+              orderBy: { isDefaultDelivery: 'desc' },
+            },
+          },
+        },
         items: true,
         driver: true,
         salesOrder: {
-          select: { id: true, number: true, status: true, externalOrderNumber: true },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            externalOrderNumber: true,
+            deliveryAddress: true,
+            quotation: {
+              select: {
+                request: {
+                  select: { deliveryLat: true, deliveryLng: true, deliveryAddress: true },
+                },
+              },
+            },
+          },
         },
+      },
+    });
+  }
+
+  @Patch(':id/location')
+  @RequirePermissions('delivery.update')
+  updateLocation(@Param('id') id: string, @Body() dto: UpdateDeliveryLocationDto) {
+    return this.prisma.delivery.update({
+      where: { id },
+      data: {
+        ...(dto.deliveryAddress != null ? { deliveryAddress: dto.deliveryAddress } : {}),
+        ...(dto.latitude != null ? { latitude: dto.latitude } : {}),
+        ...(dto.longitude != null ? { longitude: dto.longitude } : {}),
       },
     });
   }

@@ -14,6 +14,7 @@
   "orderMaterialsCreated": "נוצרה בקשת רכש מפריטים במלאי נמוך.",
   "name": "שם",
   "unit": "יחידה",
+  "standardCost": "עלות יחידה",
   "receive": "קליטה",
   "issue": "ניפוק",
   "labelPdf": "תווית PDF",

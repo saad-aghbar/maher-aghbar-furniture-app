@@ -56,10 +56,21 @@ export function PageHero({
           />
         </>
       ) : (
-        <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[var(--maher-brand-soft)]/70 via-transparent to-[var(--maher-accent-soft)]/50"
-          aria-hidden
-        />
+        <>
+          <div
+            className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[var(--maher-brand-soft)]/70 via-transparent to-[var(--maher-accent-soft)]/50"
+            aria-hidden
+          />
+          <div
+            className="maher-animate-spotlight pointer-events-none absolute -start-10 -top-8 h-44 w-44 rounded-full bg-[var(--maher-brand)]/15 blur-3xl"
+            aria-hidden
+          />
+          <div
+            className="maher-animate-drift pointer-events-none absolute -end-8 -bottom-10 h-40 w-40 rounded-full bg-[var(--maher-accent)]/20 blur-3xl"
+            aria-hidden
+          />
+          <div className="maher-page-hero__rail" aria-hidden />
+        </>
       )}
 
       <div className="relative flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
@@ -85,9 +96,10 @@ export function PageHero({
           {description ? (
             <p
               className={cn(
-                'max-w-xl text-sm leading-relaxed',
+                'maher-animate-fade max-w-xl text-sm leading-relaxed',
                 dark ? 'text-white/70' : 'text-text-secondary',
               )}
+              style={{ animationDelay: '80ms' }}
             >
               {description}
             </p>

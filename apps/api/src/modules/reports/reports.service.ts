@@ -1014,6 +1014,92 @@ export class ReportsService {
     };
   }
 
+  /** Cash movement summary from customer + supplier payments (not a full GL). */
+  async cashFlow(filters: ReportPeriodFilters = {}) {
+    const paymentDate = dateRange(filters.from, filters.to);
+    const [customerPayments, supplierPayments] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: {
+          ...(paymentDate ? { paymentDate } : {}),
+          ...(filters.customerId ? { customerId: filters.customerId } : {}),
+        },
+        select: {
+          id: true,
+          number: true,
+          amount: true,
+          method: true,
+          paymentDate: true,
+          customer: { select: { name: true, code: true } },
+        },
+        orderBy: { paymentDate: 'desc' },
+        take: 500,
+      }),
+      this.prisma.supplierPayment.findMany({
+        where: paymentDate ? { paymentDate } : undefined,
+        select: {
+          id: true,
+          number: true,
+          amount: true,
+          method: true,
+          paymentDate: true,
+          supplier: { select: { name: true, code: true } },
+        },
+        orderBy: { paymentDate: 'desc' },
+        take: 500,
+      }),
+    ]);
+
+    const inflowByMethod = new Map<string, number>();
+    const outflowByMethod = new Map<string, number>();
+    let inflow = 0;
+    let outflow = 0;
+    for (const p of customerPayments) {
+      const amt = Number(p.amount);
+      inflow += amt;
+      inflowByMethod.set(p.method, (inflowByMethod.get(p.method) ?? 0) + amt);
+    }
+    for (const p of supplierPayments) {
+      const amt = Number(p.amount);
+      outflow += amt;
+      outflowByMethod.set(p.method, (outflowByMethod.get(p.method) ?? 0) + amt);
+    }
+
+    return {
+      filters,
+      totals: {
+        inflow: roundMoney(inflow),
+        outflow: roundMoney(outflow),
+        net: roundMoney(inflow - outflow),
+        customerPaymentCount: customerPayments.length,
+        supplierPaymentCount: supplierPayments.length,
+      },
+      inflowByMethod: [...inflowByMethod.entries()].map(([method, amount]) => ({
+        method,
+        amount: roundMoney(amount),
+      })),
+      outflowByMethod: [...outflowByMethod.entries()].map(([method, amount]) => ({
+        method,
+        amount: roundMoney(amount),
+      })),
+      recentInflows: customerPayments.slice(0, 25).map((p) => ({
+        number: p.number,
+        party: p.customer.name,
+        partyCode: p.customer.code,
+        method: p.method,
+        amount: roundMoney(Number(p.amount)),
+        date: p.paymentDate.toISOString(),
+      })),
+      recentOutflows: supplierPayments.slice(0, 25).map((p) => ({
+        number: p.number,
+        party: p.supplier.name,
+        partyCode: p.supplier.code,
+        method: p.method,
+        amount: roundMoney(Number(p.amount)),
+        date: p.paymentDate.toISOString(),
+      })),
+    };
+  }
+
   async purchasing() {
     const [pos, prs, receipts] = await Promise.all([
       this.prisma.purchaseOrder.groupBy({

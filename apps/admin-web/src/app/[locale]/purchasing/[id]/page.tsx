@@ -44,9 +44,17 @@ interface PoDetail {
     id: string;
     description: string;
     quantity: string | number;
+    unit?: string | null;
     unitPrice: string | number;
     lineTotal?: string | number;
     inventoryItemId?: string | null;
+    inventoryItem?: {
+      id: string;
+      sku?: string;
+      nameEn?: string;
+      nameAr?: string;
+      unit?: string | null;
+    } | null;
   }>;
   goodsReceipts?: Array<{
     id: string;
@@ -214,6 +222,18 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
         actions={
           <>
             <StatusBadge status={po.status} />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                window.open(
+                  `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}/api/v1/purchasing/orders/${po.id}/pdf`,
+                  '_blank',
+                )
+              }
+            >
+              PDF
+            </Button>
             <Link href="/purchasing">
               <Button variant="ghost" size="sm">
                 {tCommon('back')}
@@ -288,32 +308,40 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
 
       <MotionSection className="maher-form-section" as="div">
       <Card className="space-y-3 p-4">
-        <h2 className="text-base font-semibold">{tc('lineItems')}</h2>
+        <h2 className="text-base font-semibold">{tc('materialsList')}</h2>
         {lines.length === 0 ? (
-          <EmptyState title={tc('lineDescriptionRequired')} />
+          <EmptyState title={tc('selectMaterialRequired')} />
         ) : (
           <Table>
             <TableHead>
               <TableRow>
-                <TableHeaderCell>{tc('description')}</TableHeaderCell>
+                <TableHeaderCell>{tc('material')}</TableHeaderCell>
                 <TableHeaderCell>{tc('qty')}</TableHeaderCell>
+                <TableHeaderCell>{tc('unit')}</TableHeaderCell>
                 <TableHeaderCell>{tc('unitPrice')}</TableHeaderCell>
                 <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {lines.map((line) => (
-                <TableRow key={line.id}>
-                  <TableCell>{line.description}</TableCell>
-                  <TableNumericCell>{Number(line.quantity)}</TableNumericCell>
-                  <TableNumericCell>{Number(line.unitPrice).toFixed(2)}</TableNumericCell>
-                  <TableNumericCell>
-                    {Number(line.lineTotal ?? Number(line.quantity) * Number(line.unitPrice)).toFixed(
-                      2,
-                    )}
-                  </TableNumericCell>
-                </TableRow>
-              ))}
+              {lines.map((line) => {
+                const unit = line.unit || line.inventoryItem?.unit || 'pcs';
+                const name = line.inventoryItem
+                  ? localizedName(locale, line.inventoryItem, line.description)
+                  : line.description;
+                return (
+                  <TableRow key={line.id}>
+                    <TableCell>{name}</TableCell>
+                    <TableNumericCell>{Number(line.quantity)}</TableNumericCell>
+                    <TableCell className="capitalize">{unit}</TableCell>
+                    <TableNumericCell>{Number(line.unitPrice).toFixed(2)}</TableNumericCell>
+                    <TableNumericCell>
+                      {Number(
+                        line.lineTotal ?? Number(line.quantity) * Number(line.unitPrice),
+                      ).toFixed(2)}
+                    </TableNumericCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}

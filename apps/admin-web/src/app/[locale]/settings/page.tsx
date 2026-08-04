@@ -38,6 +38,10 @@ interface IntegrationsSettings {
   smsLiveConfigured?: boolean;
   whatsappInboundConfigured?: boolean;
   emailInboundConfigured?: boolean;
+  storageProvider?: string;
+  s3Configured?: boolean;
+  mapsConfigured?: boolean;
+  mapsProvider?: string;
   smtpFrom?: string;
   jofotaraBaseUrl?: string;
 }
@@ -57,16 +61,26 @@ const PROVIDER_OPTIONS = {
 
 export default function SettingsPage() {
   const tc = useTranslations('catalog');
+  const tAuth = useTranslations('auth');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
   const [companyForm, setCompanyForm] = useState<CompanySettings | null>(null);
   const [integrationsForm, setIntegrationsForm] = useState<IntegrationsSettings | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mfaSecret, setMfaSecret] = useState<string | null>(null);
+  const [mfaOtpauth, setMfaOtpauth] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
 
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: () => apiFetch<SettingsMap>('/api/v1/settings'),
+  });
+
+  const meQuery = useQuery({
+    queryKey: ['auth-me'],
+    queryFn: () =>
+      apiFetch<{ mfaEnabled?: boolean; mfaPending?: boolean }>('/api/v1/auth/me'),
   });
 
   useEffect(() => {
@@ -98,6 +112,46 @@ export default function SettingsPage() {
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ['settings'] });
       setBanner(tCommon('saved'));
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const mfaEnableMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ secret: string; otpauthUrl: string }>('/api/v1/auth/mfa/enable', {
+        method: 'POST',
+        body: '{}',
+      }),
+    onSuccess: (data) => {
+      setMfaSecret(data.secret);
+      setMfaOtpauth(data.otpauthUrl);
+      setBanner(tAuth('mfaSetupHint'));
+      void queryClient.invalidateQueries({ queryKey: ['auth-me'] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const mfaConfirmMutation = useMutation({
+    mutationFn: () =>
+      apiFetch('/api/v1/auth/mfa/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ code: mfaCode.trim() }),
+      }),
+    onSuccess: async () => {
+      setMfaSecret(null);
+      setMfaOtpauth(null);
+      setMfaCode('');
+      setBanner(tAuth('mfaEnabled'));
+      await queryClient.invalidateQueries({ queryKey: ['auth-me'] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const mfaDisableMutation = useMutation({
+    mutationFn: () => apiFetch('/api/v1/auth/mfa/disable', { method: 'POST', body: '{}' }),
+    onSuccess: async () => {
+      setBanner(tAuth('mfaDisabled'));
+      await queryClient.invalidateQueries({ queryKey: ['auth-me'] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -370,6 +424,61 @@ export default function SettingsPage() {
             <p className="text-xs text-[var(--maher-text-secondary)]">
               {tc('ocrLocalStatus')}: {configuredBadge(integrationsForm.ocrLocalConfigured)}
             </p>
+            <p className="text-xs text-[var(--maher-text-secondary)]">
+              {tc('storageProviderStatus')}: {integrationsForm.storageProvider ?? 'local'} (
+              {configuredBadge(integrationsForm.s3Configured)})
+            </p>
+            <p className="text-xs text-[var(--maher-text-secondary)]">
+              {tc('mapsProviderStatus')}: {integrationsForm.mapsProvider ?? 'nominatim'}
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <Card title={tAuth('mfaSetup')}>
+        <div className="space-y-3">
+          <p className="text-sm text-[var(--maher-text-secondary)]">{tAuth('mfaSetupHint')}</p>
+          <p className="text-sm">
+            {meQuery.data?.mfaEnabled ? tAuth('mfaEnabled') : tAuth('mfaDisabled')}
+            {meQuery.data?.mfaPending ? ' (pending confirm)' : ''}
+          </p>
+          {mfaOtpauth ? (
+            <div className="space-y-2 rounded-md border border-border p-3 text-xs break-all" dir="ltr">
+              <p>
+                {tAuth('mfaSecret')}: {mfaSecret}
+              </p>
+              <p>{mfaOtpauth}</p>
+              <Input
+                label={tAuth('mfaCode')}
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+              />
+              <Button
+                loading={mfaConfirmMutation.isPending}
+                onClick={() => mfaConfirmMutation.mutate()}
+              >
+                {tAuth('mfaConfirm')}
+              </Button>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            {!meQuery.data?.mfaEnabled ? (
+              <Button
+                variant="secondary"
+                loading={mfaEnableMutation.isPending}
+                onClick={() => mfaEnableMutation.mutate()}
+              >
+                {tAuth('mfaEnable')}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                loading={mfaDisableMutation.isPending}
+                onClick={() => mfaDisableMutation.mutate()}
+              >
+                {tAuth('mfaDisable')}
+              </Button>
+            )}
           </div>
         </div>
       </Card>

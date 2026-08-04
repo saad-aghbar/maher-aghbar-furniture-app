@@ -35,6 +35,7 @@ import { OrgModule } from './modules/org/org.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { WarehousesModule } from './modules/warehouses/warehouses.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { GeoModule } from './modules/geo/geo.module';
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { RolesModule } from './modules/roles/roles.module';
     SettingsModule,
     WarehousesModule,
     RolesModule,
+    GeoModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

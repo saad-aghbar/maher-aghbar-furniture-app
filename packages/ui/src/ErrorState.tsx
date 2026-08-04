@@ -22,7 +22,7 @@ export function ErrorState({
   return (
     <div
       className={cn(
-        'maher-animate-rise flex flex-col items-center justify-center rounded-[var(--maher-radius-lg)] border border-[var(--maher-error)]/20 bg-[var(--maher-error-soft)] px-6 py-14 text-center',
+        'maher-animate-rise flex flex-col items-center justify-center rounded-[var(--maher-radius-lg)] border border-[color:color-mix(in_srgb,var(--maher-error)_28%,transparent)] bg-[var(--maher-error-soft)] px-6 py-14 text-center',
         className,
       )}
       role="alert"

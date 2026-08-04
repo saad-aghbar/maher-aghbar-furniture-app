@@ -90,8 +90,12 @@ export class SuppliersController {
         ? {
             OR: [
               { name: { contains: query.q, mode: 'insensitive' } },
+              { nameAr: { contains: query.q, mode: 'insensitive' } },
+              { nameEn: { contains: query.q, mode: 'insensitive' } },
+              { nameHe: { contains: query.q, mode: 'insensitive' } },
               { code: { contains: query.q, mode: 'insensitive' } },
               { email: { contains: query.q, mode: 'insensitive' } },
+              { companyName: { contains: query.q, mode: 'insensitive' } },
             ],
           }
         : {}),

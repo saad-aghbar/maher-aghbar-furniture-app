@@ -333,7 +333,7 @@ function OrderBox({
         </Link>
         {subtitle ? <p className="truncate text-[11px] text-text-tertiary">{subtitle}</p> : null}
 
-        <div className="mt-auto space-y-0.5 border-t border-border/60 pt-2">
+        <div className="mt-auto space-y-0.5 maher-card-rule-t pt-2">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-[10px] text-text-tertiary">{tSales('sellerPrice')}</span>
             <span className="text-sm font-bold tracking-tight text-text-primary" dir="ltr">
@@ -590,7 +590,7 @@ export function DealerSections({ customerId }: DealerSectionsProps) {
               {item.count != null ? (
                 <span
                   className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
-                    selected ? 'bg-white/70 text-inherit' : 'bg-[var(--maher-surface-muted)]'
+                    selected ? 'bg-surface/70 text-inherit' : 'bg-[var(--maher-surface-muted)]'
                   }`}
                 >
                   {item.count}
@@ -751,7 +751,7 @@ export function DealerSections({ customerId }: DealerSectionsProps) {
 
       {!loading && tab === 'soa' && statementQuery.data ? (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-white px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-5 py-4">
             <div>
               <p className="text-[11px] text-text-tertiary">{t('balance')}</p>
               <p className="mt-1 text-xl font-semibold tabular-nums tracking-tight" dir="ltr">
@@ -776,7 +776,7 @@ export function DealerSections({ customerId }: DealerSectionsProps) {
                 {statementPage.items.map((line, i) => (
                   <div
                     key={`${line.date}-${i}`}
-                    className="rounded-2xl border border-border/60 bg-white p-4 transition hover:border-brand/30"
+                    className="rounded-2xl border border-border bg-surface p-4 transition hover:border-brand/30"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2 text-text-tertiary">
@@ -822,7 +822,7 @@ export function DealerSections({ customerId }: DealerSectionsProps) {
               {paymentsPage.items.map((row) => (
                 <div
                   key={row.id}
-                  className="rounded-2xl border border-border/60 bg-white p-4 transition hover:border-brand/30"
+                  className="rounded-2xl border border-border bg-surface p-4 transition hover:border-brand/30"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -863,7 +863,7 @@ export function DealerSections({ customerId }: DealerSectionsProps) {
                 <Link
                   key={row.id}
                   href={`/invoices/${row.id}`}
-                  className="rounded-2xl border border-border/60 bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-sm"
+                  className="rounded-2xl border border-border bg-surface p-4 transition hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -969,7 +969,7 @@ export function DealerSections({ customerId }: DealerSectionsProps) {
                         <p className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary">
                           {productName}
                         </p>
-                        <div className="mt-auto space-y-0.5 border-t border-border/60 pt-2">
+                        <div className="mt-auto space-y-0.5 maher-card-rule-t pt-2">
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="text-[10px] text-text-tertiary">{t('dealerPrice')}</span>
                             <span

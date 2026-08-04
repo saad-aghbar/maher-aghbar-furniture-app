@@ -7,6 +7,7 @@ import {
   InviteUserDto,
   LoginDto,
   LogoutDto,
+  ConfirmMfaDto,
   RefreshDto,
   ResetPasswordDto,
 } from './dto/auth.dto';
@@ -105,6 +106,11 @@ export class AuthController {
   @Post('mfa/enable')
   enableMfa(@CurrentUser() user: AuthUser) {
     return this.auth.enableMfa(user.id);
+  }
+
+  @Post('mfa/confirm')
+  confirmMfa(@CurrentUser() user: AuthUser, @Body() dto: ConfirmMfaDto) {
+    return this.auth.confirmMfa(user.id, dto.code);
   }
 
   @Post('mfa/disable')

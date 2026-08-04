@@ -82,6 +82,7 @@ export class InventoryService {
       category?: string;
       minStock?: number;
       maxStock?: number;
+      standardCost?: number;
       barcode?: string;
       materialId?: string;
       color?: string;
@@ -101,6 +102,7 @@ export class InventoryService {
         category: (dto.category as never) || undefined,
         minStock: roundMoney(dto.minStock ?? 0),
         maxStock: dto.maxStock != null ? roundMoney(dto.maxStock) : undefined,
+        standardCost: roundMoney(dto.standardCost ?? 0),
         barcode: dto.barcode?.trim() || undefined,
         materialId: dto.materialId,
         color: dto.color?.trim() || undefined,
@@ -131,6 +133,7 @@ export class InventoryService {
       category: string;
       minStock: number;
       maxStock: number;
+      standardCost: number;
       barcode: string;
       isActive: boolean;
       color: string;
@@ -151,6 +154,9 @@ export class InventoryService {
         ...(dto.category !== undefined ? { category: dto.category as never } : {}),
         ...(dto.minStock !== undefined ? { minStock: roundMoney(dto.minStock) } : {}),
         ...(dto.maxStock !== undefined ? { maxStock: roundMoney(dto.maxStock) } : {}),
+        ...(dto.standardCost !== undefined
+          ? { standardCost: roundMoney(dto.standardCost) }
+          : {}),
         ...(dto.barcode !== undefined ? { barcode: dto.barcode.trim() || null } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
         ...(dto.color !== undefined ? { color: dto.color.trim() || null } : {}),

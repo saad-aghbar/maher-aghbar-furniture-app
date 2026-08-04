@@ -351,6 +351,11 @@ export default function ReportsPage() {
       contribution: number;
     };
   }>('period-pl', `/api/v1/reports/period-pl${periodQs}`);
+  const cashFlow = useReportQuery<{
+    totals: { inflow: number; outflow: number; net: number };
+    recentInflows: Array<{ number: string; party: string; amount: number; date: string; method: string }>;
+    recentOutflows: Array<{ number: string; party: string; amount: number; date: string; method: string }>;
+  }>('cash-flow', `/api/v1/reports/cash-flow${periodQs}`);
   const inventory = useReportQuery<InventoryReport>('inventory', '/api/v1/reports/inventory');
   const financial = useReportQuery<FinancialReport>('financial', '/api/v1/reports/financial');
   const purchasing = useReportQuery<PurchasingReport>('purchasing', '/api/v1/reports/purchasing');
@@ -380,6 +385,7 @@ export default function ReportsPage() {
   const showProductivity = productivity.isSuccess && !!productivity.data;
   const showApLedger = apLedger.isSuccess && !!apLedger.data;
   const showPeriodPl = periodPl.isSuccess && !!periodPl.data;
+  const showCashFlow = cashFlow.isSuccess && !!cashFlow.data;
   const showInventory = inventory.isSuccess && !!inventory.data;
   const showFinancial = financial.isSuccess && !!financial.data;
   const showPurchasing = purchasing.isSuccess && !!purchasing.data;
@@ -487,6 +493,28 @@ export default function ReportsPage() {
                 }
               >
                 {ta('exportApCsv')}
+              </Button>
+            ) : null}
+            {showPeriodPl ? (
+              <Button
+                size="sm"
+                variant="subtle"
+                onClick={() =>
+                  void downloadCsv(`/api/v1/reports/export/period-pl.csv${periodQs}`, 'period-pl.csv')
+                }
+              >
+                {ta('exportPeriodPlCsv')}
+              </Button>
+            ) : null}
+            {showCashFlow ? (
+              <Button
+                size="sm"
+                variant="subtle"
+                onClick={() =>
+                  void downloadCsv(`/api/v1/reports/export/cash-flow.csv${periodQs}`, 'cash-flow.csv')
+                }
+              >
+                {ta('exportCashFlowCsv')}
               </Button>
             ) : null}
             {showFinancial ? (
@@ -794,6 +822,31 @@ export default function ReportsPage() {
         </MotionSection>
       ) : isForbidden(periodPl.error) ? null : periodPl.isError ? (
         <ForbiddenOrError title={ta('reportPeriodPl')} message={tCommon('loadFailed')} />
+      ) : null}
+
+      {showCashFlow ? (
+        <MotionSection enter="rise" className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">{ta('reportCashFlow')}</h2>
+          </div>
+          <p className="text-sm text-text-secondary">{ta('cashFlowHint')}</p>
+          <div className="maher-stagger grid gap-4 sm:grid-cols-3">
+            <MetricCard
+              label={ta('cashInflow')}
+              value={<span dir="ltr">{money(cashFlow.data.totals.inflow)}</span>}
+            />
+            <MetricCard
+              label={ta('cashOutflow')}
+              value={<span dir="ltr">{money(cashFlow.data.totals.outflow)}</span>}
+            />
+            <MetricCard
+              label={ta('cashNet')}
+              value={<span dir="ltr">{money(cashFlow.data.totals.net)}</span>}
+            />
+          </div>
+        </MotionSection>
+      ) : isForbidden(cashFlow.error) ? null : cashFlow.isError ? (
+        <ForbiddenOrError title={ta('reportCashFlow')} message={tCommon('loadFailed')} />
       ) : null}
 
       {showApLedger ? (
