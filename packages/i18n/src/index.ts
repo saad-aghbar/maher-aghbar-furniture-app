@@ -15,6 +15,7 @@ import arUsers from './messages/ar/users.json';
 import arStatuses from './messages/ar/statuses.json';
 import arCatalog from './messages/ar/catalog.json';
 import arMobile from './messages/ar/mobile.json';
+import arErrors from './messages/ar/errors.json';
 
 import enCommon from './messages/en/common.json';
 import enAuth from './messages/en/auth.json';
@@ -30,6 +31,7 @@ import enUsers from './messages/en/users.json';
 import enStatuses from './messages/en/statuses.json';
 import enCatalog from './messages/en/catalog.json';
 import enMobile from './messages/en/mobile.json';
+import enErrors from './messages/en/errors.json';
 
 import heCommon from './messages/he/common.json';
 import heAuth from './messages/he/auth.json';
@@ -45,6 +47,7 @@ import heUsers from './messages/he/users.json';
 import heStatuses from './messages/he/statuses.json';
 import heCatalog from './messages/he/catalog.json';
 import heMobile from './messages/he/mobile.json';
+import heErrors from './messages/he/errors.json';
 
 export const locales = ['ar', 'en', 'he'] as const satisfies readonly Locale[];
 export const defaultLocale: Locale = 'ar';
@@ -63,7 +66,8 @@ export type MessageNamespace =
   | 'users'
   | 'statuses'
   | 'catalog'
-  | 'mobile';
+  | 'mobile'
+  | 'errors';
 
 export type MessageValue = string | { [key: string]: MessageValue };
 export type Messages = Record<MessageNamespace, Record<string, MessageValue>>;
@@ -84,6 +88,7 @@ const messagesByLocale: Record<Locale, Messages> = {
     statuses: arStatuses,
     catalog: arCatalog,
     mobile: arMobile,
+    errors: arErrors,
   },
   en: {
     common: enCommon,
@@ -100,6 +105,7 @@ const messagesByLocale: Record<Locale, Messages> = {
     statuses: enStatuses,
     catalog: enCatalog,
     mobile: enMobile,
+    errors: enErrors,
   },
   he: {
     common: heCommon,
@@ -116,6 +122,7 @@ const messagesByLocale: Record<Locale, Messages> = {
     statuses: heStatuses,
     catalog: heCatalog,
     mobile: heMobile,
+    errors: heErrors,
   },
 };
 
@@ -209,4 +216,69 @@ export function statusLabel(locale: string, status: string): string {
   const map = getMessages(typed).statuses;
   const value = map[status];
   return typeof value === 'string' ? value : status.replace(/_/g, ' ');
+}
+
+/** Translate an API error code for the active locale (falls back to English message). */
+export function translateErrorCode(
+  locale: string,
+  code: string | null | undefined,
+  fallbackMessage?: string | null,
+): string {
+  const typed = isValidLocale(locale) ? locale : defaultLocale;
+  const map = getMessages(typed).errors;
+  if (code) {
+    const value = map[code];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  if (fallbackMessage?.trim()) return fallbackMessage;
+  const generic = map.REQUEST_FAILED;
+  return typeof generic === 'string' ? generic : 'Request failed';
+}
+
+/**
+ * Resolve a thrown API/client error to a localized user-facing string.
+ * Prefers `error.code` from the API body; otherwise uses message / fallback.
+ */
+export function translateApiError(
+  locale: string,
+  error: unknown,
+  fallback?: string,
+): string {
+  const typed = isValidLocale(locale) ? locale : defaultLocale;
+  const requestFailed = translateErrorCode(typed, 'REQUEST_FAILED', fallback);
+
+  if (error && typeof error === 'object') {
+    const maybe = error as {
+      body?: { code?: string; message?: string };
+      code?: string;
+      message?: string;
+    };
+    const code = maybe.body?.code ?? maybe.code;
+    const message = maybe.body?.message ?? maybe.message;
+    if (code || message) {
+      return translateErrorCode(typed, code, message ?? requestFailed);
+    }
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return requestFailed;
+}
+
+/** Best-effort locale from explicit value, runtime override, or `<html lang>`. */
+let runtimeUiLocale: Locale | null = null;
+
+export function setRuntimeUiLocale(locale: Locale) {
+  runtimeUiLocale = locale;
+}
+
+export function detectUiLocale(preferred?: string | null): Locale {
+  if (preferred && isValidLocale(preferred)) return preferred;
+  if (runtimeUiLocale) return runtimeUiLocale;
+  try {
+    const doc = (globalThis as { document?: { documentElement?: { lang?: string } } }).document;
+    const lang = doc?.documentElement?.lang?.slice(0, 2);
+    if (lang && isValidLocale(lang)) return lang;
+  } catch {
+    /* non-DOM runtime */
+  }
+  return defaultLocale;
 }

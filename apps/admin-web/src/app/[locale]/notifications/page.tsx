@@ -1,6 +1,5 @@
 'use client';
 
-import { PageHeader } from '@/components/admin/page-header';
 import { apiFetch } from '@/lib/api-client';
 import {
   Alert,
@@ -8,6 +7,7 @@ import {
   EmptyState,
   ErrorState,
   Modal,
+  PageHero,
   Skeleton,
   Table,
   TableBody,
@@ -105,8 +105,9 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title={t('notifications')}
+        tone="soft"
         actions={
           inbox.length ? (
             <Button variant="secondary" loading={readAll.isPending} onClick={() => readAll.mutate()}>
@@ -236,7 +237,7 @@ export default function NotificationsPage() {
         }
       >
         {previewTpl ? (
-          <div className="space-y-4">
+          <div className="maher-form-section space-y-4">
             <div className="flex gap-2">
               <Button
                 size="sm"

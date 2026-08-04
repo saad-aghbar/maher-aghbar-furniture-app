@@ -33,6 +33,7 @@ const COMPANY_DEFAULTS = {
   quotationValidityDays: 14,
   invoiceTermsDays: 30,
   lowStockAlertsEnabled: true,
+  autoReorderEnabled: true,
   phone: '',
   email: '',
   address: '',
@@ -41,6 +42,7 @@ const COMPANY_DEFAULTS = {
 const INTEGRATION_DEFAULTS = {
   emailProvider: process.env.EMAIL_PROVIDER ?? 'console',
   whatsappProvider: process.env.WHATSAPP_PROVIDER ?? 'console',
+  smsProvider: process.env.SMS_PROVIDER ?? 'console',
   aiProvider: process.env.AI_PROVIDER ?? 'mock',
   ocrProvider: process.env.OCR_PROVIDER ?? 'mock',
   jofotaraConfigured: Boolean(
@@ -48,6 +50,25 @@ const INTEGRATION_DEFAULTS = {
   ),
   smtpConfigured: Boolean(process.env.SMTP_URL?.trim()),
   openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
+  ocrLiveConfigured: Boolean(
+    process.env.OCR_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim(),
+  ),
+  ocrLocalConfigured: ['local', 'tesseract', 'pdf', 'auto'].includes(
+    (process.env.OCR_PROVIDER ?? '').toLowerCase(),
+  ),
+  whatsappLiveConfigured: Boolean(
+    (process.env.WHATSAPP_TOKEN?.trim() && process.env.WHATSAPP_PHONE_NUMBER_ID?.trim()) ||
+      (process.env.TWILIO_ACCOUNT_SID?.trim() &&
+        process.env.TWILIO_AUTH_TOKEN?.trim() &&
+        (process.env.TWILIO_WHATSAPP_FROM?.trim() || process.env.TWILIO_FROM?.trim())),
+  ),
+  smsLiveConfigured: Boolean(
+    process.env.TWILIO_ACCOUNT_SID?.trim() &&
+      process.env.TWILIO_AUTH_TOKEN?.trim() &&
+      (process.env.TWILIO_SMS_FROM?.trim() || process.env.TWILIO_FROM?.trim()),
+  ),
+  whatsappInboundConfigured: Boolean(process.env.WHATSAPP_INBOUND_WEBHOOK_SECRET?.trim()),
+  emailInboundConfigured: Boolean(process.env.EMAIL_INBOUND_WEBHOOK_SECRET?.trim()),
 };
 
 const SECRET_KEYS = new Set([

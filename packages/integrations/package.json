@@ -9,13 +9,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "imapflow": "^1.0.181",
+    "mailparser": "^3.7.2",
     "nodemailer": "^6.9.16",
+    "pdf-parse": "^1.1.4",
+    "tesseract.js": "^5.1.1",
     "uuid": "^11.0.3"
   },
   "devDependencies": {
     "@maher/tsconfig": "workspace:*",
+    "@types/mailparser": "^3.4.5",
     "@types/node": "^22.10.2",
     "@types/nodemailer": "^6.4.17",
+    "@types/pdf-parse": "^1.1.5",
     "@types/uuid": "^10.0.0",
     "typescript": "^5.7.2"
   }

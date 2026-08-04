@@ -39,6 +39,7 @@ export class AuthService {
     ];
     return {
       id: user.id,
+      username: user.username ?? '',
       email: user.email ?? '',
       phone: user.phone ?? undefined,
       name: `${user.firstName} ${user.lastName}`.trim(),
@@ -67,17 +68,15 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, res: Response, meta: { ip?: string; userAgent?: string }) {
-    if (!dto.email && !dto.phone) {
-      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Email or phone required.' });
+    const username = (dto.username ?? '').trim().toLowerCase();
+    if (!username) {
+      throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Username required.' });
     }
 
     const user = await this.prisma.user.findFirst({
       where: {
         archivedAt: null,
-        OR: [
-          dto.email ? { email: dto.email.toLowerCase() } : undefined,
-          dto.phone ? { phone: dto.phone } : undefined,
-        ].filter(Boolean) as Array<{ email?: string; phone?: string }>,
+        username,
       },
     });
 
@@ -322,14 +321,19 @@ export class AuthService {
     return { ok: true };
   }
 
-  async invite(dto: {
-    email: string;
-    firstName: string;
-    lastName: string;
-    roleCode: string;
-    phone?: string;
-  }, actorId: string) {
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
+  async invite(
+    dto: {
+      username: string;
+      email?: string;
+      firstName: string;
+      lastName: string;
+      roleCode: string;
+      phone?: string;
+    },
+    actorId: string,
+  ) {
+    const username = dto.username.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { username } });
     if (existing) {
       throw new BadRequestException({ code: 'USER_EXISTS', message: 'User already exists.' });
     }
@@ -340,7 +344,8 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(tempPassword, 12);
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email.toLowerCase(),
+        username,
+        email: dto.email?.toLowerCase(),
         phone: dto.phone,
         firstName: dto.firstName,
         lastName: dto.lastName,
@@ -352,7 +357,7 @@ export class AuthService {
     });
 
     // eslint-disable-next-line no-console
-    console.log(`[email:console] invite ${dto.email} tempPassword=${tempPassword}`);
+    console.log(`[email:console] invite ${username} tempPassword=${tempPassword}`);
 
     await this.prisma.auditEvent.create({
       data: {
@@ -360,12 +365,18 @@ export class AuthService {
         action: 'user.invite',
         entityType: 'User',
         entityId: user.id,
-        newValues: { email: dto.email, roleCode: dto.roleCode },
+        newValues: { username, roleCode: dto.roleCode },
       },
     });
 
     return {
-      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
       ...(process.env.NODE_ENV !== 'production' ? { tempPassword } : {}),
     };
   }

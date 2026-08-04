@@ -154,7 +154,7 @@ pnpm --filter @maher/database generate
 pnpm --filter @maher/database build
 
 echo "==> Database schema + seed"
-(cd packages/database && DATABASE_URL="$DATABASE_URL" pnpm exec prisma db push --skip-generate)
+(cd packages/database && DATABASE_URL="$DATABASE_URL" pnpm exec prisma db push --skip-generate --accept-data-loss)
 (cd packages/database && DATABASE_URL="$DATABASE_URL" pnpm exec tsx prisma/seed.ts)
 
 echo "==> Building apps"

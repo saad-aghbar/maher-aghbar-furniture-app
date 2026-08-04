@@ -12,7 +12,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#E03C31"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
@@ -23,7 +23,7 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png",
-        "backgroundColor": "#E03C31"
+        "backgroundColor": "#000000"
       },
       "package": "jo.maheraghbar.furniture",
       "edgeToEdgeEnabled": true
@@ -31,18 +31,17 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-localization",
       [
-        "expo-image-picker",
+        "expo-camera",
         {
-          "cameraPermission": "Allow Maher Al-Aghbar Furniture to take photos of completed work.",
-          "photosPermission": "Allow Maher Al-Aghbar Furniture to attach photos from your library."
+          "cameraPermission": "Allow Maher Furniture to scan inventory barcodes.",
+          "barcodeScannerEnabled": true,
+          "recordAudioAndroid": false
         }
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "autolinkingModuleResolution": true
+      "typedRoutes": true
     },
     "extra": {
       "eas": {

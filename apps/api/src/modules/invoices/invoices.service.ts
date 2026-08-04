@@ -10,9 +10,10 @@ import type { JoFotaraProvider } from '@maher/integrations';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
-import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
+import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { JOFOTARA_PROVIDER } from '../../integrations/integrations.module';
+import type { ListInvoicesDto } from './dto/invoice.dto';
 
 @Injectable()
 export class InvoicesService {
@@ -22,32 +23,56 @@ export class InvoicesService {
     @Inject(JOFOTARA_PROVIDER) private readonly jofotara: JoFotaraProvider,
   ) {}
 
-  async list(query: PaginationDto & { status?: string; customerId?: string }) {
+  async list(query: ListInvoicesDto) {
+    const { page, pageSize, skip, take } = pageSkipTake(query);
     const where: Prisma.InvoiceWhereInput = {
       archivedAt: null,
-      ...(query.status ? { status: query.status as InvoiceStatus } : {}),
+      ...(query.status ? { status: query.status } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.q
-        ? { OR: [{ number: { contains: query.q, mode: 'insensitive' } }] }
+        ? {
+            OR: [
+              { number: { contains: query.q, mode: 'insensitive' } },
+              { salesOrder: { number: { contains: query.q, mode: 'insensitive' } } },
+              {
+                salesOrder: {
+                  externalOrderNumber: { contains: query.q, mode: 'insensitive' },
+                },
+              },
+            ],
+          }
         : {}),
     };
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.invoice.count({ where }),
       this.prisma.invoice.findMany({
         where,
-        include: { customer: true, lines: true },
+        include: {
+          customer: true,
+          lines: true,
+          salesOrder: {
+            select: { id: true, number: true, status: true, externalOrderNumber: true },
+          },
+        },
         orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
+        skip,
+        take,
       }),
     ]);
-    return { data, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
   }
 
   async get(id: string, user?: AuthUser) {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, archivedAt: null },
-      include: { customer: true, lines: true, payments: true, salesOrder: true },
+      include: {
+        customer: true,
+        lines: true,
+        payments: true,
+        salesOrder: {
+          select: { id: true, number: true, status: true, externalOrderNumber: true },
+        },
+      },
     });
     if (!invoice) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Invoice not found.' });
     if (!assertCustomerOwns(user, invoice.customerId)) {
@@ -142,5 +167,26 @@ export class InvoicesService {
       },
       include: { lines: true, customer: true },
     });
+  }
+
+  /** Idempotent — skips when a non-cancelled invoice already exists for the SO. */
+  async ensureFromSalesOrder(salesOrderId: string, userId: string) {
+    const existing = await this.prisma.invoice.findFirst({
+      where: { salesOrderId, status: { not: InvoiceStatus.CANCELLED }, archivedAt: null },
+    });
+    if (existing) return existing;
+    try {
+      return await this.createFromSalesOrder(salesOrderId, userId);
+    } catch (err) {
+      if (err instanceof BadRequestException) {
+        const body = err.getResponse();
+        if (typeof body === 'object' && body && 'code' in body && body.code === 'INVOICE_EXISTS') {
+          return this.prisma.invoice.findFirstOrThrow({
+            where: { salesOrderId, status: { not: InvoiceStatus.CANCELLED }, archivedAt: null },
+          });
+        }
+      }
+      throw err;
+    }
   }
 }

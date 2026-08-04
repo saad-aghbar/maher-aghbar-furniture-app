@@ -3,7 +3,7 @@
 import { BrandMark } from '@maher/ui';
 import { LoginForm } from '@/components/login-form';
 import { LanguageSwitcher } from '@/components/language-switcher';
-import { FileText, Package, Receipt } from 'lucide-react';
+import { FileText, Package, Receipt, Sparkles } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 export default function LoginPage() {
@@ -38,21 +38,44 @@ export default function LoginPage() {
             backgroundSize: '56px 56px',
           }}
         />
-        <div className="relative flex items-center gap-3">
-          <BrandMark />
+        <div
+          className="maher-animate-spotlight pointer-events-none absolute -start-10 top-8 h-52 w-52 rounded-full bg-[var(--maher-brand)]/30 blur-3xl"
+          aria-hidden
+        />
+        <div
+          className="maher-animate-drift pointer-events-none absolute -end-8 bottom-10 h-44 w-44 rounded-full bg-[var(--maher-accent)]/35 blur-3xl"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute end-16 top-24 h-2 w-2 rounded-full bg-white/50 maher-animate-orbit"
+          aria-hidden
+        />
+
+        <div className="relative flex items-center gap-3 maher-animate-rise">
+          <BrandMark size="lg" animated />
           <span className="text-base font-semibold">{tCommon('appNameFull')}</span>
         </div>
 
         <div className="relative max-w-md">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/55">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-white/85 backdrop-blur-sm maher-animate-fade">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--maher-brand)] opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--maher-brand)]" />
+            </span>
             {tCommon('portalCustomer')}
+            <Sparkles className="h-3.5 w-3.5 text-white/70" />
+          </div>
+          <h2 className="maher-animate-rise text-4xl font-bold leading-tight">{t('loginTitle')}</h2>
+          <p
+            className="maher-animate-rise mt-4 text-base leading-relaxed text-white/75"
+            style={{ animationDelay: '80ms' }}
+          >
+            {t('loginSubtitle')}
           </p>
-          <h2 className="mt-3 text-4xl font-bold leading-tight">{t('loginTitle')}</h2>
-          <p className="mt-4 text-base leading-relaxed text-white/75">{t('loginSubtitle')}</p>
-          <ul className="mt-10 space-y-3">
+          <ul className="maher-auth-highlights mt-10 space-y-3">
             {highlights.map(({ icon: Icon, label }) => (
               <li key={label} className="flex items-center gap-3 text-sm text-white/85">
-                <span className="flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)] bg-white/10 ring-1 ring-inset ring-white/15">
+                <span className="flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)] bg-white/10 ring-1 ring-inset ring-white/15 transition-transform duration-300 hover:scale-110">
                   <Icon className="h-4 w-4" />
                 </span>
                 {label}
@@ -67,17 +90,24 @@ export default function LoginPage() {
       </div>
 
       <div className="flex items-center justify-center bg-background px-6 py-12">
-        <div className="w-full max-w-md">
+        <div className="maher-auth-panel w-full max-w-md">
           <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <BrandMark />
+            <BrandMark size="lg" animated />
             <div>
               <p className="text-base font-semibold text-text-primary">{tCommon('appName')}</p>
               <p className="text-xs text-text-tertiary">{tCommon('portalCustomer')}</p>
             </div>
           </div>
-          <div className="rounded-[var(--maher-radius-xl)] border border-border bg-surface p-8 shadow-elevated">
-            <h1 className="text-2xl font-bold text-text-primary">{t('login')}</h1>
-            <p className="mt-1.5 text-sm text-text-secondary">{t('unifiedLoginHint')}</p>
+          <div className="maher-sheen rounded-[var(--maher-radius-xl)] border border-border bg-surface p-8 shadow-elevated">
+            <h1 className="maher-animate-in-start text-2xl font-bold text-text-primary">
+              {t('login')}
+            </h1>
+            <p
+              className="maher-animate-in-start mt-1.5 text-sm text-text-secondary"
+              style={{ animationDelay: '60ms' }}
+            >
+              {t('unifiedLoginHint')}
+            </p>
             <div className="mt-6">
               <LoginForm />
             </div>

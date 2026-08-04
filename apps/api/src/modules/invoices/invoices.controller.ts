@@ -4,7 +4,7 @@ import { IsUUID } from 'class-validator';
 import { InvoicesService } from './invoices.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { PaginationDto } from '../../common/dto/pagination.dto';
+import { ListInvoicesDto } from './dto/invoice.dto';
 import type { AuthUser } from '@maher/types';
 
 class CreateInvoiceDto {
@@ -19,10 +19,10 @@ export class InvoicesController {
 
   @Get()
   @RequirePermissions('invoice.read')
-  list(@Query() query: PaginationDto, @CurrentUser() user: AuthUser) {
+  list(@Query() query: ListInvoicesDto, @CurrentUser() user: AuthUser) {
     return this.invoices.list({
       ...query,
-      customerId: user.customerId ?? undefined,
+      customerId: user.customerId ?? query.customerId,
     });
   }
 
@@ -35,6 +35,7 @@ export class InvoicesController {
   @Post()
   @RequirePermissions('invoice.create')
   create(@Body() dto: CreateInvoiceDto, @CurrentUser() user: AuthUser) {
-    return this.invoices.createFromSalesOrder(dto.salesOrderId, user.id);
+    // Idempotent: delivery/completion may already have auto-created the invoice.
+    return this.invoices.ensureFromSalesOrder(dto.salesOrderId, user.id);
   }
 }

@@ -6,7 +6,7 @@ import { PaymentMethod } from '@maher/database';
 import { PaymentsService } from './payments.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { PaginationDto } from '../../common/dto/pagination.dto';
+import { ListPaymentsDto } from './dto/payment.dto';
 import type { AuthUser } from '@maher/types';
 
 class RecordPaymentDto {
@@ -50,7 +50,7 @@ export class PaymentsController {
 
   @Get()
   @RequirePermissions('payment.read')
-  list(@Query() query: PaginationDto, @CurrentUser() user: AuthUser) {
+  list(@Query() query: ListPaymentsDto, @CurrentUser() user: AuthUser) {
     return this.payments.list(query, user);
   }
 

@@ -7,10 +7,11 @@ import { InvoiceStatus, PaymentMethod, Prisma } from '@maher/database';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
-import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
+import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { roundMoney } from '../../common/helpers/money.util';
 import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { NotificationsService } from '../notifications/notifications.service';
+import type { ListPaymentsDto } from './dto/payment.dto';
 
 @Injectable()
 export class PaymentsService {
@@ -20,10 +21,11 @@ export class PaymentsService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  async list(query: PaginationDto, user?: AuthUser) {
+  async list(query: ListPaymentsDto, user?: AuthUser) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
     const where: Prisma.PaymentWhereInput = {
       ...customerScopeFilter(user),
+      ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.q
         ? { OR: [{ number: { contains: query.q, mode: 'insensitive' } }] }
         : {}),

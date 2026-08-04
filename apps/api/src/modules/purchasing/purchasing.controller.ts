@@ -27,6 +27,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { roundMoney } from '../../common/helpers/money.util';
 import type { AuthUser } from '@maher/types';
+import { PurchasingService } from './purchasing.service';
 
 class PurchaseLineDto {
   @IsString()
@@ -96,6 +97,12 @@ class SupplierOfferDto {
   leadTimeDays?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  qualityScore?: number;
+
+  @IsOptional()
   @IsString()
   notes?: string;
 
@@ -110,6 +117,7 @@ export class PurchasingController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    private readonly purchasing: PurchasingService,
   ) {}
 
   @Get('purchase-requests')
@@ -238,6 +246,8 @@ export class PurchasingController {
         supplierId: dto.supplierId,
         unitPrice: roundMoney(dto.unitPrice),
         leadTimeDays: dto.leadTimeDays,
+        qualityScore:
+          dto.qualityScore != null ? roundMoney(dto.qualityScore) : undefined,
         notes: dto.notes,
         isSelected: Boolean(dto.isSelected),
       },
@@ -253,6 +263,43 @@ export class PurchasingController {
       },
     });
     return offer;
+  }
+
+  @Post('purchase-requests/:id/offers/:offerId/select')
+  @RequirePermissions('purchase-request.create')
+  async selectOffer(
+    @Param('id') id: string,
+    @Param('offerId') offerId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const offer = await this.prisma.supplierQuoteOffer.findFirst({
+      where: { id: offerId, purchaseRequestId: id },
+    });
+    if (!offer) {
+      throw new BadRequestException({
+        code: 'NOT_FOUND',
+        message: 'Offer not found on this purchase request.',
+      });
+    }
+    await this.prisma.supplierQuoteOffer.updateMany({
+      where: { purchaseRequestId: id },
+      data: { isSelected: false },
+    });
+    const selected = await this.prisma.supplierQuoteOffer.update({
+      where: { id: offerId },
+      data: { isSelected: true },
+      include: { supplier: true },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'purchase-request.select-offer',
+        entityType: 'PurchaseRequest',
+        entityId: id,
+        newValues: { offerId },
+      },
+    });
+    return selected;
   }
 
   @Post('purchase-requests/:id/convert')
@@ -276,13 +323,18 @@ export class PurchasingController {
     }
     const selected =
       pr.offers.find((o) => o.isSelected) ??
-      [...pr.offers].sort((a, b) => Number(a.unitPrice) - Number(b.unitPrice))[0];
+      [...pr.offers].sort((a, b) => {
+        const priceDiff = Number(a.unitPrice) - Number(b.unitPrice);
+        if (priceDiff !== 0) return priceDiff;
+        return Number(b.qualityScore ?? 0) - Number(a.qualityScore ?? 0);
+      })[0];
     if (!selected) {
       throw new BadRequestException({
         code: 'BAD_REQUEST',
         message: 'Add at least one supplier offer before converting.',
       });
     }
+    await this.purchasing.assertSupplierCertified(selected.supplierId);
     const selectedUnitPrice = Number(selected.unitPrice);
 
     const number = await this.sequences.next('PORD', 'PORD');
@@ -344,39 +396,13 @@ export class PurchasingController {
   @Post('purchase-requests/from-low-stock')
   @RequirePermissions('purchase-request.create')
   async createFromLowStock(@CurrentUser() user: AuthUser) {
-    const items = await this.prisma.inventoryItem.findMany({
-      where: { archivedAt: null },
-      include: { balances: true },
+    const created = await this.purchasing.createFromLowStock({
+      requestedById: user.id,
+      reason: 'AUTO_REORDER',
+      throwIfEmpty: true,
     });
-    const low = items.filter((item) => {
-      const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
-      return available <= Number(item.minStock);
-    });
-    if (!low.length) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'No low-stock items to order.',
-      });
-    }
-    const number = await this.sequences.next('PR', 'PR');
-    return this.prisma.purchaseRequest.create({
-      data: {
-        number,
-        requestedById: user.id,
-        reason: 'Auto-created from low stock',
-        status: PurchaseRequestStatus.SUBMITTED,
-        lines: {
-          create: low.map((item) => {
-            const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
-            const qty = Math.max(Number(item.minStock) * 2 - available, 1);
-            return {
-              description: item.nameEn || item.nameAr || item.sku,
-              quantity: roundMoney(qty),
-              inventoryItemId: item.id,
-            };
-          }),
-        },
-      },
+    return this.prisma.purchaseRequest.findUniqueOrThrow({
+      where: { id: created!.id },
       include: { lines: true },
     });
   }
@@ -419,6 +445,7 @@ export class PurchasingController {
         message: 'unitPrice is required on purchase order lines.',
       });
     }
+    await this.purchasing.assertSupplierCertified(dto.supplierId);
     const number = await this.sequences.next('PORD', 'PORD');
     const lines = dto.lines.map((l) => {
       const unitPrice = Number(l.unitPrice);
@@ -498,6 +525,7 @@ export class PurchasingController {
         message: 'Only approved purchase orders can be sent.',
       });
     }
+    await this.purchasing.assertSupplierCertified(existing.supplierId);
     const po = await this.prisma.purchaseOrder.update({
       where: { id },
       data: { status: PurchaseOrderStatus.SENT },
@@ -524,6 +552,10 @@ export class PurchasingController {
         lines: true,
         goodsReceipts: { include: { lines: true } },
         purchaseRequest: true,
+        supplierInvoices: {
+          where: { archivedAt: null },
+          select: { id: true, number: true, status: true, total: true },
+        },
       },
     });
   }

@@ -2,7 +2,7 @@
 
 import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
-import { apiFetch, ApiClientError } from '@/lib/api-client';
+import { apiFetch, apiUpload, apiUploadFromUrl, ApiClientError } from '@/lib/api-client';
 import { DELIVERY_STATUSES } from '@/lib/status-options';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
@@ -12,6 +12,8 @@ import {
   ErrorState,
   Input,
   Modal,
+  MotionSection,
+  PhotoAttachField,
   Select,
   Skeleton,
   StatusBadge,
@@ -43,6 +45,11 @@ interface DeliveryDetail {
   signatureData?: string | null;
   customer?: { name: string; phone?: string | null };
   driver?: { firstName?: string; lastName?: string } | null;
+  salesOrder?: {
+    id: string;
+    number: string;
+    externalOrderNumber?: string | null;
+  } | null;
   items?: DeliveryItem[];
 }
 
@@ -70,6 +77,7 @@ function canvasPoint(
 
 export default function DeliveryDetailPage({ params }: { params: { id: string } }) {
   const tc = useTranslations('catalog');
+  const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
   const tStatus = useTranslations('statuses');
   const queryClient = useQueryClient();
@@ -83,6 +91,8 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
   const [recipientName, setRecipientName] = useState('');
   const [failureReason, setFailureReason] = useState('');
   const [driverId, setDriverId] = useState('');
+  const [podPhotoDocId, setPodPhotoDocId] = useState<string | undefined>();
+  const [podPhotoBusy, setPodPhotoBusy] = useState(false);
 
   const detailQuery = useQuery({
     queryKey: ['delivery', params.id],
@@ -102,7 +112,7 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
       }>('/api/v1/users?pageSize=100').then((r) =>
         (r.data ?? []).filter((u) =>
           u.roles?.some((role) =>
-            ['DELIVERY_EMPLOYEE', 'WAREHOUSE_EMPLOYEE', 'PRODUCTION_SUPERVISOR'].includes(
+            ['PRODUCTION_WORKER'].includes(
               role.role.code,
             ),
           ),
@@ -178,27 +188,11 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
     }
     const canvas = canvasRef.current;
     const signatureData = canvas?.toDataURL('image/png');
-    let photoDocumentId: string | undefined;
-    const fileInput = document.getElementById('pod-photo-detail') as HTMLInputElement | null;
-    const file = fileInput?.files?.[0];
-    if (file) {
-      const form = new FormData();
-      form.append('file', file);
-      const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-      const res = await fetch(`${API}/api/v1/uploads?category=POD`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
-      if (!res.ok) throw new ApiClientError(tCommon('uploadFailed'), res.status);
-      const json = (await res.json()) as { document: { id: string } };
-      photoDocumentId = json.document.id;
-    }
     statusMutation.mutate({
       status: 'DELIVERED',
       recipientName: recipientName.trim(),
       signatureData,
-      photoDocumentId,
+      photoDocumentId: podPhotoDocId,
     });
   }
 
@@ -232,21 +226,34 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/deliveries"
         title={delivery.number}
         description={delivery.customer?.name}
-        actions={
-          <Link href="/deliveries" className="text-sm text-brand hover:underline">
-            {tc('backToList')}
-          </Link>
-        }
       />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
+      <MotionSection className="maher-form-section space-y-6" as="div">
       {formError && !podOpen && !failOpen ? <Alert variant="error">{formError}</Alert> : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={delivery.status} />
         <span className="text-sm text-text-secondary">{delivery.deliveryAddress}</span>
+        {delivery.salesOrder?.number ? (
+          <span className="text-sm text-text-secondary" dir="ltr">
+            {tSales('systemOrderNumber')}:{' '}
+            <Link
+              href={`/sales-orders/${delivery.salesOrder.id}`}
+              className="text-brand hover:underline"
+            >
+              {delivery.salesOrder.number}
+            </Link>
+          </span>
+        ) : null}
+        {delivery.salesOrder?.externalOrderNumber ? (
+          <span className="text-sm text-text-secondary" dir="ltr">
+            {tSales('dealerOrderNumber')}: {delivery.salesOrder.externalOrderNumber}
+          </span>
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -312,6 +319,7 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
             <Button
               onClick={() => {
                 setRecipientName(delivery.recipientName ?? '');
+                setPodPhotoDocId(undefined);
                 setFormError(null);
                 setPodOpen(true);
                 setTimeout(clearSignature, 50);
@@ -431,15 +439,44 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
               {tc('clearSignature')}
             </Button>
           </div>
-          <label className="block text-sm">
-            {tc('photoOptional')}
-            <input
-              id="pod-photo-detail"
-              type="file"
-              accept="image/*"
-              className="mt-1 block w-full text-sm"
-            />
-          </label>
+          <PhotoAttachField
+            label={tc('photoOptional')}
+            hint={tCommon('photoUrlHint')}
+            accept="image/*"
+            uploadLabel={tCommon('uploadFromDevice')}
+            uploadingLabel={tCommon('uploading')}
+            attachUrlLabel={tCommon('attachFromUrl')}
+            disabled={podPhotoBusy || statusMutation.isPending}
+            onUploadFile={async (file) => {
+              setPodPhotoBusy(true);
+              try {
+                const form = new FormData();
+                form.append('file', file);
+                const json = await apiUpload<{ document: { id: string } }>(
+                  '/api/v1/uploads?category=POD',
+                  form,
+                );
+                setPodPhotoDocId(json.document.id);
+              } finally {
+                setPodPhotoBusy(false);
+              }
+            }}
+            onAttachUrl={async (url) => {
+              setPodPhotoBusy(true);
+              try {
+                const json = await apiUploadFromUrl<{ document: { id: string } }>(
+                  '/api/v1/uploads/from-url?category=POD',
+                  { url },
+                );
+                setPodPhotoDocId(json.document.id);
+              } finally {
+                setPodPhotoBusy(false);
+              }
+            }}
+          />
+          {podPhotoDocId ? (
+            <p className="text-xs text-text-tertiary">{tCommon('saved')}</p>
+          ) : null}
         </div>
       </Modal>
 
@@ -476,6 +513,7 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
           />
         </div>
       </Modal>
+      </MotionSection>
     </div>
   );
 }

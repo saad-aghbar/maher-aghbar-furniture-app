@@ -20,18 +20,37 @@ export class ProductionService {
   ) {}
 
   async list(query: ListProductionOrdersDto, user?: AuthUser) {
+    const q = query.q?.trim();
+    const and: Prisma.ProductionOrderWhereInput[] = [];
+    if (query.customerId) {
+      and.push({
+        OR: [
+          { customerId: query.customerId },
+          { salesOrder: { customerId: query.customerId } },
+        ],
+      });
+    }
+    if (q) {
+      and.push({
+        OR: [
+          { number: { contains: q, mode: 'insensitive' } },
+          { productDescription: { contains: q, mode: 'insensitive' } },
+          { currentStageCode: { contains: q, mode: 'insensitive' } },
+          { salesOrder: { number: { contains: q, mode: 'insensitive' } } },
+          { product: { nameEn: { contains: q, mode: 'insensitive' } } },
+          { product: { nameAr: { contains: q, mode: 'insensitive' } } },
+          { product: { nameHe: { contains: q, mode: 'insensitive' } } },
+          { product: { sku: { contains: q, mode: 'insensitive' } } },
+          { salesOrder: { externalOrderNumber: { contains: q, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
     const where: Prisma.ProductionOrderWhereInput = {
       archivedAt: null,
       ...customerScopeFilter(user),
       ...(query.status ? { status: query.status } : {}),
-      ...(query.q
-        ? {
-            OR: [
-              { number: { contains: query.q, mode: 'insensitive' } },
-              { productDescription: { contains: query.q, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
+      ...(and.length ? { AND: and } : {}),
     };
 
     const [totalItems, data] = await this.prisma.$transaction([
@@ -39,7 +58,34 @@ export class ProductionService {
       this.prisma.productionOrder.findMany({
         where,
         include: {
-          salesOrder: { select: { id: true, number: true } },
+          salesOrder: {
+            select: {
+              id: true,
+              number: true,
+              externalOrderNumber: true,
+              customerId: true,
+              customer: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  nameAr: true,
+                  nameEn: true,
+                  nameHe: true,
+                },
+              },
+            },
+          },
+          product: {
+            select: {
+              id: true,
+              sku: true,
+              nameEn: true,
+              nameAr: true,
+              nameHe: true,
+              imageUrl: true,
+            },
+          },
           stages: {
             include: { stageDefinition: true },
             orderBy: { stageDefinition: { sortOrder: 'asc' } },
@@ -51,14 +97,72 @@ export class ProductionService {
       }),
     ]);
 
-    return { data, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    const orphanCustomerIds = [
+      ...new Set(
+        data
+          .filter((row) => row.customerId && !row.salesOrder?.customer)
+          .map((row) => row.customerId as string),
+      ),
+    ];
+    const orphanCustomers =
+      orphanCustomerIds.length > 0
+        ? await this.prisma.customer.findMany({
+            where: { id: { in: orphanCustomerIds } },
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              nameAr: true,
+              nameEn: true,
+              nameHe: true,
+            },
+          })
+        : [];
+    const orphanById = new Map(orphanCustomers.map((c) => [c.id, c]));
+
+    const enriched = data.map((row) => {
+      const byCode = row.currentStageCode
+        ? row.stages.find((s) => s.stageDefinition.code === row.currentStageCode)
+        : null;
+      const inProgress = row.stages.find((s) => s.status === 'IN_PROGRESS');
+      const stage = byCode ?? inProgress ?? null;
+      const def = stage?.stageDefinition;
+      const customer =
+        row.salesOrder?.customer ??
+        (row.customerId ? orphanById.get(row.customerId) ?? null : null);
+      return {
+        ...row,
+        customer,
+        imageUrl: row.product?.imageUrl ?? null,
+        currentStage: def
+          ? {
+              code: def.code,
+              nameEn: def.nameEn,
+              nameAr: def.nameAr,
+              nameHe: def.nameHe,
+            }
+          : row.currentStageCode
+            ? { code: row.currentStageCode, nameEn: row.currentStageCode, nameAr: row.currentStageCode, nameHe: null }
+            : null,
+      };
+    });
+
+    return { data: enriched, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
   }
 
   async getById(id: string, user?: AuthUser) {
     const order = await this.prisma.productionOrder.findFirst({
       where: { id, archivedAt: null },
       include: {
-        salesOrder: true,
+        salesOrder: {
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            externalOrderNumber: true,
+            requiredDeliveryDate: true,
+          },
+        },
         product: true,
         stages: {
           include: {
@@ -81,6 +185,18 @@ export class ProductionService {
             stageDefinition: true,
           },
           orderBy: { createdAt: 'asc' },
+        },
+        documents: {
+          where: { archivedAt: null },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            fileName: true,
+            mimeType: true,
+            category: true,
+            sizeBytes: true,
+            createdAt: true,
+          },
         },
       },
     });

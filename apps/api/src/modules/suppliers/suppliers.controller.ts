@@ -9,7 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
@@ -39,6 +39,8 @@ class SupplierDto {
   @IsOptional() @IsString() address?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) paymentTermsDays?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) leadTimeDays?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) rating?: number;
+  @IsOptional() @IsBoolean() isCertified?: boolean;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() status?: string;
 }
@@ -56,6 +58,8 @@ class UpdateSupplierDto {
   @IsOptional() @IsString() address?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) paymentTermsDays?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) leadTimeDays?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) rating?: number;
+  @IsOptional() @IsBoolean() isCertified?: boolean;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() status?: string;
 }
@@ -124,6 +128,8 @@ export class SuppliersController {
         address: dto.address,
         paymentTermsDays: dto.paymentTermsDays ?? 30,
         leadTimeDays: dto.leadTimeDays ?? 7,
+        rating: dto.rating,
+        isCertified: dto.isCertified ?? false,
         notes: dto.notes,
         status: dto.status ?? 'ACTIVE',
       },

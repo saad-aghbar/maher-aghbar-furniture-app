@@ -18,6 +18,16 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import type { AuthUser } from '@maher/types';
 
+class ListInventoryItemsDto extends PaginationDto {
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  categoryGroup?: string;
+}
+
 class CreateInventoryItemDto {
   @IsString()
   @MinLength(1)
@@ -63,6 +73,18 @@ class CreateInventoryItemDto {
 
   @IsOptional()
   @IsString()
+  materialType?: string;
+
+  @IsOptional()
+  @IsString()
+  size?: string;
+
+  @IsOptional()
+  @IsUUID()
+  preferredSupplierId?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
 }
 
@@ -104,6 +126,18 @@ class UpdateInventoryItemDto {
   @IsOptional()
   @IsString()
   color?: string;
+
+  @IsOptional()
+  @IsString()
+  materialType?: string;
+
+  @IsOptional()
+  @IsString()
+  size?: string;
+
+  @IsOptional()
+  @IsUUID()
+  preferredSupplierId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -187,6 +221,27 @@ class CreateCountDto {
   lines!: CountLineDto[];
 }
 
+class ScanCountDto {
+  @IsUUID()
+  warehouseId!: string;
+
+  @IsString()
+  @MinLength(1)
+  code!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  countedQty!: number;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  postImmediately?: boolean;
+}
+
 @ApiTags('inventory')
 @Controller('inventory')
 export class InventoryController {
@@ -194,7 +249,7 @@ export class InventoryController {
 
   @Get('items')
   @RequirePermissions('inventory.read')
-  list(@Query() query: PaginationDto) {
+  list(@Query() query: ListInventoryItemsDto) {
     return this.inventory.listItems(query);
   }
 
@@ -224,6 +279,12 @@ export class InventoryController {
   @RequirePermissions('inventory.read')
   byCode(@Param('code') code: string) {
     return this.inventory.findByCode(code);
+  }
+
+  @Get('items/:id')
+  @RequirePermissions('inventory.read')
+  getItem(@Param('id') id: string) {
+    return this.inventory.getItem(id);
   }
 
   @Get('warehouses')
@@ -278,6 +339,13 @@ export class InventoryController {
   @RequirePermissions('inventory.count')
   createCount(@Body() dto: CreateCountDto, @CurrentUser() user: AuthUser) {
     return this.inventory.createCount(dto, user.id);
+  }
+
+  /** Barcode / SKU cycle-count: create (and optionally post) a one-line count. */
+  @Post('counts/scan')
+  @RequirePermissions('inventory.count')
+  scanCount(@Body() dto: ScanCountDto, @CurrentUser() user: AuthUser) {
+    return this.inventory.scanCount(dto, user.id);
   }
 
   @Post('counts/:id/post')

@@ -7,7 +7,9 @@ import {
 import { Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
+import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
+import { InvoicesService } from '../invoices/invoices.service';
 import {
   AssignTaskDto,
   ListTasksDto,
@@ -20,6 +22,8 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pipeline: StagePipelineService,
+    private readonly invoices: InvoicesService,
+    private readonly storage: LocalStorageService,
   ) {}
 
   async list(query: ListTasksDto, userId: string, permissions: string[]) {
@@ -97,8 +101,21 @@ export class TasksService {
             number: true,
             status: true,
             productDescription: true,
+            quantity: true,
+            specifications: true,
             currentStageCode: true,
             progressPercent: true,
+            salesOrder: { select: { id: true, number: true } },
+            product: {
+              select: {
+                id: true,
+                sku: true,
+                nameAr: true,
+                nameEn: true,
+                nameHe: true,
+                imageUrl: true,
+              },
+            },
           },
         },
         stageDefinition: true,
@@ -121,16 +138,33 @@ export class TasksService {
       }
     }
 
-    const photos = await this.prisma.document.findMany({
+    const photoDocs = await this.prisma.document.findMany({
       where: {
         productionOrderId: task.productionOrderId,
         category: `TASK_PHOTO:${task.id}`,
         archivedAt: null,
       },
-      select: { id: true, fileName: true, createdAt: true },
+      select: { id: true, fileName: true, storageKey: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
-    return { ...task, photos };
+
+    const photos = photoDocs.map((doc) => {
+      const token = this.storage.createAccessToken(doc.storageKey, 3600);
+      return {
+        id: doc.id,
+        fileName: doc.fileName,
+        createdAt: doc.createdAt,
+        downloadPath: `/api/v1/uploads/download?token=${token}`,
+      };
+    });
+
+    return {
+      ...task,
+      photos,
+      productImageUrl: task.productionOrder.product?.imageUrl?.trim() || null,
+      factoryOrderNumber: task.productionOrder.number,
+      salesOrderNumber: task.productionOrder.salesOrder?.number ?? null,
+    };
   }
 
   private async closeOpenTimeEntries(
@@ -192,7 +226,40 @@ export class TasksService {
   }
 
   async assign(id: string, dto: AssignTaskDto) {
-    await this.getTask(id);
+    const task = await this.getTask(id);
+    const orderStatus = task.productionOrder?.status;
+    if (orderStatus === 'COMPLETED' || orderStatus === 'CANCELLED') {
+      throw new BadRequestException({
+        code: 'ASSIGN_LOCKED',
+        message: 'Cannot assign workers on a completed or cancelled production order.',
+      });
+    }
+
+    const lockedTaskStatuses = [
+      'COMPLETED',
+      'CANCELLED',
+      'IN_PROGRESS',
+      'PAUSED',
+      'READY_FOR_INSPECTION',
+      'BLOCKED',
+    ];
+    const lockedStageStatuses = [
+      'COMPLETED',
+      'SKIPPED',
+      'IN_PROGRESS',
+      'PAUSED',
+      'READY_FOR_INSPECTION',
+      'BLOCKED',
+    ];
+    const stageStatus = task.stageInstance?.status;
+    if (lockedTaskStatuses.includes(task.status) || (stageStatus && lockedStageStatuses.includes(stageStatus))) {
+      throw new BadRequestException({
+        code: 'ASSIGN_LOCKED',
+        message:
+          'Cannot reassign this stage — it is already in progress, completed, or otherwise locked.',
+      });
+    }
+
     const employee = await this.prisma.user.findFirst({
       where: { id: dto.employeeId, isActive: true, archivedAt: null },
     });
@@ -424,6 +491,10 @@ export class TasksService {
 
     await this.assertPrereqsMet(task);
 
+    if (['READY', 'NOT_STARTED', 'PAUSED'].includes(task.status)) {
+      await this.start(id, userId, permissions);
+    }
+
     if (task.stageDefinition?.requiresPhotos) {
       const linked = dto?.photoDocumentIds?.length
         ? dto.photoDocumentIds.length
@@ -451,7 +522,18 @@ export class TasksService {
           data: {
             productionOrderId: task.productionOrderId,
             category: `TASK_PHOTO:${id}`,
+            // Dealers may view stage photos on their order tracking page.
+            visibility: 'CUSTOMER_VISIBLE',
           },
+        });
+      } else if (task.stageDefinition?.requiresPhotos) {
+        await tx.document.updateMany({
+          where: {
+            productionOrderId: task.productionOrderId,
+            category: `TASK_PHOTO:${id}`,
+            archivedAt: null,
+          },
+          data: { visibility: 'CUSTOMER_VISIBLE' },
         });
       }
 
@@ -469,6 +551,15 @@ export class TasksService {
         },
       });
       await this.pipeline.onTaskComplete(task.productionOrderId, task.stageInstanceId, tx);
+      return updated;
+    }).then(async (updated) => {
+      const po = await this.prisma.productionOrder.findUnique({
+        where: { id: task.productionOrderId },
+        select: { status: true, salesOrderId: true },
+      });
+      if (po?.status === 'COMPLETED' && po.salesOrderId) {
+        await this.invoices.ensureFromSalesOrder(po.salesOrderId, userId).catch(() => {});
+      }
       return updated;
     });
   }

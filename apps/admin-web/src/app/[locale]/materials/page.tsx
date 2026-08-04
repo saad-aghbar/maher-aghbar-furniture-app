@@ -11,7 +11,6 @@ interface Material {
   sku: string;
   nameAr: string;
   nameEn: string;
-  unit: string;
   category: string;
   color?: string | null;
   minStock: string | number;
@@ -23,13 +22,6 @@ interface ColorRef {
   code: string;
   nameAr: string;
   nameEn: string;
-}
-
-interface Unit {
-  id: string;
-  code: string;
-  nameEn: string;
-  nameAr: string;
 }
 
 const CATEGORIES = [
@@ -57,11 +49,6 @@ export default function MaterialsPage() {
       apiFetch<{ data: ColorRef[] }>('/api/v1/colors?pageSize=100').then((r) => r.data),
   });
 
-  const unitsQuery = useQuery({
-    queryKey: ['units-pick'],
-    queryFn: () => apiFetch<{ data: Unit[] }>('/api/v1/units').then((r) => r.data),
-  });
-
   const categoryLabel = (code: string) => {
     try {
       return t(`materialCategories.${code}` as 'materialCategories.WOOD');
@@ -78,14 +65,6 @@ export default function MaterialsPage() {
     })),
   ];
 
-  const unitOptions =
-    (unitsQuery.data ?? []).length > 0
-      ? (unitsQuery.data ?? []).map((u) => ({
-          value: u.code,
-          label: `${u.code} — ${localizedName(locale, u)}`,
-        }))
-      : [{ value: 'pcs', label: 'pcs' }];
-
   return (
     <MasterCrudPage<Material>
       title={t('materials')}
@@ -101,7 +80,6 @@ export default function MaterialsPage() {
         { key: 'sku', header: t('sku'), render: (r) => <span dir="ltr">{r.sku}</span> },
         { key: 'name', header: t('name'), render: (r) => localizedName(locale, r) },
         { key: 'category', header: t('category'), render: (r) => categoryLabel(r.category) },
-        { key: 'unit', header: t('unit'), render: (r) => r.unit },
         { key: 'color', header: t('color'), render: (r) => r.color ?? '—' },
         {
           key: 'min',
@@ -125,13 +103,6 @@ export default function MaterialsPage() {
           options: CATEGORIES.map((c) => ({ value: c, label: categoryLabel(c) })),
         },
         {
-          name: 'unit',
-          label: t('unit'),
-          type: 'select',
-          required: true,
-          options: unitOptions,
-        },
-        {
           name: 'color',
           label: t('color'),
           type: 'select',
@@ -145,7 +116,6 @@ export default function MaterialsPage() {
         nameEn: r.nameEn,
         nameAr: r.nameAr,
         category: r.category,
-        unit: r.unit,
         color: r.color ?? '',
         minStock: Number(r.minStock),
         isActive: r.isActive,
@@ -155,7 +125,7 @@ export default function MaterialsPage() {
         nameEn: String(form.nameEn).trim(),
         nameAr: String(form.nameAr).trim(),
         category: String(form.category || 'OTHER'),
-        unit: String(form.unit).trim(),
+        unit: 'pcs',
         color: String(form.color ?? '').trim() || undefined,
         minStock: Number(form.minStock),
         isActive: Boolean(form.isActive),

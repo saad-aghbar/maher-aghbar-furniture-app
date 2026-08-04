@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
 import type { AuthUser } from '@maher/types';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ListSalesOrdersDto } from './dto/sales-order.dto';
+import { ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
 import { SalesOrdersService } from './sales-orders.service';
 
 class ReasonDto {
@@ -28,6 +28,16 @@ export class SalesOrdersController {
   @Get(':id')
   getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesOrders.getById(id, user);
+  }
+
+  @RequirePermissions('sales-order.update')
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateSalesOrderDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesOrders.update(id, dto, user);
   }
 
   @RequirePermissions('sales-order.update')

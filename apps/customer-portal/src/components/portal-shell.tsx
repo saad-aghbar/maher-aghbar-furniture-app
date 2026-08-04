@@ -3,12 +3,11 @@
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
-import { BrandMark, cn } from '@maher/ui';
+import { BrandMark, cn, isNavItemActive, useHeaderOverDark } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
   ChevronDown,
-  ClipboardList,
   FileText,
   FolderOpen,
   LayoutDashboard,
@@ -16,26 +15,26 @@ import {
   Package,
   Receipt,
   Scroll,
-  ScrollText,
+  ShoppingBag,
   SquarePen,
-  Truck,
+  Undo2,
   User,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from './language-switcher';
 
 const items = [
   { href: '/dashboard', key: 'dashboard', icon: LayoutDashboard },
-  { href: '/quotations/request', key: 'requestQuote', icon: SquarePen },
-  { href: '/quotations', key: 'myQuotes', icon: FileText },
-  { href: '/orders', key: 'orders', icon: Package },
-  { href: '/contracts', key: 'contracts', icon: ScrollText },
-  { href: '/deliveries', key: 'deliveries', icon: Truck },
+  { href: '/catalog', key: 'catalog', icon: ShoppingBag },
+  { href: '/orders/new', key: 'createOrder', icon: SquarePen },
+  { href: '/orders', key: 'myOrders', icon: Package },
   { href: '/invoices', key: 'invoices', icon: Receipt },
   { href: '/statement', key: 'statement', icon: Scroll },
+  { href: '/contracts', key: 'contracts', icon: FileText },
   { href: '/documents', key: 'documents', icon: FolderOpen },
-  { href: '/requests', key: 'rfqs', icon: ClipboardList },
+  { href: '/returns', key: 'returns', icon: Undo2 },
+  { href: '/profile', key: 'profile', icon: User },
 ] as const;
 
 interface NotificationItem {
@@ -51,6 +50,8 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const overDark = useHeaderOverDark(headerRef, pathname);
 
   const me = useQuery({
     queryKey: ['auth-me'],
@@ -87,6 +88,8 @@ export function PortalShell({ children }: { children: ReactNode }) {
     router.refresh();
   }
 
+  const navHrefs = useMemo(() => items.map((item) => item.href), []);
+
   const initials = (me.data?.name ?? '')
     .split(' ')
     .filter(Boolean)
@@ -96,27 +99,51 @@ export function PortalShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-surface/85 backdrop-blur-md">
+      <header
+        ref={headerRef}
+        data-header-tone={overDark ? 'on-dark' : 'on-light'}
+        className={cn(
+          'sticky top-0 z-[1100] border-b',
+          overDark ? 'border-white/10' : 'border-border',
+        )}
+      >
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
           <div className="group flex min-w-0 items-center gap-3">
             <span className="transition-transform duration-500 ease-out group-hover:rotate-6 group-hover:scale-110">
-              <BrandMark />
+              <BrandMark animated />
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold leading-tight text-text-primary">
+              <p
+                className={cn(
+                  'maher-header-fg truncate text-sm font-bold leading-tight',
+                  overDark ? 'text-white' : 'text-text-primary',
+                )}
+              >
                 {tCommon('appName')}
               </p>
-              <p className="text-xs text-text-tertiary">{tCommon('portalCustomer')}</p>
+              <p
+                className={cn(
+                  'maher-header-fg-muted text-xs',
+                  overDark ? 'text-white/70' : 'text-text-tertiary',
+                )}
+              >
+                {tCommon('portalCustomer')}
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <LanguageSwitcher className="hidden sm:block" />
+            <LanguageSwitcher className="hidden sm:block" inverted={overDark} />
 
             <Link
               href="/notifications"
               aria-label={t('notifications')}
-              className="maher-press group relative flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)] text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+              className={cn(
+                'maher-header-icon-btn maher-press group relative flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)]',
+                overDark
+                  ? 'text-white hover:bg-white/10 hover:text-white'
+                  : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+              )}
             >
               <Bell className="h-[18px] w-[18px] group-hover:animate-[maher-shake_600ms_ease-in-out]" />
               {unread > 0 ? (
@@ -138,20 +165,28 @@ export function PortalShell({ children }: { children: ReactNode }) {
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 className={cn(
-                  'maher-press group flex items-center gap-2 rounded-[var(--maher-radius-md)] py-1 ps-1 pe-2 hover:bg-surface-muted',
-                  menuOpen && 'bg-surface-muted',
+                  'maher-press group flex items-center gap-2 rounded-[var(--maher-radius-md)] py-1 ps-1 pe-2',
+                  overDark
+                    ? cn('hover:bg-white/10', menuOpen && 'bg-white/10')
+                    : cn('hover:bg-surface-muted', menuOpen && 'bg-surface-muted'),
                 )}
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand transition-transform duration-300 ease-out group-hover:scale-105">
                   {initials || <User className="h-4 w-4" />}
                 </span>
-                <span className="hidden max-w-[9rem] truncate text-sm font-medium text-text-primary md:block">
+                <span
+                  className={cn(
+                    'maher-header-fg hidden max-w-[9rem] truncate text-sm font-medium md:block',
+                    overDark ? 'text-white' : 'text-text-primary',
+                  )}
+                >
                   {me.data?.name ?? ''}
                 </span>
                 <ChevronDown
                   className={cn(
-                    'h-4 w-4 text-text-tertiary transition-transform duration-300 ease-out',
-                    menuOpen && 'rotate-180 text-brand',
+                    'maher-header-fg-muted h-4 w-4 transition-transform duration-300 ease-out',
+                    overDark ? 'text-white/70' : 'text-text-tertiary',
+                    menuOpen && 'rotate-180 !text-brand',
                   )}
                 />
               </button>
@@ -159,17 +194,28 @@ export function PortalShell({ children }: { children: ReactNode }) {
               {menuOpen ? (
                 <div
                   role="menu"
-                  className="maher-animate-pop absolute end-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-[var(--maher-radius-lg)] border border-border bg-surface shadow-float"
+                  className="maher-animate-pop absolute end-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-[var(--maher-radius-lg)] border border-border bg-surface text-text-primary shadow-float"
                 >
                   <div className="border-b border-border px-4 py-3">
                     <p className="truncate text-sm font-semibold text-text-primary">
                       {me.data?.name}
                     </p>
-                    <p className="truncate text-xs text-text-secondary">{me.data?.email}</p>
+                    <p className="truncate text-xs text-text-secondary">
+                      {me.data?.username ?? me.data?.email}
+                    </p>
                   </div>
                   <div className="border-b border-border px-3 py-2 sm:hidden">
                     <LanguageSwitcher />
                   </div>
+                  <Link
+                    href="/profile"
+                    role="menuitem"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+                  >
+                    <FileText className="h-4 w-4" />
+                    {t('profile')}
+                  </Link>
                   <button
                     type="button"
                     role="menuitem"
@@ -185,16 +231,9 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-3 pb-2">
+        <nav className="maher-stagger mx-auto flex max-w-6xl gap-1 overflow-x-auto px-3 pb-2">
           {items.map((item) => {
-            const active =
-              pathname === item.href ||
-              (item.href !== '/quotations' &&
-                item.href !== '/dashboard' &&
-                pathname.startsWith(`${item.href}/`)) ||
-              (item.href === '/quotations' &&
-                pathname.startsWith('/quotations') &&
-                !pathname.startsWith('/quotations/request'));
+            const active = isNavItemActive(pathname, item.href, navHrefs);
             const Icon = item.icon;
             return (
               <Link
@@ -202,10 +241,12 @@ export function PortalShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'maher-press group flex items-center gap-2 whitespace-nowrap rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium',
+                  'maher-nav-item maher-press group flex items-center gap-2 whitespace-nowrap rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium',
                   active
                     ? 'bg-brand-soft text-brand'
-                    : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+                    : overDark
+                      ? 'text-white hover:bg-white/10 hover:text-white'
+                      : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
                 )}
               >
                 <Icon className="h-4 w-4 transition-transform duration-300 ease-out group-hover:scale-110" />

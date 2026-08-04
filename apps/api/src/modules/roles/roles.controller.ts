@@ -18,11 +18,7 @@ import { RequireAnyPermissions, RequirePermissions } from '../../common/decorato
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '@maher/types';
 
-const PROTECTED_ROLES = new Set([
-  'SYSTEM_ADMINISTRATOR',
-  'CUSTOMER',
-  'GENERAL_MANAGER',
-]);
+const PROTECTED_ROLES = new Set(['SYSTEM_ADMINISTRATOR', 'CUSTOMER', 'PRODUCTION_WORKER']);
 
 class CreateRoleDto {
   @IsString() @MinLength(2) code!: string;

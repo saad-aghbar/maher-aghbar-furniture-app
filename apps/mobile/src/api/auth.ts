@@ -9,8 +9,7 @@ export type MobileAuthResponse = {
 };
 
 export async function loginWithPassword(input: {
-  email?: string;
-  phone?: string;
+  username: string;
   password: string;
 }): Promise<AuthUser> {
   const data = await apiFetch<MobileAuthResponse>('/auth/login', {

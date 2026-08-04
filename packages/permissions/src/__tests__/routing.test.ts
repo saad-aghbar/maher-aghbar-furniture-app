@@ -8,6 +8,7 @@ import type { AuthUser } from '@maher/types';
 
 const base: AuthUser = {
   id: '1',
+  username: 'test',
   email: 'a@b.c',
   name: 'Test',
   roles: [],
@@ -25,7 +26,7 @@ describe('post-login routing', () => {
     expect(resolveAppSurface(user)).toBe('customer');
     expect(resolveWebHomePath(user)).toBe('/dashboard');
     expect(resolveHomePersona(user)).toBe('customer');
-    expect(resolveMobileHomeHref(user)).toBe('/(app)');
+    expect(resolveMobileHomeHref(user)).toBe('/(app)/customer');
   });
 
   it('sends production workers to the employee portal', () => {
@@ -34,8 +35,9 @@ describe('post-login routing', () => {
       permissions: ['production-task.update-own', 'production-task.complete', 'notification.read'],
     };
     expect(resolveAppSurface(user)).toBe('employee');
-    expect(resolveWebHomePath(user)).toBe('/tasks');
+    expect(resolveWebHomePath(user)).toBe('/dashboard');
     expect(resolveHomePersona(user)).toBe('production_worker');
+    expect(resolveMobileHomeHref(user)).toBe('/(app)/employee');
   });
 
   it('sends sales/admin to the admin portal', () => {
@@ -46,5 +48,6 @@ describe('post-login routing', () => {
     expect(resolveAppSurface(user)).toBe('admin');
     expect(resolveWebHomePath(user)).toBe('/dashboard');
     expect(resolveHomePersona(user)).toBe('sales');
+    expect(resolveMobileHomeHref(user)).toBe('/(app)/admin');
   });
 });

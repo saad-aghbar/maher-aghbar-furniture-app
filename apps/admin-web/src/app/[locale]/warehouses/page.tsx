@@ -1,6 +1,7 @@
 'use client';
 
 import { MasterCrudPage } from '@/components/admin/master-crud-page';
+import { StatusBadge } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useLocale, useTranslations } from 'next-intl';
 
@@ -13,42 +14,51 @@ interface Warehouse {
   isActive: boolean;
 }
 
+const WAREHOUSE_TYPES = [
+  { value: 'RAW', labelKey: 'warehouseTypeRaw' as const },
+  { value: 'SEMI', labelKey: 'warehouseTypeSemi' as const },
+  { value: 'FINISHED', labelKey: 'warehouseTypeFinished' as const },
+];
+
 export default function WarehousesPage() {
   const t = useTranslations('catalog');
+  const ti = useTranslations('inventory');
+  const tNav = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const locale = useLocale();
 
+  const typeLabel = (type: string) => {
+    const found = WAREHOUSE_TYPES.find((t) => t.value === type);
+    return found ? ti(found.labelKey) : type;
+  };
+
   return (
     <MasterCrudPage<Warehouse>
-      title={t('warehouses')}
+      title={tNav('warehouses')}
       queryKey="warehouses"
       listPath="/api/v1/warehouses"
       createPath="/api/v1/warehouses"
       patchPath={(id) => `/api/v1/warehouses/${id}`}
       activatePath={(id) => `/api/v1/warehouses/${id}/activate`}
       deactivatePath={(id) => `/api/v1/warehouses/${id}/deactivate`}
-      deletePath={(id) => `/api/v1/warehouses/${id}`}
-      emptyTitle={t('noWarehouses')}
+      emptyTitle={ti('noWarehouses')}
       activeField="isActive"
       columns={[
-        { key: 'code', header: t('code'), render: (r) => r.code },
-        { key: 'name', header: t('name'), render: (r) => localizedName(locale, r) },
+        { key: 'code', header: t('code'), render: (r) => <span dir="ltr">{r.code}</span> },
         {
-          key: 'type',
-          header: t('type'),
-          render: (r) =>
-            r.type === 'RAW'
-              ? t('typeRaw')
-              : r.type === 'SEMI'
-                ? t('typeSemi')
-                : r.type === 'FINISHED'
-                  ? t('typeFinished')
-                  : r.type,
+          key: 'name',
+          header: t('name'),
+          render: (r) => localizedName(locale, r),
         },
         {
-          key: 'active',
-          header: t('active'),
-          render: (r) => (r.isActive ? tCommon('yes') : tCommon('no')),
+          key: 'type',
+          header: ti('warehouseType'),
+          render: (r) => typeLabel(r.type),
+        },
+        {
+          key: 'status',
+          header: tCommon('status'),
+          render: (r) => <StatusBadge status={r.isActive ? 'ACTIVE' : 'INACTIVE'} />,
         },
       ]}
       fields={[
@@ -57,22 +67,26 @@ export default function WarehousesPage() {
         { name: 'nameAr', label: t('nameAr'), required: true },
         {
           name: 'type',
-          label: t('type'),
+          label: ti('warehouseType'),
           type: 'select',
-          options: [
-            { value: 'RAW', label: t('typeRaw') },
-            { value: 'SEMI', label: t('typeSemi') },
-            { value: 'FINISHED', label: t('typeFinished') },
-          ],
+          required: true,
+          options: WAREHOUSE_TYPES.map((wt) => ({
+            value: wt.value,
+            label: ti(wt.labelKey),
+          })),
         },
-        { name: 'isActive', label: t('active'), type: 'checkbox' },
       ]}
       mapRowToForm={(r) => ({
         code: r.code,
         nameEn: r.nameEn,
         nameAr: r.nameAr,
-        type: r.type,
-        isActive: r.isActive,
+        type: r.type || 'RAW',
+      })}
+      buildPayload={(form) => ({
+        code: String(form.code).trim(),
+        nameEn: String(form.nameEn).trim(),
+        nameAr: String(form.nameAr).trim(),
+        type: String(form.type || 'RAW'),
       })}
     />
   );

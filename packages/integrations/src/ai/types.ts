@@ -7,11 +7,25 @@ export interface ExtractedField {
   isMissing?: boolean;
 }
 
+/** Structured line item extracted from RFQ documents (supports multi-item orders). */
+export interface ExtractedLineItem {
+  productName: string;
+  quantity?: string | null;
+  width?: string | null;
+  height?: string | null;
+  depth?: string | null;
+  fabricType?: string | null;
+  material?: string | null;
+  category?: string | null;
+  notes?: string | null;
+}
+
 export interface ExtractionResult {
   originalText: string;
   translatedText: string;
   detectedLanguage: SupportedLocale;
   fields: ExtractedField[];
+  items?: ExtractedLineItem[];
   provider: string;
 }
 
@@ -23,7 +37,10 @@ export interface TranslateProvider {
 
 export interface ExtractionProvider {
   readonly name: string;
-  extractStructured(text: string, opts?: { customerId?: string }): Promise<ExtractionResult>;
+  extractStructured(
+    text: string,
+    opts?: { customerId?: string; targetLanguage?: SupportedLocale },
+  ): Promise<ExtractionResult>;
 }
 
 export interface AiProviders {

@@ -17,10 +17,12 @@ type LocaleCode = (typeof LOCALES)[number]['code'];
 export interface LanguageSwitcherProps {
   /** Pins the control to the top corner of the viewport (used on the login screens). */
   floating?: boolean;
+  /** Light chrome for use over dark frosted headers. */
+  inverted?: boolean;
   className?: string;
 }
 
-export function LanguageSwitcher({ floating, className }: LanguageSwitcherProps) {
+export function LanguageSwitcher({ floating, inverted, className }: LanguageSwitcherProps) {
   const t = useTranslations('navigation');
   const locale = useLocale();
   const pathname = usePathname();
@@ -71,11 +73,15 @@ export function LanguageSwitcher({ floating, className }: LanguageSwitcherProps)
         aria-label={t('language')}
         title={t('language')}
         className={cn(
-          'maher-press group flex h-10 items-center gap-2 rounded-full border bg-surface/80 px-3.5 text-sm font-semibold tracking-[0.08em] shadow-card backdrop-blur-md',
+          'maher-lang-switch maher-press group flex h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold tracking-[0.08em] shadow-card backdrop-blur-md transition-colors duration-200',
           'hover:-translate-y-0.5 hover:shadow-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40',
-          open
-            ? 'border-brand/50 text-text-primary shadow-elevated'
-            : 'border-border text-text-secondary hover:border-brand/40 hover:text-text-primary',
+          inverted
+            ? open
+              ? 'border-white/40 bg-white/15 text-white shadow-elevated'
+              : 'border-white/25 bg-white/10 text-white hover:border-white/40 hover:bg-white/15'
+            : open
+              ? 'border-brand/50 bg-white/80 text-text-primary shadow-elevated'
+              : 'border-border bg-white/80 text-text-secondary hover:border-brand/40 hover:text-text-primary',
         )}
       >
         <Globe

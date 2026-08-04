@@ -41,4 +41,35 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return res.json() as Promise<T>;
 }
 
+/** Multipart upload (do not set Content-Type — browser sets boundary). */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  if (!res.ok) {
+    let body: ApiError | undefined;
+    try {
+      const json = (await res.json()) as { error?: ApiError } & ApiError;
+      body = json.error ?? json;
+    } catch {
+      /* empty */
+    }
+    throw new ApiClientError(body?.message ?? `Upload failed (${res.status})`, res.status, body);
+  }
+  return res.json() as Promise<T>;
+}
+
+/** Download a remote URL into storage (server-side fetch). */
+export async function apiUploadFromUrl<T>(
+  path: string,
+  body: { url: string; fileName?: string },
+): Promise<T> {
+  return apiFetch<T>(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export { API_URL };

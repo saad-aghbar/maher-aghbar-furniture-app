@@ -8,7 +8,7 @@ import {
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
 import { PageHeader } from '@/components/admin/page-header';
 import { Link, useRouter } from '@/i18n/navigation';
-import { apiFetch, API_URL } from '@/lib/api-client';
+import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
   Alert,
@@ -16,20 +16,23 @@ import {
   Card,
   ErrorState,
   Input,
+  PhotoAttachField,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
   TextArea,
+  MotionSection,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 interface RequestItem {
   id: string;
@@ -49,6 +52,7 @@ interface RequestDetail {
   status: string;
   source?: string;
   projectName?: string | null;
+  externalOrderNumber?: string | null;
   contactName?: string | null;
   deliveryAddress?: string | null;
   notes?: string | null;
@@ -70,16 +74,17 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
   const locale = useLocale();
   const tc = useTranslations('catalog');
   const tq = useTranslations('quotations');
+  const tSales = useTranslations('sales');
   const tNav = useTranslations('navigation');
   const tStatus = useTranslations('statuses');
   const tCommon = useTranslations('common');
   const router = useRouter();
   const qc = useQueryClient();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [internalNotes, setInternalNotes] = useState('');
   const [projectName, setProjectName] = useState('');
+  const [externalOrderNumber, setExternalOrderNumber] = useState('');
   const [draftLines, setDraftLines] = useState<LineItemDraft[]>([]);
   const [needsInfoOpen, setNeedsInfoOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
@@ -102,6 +107,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
       const r = await apiFetch<RequestDetail>(`/api/v1/requests/${params.id}`);
       setInternalNotes(r.internalNotes ?? '');
       setProjectName(r.projectName ?? '');
+      setExternalOrderNumber(r.externalOrderNumber ?? '');
       setDraftLines(
         (r.items ?? []).map((item) =>
           emptyLineItem({
@@ -162,6 +168,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
         body: JSON.stringify({
           internalNotes: internalNotes.trim() || undefined,
           projectName: projectName.trim() || undefined,
+          externalOrderNumber: externalOrderNumber.trim() || undefined,
           ...(items ? { items } : {}),
         }),
       });
@@ -189,7 +196,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
             description: item.productName,
             quantity: Number(item.quantity),
             unitPrice: 0,
-            unit: item.unit ?? 'pcs',
+            unit: 'pcs',
             material: item.material ?? undefined,
             fabric: item.fabric ?? undefined,
             color: item.color ?? undefined,
@@ -204,21 +211,20 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async (args: { file?: File; url?: string }) => {
+      const qs = `category=RFQ_ATTACHMENT&requestId=${params.id}`;
+      if (args.url) {
+        return apiUploadFromUrl(`/api/v1/uploads/from-url?${qs}`, { url: args.url });
+      }
+      if (!args.file) throw new Error(tCommon('required'));
       const form = new FormData();
-      form.append('file', file);
-      const res = await fetch(
-        `${API_URL}/api/v1/uploads?category=RFQ_ATTACHMENT&requestId=${params.id}`,
-        { method: 'POST', credentials: 'include', body: form },
-      );
-      if (!res.ok) throw new Error(tCommon('uploadFailed'));
-      return res.json();
+      form.append('file', args.file);
+      return apiUpload(`/api/v1/uploads?${qs}`, form);
     },
     onSuccess: async () => {
       setError(null);
       setMessage(tc('documentUploaded'));
       await qc.invalidateQueries({ queryKey: ['admin-rfq', params.id] });
-      if (fileRef.current) fileRef.current.value = '';
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -252,6 +258,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/orders"
         title={data.number}
         description={
           data.customer
@@ -260,11 +267,6 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/requests">
-              <Button variant="ghost" size="sm">
-                {tCommon('back')}
-              </Button>
-            </Link>
             <StatusBadge status={data.status} />
           </div>
         }
@@ -272,8 +274,24 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
       {message ? <Alert variant="success">{message}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
+      <div className="maher-stagger space-y-6">
+      <MotionSection className="maher-form-section" as="div">
       <Card title={tCommon('details')}>
         <dl className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-sm text-[var(--maher-text-secondary)]">{tSales('systemOrderNumber')}</dt>
+            <dd className="font-medium" dir="ltr">
+              {data.number}
+            </dd>
+          </div>
+          <div>
+            <Input
+              label={tSales('dealerOrderNumber')}
+              value={externalOrderNumber}
+              onChange={(e) => setExternalOrderNumber(e.target.value)}
+              dir="ltr"
+            />
+          </div>
           <div>
             <dt className="text-sm text-[var(--maher-text-secondary)]">{tc('source')}</dt>
             <dd className="font-medium">{data.source ? sourceLabel(data.source) : '—'}</dd>
@@ -300,7 +318,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
             />
           </div>
         </dl>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="maher-detail-sticky-actions mt-4 flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => saveMutation.mutate()} loading={saveMutation.isPending}>
             {tCommon('save')}
           </Button>
@@ -344,7 +362,9 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
           ) : null}
         </div>
       </Card>
+      </MotionSection>
 
+      <MotionSection className="maher-form-section" as="div">
       <Card title={tc('lineItems')} padded={data.status === 'DRAFT'}>
         {data.status === 'DRAFT' ? (
           <LineItemsEditor
@@ -367,7 +387,7 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
               {data.items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>{item.productName}</TableCell>
-                  <TableCell dir="ltr">{String(item.quantity)}</TableCell>
+                  <TableNumericCell>{String(item.quantity)}</TableNumericCell>
                   <TableCell>{item.notes || item.description || '—'}</TableCell>
                   <TableCell>
                     {[item.material, item.fabric, item.color].filter(Boolean).join(' / ') || '—'}
@@ -378,27 +398,25 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
           </Table>
         )}
       </Card>
+      </MotionSection>
 
+      <MotionSection className="maher-form-section" as="div">
       <Card title={tc('attachments')}>
         <div className="space-y-3">
-          <input
-            ref={fileRef}
-            type="file"
+          <PhotoAttachField
+            hint={tCommon('photoUrlHint')}
             accept="application/pdf,image/*,.doc,.docx,.xlsx"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) uploadMutation.mutate(file);
+            uploadLabel={tCommon('upload')}
+            uploadingLabel={tCommon('uploading')}
+            attachUrlLabel={tCommon('attachFromUrl')}
+            disabled={uploadMutation.isPending}
+            onUploadFile={async (file) => {
+              await uploadMutation.mutateAsync({ file });
+            }}
+            onAttachUrl={async (url) => {
+              await uploadMutation.mutateAsync({ url });
             }}
           />
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={uploadMutation.isPending}
-            onClick={() => fileRef.current?.click()}
-          >
-            {tCommon('upload')}
-          </Button>
           {(data.documents?.length ?? 0) > 0 ? (
             <ul className="space-y-1 text-sm">
               {data.documents!.map((d) => (
@@ -418,8 +436,10 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
           )}
         </div>
       </Card>
+      </MotionSection>
 
       {(data.quotations?.length ?? 0) > 0 ? (
+        <MotionSection className="maher-form-section" as="div">
         <Card title={tc('quotations')}>
           <ul className="space-y-2">
             {data.quotations!.map((q) => (
@@ -432,7 +452,9 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
             ))}
           </ul>
         </Card>
+        </MotionSection>
       ) : null}
+      </div>
 
       <ConfirmDialog
         open={needsInfoOpen}

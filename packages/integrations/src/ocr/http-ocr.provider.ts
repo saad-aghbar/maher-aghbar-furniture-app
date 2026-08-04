@@ -1,4 +1,5 @@
 import type { OcrProvider, OcrResult } from './types';
+import { OpenAiVisionOcrProvider } from './openai-vision-ocr.provider';
 
 /** Generic HTTP OCR: POST multipart/json to OCR_API_URL with OCR_API_KEY. */
 export class HttpOcrProvider implements OcrProvider {
@@ -12,7 +13,6 @@ export class HttpOcrProvider implements OcrProvider {
   async extractText(input: Buffer, mimeType: string): Promise<OcrResult> {
     // Prefer OpenAI-compatible vision when pointing at OpenAI; otherwise POST raw bytes.
     if (this.baseUrl.includes('openai.com')) {
-      const { OpenAiVisionOcrProvider } = await import('./openai-vision-ocr.provider');
       return new OpenAiVisionOcrProvider(this.apiKey).extractText(input, mimeType);
     }
 

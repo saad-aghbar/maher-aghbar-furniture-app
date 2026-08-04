@@ -10,6 +10,7 @@
     "test": "echo 'worker tests stub'"
   },
   "dependencies": {
+    "@maher/integrations": "workspace:*",
     "@maher/logging": "workspace:*",
     "bullmq": "^5.34.5",
     "ioredis": "^5.4.2"

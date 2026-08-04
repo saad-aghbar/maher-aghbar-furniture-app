@@ -1,12 +1,30 @@
 import { Injectable } from '@nestjs/common';
-import {
-  InvoiceStatus,
-  ProductionOrderStatus,
-  QuotationStatus,
-  SalesOrderStatus,
-} from '@maher/database';
+import { InvoiceStatus, Prisma, ProductionOrderStatus, SalesOrderStatus } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
+import { calculateOrderCosts } from '../../common/helpers/order-costing.util';
 import { roundMoney } from '../../common/helpers/money.util';
+
+export type SalesReportFilters = {
+  from?: string;
+  to?: string;
+  customerId?: string;
+  productId?: string;
+  salesRepId?: string;
+};
+
+export type ReportPeriodFilters = {
+  from?: string;
+  to?: string;
+  customerId?: string;
+};
+
+function dateRange(from?: string, to?: string): Prisma.DateTimeFilter | undefined {
+  if (!from && !to) return undefined;
+  return {
+    ...(from ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}),
+    ...(to ? { lte: new Date(`${to}T23:59:59.999Z`) } : {}),
+  };
+}
 
 @Injectable()
 export class ReportsService {
@@ -18,29 +36,34 @@ export class ReportsService {
     soon.setDate(soon.getDate() + 7);
 
     const [
-      activeOrders,
-      ordersDueSoon,
-      delayedProduction,
-      waitingMaterials,
-      pendingQuoteApprovals,
-      outstandingInvoices,
-      lowStock,
-      criticalBlockers,
-      dailyCompletions,
-      revenueAgg,
-      receivablesAgg,
-      completedSalesOrders,
-      openPurchases,
+      newOrders,
+      ordersInProduction,
+      ordersNearingDelivery,
+      completedOrders,
+      delayedOrders,
+      openInvoices,
+      outstandingAgg,
+      dealersActive,
+      pendingReturns,
+      inventoryForLowStock,
+      recentSalesOrders,
     ] = await Promise.all([
+      this.prisma.requestForQuotation.count({
+        where: {
+          archivedAt: null,
+          status: {
+            in: ['SUBMITTED', 'UNDER_REVIEW', 'NEEDS_INFORMATION', 'READY_FOR_QUOTATION'],
+          },
+        },
+      }),
       this.prisma.salesOrder.count({
         where: {
           archivedAt: null,
           status: {
             in: [
-              SalesOrderStatus.CONFIRMED,
-              SalesOrderStatus.IN_PRODUCTION,
               SalesOrderStatus.READY_FOR_PRODUCTION,
-              SalesOrderStatus.READY_FOR_DELIVERY,
+              SalesOrderStatus.IN_PRODUCTION,
+              SalesOrderStatus.WAITING_FOR_MATERIALS,
             ],
           },
         },
@@ -58,20 +81,24 @@ export class ReportsService {
           },
         },
       }),
-      this.prisma.productionOrder.count({
+      this.prisma.salesOrder.count({
+        where: {
+          archivedAt: null,
+          status: { in: [SalesOrderStatus.COMPLETED, SalesOrderStatus.DELIVERED] },
+        },
+      }),
+      this.prisma.salesOrder.count({
         where: {
           archivedAt: null,
           requiredDeliveryDate: { lt: now },
           status: {
-            notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
+            notIn: [
+              SalesOrderStatus.COMPLETED,
+              SalesOrderStatus.CANCELLED,
+              SalesOrderStatus.DELIVERED,
+            ],
           },
         },
-      }),
-      this.prisma.productionOrder.count({
-        where: { archivedAt: null, status: ProductionOrderStatus.WAITING_FOR_MATERIALS },
-      }),
-      this.prisma.quotation.count({
-        where: { archivedAt: null, status: QuotationStatus.INTERNAL_REVIEW },
       }),
       this.prisma.invoice.count({
         where: {
@@ -82,134 +109,240 @@ export class ReportsService {
           outstandingAmount: { gt: 0 },
         },
       }),
-      this.prisma.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(*)::bigint AS count FROM inventory_items i
-         WHERE i.archived_at IS NULL AND EXISTS (
-           SELECT 1 FROM inventory_balances b
-           WHERE b.inventory_item_id = i.id
-           GROUP BY b.inventory_item_id
-           HAVING COALESCE(SUM(b.available_qty), 0) <= i.min_stock
-         )`,
-      )
-        .then((rows) => Number(rows[0]?.count ?? 0))
-        .catch(async () => {
-          const items = await this.prisma.inventoryItem.findMany({
-            where: { archivedAt: null },
-            include: { balances: true },
-          });
-          return items.filter((item) => {
-            const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
-            return available <= Number(item.minStock);
-          }).length;
-        }),
-      this.prisma.taskBlocker.count({ where: { resolvedAt: null } }),
-      this.prisma.productionTask.count({
-        where: {
-          status: 'COMPLETED',
-          actualCompletion: {
-            gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-          },
-        },
-      }),
       this.prisma.invoice.aggregate({
         where: {
           archivedAt: null,
-          status: {
-            in: [
-              InvoiceStatus.ISSUED,
-              InvoiceStatus.PARTIALLY_PAID,
-              InvoiceStatus.PAID,
-              InvoiceStatus.OVERDUE,
-            ],
-          },
-        },
-        _sum: { total: true },
-      }),
-      this.prisma.invoice.aggregate({
-        where: {
-          archivedAt: null,
-          status: {
-            in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE],
-          },
-          outstandingAmount: { gt: 0 },
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID, InvoiceStatus.DRAFT] },
         },
         _sum: { outstandingAmount: true },
       }),
-      this.prisma.salesOrder.count({
-        where: {
-          archivedAt: null,
-          status: { in: [SalesOrderStatus.COMPLETED, SalesOrderStatus.DELIVERED] },
-        },
+      this.prisma.customer.count({
+        where: { archivedAt: null, status: 'ACTIVE' },
       }),
-      this.prisma.purchaseOrder.count({
-        where: {
-          archivedAt: null,
-          status: {
-            notIn: ['RECEIVED', 'CANCELLED', 'CLOSED'],
+      this.prisma.returnRequest.count({
+        where: { approvalStatus: 'PENDING' },
+      }),
+      this.prisma.inventoryItem.findMany({
+        where: { archivedAt: null },
+        select: {
+          minStock: true,
+          balances: { select: { availableQty: true } },
+        },
+        take: 500,
+      }),
+      this.prisma.salesOrder.findMany({
+        where: { archivedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        include: {
+          customer: {
+            select: { name: true, nameEn: true, nameAr: true, nameHe: true },
+          },
+          lines: {
+            orderBy: { sortOrder: 'asc' },
+            take: 1,
+            include: {
+              product: {
+                select: {
+                  nameEn: true,
+                  nameAr: true,
+                  nameHe: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+          quotation: {
+            select: {
+              request: {
+                select: {
+                  externalOrderNumber: true,
+                  endCustomerName: true,
+                  items: {
+                    orderBy: { sortOrder: 'asc' },
+                    take: 1,
+                    select: { productName: true },
+                  },
+                },
+              },
+            },
           },
         },
       }),
     ]);
 
+    const lowStockItems = inventoryForLowStock.filter((item) => {
+      const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
+      return available <= Number(item.minStock);
+    }).length;
+
+    const recentOrders = recentSalesOrders.map((so) => {
+      const line = so.lines[0];
+      const product = line?.product;
+      const title =
+        product?.nameEn ||
+        product?.nameAr ||
+        line?.description ||
+        so.quotation?.request?.items?.[0]?.productName ||
+        so.number;
+      return {
+        id: so.id,
+        number: so.number,
+        status: so.status,
+        title,
+        imageUrl: product?.imageUrl ?? null,
+        customerName:
+          so.customer.nameEn || so.customer.nameAr || so.customer.name || so.customer.nameHe || null,
+        externalOrderNumber:
+          so.externalOrderNumber?.trim() ||
+          so.quotation?.request?.externalOrderNumber?.trim() ||
+          null,
+        endCustomerName: so.quotation?.request?.endCustomerName ?? null,
+      };
+    });
+
     return {
-      activeOrders,
-      ordersDueSoon,
-      delayedProduction,
-      waitingMaterials,
-      pendingQuoteApprovals,
-      outstandingInvoices,
-      lowStock,
-      criticalBlockers,
-      dailyCompletions,
-      revenueInvoiced: roundMoney(Number(revenueAgg._sum.total ?? 0)),
-      receivablesAmount: roundMoney(Number(receivablesAgg._sum.outstandingAmount ?? 0)),
-      completedSalesOrders,
-      openPurchases,
+      newOrders,
+      ordersInProduction,
+      ordersNearingDelivery,
+      completedOrders,
+      delayedOrders,
+      openInvoices,
+      outstandingReceivables: roundMoney(Number(outstandingAgg._sum.outstandingAmount ?? 0)),
+      dealersActive,
+      pendingReturns,
+      lowStockItems,
+      recentOrders,
       generatedAt: new Date().toISOString(),
     };
   }
 
-  async sales() {
-    const [byStatus, topCustomers, recentQuotes] = await Promise.all([
+  private salesOrderWhere(filters: SalesReportFilters = {}): Prisma.SalesOrderWhereInput {
+    const orderDate = dateRange(filters.from, filters.to);
+    return {
+      archivedAt: null,
+      ...(filters.customerId ? { customerId: filters.customerId } : {}),
+      ...(orderDate ? { orderDate } : {}),
+      ...(filters.productId ? { lines: { some: { productId: filters.productId } } } : {}),
+      ...(filters.salesRepId ? { quotation: { is: { salesRepId: filters.salesRepId } } } : {}),
+    };
+  }
+
+  async sales(filters: SalesReportFilters = {}) {
+    const where = this.salesOrderWhere(filters);
+
+    const [byStatus, topCustomersRaw, recentQuotes, byProductRaw, byRepRaw] = await Promise.all([
       this.prisma.salesOrder.groupBy({
         by: ['status'],
-        where: { archivedAt: null },
+        where,
         _count: true,
         _sum: { total: true },
       }),
       this.prisma.salesOrder.groupBy({
         by: ['customerId'],
-        where: { archivedAt: null },
+        where,
         _sum: { total: true },
         _count: true,
         orderBy: { _sum: { total: 'desc' } },
         take: 10,
       }),
       this.prisma.quotation.findMany({
-        where: { archivedAt: null },
-        include: { customer: true },
+        where: {
+          archivedAt: null,
+          ...(filters.customerId ? { customerId: filters.customerId } : {}),
+          ...(filters.salesRepId ? { salesRepId: filters.salesRepId } : {}),
+          ...(dateRange(filters.from, filters.to)
+            ? { createdAt: dateRange(filters.from, filters.to) }
+            : {}),
+        },
+        include: {
+          customer: true,
+          salesRep: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
+      this.prisma.salesOrderLine.groupBy({
+        by: ['productId'],
+        where: {
+          productId: { not: null },
+          ...(filters.productId ? { productId: filters.productId } : {}),
+          salesOrder: where,
+        },
+        _sum: { lineTotal: true, quantity: true },
+        _count: true,
+        orderBy: { _sum: { lineTotal: 'desc' } },
+        take: 10,
+      }),
+      this.prisma.quotation.groupBy({
+        by: ['salesRepId'],
+        where: {
+          archivedAt: null,
+          salesRepId: { not: null },
+          ...(filters.salesRepId ? { salesRepId: filters.salesRepId } : {}),
+          ...(filters.customerId ? { customerId: filters.customerId } : {}),
+          salesOrders: { some: where },
+        },
+        _count: true,
+        orderBy: { _count: { salesRepId: 'desc' } },
+        take: 10,
+      }),
     ]);
 
-    const customers = await this.prisma.customer.findMany({
-      where: { id: { in: topCustomers.map((c) => c.customerId) } },
-    });
+    const customerIds = topCustomersRaw.map((c) => c.customerId);
+    const productIds = byProductRaw.map((p) => p.productId).filter(Boolean) as string[];
+    const repIds = byRepRaw.map((r) => r.salesRepId).filter(Boolean) as string[];
+
+    const [customers, products, reps] = await Promise.all([
+      this.prisma.customer.findMany({ where: { id: { in: customerIds } } }),
+      this.prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, sku: true, nameEn: true, nameAr: true },
+      }),
+      this.prisma.user.findMany({
+        where: { id: { in: repIds } },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      }),
+    ]);
     const customerMap = Object.fromEntries(customers.map((c) => [c.id, c]));
+    const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
+    const repMap = Object.fromEntries(reps.map((r) => [r.id, r]));
 
     return {
+      filters,
       ordersByStatus: byStatus.map((row) => ({
         status: row.status,
         count: row._count,
         total: roundMoney(Number(row._sum.total ?? 0)),
       })),
-      topCustomers: topCustomers.map((row) => ({
+      topCustomers: topCustomersRaw.map((row) => ({
         customerId: row.customerId,
         customerName: customerMap[row.customerId]?.name ?? row.customerId,
         orderCount: row._count,
         total: roundMoney(Number(row._sum.total ?? 0)),
       })),
+      topProducts: byProductRaw.map((row) => {
+        const product = row.productId ? productMap[row.productId] : null;
+        return {
+          productId: row.productId,
+          sku: product?.sku ?? null,
+          name: product?.nameEn || product?.nameAr || row.productId,
+          lineCount: row._count,
+          quantity: roundMoney(Number(row._sum.quantity ?? 0)),
+          total: roundMoney(Number(row._sum.lineTotal ?? 0)),
+        };
+      }),
+      bySalesRep: byRepRaw.map((row) => {
+        const rep = row.salesRepId ? repMap[row.salesRepId] : null;
+        const name = rep
+          ? `${rep.firstName} ${rep.lastName}`.trim() || rep.email || row.salesRepId
+          : row.salesRepId;
+        return {
+          salesRepId: row.salesRepId,
+          name,
+          quotationCount: row._count,
+        };
+      }),
       recentQuotes: recentQuotes.map((q) => ({
         id: q.id,
         number: q.number,
@@ -217,40 +350,381 @@ export class ReportsService {
         status: q.status,
         total: q.total,
         customer: q.customer.name,
+        salesRep: q.salesRep
+          ? `${q.salesRep.firstName} ${q.salesRep.lastName}`.trim() || q.salesRep.email
+          : null,
         createdAt: q.createdAt.toISOString(),
       })),
     };
   }
 
-  async production() {
-    const [byStatus, delayed, stageThroughput] = await Promise.all([
+  async production(filters: ReportPeriodFilters = {}) {
+    const now = new Date();
+    const requiredDeliveryDate = dateRange(filters.from, filters.to);
+    const baseWhere: Prisma.ProductionOrderWhereInput = {
+      archivedAt: null,
+      ...(filters.customerId ? { salesOrder: { customerId: filters.customerId } } : {}),
+    };
+
+    const [byStatus, delayed, open, stageThroughput] = await Promise.all([
       this.prisma.productionOrder.groupBy({
         by: ['status'],
-        where: { archivedAt: null },
+        where: baseWhere,
         _count: true,
       }),
       this.prisma.productionOrder.findMany({
         where: {
-          archivedAt: null,
-          requiredDeliveryDate: { lt: new Date() },
+          ...baseWhere,
+          requiredDeliveryDate: {
+            lt: now,
+            ...(requiredDeliveryDate?.gte ? { gte: requiredDeliveryDate.gte } : {}),
+            ...(requiredDeliveryDate?.lte ? { lte: requiredDeliveryDate.lte } : {}),
+          },
           status: {
             notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
           },
         },
-        include: { salesOrder: true },
-        take: 50,
+        include: {
+          salesOrder: {
+            select: {
+              id: true,
+              number: true,
+              customer: {
+                select: { id: true, name: true, nameEn: true, nameAr: true },
+              },
+            },
+          },
+        },
+        orderBy: { requiredDeliveryDate: 'asc' },
+        take: 100,
+      }),
+      this.prisma.productionOrder.findMany({
+        where: {
+          ...baseWhere,
+          status: {
+            notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
+          },
+          ...(requiredDeliveryDate ? { requiredDeliveryDate } : {}),
+        },
+        include: {
+          salesOrder: {
+            select: {
+              id: true,
+              number: true,
+              customer: {
+                select: { id: true, name: true, nameEn: true, nameAr: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ requiredDeliveryDate: 'asc' }, { createdAt: 'desc' }],
+        take: 100,
       }),
       this.prisma.productionTask.groupBy({
         by: ['status'],
+        where: filters.customerId
+          ? { productionOrder: { salesOrder: { customerId: filters.customerId } } }
+          : undefined,
         _count: true,
       }),
     ]);
 
+    const mapPo = (po: (typeof delayed)[number], opts: { late?: boolean } = {}) => {
+      const due = po.requiredDeliveryDate ? new Date(po.requiredDeliveryDate).getTime() : null;
+      const daysLate =
+        opts.late && due != null ? Math.max(0, Math.floor((now.getTime() - due) / 86_400_000)) : 0;
+      const customer = po.salesOrder?.customer;
+      return {
+        id: po.id,
+        number: po.number,
+        status: po.status,
+        currentStageCode: po.currentStageCode,
+        progressPercent: po.progressPercent,
+        requiredDeliveryDate: po.requiredDeliveryDate,
+        daysLate,
+        salesOrderId: po.salesOrderId,
+        salesOrder: po.salesOrder ? { id: po.salesOrder.id, number: po.salesOrder.number } : null,
+        customerName: customer?.nameEn || customer?.nameAr || customer?.name || null,
+        customerId: customer?.id ?? null,
+      };
+    };
+
     return {
+      filters,
       ordersByStatus: byStatus,
-      delayedOrders: delayed,
+      delayedOrders: delayed.map((po) => mapPo(po, { late: true })),
+      openOrders: open.map((po) => mapPo(po)),
+      openCount: open.length,
+      delayedCount: delayed.length,
       tasksByStatus: stageThroughput,
     };
+  }
+
+  async orderProfit(filters: ReportPeriodFilters = {}) {
+    const where = this.salesOrderWhere(filters);
+    const orders = await this.prisma.salesOrder.findMany({
+      where,
+      include: {
+        customer: { select: { id: true, name: true, nameEn: true, nameAr: true } },
+        lines: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                manufacturingCost: true,
+                basePrice: true,
+                bomDefaults: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { orderDate: 'desc' },
+      take: 200,
+    });
+
+    const materialRows = await this.prisma.inventoryTransaction.findMany({
+      where: { unitCost: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        unitCost: true,
+        type: true,
+        inventoryItem: { select: { sku: true } },
+      },
+      take: 800,
+    });
+    const materialCosts = new Map<string, number>();
+    const ranked = [...materialRows].sort((a, b) => {
+      const rank = (t: string) => (t === 'PURCHASE_RECEIPT' ? 0 : 1);
+      return rank(a.type) - rank(b.type);
+    });
+    for (const tx of ranked) {
+      const sku = tx.inventoryItem.sku;
+      if (!materialCosts.has(sku) && tx.unitCost != null) {
+        materialCosts.set(sku, Number(tx.unitCost));
+      }
+    }
+
+    const customerIds = [...new Set(orders.map((o) => o.customerId))];
+    const dealerPriceRows = await this.prisma.dealerPrice.findMany({
+      where: { customerId: { in: customerIds } },
+      select: { customerId: true, productId: true, price: true },
+    });
+    const dealerByCustomer = new Map<string, Map<string, number>>();
+    for (const row of dealerPriceRows) {
+      let map = dealerByCustomer.get(row.customerId);
+      if (!map) {
+        map = new Map();
+        dealerByCustomer.set(row.customerId, map);
+      }
+      map.set(row.productId, Number(row.price));
+    }
+
+    const rows = orders.map((order) => {
+      const storedCost = order.manufacturingCost != null ? Number(order.manufacturingCost) : null;
+      const costs = calculateOrderCosts(order.lines, {
+        customerId: order.customerId,
+        dealerPrices: dealerByCustomer.get(order.customerId),
+        materialCosts,
+        fallbackSellerTotal: order.total,
+      });
+      const sellerPrice = costs.sellerPrice || Number(order.total);
+      const productionPrice =
+        storedCost != null && storedCost > 0 ? storedCost : costs.productionPrice;
+      const profit = roundMoney(sellerPrice - productionPrice);
+      const customer = order.customer;
+      return {
+        id: order.id,
+        number: order.number,
+        status: order.status,
+        orderDate: order.orderDate.toISOString(),
+        customerId: order.customerId,
+        customerName: customer.nameEn || customer.nameAr || customer.name,
+        sellerPrice: roundMoney(sellerPrice),
+        productionPrice: roundMoney(productionPrice),
+        profit,
+        marginPercent: sellerPrice > 0 ? roundMoney((Number(profit) / sellerPrice) * 100) : 0,
+      };
+    });
+
+    const totals = rows.reduce(
+      (acc, row) => {
+        acc.sellerPrice += Number(row.sellerPrice);
+        acc.productionPrice += Number(row.productionPrice);
+        acc.profit += Number(row.profit);
+        return acc;
+      },
+      { sellerPrice: 0, productionPrice: 0, profit: 0 },
+    );
+
+    return {
+      filters,
+      totals: {
+        sellerPrice: roundMoney(totals.sellerPrice),
+        productionPrice: roundMoney(totals.productionPrice),
+        profit: roundMoney(totals.profit),
+        orderCount: rows.length,
+      },
+      orders: rows,
+    };
+  }
+
+  async productivity(filters: ReportPeriodFilters = {}) {
+    const startedAt = dateRange(filters.from, filters.to);
+    const entries = await this.prisma.taskTimeEntry.findMany({
+      where: {
+        ...(startedAt ? { startedAt } : {}),
+        ...(filters.customerId
+          ? {
+              task: {
+                productionOrder: { salesOrder: { customerId: filters.customerId } },
+              },
+            }
+          : {}),
+      },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        task: {
+          select: {
+            id: true,
+            status: true,
+            productionOrder: {
+              select: {
+                number: true,
+                currentStageCode: true,
+                salesOrder: {
+                  select: {
+                    number: true,
+                    customer: { select: { name: true, nameEn: true, nameAr: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 1000,
+    });
+
+    const byUser = new Map<
+      string,
+      {
+        userId: string;
+        name: string;
+        minutes: number;
+        entries: number;
+        completedTasks: number;
+      }
+    >();
+
+    for (const entry of entries) {
+      const minutes =
+        entry.minutes != null
+          ? entry.minutes
+          : entry.endedAt
+            ? Math.max(
+                0,
+                Math.round((entry.endedAt.getTime() - entry.startedAt.getTime()) / 60_000),
+              )
+            : 0;
+      const existing = byUser.get(entry.userId) ?? {
+        userId: entry.userId,
+        name:
+          `${entry.user.firstName} ${entry.user.lastName}`.trim() ||
+          entry.user.email ||
+          entry.userId,
+        minutes: 0,
+        entries: 0,
+        completedTasks: 0,
+      };
+      existing.minutes += minutes;
+      existing.entries += 1;
+      if (entry.task.status === 'COMPLETED') existing.completedTasks += 1;
+      byUser.set(entry.userId, existing);
+    }
+
+    const workers = [...byUser.values()]
+      .map((w) => ({
+        ...w,
+        hours: roundMoney(w.minutes / 60),
+        score: roundMoney(w.completedTasks * 10 + w.minutes / 30),
+      }))
+      .sort((a, b) => Number(b.score) - Number(a.score));
+
+    return {
+      filters,
+      totals: {
+        workers: workers.length,
+        minutes: workers.reduce((s, w) => s + w.minutes, 0),
+        completedTasks: workers.reduce((s, w) => s + w.completedTasks, 0),
+      },
+      workers,
+      recentEntries: entries.slice(0, 40).map((e) => ({
+        id: e.id,
+        userId: e.userId,
+        userName:
+          `${e.user.firstName} ${e.user.lastName}`.trim() || e.user.email || e.userId,
+        minutes:
+          e.minutes ??
+          (e.endedAt
+            ? Math.max(0, Math.round((e.endedAt.getTime() - e.startedAt.getTime()) / 60_000))
+            : null),
+        startedAt: e.startedAt.toISOString(),
+        endedAt: e.endedAt?.toISOString() ?? null,
+        taskStatus: e.task.status,
+        productionOrder: e.task.productionOrder.number,
+        stageCode: e.task.productionOrder.currentStageCode,
+        salesOrder: e.task.productionOrder.salesOrder?.number ?? null,
+        customerName:
+          e.task.productionOrder.salesOrder?.customer?.nameEn ||
+          e.task.productionOrder.salesOrder?.customer?.nameAr ||
+          e.task.productionOrder.salesOrder?.customer?.name ||
+          null,
+      })),
+    };
+  }
+
+  async productionSummary() {
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const completedFilter = {
+      archivedAt: null,
+      status: ProductionOrderStatus.COMPLETED,
+    } as const;
+
+    const [completedToday, completedThisWeek, completedThisMonth, inProduction] =
+      await Promise.all([
+        this.prisma.productionOrder.count({
+          where: { ...completedFilter, actualCompletionDate: { gte: startOfDay } },
+        }),
+        this.prisma.productionOrder.count({
+          where: { ...completedFilter, actualCompletionDate: { gte: startOfWeek } },
+        }),
+        this.prisma.productionOrder.count({
+          where: { ...completedFilter, actualCompletionDate: { gte: startOfMonth } },
+        }),
+        this.prisma.productionOrder.count({
+          where: {
+            archivedAt: null,
+            status: {
+              in: [
+                ProductionOrderStatus.IN_PROGRESS,
+                ProductionOrderStatus.READY_FOR_PACKAGING,
+                ProductionOrderStatus.READY_FOR_DELIVERY,
+              ],
+            },
+          },
+        }),
+      ]);
+
+    return { completedToday, completedThisWeek, completedThisMonth, inProduction };
   }
 
   async inventory() {
@@ -358,6 +832,185 @@ export class ReportsService {
         dueDate: inv.dueDate,
         outstanding: inv.outstandingAmount,
       })),
+    };
+  }
+
+  async apLedger(filters: ReportPeriodFilters = {}) {
+    const invoiceDate = dateRange(filters.from, filters.to);
+    const open = await this.prisma.supplierInvoice.findMany({
+      where: {
+        archivedAt: null,
+        outstandingAmount: { gt: 0 },
+        status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE] },
+        ...(invoiceDate ? { invoiceDate } : {}),
+      },
+      include: {
+        supplier: { select: { id: true, name: true, nameEn: true, nameAr: true } },
+        purchaseOrder: { select: { id: true, number: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+      take: 200,
+    });
+
+    const now = Date.now();
+    const buckets = { current: 0, d30: 0, d60: 0, d90: 0, older: 0 };
+    const bySupplier = new Map<
+      string,
+      { supplierId: string; supplierName: string; count: number; outstanding: number }
+    >();
+
+    const rows = open.map((inv) => {
+      const due = inv.dueDate ? new Date(inv.dueDate).getTime() : now;
+      const days = Math.floor((now - due) / 86_400_000);
+      const amt = Number(inv.outstandingAmount);
+      if (days <= 0) buckets.current += amt;
+      else if (days <= 30) buckets.d30 += amt;
+      else if (days <= 60) buckets.d60 += amt;
+      else if (days <= 90) buckets.d90 += amt;
+      else buckets.older += amt;
+
+      const name =
+        inv.supplier.nameEn || inv.supplier.nameAr || inv.supplier.name || inv.supplierId;
+      const agg = bySupplier.get(inv.supplierId) ?? {
+        supplierId: inv.supplierId,
+        supplierName: name,
+        count: 0,
+        outstanding: 0,
+      };
+      agg.count += 1;
+      agg.outstanding += amt;
+      bySupplier.set(inv.supplierId, agg);
+
+      return {
+        id: inv.id,
+        number: inv.number,
+        status: inv.status,
+        supplierId: inv.supplierId,
+        supplierName: name,
+        purchaseOrderId: inv.purchaseOrderId,
+        purchaseOrderNumber: inv.purchaseOrder.number,
+        invoiceDate: inv.invoiceDate.toISOString(),
+        dueDate: inv.dueDate?.toISOString() ?? null,
+        total: roundMoney(Number(inv.total)),
+        paidAmount: roundMoney(Number(inv.paidAmount)),
+        outstanding: roundMoney(amt),
+        daysPastDue: Math.max(0, days),
+      };
+    });
+
+    const payments = await this.prisma.supplierPayment.aggregate({
+      where: invoiceDate ? { paymentDate: invoiceDate } : undefined,
+      _sum: { amount: true },
+      _count: true,
+    });
+
+    return {
+      filters,
+      aging: {
+        current: roundMoney(buckets.current),
+        d1_30: roundMoney(buckets.d30),
+        d31_60: roundMoney(buckets.d60),
+        d61_90: roundMoney(buckets.d90),
+        older: roundMoney(buckets.older),
+      },
+      totals: {
+        openInvoices: rows.length,
+        outstanding: roundMoney(rows.reduce((s, r) => s + Number(r.outstanding), 0)),
+        paymentsTotal: roundMoney(Number(payments._sum.amount ?? 0)),
+        paymentCount: payments._count,
+      },
+      bySupplier: [...bySupplier.values()]
+        .map((s) => ({ ...s, outstanding: roundMoney(s.outstanding) }))
+        .sort((a, b) => Number(b.outstanding) - Number(a.outstanding)),
+      openInvoices: rows,
+    };
+  }
+
+  async periodPl(filters: ReportPeriodFilters = {}) {
+    const orderWhere = this.salesOrderWhere(filters);
+    const invoiceDate = dateRange(filters.from, filters.to);
+
+    const [orders, arInvoices, supplierInvoices, timeEntries] = await Promise.all([
+      this.prisma.salesOrder.findMany({
+        where: orderWhere,
+        select: {
+          id: true,
+          total: true,
+          manufacturingCost: true,
+          status: true,
+        },
+        take: 500,
+      }),
+      this.prisma.invoice.aggregate({
+        where: {
+          archivedAt: null,
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID, InvoiceStatus.DRAFT] },
+          ...(invoiceDate ? { invoiceDate } : {}),
+        },
+        _sum: { total: true },
+        _count: true,
+      }),
+      this.prisma.supplierInvoice.aggregate({
+        where: {
+          archivedAt: null,
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID, InvoiceStatus.DRAFT] },
+          ...(invoiceDate ? { invoiceDate } : {}),
+        },
+        _sum: { total: true },
+        _count: true,
+      }),
+      this.prisma.taskTimeEntry.findMany({
+        where: {
+          ...(dateRange(filters.from, filters.to) ? { startedAt: dateRange(filters.from, filters.to) } : {}),
+        },
+        select: { minutes: true, startedAt: true, endedAt: true },
+        take: 2000,
+      }),
+    ]);
+
+    const revenueOrders = orders.reduce((s, o) => s + Number(o.total), 0);
+    const materialCogs = orders.reduce((s, o) => s + Number(o.manufacturingCost ?? 0), 0);
+    const revenueInvoiced = Number(arInvoices._sum.total ?? 0);
+    const supplierSpend = Number(supplierInvoices._sum.total ?? 0);
+
+    const laborMinutes = timeEntries.reduce((s, e) => {
+      if (e.minutes != null) return s + e.minutes;
+      if (e.endedAt) {
+        return s + Math.max(0, Math.round((e.endedAt.getTime() - e.startedAt.getTime()) / 60_000));
+      }
+      return s;
+    }, 0);
+
+    const laborRateSetting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'company' },
+    });
+    const company = (laborRateSetting?.value ?? {}) as Record<string, unknown>;
+    const laborRate =
+      typeof company.defaultLaborRateJod === 'number'
+        ? company.defaultLaborRateJod
+        : Number(process.env.DEFAULT_LABOR_RATE_JOD ?? 5);
+
+    const laborCost = (laborMinutes / 60) * laborRate;
+    const grossProfit = revenueOrders - materialCogs;
+    const contribution = grossProfit - laborCost;
+
+    return {
+      filters,
+      laborRateJod: roundMoney(laborRate),
+      totals: {
+        orderCount: orders.length,
+        revenueOrders: roundMoney(revenueOrders),
+        revenueInvoiced: roundMoney(revenueInvoiced),
+        materialCogs: roundMoney(materialCogs),
+        supplierSpend: roundMoney(supplierSpend),
+        laborMinutes,
+        laborHours: roundMoney(laborMinutes / 60),
+        laborCost: roundMoney(laborCost),
+        grossProfit: roundMoney(grossProfit),
+        contribution: roundMoney(contribution),
+        invoiceCount: arInvoices._count,
+        supplierInvoiceCount: supplierInvoices._count,
+      },
     };
   }
 

@@ -1,46 +1,46 @@
 import type { HTMLAttributes } from 'react';
 import { cn } from './cn';
+import { BRAND_LOGO_DATA_URI } from './brand-logo-data';
 
 export interface BrandMarkProps extends HTMLAttributes<HTMLSpanElement> {
   size?: 'sm' | 'md' | 'lg';
+  /** Soft entrance animation for auth and hero surfaces */
+  animated?: boolean;
 }
 
 const sizeClass = {
   sm: 'h-8 w-8',
-  md: 'h-9 w-9',
-  lg: 'h-12 w-12',
+  md: 'h-10 w-10',
+  lg: 'h-14 w-14',
 } as const;
 
-const iconClass = {
-  sm: 'h-4 w-4',
-  md: 'h-5 w-5',
-  lg: 'h-6 w-6',
-} as const;
+/** Inlined PNG data URI — always available, no public-path / cache miss. */
+export const BRAND_LOGO_SRC = BRAND_LOGO_DATA_URI;
 
-export function BrandMark({ className, size = 'md', ...props }: BrandMarkProps) {
+export function BrandMark({
+  className,
+  size = 'md',
+  animated = false,
+  ...props
+}: BrandMarkProps) {
   return (
     <span
       aria-hidden="true"
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-[var(--maher-radius-md)] bg-brand text-white shadow-[var(--maher-shadow-sm)]',
+        'relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[var(--maher-radius-sm)] bg-transparent',
+        animated && 'maher-brand-mark',
         sizeClass[size],
         className,
       )}
       {...props}
     >
-      <svg
-        viewBox="0 0 24 24"
-        className={iconClass[size]}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 11V8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5V11" />
-        <path d="M3 11h18a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1Z" />
-        <path d="M5 17v2m14-2v2" />
-      </svg>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={BRAND_LOGO_SRC}
+        alt=""
+        className="h-full w-auto max-w-none object-contain"
+        draggable={false}
+      />
     </span>
   );
 }

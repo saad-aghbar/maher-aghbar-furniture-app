@@ -1,31 +1,17 @@
+import type { Permission } from '@maher/permissions';
 import {
   Armchair,
-  BadgeCheck,
   Banknote,
   Bell,
-  Blocks,
   Boxes,
-  Building2,
-  ClipboardList,
   Factory,
-  FileText,
-  Gauge,
-  Layers,
   LayoutDashboard,
-  Palette,
   Receipt,
   RotateCcw,
-  Ruler,
-  ScrollText,
   Settings,
-  ShieldCheck,
   ShoppingCart,
-  Sparkles,
-  Truck,
   UserCog,
   Users,
-  Warehouse,
-  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,6 +19,7 @@ export interface NavItem {
   href: string;
   key: string;
   icon: LucideIcon;
+  anyPermissions?: readonly Permission[];
 }
 
 export interface NavGroup {
@@ -40,68 +27,168 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-export const navGroups: NavGroup[] = [
+export interface NestedNavItem {
+  href: string;
+  key: string;
+  anyPermissions?: readonly Permission[];
+}
+
+export interface NestedNavGroup {
+  parentHref: string;
+  matchPrefixes: string[];
+  items: NestedNavItem[];
+}
+
+/** Father-friendly factory sidebar — Orders / Products / Inventory / Production first. */
+export const navItems: NavItem[] = [
+  { href: '/dashboard', key: 'dashboard', icon: LayoutDashboard },
   {
-    key: 'groupOverview',
+    href: '/orders',
+    key: 'orders',
+    icon: ShoppingCart,
+    anyPermissions: ['request.read', 'quotation.read', 'sales-order.read'],
+  },
+  {
+    href: '/products',
+    key: 'products',
+    icon: Armchair,
+    anyPermissions: ['catalog.manage'],
+  },
+  {
+    href: '/customers',
+    key: 'dealers',
+    icon: Users,
+    anyPermissions: ['customer.read'],
+  },
+  {
+    href: '/production',
+    key: 'production',
+    icon: Factory,
+    anyPermissions: ['production-order.read'],
+  },
+  {
+    href: '/inventory',
+    key: 'inventory',
+    icon: Boxes,
+    anyPermissions: ['inventory.read'],
+  },
+  {
+    href: '/purchasing',
+    key: 'purchasing',
+    icon: Receipt,
+    anyPermissions: ['purchase-order.read', 'supplier.read'],
+  },
+  {
+    href: '/invoices',
+    key: 'invoices',
+    icon: Banknote,
+    anyPermissions: ['invoice.read'],
+  },
+  {
+    href: '/employees',
+    key: 'employees',
+    icon: UserCog,
+    anyPermissions: ['user.manage'],
+  },
+  {
+    href: '/returns',
+    key: 'returns',
+    icon: RotateCcw,
+    anyPermissions: ['sales-order.read', 'customer.read'],
+  },
+];
+
+/** Pinned to the bottom of the sidebar. */
+export const navFooterItems: NavItem[] = [
+  {
+    href: '/settings',
+    key: 'settings',
+    icon: Settings,
+    anyPermissions: ['settings.manage', 'role.manage'],
+  },
+  {
+    href: '/notifications',
+    key: 'notifications',
+    icon: Bell,
+    anyPermissions: ['notification.read'],
+  },
+];
+
+export const navGroups: NavGroup[] = [{ key: 'groupMain', items: navItems }];
+
+export const allNavItems: NavItem[] = [...navItems, ...navFooterItems];
+
+export const nestedNavGroups: NestedNavGroup[] = [
+  {
+    parentHref: '/orders',
+    matchPrefixes: ['/orders', '/requests', '/quotations', '/sales-orders', '/deliveries', '/ai-intake'],
     items: [
-      { href: '/dashboard', key: 'dashboard', icon: LayoutDashboard },
-      { href: '/reports', key: 'reports', icon: Gauge },
+      { href: '/orders', key: 'ordersOverview', anyPermissions: ['request.read', 'sales-order.read'] },
+      { href: '/requests', key: 'ordersDrafts', anyPermissions: ['request.read'] },
+      { href: '/quotations', key: 'ordersReview', anyPermissions: ['quotation.read'] },
+      { href: '/sales-orders', key: 'ordersActive', anyPermissions: ['sales-order.read'] },
+      { href: '/deliveries', key: 'deliveries', anyPermissions: ['delivery.read'] },
+      { href: '/ai-intake', key: 'aiIntake', anyPermissions: ['ai-intake.read', 'ai-intake.manage'] },
     ],
   },
   {
-    key: 'groupSales',
+    parentHref: '/products',
+    matchPrefixes: ['/products', '/categories', '/materials', '/fabrics'],
     items: [
-      { href: '/customers', key: 'customers', icon: Users },
-      { href: '/requests', key: 'rfqRequests', icon: FileText },
-      { href: '/quotations', key: 'quotations', icon: ClipboardList },
-      { href: '/sales-orders', key: 'salesOrders', icon: ShoppingCart },
-      { href: '/ai-intake', key: 'aiIntake', icon: Sparkles },
+      { href: '/products', key: 'products', anyPermissions: ['catalog.manage'] },
+      { href: '/categories', key: 'categories', anyPermissions: ['catalog.manage'] },
+      { href: '/materials', key: 'materials', anyPermissions: ['catalog.manage'] },
+      { href: '/fabrics', key: 'fabrics', anyPermissions: ['catalog.manage'] },
     ],
   },
   {
-    key: 'groupCatalog',
+    parentHref: '/inventory',
+    matchPrefixes: ['/inventory', '/warehouses'],
     items: [
-      { href: '/products', key: 'products', icon: Armchair },
-      { href: '/categories', key: 'categories', icon: Blocks },
-      { href: '/materials', key: 'materials', icon: Layers },
-      { href: '/fabrics', key: 'fabrics', icon: Palette },
-      { href: '/colors', key: 'colors', icon: Palette },
-      { href: '/units', key: 'units', icon: Ruler },
+      { href: '/inventory', key: 'inventory', anyPermissions: ['inventory.read'] },
+      {
+        href: '/warehouses',
+        key: 'warehouses',
+        anyPermissions: ['warehouse.manage', 'inventory.read'],
+      },
     ],
   },
   {
-    key: 'groupOperations',
+    parentHref: '/purchasing',
+    matchPrefixes: ['/purchasing', '/suppliers'],
     items: [
-      { href: '/production', key: 'production', icon: Factory },
-      { href: '/production-stages', key: 'productionStages', icon: Wrench },
-      { href: '/quality', key: 'quality', icon: BadgeCheck },
-      { href: '/inventory', key: 'inventory', icon: Boxes },
-      { href: '/warehouses', key: 'warehouses', icon: Warehouse },
-      { href: '/purchasing', key: 'purchasing', icon: Receipt },
-      { href: '/suppliers', key: 'suppliers', icon: Building2 },
-      { href: '/deliveries', key: 'deliveries', icon: Truck },
+      { href: '/purchasing', key: 'purchasing', anyPermissions: ['purchase-order.read'] },
+      { href: '/suppliers', key: 'suppliers', anyPermissions: ['supplier.read'] },
     ],
   },
   {
-    key: 'groupFinance',
+    parentHref: '/production',
+    matchPrefixes: ['/production', '/production-stages', '/quality'],
     items: [
-      { href: '/invoices', key: 'invoices', icon: Banknote },
-      { href: '/contracts', key: 'contracts', icon: ScrollText },
-      { href: '/payments', key: 'payments', icon: Banknote },
-      { href: '/returns', key: 'returns', icon: RotateCcw },
-      { href: '/documents', key: 'documents', icon: FileText },
-      { href: '/notifications', key: 'notifications', icon: Bell },
-    ],
-  },
-  {
-    key: 'groupAdmin',
-    items: [
-      { href: '/users', key: 'users', icon: UserCog },
-      { href: '/employees', key: 'employees', icon: Users },
-      { href: '/departments', key: 'departments', icon: Building2 },
-      { href: '/roles', key: 'roles', icon: ShieldCheck },
-      { href: '/audit', key: 'audit', icon: ScrollText },
-      { href: '/settings', key: 'settings', icon: Settings },
+      {
+        href: '/production',
+        key: 'production',
+        anyPermissions: ['production-order.read'],
+      },
+      {
+        href: '/production-stages',
+        key: 'productionStages',
+        anyPermissions: ['production-order.update'],
+      },
+      {
+        href: '/quality',
+        key: 'quality',
+        anyPermissions: ['quality-inspection.read'],
+      },
     ],
   },
 ];
+
+export function canSeeNav(item: { anyPermissions?: readonly Permission[] }, permissions: string[]) {
+  if (!item.anyPermissions?.length) return true;
+  return item.anyPermissions.some((p) => permissions.includes(p));
+}
+
+export function visibleNavItems(permissions: string[]) {
+  return allNavItems.filter((item) => canSeeNav(item, permissions));
+}

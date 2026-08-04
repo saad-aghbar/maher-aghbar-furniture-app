@@ -3,16 +3,16 @@
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
-import { BrandMark, cn } from '@maher/ui';
+import { BrandMark, cn, isNavItemActive, useHeaderOverDark } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ClipboardList, Home, LogOut, User } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ClipboardList, LogOut, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from './language-switcher';
 
 const navItems = [
-  { href: '/dashboard', key: 'dashboard', icon: Home },
-  { href: '/tasks', key: 'tasks', icon: ClipboardList },
+  { href: '/tasks', key: 'myOrders', icon: ClipboardList },
+  { href: '/tasks/completed', key: 'completeTask', icon: CheckCircle2 },
 ] as const;
 
 export function EmployeeShell({ children }: { children: ReactNode }) {
@@ -23,6 +23,8 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const overDark = useHeaderOverDark(headerRef, pathname);
 
   const me = useQuery({
     queryKey: ['auth-me'],
@@ -57,24 +59,45 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
     .map((p) => p[0]?.toUpperCase())
     .join('');
 
+  const navHrefs = useMemo(() => navItems.map((item) => item.href), []);
+
   return (
     <div className="mx-auto min-h-screen max-w-xl bg-background shadow-elevated sm:my-6 sm:rounded-[var(--maher-radius-xl)]">
-      <header className="sticky top-0 z-20 border-b border-border bg-surface/90 backdrop-blur-md sm:rounded-t-[var(--maher-radius-xl)]">
+      <header
+        ref={headerRef}
+        data-header-tone={overDark ? 'on-dark' : 'on-light'}
+        className={cn(
+          'sticky top-0 z-20 border-b sm:rounded-t-[var(--maher-radius-xl)]',
+          overDark ? 'border-white/10' : 'border-border',
+        )}
+      >
         <div className="flex items-center justify-between gap-3 px-4 py-3.5">
           <div className="group flex min-w-0 items-center gap-3">
             <span className="transition-transform duration-500 ease-out group-hover:rotate-6 group-hover:scale-110">
-              <BrandMark size="md" />
+              <BrandMark size="md" animated />
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold leading-tight text-text-primary">
+              <p
+                className={cn(
+                  'maher-header-fg truncate text-sm font-bold leading-tight',
+                  overDark ? 'text-white' : 'text-text-primary',
+                )}
+              >
                 {tCommon('appName')}
               </p>
-              <p className="text-xs text-text-tertiary">{tCommon('portalEmployee')}</p>
+              <p
+                className={cn(
+                  'maher-header-fg-muted text-xs',
+                  overDark ? 'text-white/70' : 'text-text-tertiary',
+                )}
+              >
+                {tCommon('portalEmployee')}
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1">
-            <LanguageSwitcher />
+            <LanguageSwitcher inverted={overDark} />
 
             <div className="relative" ref={menuRef}>
               <button
@@ -83,8 +106,10 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 className={cn(
-                  'maher-press group flex items-center gap-1.5 rounded-[var(--maher-radius-md)] py-1 ps-1 pe-1.5 hover:bg-surface-muted',
-                  menuOpen && 'bg-surface-muted',
+                  'maher-press group flex items-center gap-1.5 rounded-[var(--maher-radius-md)] py-1 ps-1 pe-1.5',
+                  overDark
+                    ? cn('hover:bg-white/10', menuOpen && 'bg-white/10')
+                    : cn('hover:bg-surface-muted', menuOpen && 'bg-surface-muted'),
                 )}
               >
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand transition-transform duration-300 ease-out group-hover:scale-105">
@@ -92,8 +117,9 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                 </span>
                 <ChevronDown
                   className={cn(
-                    'h-4 w-4 text-text-tertiary transition-transform duration-300 ease-out',
-                    menuOpen && 'rotate-180 text-brand',
+                    'maher-header-fg-muted h-4 w-4 transition-transform duration-300 ease-out',
+                    overDark ? 'text-white/70' : 'text-text-tertiary',
+                    menuOpen && 'rotate-180 !text-brand',
                   )}
                 />
               </button>
@@ -101,13 +127,15 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
               {menuOpen ? (
                 <div
                   role="menu"
-                  className="maher-animate-pop absolute end-0 top-full z-40 mt-2 w-56 overflow-hidden rounded-[var(--maher-radius-lg)] border border-border bg-surface shadow-float"
+                  className="maher-animate-pop absolute end-0 top-full z-40 mt-2 w-56 overflow-hidden rounded-[var(--maher-radius-lg)] border border-border bg-surface text-text-primary shadow-float"
                 >
                   <div className="border-b border-border px-4 py-3">
                     <p className="truncate text-sm font-semibold text-text-primary">
                       {me.data?.name}
                     </p>
-                    <p className="truncate text-xs text-text-secondary">{me.data?.email}</p>
+                    <p className="truncate text-xs text-text-secondary">
+                      {me.data?.username ?? me.data?.email}
+                    </p>
                     {me.data?.roles?.length ? (
                       <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-text-tertiary">
                         {me.data.roles.join(' · ')}
@@ -129,10 +157,9 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <nav className="flex gap-1 px-3 pb-2">
+        <nav className="maher-stagger flex gap-1 px-3 pb-2">
           {navItems.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const active = isNavItemActive(pathname, item.href, navHrefs);
             const Icon = item.icon;
             return (
               <Link
@@ -140,10 +167,12 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'maher-press group inline-flex flex-1 items-center justify-center gap-2 rounded-[var(--maher-radius-md)] px-3 py-2.5 text-sm font-semibold',
+                  'maher-nav-item maher-press group inline-flex flex-1 items-center justify-center gap-2 rounded-[var(--maher-radius-md)] px-3 py-2.5 text-sm font-semibold',
                   active
                     ? 'bg-brand-soft text-brand'
-                    : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+                    : overDark
+                      ? 'text-white hover:bg-white/10 hover:text-white'
+                      : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
                 )}
               >
                 <Icon className="h-4 w-4 transition-transform duration-300 ease-out group-hover:scale-110" />

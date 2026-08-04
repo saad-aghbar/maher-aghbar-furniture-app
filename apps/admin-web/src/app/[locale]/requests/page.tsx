@@ -5,7 +5,6 @@ import {
   emptyLineItem,
   type LineItemDraft,
 } from '@/components/admin/line-items-editor';
-import { PageHeader } from '@/components/admin/page-header';
 import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { REQUEST_STATUSES, statusOptions } from '@/lib/status-options';
@@ -17,20 +16,22 @@ import {
   ErrorState,
   Input,
   Modal,
+  MotionSection,
+  PageHero,
   Select,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
   TextArea,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -49,6 +50,7 @@ interface RequestRow {
   status: string;
   source?: string;
   projectName?: string | null;
+  externalOrderNumber?: string | null;
   priority?: string;
   customer?: Customer | null;
   contactName?: string | null;
@@ -63,6 +65,7 @@ export default function AdminRfqsPage() {
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
   const tq = useTranslations('quotations');
+  const tSales = useTranslations('sales');
   const tStatus = useTranslations('statuses');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
@@ -79,6 +82,7 @@ export default function AdminRfqsPage() {
   const [customerId, setCustomerId] = useState('');
   const [contactName, setContactName] = useState('');
   const [projectName, setProjectName] = useState('');
+  const [externalOrderNumber, setExternalOrderNumber] = useState('');
   const [source, setSource] = useState('PORTAL');
   const [priority, setPriority] = useState('NORMAL');
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLineItem()]);
@@ -111,6 +115,7 @@ export default function AdminRfqsPage() {
       apiFetch<{ data: RequestRow[]; meta: { page: number; totalPages: number } }>(
         `/api/v1/requests?${listParams}`,
       ),
+    placeholderData: keepPreviousData,
   });
 
   const customersQuery = useQuery({
@@ -123,6 +128,7 @@ export default function AdminRfqsPage() {
     setCustomerId('');
     setContactName('');
     setProjectName('');
+    setExternalOrderNumber('');
     setSource('PORTAL');
     setPriority('NORMAL');
     setLines([emptyLineItem()]);
@@ -151,6 +157,7 @@ export default function AdminRfqsPage() {
           customerId,
           contactName: contactName.trim() || undefined,
           projectName: projectName.trim() || undefined,
+          externalOrderNumber: externalOrderNumber.trim() || undefined,
           source,
           priority,
           notes: notes.trim() || undefined,
@@ -173,7 +180,7 @@ export default function AdminRfqsPage() {
     label: tCommon('all'),
   });
 
-  if (listQuery.isLoading) {
+  if (listQuery.isLoading && !listQuery.data) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -181,7 +188,7 @@ export default function AdminRfqsPage() {
       </div>
     );
   }
-  if (listQuery.isError) {
+  if (listQuery.isError && !listQuery.data) {
     return (
       <ErrorState
         title={t('rfqRequests')}
@@ -197,8 +204,9 @@ export default function AdminRfqsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title={t('rfqRequests')}
+        tone="soft"
         actions={
           <Button
             type="button"
@@ -213,11 +221,10 @@ export default function AdminRfqsPage() {
       />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
 
-      <div className="flex flex-wrap items-end gap-3">
+      <MotionSection enter="rise" className="flex flex-wrap items-end gap-3">
         <label className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
           <Input
-            className="ps-9"
+            withSearchIcon
             value={q}
             onChange={(e) => {
               setPage(1);
@@ -270,7 +277,7 @@ export default function AdminRfqsPage() {
           options={statusFilterOptions}
           className="w-48"
         />
-      </div>
+      </MotionSection>
 
       {rows.length === 0 ? (
         <EmptyState title={tc('noRfqs')} />
@@ -279,7 +286,8 @@ export default function AdminRfqsPage() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
+                <TableHeaderCell>{tSales('systemOrderNumber')}</TableHeaderCell>
+                <TableHeaderCell>{tSales('dealerOrderNumber')}</TableHeaderCell>
                 <TableHeaderCell>{tc('customer')}</TableHeaderCell>
                 <TableHeaderCell>{tc('project')}</TableHeaderCell>
                 <TableHeaderCell>{tc('source')}</TableHeaderCell>
@@ -290,7 +298,8 @@ export default function AdminRfqsPage() {
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell dir="ltr">{row.number}</TableCell>
+                  <TableNumericCell>{row.number}</TableNumericCell>
+                  <TableNumericCell>{row.externalOrderNumber?.trim() || '—'}</TableNumericCell>
                   <TableCell>
                     {row.customer
                       ? localizedName(locale, row.customer)
@@ -354,7 +363,7 @@ export default function AdminRfqsPage() {
           </>
         }
       >
-        <div className="space-y-3">
+        <div className="maher-form-section space-y-3">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
           <Select
             label={tc('customer')}
@@ -377,6 +386,12 @@ export default function AdminRfqsPage() {
             label={tc('project')}
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
+          />
+          <Input
+            label={tSales('dealerOrderNumber')}
+            value={externalOrderNumber}
+            onChange={(e) => setExternalOrderNumber(e.target.value)}
+            dir="ltr"
           />
           <div className="grid grid-cols-2 gap-2">
             <Select label={tc('source')} value={source} onChange={(e) => setSource(e.target.value)}>

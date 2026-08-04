@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && rm -rf dist/messages && cp -R src/messages dist/messages",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'lint stub'"
   },

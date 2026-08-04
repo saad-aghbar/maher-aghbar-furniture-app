@@ -18,6 +18,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
@@ -42,6 +43,7 @@ interface PrDetail {
     id: string;
     unitPrice: string | number;
     leadTimeDays?: number | null;
+    qualityScore?: string | number | null;
     isSelected: boolean;
     supplier: { id: string; name: string; nameAr?: string | null; nameEn?: string | null };
   }>;
@@ -60,6 +62,7 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
   const [supplierId, setSupplierId] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
   const [leadTimeDays, setLeadTimeDays] = useState('');
+  const [qualityScore, setQualityScore] = useState('');
   const [approveOpen, setApproveOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
 
@@ -95,6 +98,7 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
           supplierId,
           unitPrice: Number(unitPrice),
           leadTimeDays: leadTimeDays ? Number(leadTimeDays) : undefined,
+          qualityScore: qualityScore ? Number(qualityScore) : undefined,
           isSelected: true,
         }),
       }),
@@ -121,6 +125,18 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
+  const selectOfferMutation = useMutation({
+    mutationFn: (offerId: string) =>
+      apiFetch(`/api/v1/purchase-requests/${params.id}/offers/${offerId}/select`, {
+        method: 'POST',
+      }),
+    onSuccess: async () => {
+      setBanner(tc('selectedOffer'));
+      await qc.invalidateQueries({ queryKey: ['purchase-request', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
   if (detailQuery.isLoading) return <Skeleton className="h-64 w-full" />;
   if (detailQuery.isError || !detailQuery.data) {
     return (
@@ -133,10 +149,17 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
   }
 
   const data = detailQuery.data;
+  const rankedOffers = [...(data.offers ?? [])].sort((a, b) => {
+    const priceDiff = Number(a.unitPrice) - Number(b.unitPrice);
+    if (priceDiff !== 0) return priceDiff;
+    return Number(b.qualityScore ?? 0) - Number(a.qualityScore ?? 0);
+  });
+  const recommendedOfferId = rankedOffers[0]?.id ?? null;
 
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/purchasing"
         title={data.number}
         description={data.reason ?? undefined}
         actions={
@@ -185,7 +208,7 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
               {data.lines.map((line) => (
                 <TableRow key={line.id}>
                   <TableCell>{line.description}</TableCell>
-                  <TableCell dir="ltr">{String(line.quantity)}</TableCell>
+                  <TableNumericCell>{String(line.quantity)}</TableNumericCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -193,8 +216,8 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
         )}
       </Card>
 
-      <Card title={tc('addSupplierOffer')}>
-        <div className="mb-4 grid gap-3 md:grid-cols-4">
+      <Card title={tc('supplierComparison')}>
+        <div className="mb-4 grid gap-3 md:grid-cols-5">
           <Select
             label={tc('supplier')}
             value={supplierId}
@@ -221,6 +244,14 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
             onChange={(e) => setLeadTimeDays(e.target.value)}
             dir="ltr"
           />
+          <Input
+            label={tc('qualityScore')}
+            type="number"
+            value={qualityScore}
+            onChange={(e) => setQualityScore(e.target.value)}
+            dir="ltr"
+            placeholder="0–5"
+          />
           <div className="flex items-end">
             <Button
               loading={offerMutation.isPending}
@@ -231,25 +262,51 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
             </Button>
           </div>
         </div>
-        {(data.offers ?? []).length === 0 ? (
-          <p className="text-sm text-text-secondary">—</p>
+        {rankedOffers.length === 0 ? (
+          <p className="text-sm text-text-secondary">{tc('noSupplierOffers')}</p>
         ) : (
           <Table>
             <TableHead>
               <TableRow>
+                <TableHeaderCell>{tc('rank')}</TableHeaderCell>
                 <TableHeaderCell>{tc('supplier')}</TableHeaderCell>
                 <TableHeaderCell>{tc('unitPrice')}</TableHeaderCell>
                 <TableHeaderCell>{tc('leadTimeDays')}</TableHeaderCell>
+                <TableHeaderCell>{tc('qualityScore')}</TableHeaderCell>
                 <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {(data.offers ?? []).map((offer) => (
+              {rankedOffers.map((offer, index) => (
                 <TableRow key={offer.id}>
-                  <TableCell>{localizedName(locale, offer.supplier)}</TableCell>
-                  <TableCell dir="ltr">{String(offer.unitPrice)}</TableCell>
-                  <TableCell dir="ltr">{offer.leadTimeDays ?? '—'}</TableCell>
-                  <TableCell>{offer.isSelected ? tCommon('selected') : '—'}</TableCell>
+                  <TableNumericCell>{index + 1}</TableNumericCell>
+                  <TableCell>
+                    {localizedName(locale, offer.supplier)}
+                    {offer.id === recommendedOfferId ? (
+                      <span className="ms-2 text-xs text-brand">{tc('recommendedOffer')}</span>
+                    ) : null}
+                  </TableCell>
+                  <TableNumericCell>{String(offer.unitPrice)}</TableNumericCell>
+                  <TableNumericCell>{offer.leadTimeDays ?? '—'}</TableNumericCell>
+                  <TableNumericCell>
+                    {offer.qualityScore != null ? String(offer.qualityScore) : '—'}
+                  </TableNumericCell>
+                  <TableCell>
+                    {offer.isSelected ? tc('selectedOffer') : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {!offer.isSelected ? (
+                      <Button
+                        size="sm"
+                        variant="subtle"
+                        loading={selectOfferMutation.isPending}
+                        onClick={() => selectOfferMutation.mutate(offer.id)}
+                      >
+                        {tc('selectOffer')}
+                      </Button>
+                    ) : null}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

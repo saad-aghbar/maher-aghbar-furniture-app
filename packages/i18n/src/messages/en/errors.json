@@ -1,0 +1,60 @@
+{
+  "BAD_REQUEST": "Request could not be completed.",
+  "UNAUTHORIZED": "Authentication required.",
+  "FORBIDDEN": "You do not have permission for this action.",
+  "NOT_FOUND": "The requested item was not found.",
+  "CONFLICT": "This conflicts with existing data.",
+  "VALIDATION_ERROR": "Please check the form and try again.",
+  "RATE_LIMITED": "Too many requests. Please wait and try again.",
+  "INTERNAL_ERROR": "Something went wrong. Please try again.",
+  "REQUEST_FAILED": "Request failed",
+
+  "USERNAME_IN_USE": "A user with this username already exists.",
+  "EMAIL_IN_USE": "A user with this email already exists.",
+  "USER_EXISTS": "User already exists.",
+  "CANNOT_DEACTIVATE_SELF": "You cannot deactivate your own account.",
+  "CANNOT_REMOVE_OWN_ADMIN": "You cannot remove your own system administrator role.",
+  "LAST_ADMIN": "Cannot deactivate the last active system administrator.",
+
+  "INVALID_CREDENTIALS": "Invalid credentials.",
+  "ACCOUNT_LOCKED": "Account temporarily locked.",
+  "ACCOUNT_SUSPENDED": "Account suspended.",
+  "INVALID_TOKEN": "Reset token is invalid or expired.",
+  "WEAK_PASSWORD": "Password is too short.",
+  "INVALID_ROLE": "Role not found.",
+
+  "DUPLICATE_CODE": "This code already exists.",
+  "UNIT_EXISTS": "Unit code already exists.",
+  "ROLE_EXISTS": "Role code already exists.",
+  "CATEGORY_IN_USE": "Category is in use and cannot be removed.",
+  "PRODUCT_IN_USE": "Product is in use and cannot be removed.",
+  "ROLE_IN_USE": "Role is assigned to users and cannot be deleted.",
+  "PROTECTED_ROLE": "System-critical roles cannot be deleted.",
+  "INVALID_PERMISSIONS": "One or more permissions are invalid.",
+  "CANNOT_GRANT": "You cannot grant permissions you do not have.",
+
+  "INSUFFICIENT_STOCK": "Insufficient stock for this operation.",
+  "WAREHOUSE_HAS_STOCK": "Warehouse still has stock and cannot be removed.",
+  "LOCATION_EXISTS": "Location code already exists in this warehouse.",
+  "LOCATION_HAS_STOCK": "Location still has stock and cannot be removed.",
+
+  "INVOICE_EXISTS": "An invoice already exists for this sales order.",
+  "SUPPLIER_INVOICE_EXISTS": "A supplier invoice already exists for this purchase order.",
+  "PAYMENT_EXCEEDS_OUTSTANDING": "Payment amount exceeds the outstanding balance.",
+  "JOFOTARA_FAILED": "Electronic invoice submission failed.",
+
+  "SUPPLIER_NOT_CERTIFIED": "Supplier must be certified before creating a purchase order.",
+  "ORDER_LOCKED": "This order field is locked and cannot be changed.",
+  "FABRIC_LOCKED": "Fabric selection is locked and cannot be changed.",
+
+  "STAGE_LOCKED": "This stage is locked until prerequisites are completed.",
+  "ASSIGN_LOCKED": "Task assignment cannot be changed in the current state.",
+  "PHOTOS_REQUIRED": "Photos are required before completing this task.",
+
+  "INVALID_FILE_TYPE": "File type is not allowed.",
+  "CONFIG_ERROR": "System configuration is incomplete.",
+  "NO_SOURCE": "No source document was provided.",
+  "AI_INTAKE_FAILED": "AI intake processing failed.",
+  "INVALID_STATUS": "This action is not allowed in the current status.",
+  "WEBHOOK_DISABLED": "Webhook is disabled."
+}

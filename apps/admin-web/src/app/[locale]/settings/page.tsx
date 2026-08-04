@@ -1,9 +1,8 @@
 'use client';
 
-import { PageHeader } from '@/components/admin/page-header';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
-import { Alert, Button, Card, ErrorState, Input, Select, Skeleton } from '@maher/ui';
+import { Alert, Button, Card, ErrorState, Input, PageHero, Select, Skeleton } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
@@ -18,6 +17,7 @@ interface CompanySettings {
   quotationValidityDays: number;
   invoiceTermsDays: number;
   lowStockAlertsEnabled: boolean;
+  autoReorderEnabled: boolean;
   phone: string;
   email: string;
   address: string;
@@ -26,11 +26,18 @@ interface CompanySettings {
 interface IntegrationsSettings {
   emailProvider: string;
   whatsappProvider: string;
+  smsProvider?: string;
   aiProvider: string;
   ocrProvider: string;
   jofotaraConfigured?: boolean;
   smtpConfigured?: boolean;
   openaiConfigured?: boolean;
+  ocrLiveConfigured?: boolean;
+  ocrLocalConfigured?: boolean;
+  whatsappLiveConfigured?: boolean;
+  smsLiveConfigured?: boolean;
+  whatsappInboundConfigured?: boolean;
+  emailInboundConfigured?: boolean;
   smtpFrom?: string;
   jofotaraBaseUrl?: string;
 }
@@ -43,8 +50,9 @@ type SettingsMap = Record<string, unknown> & {
 const PROVIDER_OPTIONS = {
   email: ['console', 'smtp'],
   whatsapp: ['console', 'twilio', 'meta'],
+  sms: ['console', 'twilio'],
   ai: ['mock', 'openai'],
-  ocr: ['mock', 'http'],
+  ocr: ['mock', 'local', 'tesseract', 'openai', 'http'],
 } as const;
 
 export default function SettingsPage() {
@@ -62,7 +70,14 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
-    if (settingsQuery.data?.company) setCompanyForm(settingsQuery.data.company);
+    if (settingsQuery.data?.company) {
+      const c = settingsQuery.data.company;
+      setCompanyForm({
+        ...c,
+        autoReorderEnabled: c.autoReorderEnabled ?? true,
+        lowStockAlertsEnabled: c.lowStockAlertsEnabled ?? true,
+      });
+    }
     if (settingsQuery.data?.integrations) setIntegrationsForm(settingsQuery.data.integrations);
   }, [settingsQuery.data]);
 
@@ -113,8 +128,9 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title={tc('settings')}
+        tone="soft"
         actions={
           <Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
             {tCommon('save')}
@@ -125,7 +141,7 @@ export default function SettingsPage() {
       {error ? <Alert variant="error">{error}</Alert> : null}
 
       <Card title={tc('company')}>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="maher-form-section grid gap-3 sm:grid-cols-2">
           <Input
             label={tc('nameAr')}
             value={companyForm.nameAr}
@@ -204,13 +220,23 @@ export default function SettingsPage() {
             />
             {tc('lowStockAlerts')}
           </label>
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={companyForm.autoReorderEnabled}
+              onChange={(e) =>
+                setCompanyForm({ ...companyForm, autoReorderEnabled: e.target.checked })
+              }
+            />
+            {tc('autoReorderEnabled')}
+          </label>
         </div>
       </Card>
 
       <Card title={tc('integrations')}>
         <p className="mb-4 text-sm text-[var(--maher-text-secondary)]">{tc('integrationsHint')}</p>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded border border-[var(--maher-border)] p-4 space-y-3">
+        <div className="maher-stagger grid gap-4 lg:grid-cols-2">
+          <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold">{tc('integrationJoFotara')}</h3>
               <span className="text-xs text-[var(--maher-text-secondary)]">
@@ -228,9 +254,12 @@ export default function SettingsPage() {
             />
           </div>
 
-          <div className="rounded border border-[var(--maher-border)] p-4 space-y-3">
+          <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold">{tc('integrationWhatsApp')}</h3>
+              <span className="text-xs text-[var(--maher-text-secondary)]">
+                {configuredBadge(integrationsForm.whatsappLiveConfigured)}
+              </span>
             </div>
             <Select
               label={tc('provider')}
@@ -245,9 +274,33 @@ export default function SettingsPage() {
                 </option>
               ))}
             </Select>
+            <p className="text-xs text-[var(--maher-text-secondary)]">
+              {tc('whatsappInboundStatus')}:{' '}
+              {configuredBadge(integrationsForm.whatsappInboundConfigured)}
+            </p>
+            <p className="text-xs text-[var(--maher-text-secondary)]">
+              {tc('emailInboundStatus')}:{' '}
+              {configuredBadge(integrationsForm.emailInboundConfigured)}
+            </p>
+            <Select
+              label={tc('smsProvider')}
+              value={integrationsForm.smsProvider ?? 'console'}
+              onChange={(e) =>
+                setIntegrationsForm({ ...integrationsForm, smsProvider: e.target.value })
+              }
+            >
+              {PROVIDER_OPTIONS.sms.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-[var(--maher-text-secondary)]">
+              {tc('smsLiveStatus')}: {configuredBadge(integrationsForm.smsLiveConfigured)}
+            </p>
           </div>
 
-          <div className="rounded border border-[var(--maher-border)] p-4 space-y-3">
+          <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold">{tc('integrationSmtp')}</h3>
               <span className="text-xs text-[var(--maher-text-secondary)]">
@@ -278,7 +331,7 @@ export default function SettingsPage() {
             />
           </div>
 
-          <div className="rounded border border-[var(--maher-border)] p-4 space-y-3">
+          <div className="maher-list-card rounded border border-[var(--maher-border)] p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-semibold">{tc('integrationOpenAi')}</h3>
               <span className="text-xs text-[var(--maher-text-secondary)]">
@@ -311,6 +364,12 @@ export default function SettingsPage() {
                 </option>
               ))}
             </Select>
+            <p className="text-xs text-[var(--maher-text-secondary)]">
+              {tc('ocrLiveStatus')}: {configuredBadge(integrationsForm.ocrLiveConfigured)}
+            </p>
+            <p className="text-xs text-[var(--maher-text-secondary)]">
+              {tc('ocrLocalStatus')}: {configuredBadge(integrationsForm.ocrLocalConfigured)}
+            </p>
           </div>
         </div>
       </Card>

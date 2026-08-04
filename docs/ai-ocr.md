@@ -76,19 +76,30 @@ interface ExtractionProvider {
 
 | Environment | OCR | Translation | Extraction |
 |-------------|-----|-------------|------------|
-| Local / CI | `MockProvider` (fixture JSON) | Passthrough | Mock structured output |
-| Staging | Tesseract or cloud OCR | OpenAI-compatible | OpenAI-compatible |
-| Production | Vendor TBD (credentials blocking) | Same abstraction | Same abstraction |
+| Local / CI | `MockProvider` (fixture) or `OCR_PROVIDER=local` (pdf-parse + tesseract.js) | Passthrough | Mock structured output |
+| Staging | `local` / Tesseract or cloud OCR | OpenAI-compatible | OpenAI-compatible |
+| Production | OpenAI Vision / HTTP OCR (`OCR_API_*`) | OpenAI | OpenAI |
 
-Factory selects provider via env:
+### Free / unpaid OCR
+
+```bash
+# .env
+OCR_PROVIDER=local   # or tesseract | pdf | auto
+```
+
+- **PDF:** embedded text via `pdf-parse` (no API key). Cloud providers are wrapped to prefer PDF text first.
+- **Images:** `tesseract.js` in-process (Arabic + English). First run downloads language data.
+- Keep `OCR_PROVIDER=mock` for deterministic CI demos.
+
+Factory selects provider via env (`OCR_PROVIDER` preferred; `AI_OCR_PROVIDER` still accepted):
 
 ```
-AI_OCR_PROVIDER=mock|tesseract|google
+OCR_PROVIDER=mock|local|tesseract|pdf|auto|openai|http
 AI_LLM_PROVIDER=mock|openai
 AI_LLM_MODEL=gpt-4o-mini
 ```
 
-**No vendor lock-in at call sites** — only worker imports concrete providers.
+**No vendor lock-in at call sites** — only worker/API imports concrete providers.
 
 ---
 

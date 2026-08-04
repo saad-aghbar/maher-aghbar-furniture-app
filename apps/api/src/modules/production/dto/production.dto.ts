@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
@@ -16,6 +17,11 @@ export class ListProductionOrdersDto extends PaginationDto {
   @IsOptional()
   @IsEnum(ProductionOrderStatus)
   status?: ProductionOrderStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 }
 
 export class UpdateProductionOrderDto {

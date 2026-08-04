@@ -25,17 +25,22 @@ Status legend: **DONE** | **PARTIAL** | **DEFERRED**
 | Delivery POD | DONE | Signature + photo |
 | Delivery closes SO | DONE | DELIVERED → sales order DELIVERED |
 | Driver picker | DONE | Admin delivery driver select |
-| Customer contracts | DONE | Portal `/contracts` scoped API |
+| Customer contracts | DONE | Portal `/contracts` list + scoped API |
+| Dealer production photos | DONE | Task complete → `CUSTOMER_VISIBLE`; SO detail embeds stage photos |
+| Production stage definitions CRUD | DONE | Admin `/production-stages` MasterCrud + nested nav |
+| Sales report filters | DONE | Period / dealer / product / sales rep on `/reports/sales` |
+| Open & late work orders | DONE | Production report `openOrders` + `daysLate` |
+| Order profit report | DONE | `/reports/order-profit` + CSV export |
 | Dashboard revenue / receivables / completed SOs / open POs | DONE | Extended `/reports/dashboard` |
 | Invoices / payments / SOA | DONE | Existing |
 | Purchasing PR/PO/GRN | DONE | Existing |
 | Inventory multi-WH | DONE | Existing |
-| AI / OCR (mock) | DONE | Mock extract + human review |
-| Live WhatsApp / Email webhooks | DEFERRED | Keep mock + file attach |
-| Real OCR / paid LLM | DEFERRED | |
-| Supplier comparison + AP ledger | DEFERRED | |
-| Barcode hardware / cycle-count mobile UX | DEFERRED | |
-| True P&L + productivity scoring | DEFERRED | |
+| AI / OCR (mock) | DONE | Mock extract + human review; OpenAI/HTTP when keys set |
+| Live WhatsApp / Email webhooks | PARTIAL | Email IMAP/webhook DONE; WhatsApp inbound webhook + Meta verify stub |
+| Real OCR / paid LLM | PARTIAL | Mock + local (`pdf-parse`/`tesseract.js`) + OpenAI/HTTP when keyed |
+| Supplier comparison + AP ledger | PARTIAL | PR compare/select + AP aging/ledger report + CSV |
+| Barcode hardware / cycle-count mobile UX | PARTIAL | Scan API + mobile camera barcode (`expo-camera`) + typed fallback |
+| True P&L + productivity scoring | PARTIAL | Order profit + productivity + period P&L proxy (material + labor) |
 
 ## Critical path (this pass)
 

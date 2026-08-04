@@ -8,7 +8,9 @@ import {
   Matches,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 /** E.164-style: +country code then national number (e.g. +970599123456). */
@@ -19,6 +21,28 @@ export class ListCustomersDto extends PaginationDto {
   @IsOptional()
   @IsEnum(CustomerStatus)
   status?: CustomerStatus;
+}
+
+class CreateCustomerAddressDto {
+  @IsString()
+  @MinLength(1)
+  label!: string;
+
+  @IsString()
+  @MinLength(1)
+  city!: string;
+
+  @IsOptional()
+  @IsString()
+  street?: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  area?: string;
 }
 
 export class CreateCustomerDto {
@@ -57,13 +81,11 @@ export class CreateCustomerDto {
   @IsString()
   companyName?: string;
 
-  @ApiPropertyOptional()
-  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
   @Matches(PHONE_E164_PATTERN, {
     message: 'Phone must start with +country code then digits (e.g. +970599123456).',
   })
-  phone?: string;
+  phone!: string;
 
   @ApiPropertyOptional()
   @ValidateIf((_, v) => v != null && String(v).trim() !== '')
@@ -92,6 +114,10 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ValidateNested()
+  @Type(() => CreateCustomerAddressDto)
+  address!: CreateCustomerAddressDto;
 }
 
 export class UpdateCustomerDto {

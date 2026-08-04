@@ -24,7 +24,7 @@ export class RequestsController {
     @CurrentUser() user: AuthUser,
     @Query('submit') submit?: string,
   ) {
-    const autoSubmit = submit === 'true' || submit === '1' || Boolean(user.customerId);
+    const autoSubmit = submit === 'true' || submit === '1';
     return this.requests.create(dto, user.id, { submit: autoSubmit, user });
   }
 

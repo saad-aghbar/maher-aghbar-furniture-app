@@ -2,6 +2,7 @@ import type {
   ExtractionProvider,
   ExtractionResult,
   ExtractedField,
+  ExtractedLineItem,
   SupportedLocale,
   TranslateProvider,
 } from './types';
@@ -67,6 +68,20 @@ export class MockTranslateProvider implements TranslateProvider {
   }
 }
 
+function lineItemFromFields(fields: ExtractedField[]): ExtractedLineItem {
+  const get = (name: string) => fields.find((f) => f.fieldName === name)?.fieldValue ?? null;
+  return {
+    productName: get('product') ?? 'Custom furniture',
+    quantity: get('quantity') ?? '1',
+    width: get('width'),
+    height: get('height'),
+    depth: get('depth'),
+    fabricType: get('fabric'),
+    material: get('material'),
+    category: get('category'),
+  };
+}
+
 export class MockExtractionProvider implements ExtractionProvider {
   readonly name = 'mock';
 
@@ -74,7 +89,7 @@ export class MockExtractionProvider implements ExtractionProvider {
 
   async extractStructured(
     text: string,
-    opts?: { customerId?: string },
+    opts?: { customerId?: string; targetLanguage?: SupportedLocale },
   ): Promise<ExtractionResult> {
     const originalText =
       text.trim() ||
@@ -101,6 +116,7 @@ export class MockExtractionProvider implements ExtractionProvider {
       translatedText,
       detectedLanguage: detectLanguage(originalText),
       fields,
+      items: [lineItemFromFields(fields)],
       provider: this.name,
     };
   }

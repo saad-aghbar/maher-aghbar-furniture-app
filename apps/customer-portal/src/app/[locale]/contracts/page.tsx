@@ -1,10 +1,12 @@
 'use client';
 
 import { apiFetch } from '@/lib/api-client';
+import { Link } from '@/i18n/navigation';
 import {
   EmptyState,
   ErrorState,
-  PageHeader,
+  MotionSection,
+  PageHero,
   Skeleton,
   StatusBadge,
   Table,
@@ -23,26 +25,31 @@ interface ContractRow {
   number: string;
   status: string;
   contractValue: string | number;
-  currency?: string;
-  paymentSchedule?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
   salesOrder?: { id: string; number: string } | null;
 }
 
 export default function ContractsPage() {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
+  const tc = useTranslations('catalog');
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['customer-contracts'],
-    queryFn: () =>
-      apiFetch<{ data: ContractRow[] }>('/api/v1/contracts?pageSize=50').then((r) => r.data),
+    queryFn: async () => {
+      const json = await apiFetch<{ data: ContractRow[] } | ContractRow[]>(
+        '/api/v1/contracts?pageSize=50',
+      );
+      return Array.isArray(json) ? json : (json.data ?? []);
+    },
   });
 
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <TableSkeleton columns={4} />
+        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
+        <TableSkeleton columns={5} />
       </div>
     );
   }
@@ -54,35 +61,54 @@ export default function ContractsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t('contracts')} description="Sales contracts linked to your orders." />
+      <PageHero tone="soft" title={t('contracts')} description={tCommon('contractsSubtitle')} />
       {rows.length === 0 ? (
-        <EmptyState title="No contracts yet" />
+        <MotionSection>
+          <EmptyState title={tCommon('emptyList')} description={tCommon('contractsEmptyHint')} />
+        </MotionSection>
       ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>Number</TableHeaderCell>
-              <TableHeaderCell>Order</TableHeaderCell>
-              <TableHeaderCell>Value</TableHeaderCell>
-              <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-medium">{row.number}</TableCell>
-                <TableCell>{row.salesOrder?.number ?? '—'}</TableCell>
-                <TableCell>
-                  {Number(row.contractValue).toLocaleString('ar-JO')}{' '}
-                  {row.currency ?? tCommon('currency')}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={row.status} />
-                </TableCell>
+        <MotionSection delayMs={60}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
+                <TableHeaderCell>{tc('salesOrder')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('date')}</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium" dir="ltr">
+                    {row.number}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={row.status} />
+                  </TableCell>
+                  <TableCell dir="ltr">{Number(row.contractValue).toFixed(2)}</TableCell>
+                  <TableCell>
+                    {row.salesOrder ? (
+                      <Link
+                        href={`/orders/${row.salesOrder.id}`}
+                        className="font-medium text-brand hover:underline"
+                        dir="ltr"
+                      >
+                        {row.salesOrder.number}
+                      </Link>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                  <TableCell dir="ltr">
+                    {(row.startDate ?? row.endDate)?.toString().slice(0, 10) ?? '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </MotionSection>
       )}
     </div>
   );

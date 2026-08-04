@@ -17,6 +17,7 @@ import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import type { AuthUser } from '@maher/types';
+import { InvoicesService } from '../invoices/invoices.service';
 
 const DELIVERY_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   PLANNED: [DeliveryStatus.READY, DeliveryStatus.CANCELLED, DeliveryStatus.FAILED],
@@ -82,6 +83,7 @@ export class DeliveriesController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    private readonly invoices: InvoicesService,
   ) {}
 
   @Get()
@@ -99,6 +101,16 @@ export class DeliveriesController {
             OR: [
               { number: { contains: query.q, mode: 'insensitive' as const } },
               { customer: { name: { contains: query.q, mode: 'insensitive' as const } } },
+              {
+                salesOrder: {
+                  number: { contains: query.q, mode: 'insensitive' as const },
+                },
+              },
+              {
+                salesOrder: {
+                  externalOrderNumber: { contains: query.q, mode: 'insensitive' as const },
+                },
+              },
             ],
           }
         : {}),
@@ -112,7 +124,9 @@ export class DeliveriesController {
             select: { id: true, name: true, nameAr: true, nameEn: true, nameHe: true, code: true },
           },
           items: true,
-          salesOrder: { select: { id: true, number: true, status: true } },
+          salesOrder: {
+            select: { id: true, number: true, status: true, externalOrderNumber: true },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -177,7 +191,9 @@ export class DeliveriesController {
         customer: true,
         items: true,
         driver: true,
-        salesOrder: { select: { id: true, number: true, status: true } },
+        salesOrder: {
+          select: { id: true, number: true, status: true, externalOrderNumber: true },
+        },
       },
     });
   }
@@ -254,6 +270,12 @@ export class DeliveriesController {
 
       return updated;
     });
+
+    if (dto.status === DeliveryStatus.DELIVERED && existing.salesOrderId) {
+      await this.invoices.ensureFromSalesOrder(existing.salesOrderId, user.id).catch(() => {
+        /* JoFotara/network failures must not block delivery confirmation */
+      });
+    }
 
     return delivery;
   }

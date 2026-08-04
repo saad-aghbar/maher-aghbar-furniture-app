@@ -1,8 +1,18 @@
 'use client';
 
-import { apiFetch, apiUpload } from '@/lib/api-client';
+import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
 import { useRouter } from '@/i18n/navigation';
-import { Alert, Button, Card, Input, Select, TextArea } from '@maher/ui';
+import {
+  Alert,
+  Button,
+  Card,
+  ImageSourceField,
+  Input,
+  MotionSection,
+  PageHero,
+  Select,
+  TextArea,
+} from '@maher/ui';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -43,6 +53,7 @@ export default function RequestQuotePage() {
   const [notes, setNotes] = useState('');
   const [source, setSource] = useState('PORTAL');
   const [file, setFile] = useState<File | null>(null);
+  const [attachmentUrl, setAttachmentUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -101,6 +112,11 @@ export default function RequestQuotePage() {
           `/api/v1/uploads?category=RFQ_ATTACHMENT&requestId=${created.id}`,
           form,
         );
+      } else if (attachmentUrl.trim()) {
+        await apiUploadFromUrl(
+          `/api/v1/uploads/from-url?category=RFQ_ATTACHMENT&requestId=${created.id}`,
+          { url: attachmentUrl.trim() },
+        );
       }
 
       setSuccess(tQ('submittedOk'));
@@ -114,20 +130,23 @@ export default function RequestQuotePage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">{t('requestQuote')}</h1>
-      <ol className="flex flex-wrap gap-2 text-xs text-text-secondary">
-        {stepLabels.map((label, i) => (
-          <li
-            key={STEP_KEYS[i]}
-            className={
-              step === i + 1 ? 'font-semibold text-brand' : step > i + 1 ? 'text-text-primary' : ''
-            }
-          >
-            {i + 1}. {label}
-          </li>
-        ))}
-      </ol>
+      <PageHero tone="soft" title={t('requestQuote')} />
+      <MotionSection delayMs={40}>
+        <ol className="maher-stagger flex flex-wrap gap-2 text-xs text-text-secondary">
+          {stepLabels.map((label, i) => (
+            <li
+              key={STEP_KEYS[i]}
+              className={
+                step === i + 1 ? 'font-semibold text-brand' : step > i + 1 ? 'text-text-primary' : ''
+              }
+            >
+              {i + 1}. {label}
+            </li>
+          ))}
+        </ol>
+      </MotionSection>
       <Card
+        className="maher-form-section"
         title={tQ('stepTitle', {
           step: String(step),
           total: '6',
@@ -195,15 +214,24 @@ export default function RequestQuotePage() {
                   </option>
                 ))}
               </Select>
-              <label className="flex flex-col gap-1.5 text-sm font-medium">
-                {tQ('attachFile')}
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  className="text-sm"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
-              </label>
+              <ImageSourceField
+                label={tQ('attachFile')}
+                value={attachmentUrl}
+                onChange={(v) => {
+                  setAttachmentUrl(v);
+                  if (v.trim()) setFile(null);
+                }}
+                hint={tCommon('photoUrlHint')}
+                uploadLabel={tCommon('uploadFromDevice')}
+                uploadingLabel={tCommon('uploading')}
+                accept="image/*,application/pdf"
+                showPreview={Boolean(attachmentUrl.trim() && /^https?:\/\//i.test(attachmentUrl))}
+                onUploadFile={async (picked) => {
+                  setFile(picked);
+                  return '';
+                }}
+              />
+              {file ? <p className="text-xs text-text-tertiary">{file.name}</p> : null}
               <TextArea
                 label={tc('notes')}
                 value={notes}
@@ -244,7 +272,7 @@ export default function RequestQuotePage() {
               </div>
             </dl>
           ) : null}
-          <div className="flex gap-3">
+          <div className="maher-detail-sticky-actions flex gap-3">
             {step > 1 ? (
               <Button variant="secondary" onClick={() => setStep((s) => s - 1)}>
                 {tCommon('previous')}

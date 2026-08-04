@@ -232,6 +232,130 @@
   }
 }
 
+@keyframes maher-float-slow {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6px, -10px, 0) scale(1.04);
+  }
+}
+
+@keyframes maher-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-12px, 8px, 0);
+  }
+}
+
+@keyframes maher-glow-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes maher-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-50% * var(--maher-dir, 1)));
+  }
+}
+
+@keyframes maher-orbit {
+  from {
+    transform: rotate(0deg) translateX(14px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(14px) rotate(-360deg);
+  }
+}
+
+@keyframes maher-spotlight {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translate3d(-8%, -4%, 0) scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: translate3d(6%, 6%, 0) scale(1.12);
+  }
+}
+
+@keyframes maher-dash-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes maher-bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes maher-card-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  33% {
+    transform: translateY(-6px) rotate(0.4deg);
+  }
+  66% {
+    transform: translateY(-2px) rotate(-0.35deg);
+  }
+}
+
+@keyframes maher-icon-spring {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  40% {
+    transform: scale(1.14) rotate(-8deg);
+  }
+  70% {
+    transform: scale(0.96) rotate(4deg);
+  }
+  100% {
+    transform: scale(1.08) rotate(-2deg);
+  }
+}
+
+@keyframes maher-border-run {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes maher-value-glint {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.08);
+  }
+}
+
 /* ---------- Entrance utilities ---------- */
 
 .maher-animate-fade {
@@ -278,8 +402,415 @@
   animation: maher-float 4.5s ease-in-out infinite;
 }
 
+.maher-animate-float-slow {
+  animation: maher-float-slow 9s ease-in-out infinite;
+}
+
+.maher-animate-drift {
+  animation: maher-drift 11s ease-in-out infinite;
+}
+
+.maher-animate-glow {
+  animation: maher-glow-breathe 3.8s ease-in-out infinite;
+}
+
+.maher-animate-orbit {
+  animation: maher-orbit 8s linear infinite;
+}
+
+.maher-animate-spotlight {
+  animation: maher-spotlight 7s ease-in-out infinite;
+}
+
+.maher-animate-card-bob {
+  animation: maher-card-bob 6.5s ease-in-out infinite;
+}
+
+/* Premium interactive dashboard / action cards */
+.maher-dash-card {
+  --rx: 0deg;
+  --ry: 0deg;
+  --mx: 50%;
+  --my: 40%;
+  transform: perspective(1100px) rotateX(var(--rx)) rotateY(var(--ry)) translate3d(0, 0, 0);
+  transition:
+    transform 220ms var(--maher-ease-out),
+    box-shadow 280ms var(--maher-ease-out),
+    border-color 220ms var(--maher-ease-out);
+  will-change: transform;
+}
+
+.maher-dash-card:hover {
+  box-shadow:
+    0 18px 40px rgba(28, 25, 23, 0.12),
+    0 4px 12px rgba(28, 25, 23, 0.06);
+  border-color: color-mix(in srgb, var(--maher-brand) 28%, var(--maher-border));
+}
+
+.maher-dash-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    520px circle at var(--mx) var(--my),
+    rgba(255, 255, 255, 0.55),
+    transparent 42%
+  );
+  transition: opacity 280ms var(--maher-ease-out);
+  z-index: 1;
+  mix-blend-mode: soft-light;
+}
+
+.maher-dash-card:hover::before {
+  opacity: 1;
+}
+
+.maher-dash-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 20%,
+    rgba(217, 58, 43, 0.45),
+    rgba(138, 90, 43, 0.35),
+    transparent 80%
+  );
+  background-size: 220% 220%;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  transition: opacity 280ms var(--maher-ease-out);
+  z-index: 2;
+}
+
+.maher-dash-card:hover::after {
+  opacity: 1;
+  animation: maher-border-run 1.4s linear infinite;
+}
+
+.maher-dash-card .maher-dash-glow {
+  transition:
+    transform 500ms var(--maher-ease-out),
+    opacity 400ms var(--maher-ease-out);
+}
+
+.maher-dash-card:hover .maher-dash-glow {
+  transform: scale(1.45) translate(-6%, 8%);
+  opacity: 1;
+}
+
+.maher-dash-card .maher-dash-icon {
+  transition:
+    transform 320ms var(--maher-ease-spring),
+    box-shadow 280ms var(--maher-ease-out);
+}
+
+.maher-dash-card:hover .maher-dash-icon {
+  animation: maher-icon-spring 520ms var(--maher-ease-spring) both;
+  box-shadow: 0 8px 18px rgba(28, 25, 23, 0.12);
+}
+
+.maher-dash-card .maher-dash-rail {
+  transition:
+    width 280ms var(--maher-ease-out),
+    box-shadow 280ms var(--maher-ease-out);
+}
+
+.maher-dash-card:hover .maher-dash-rail {
+  width: 0.35rem;
+  filter: drop-shadow(0 0 8px rgba(217, 58, 43, 0.4));
+}
+
+.maher-dash-card .maher-dash-arrow {
+  transition:
+    opacity 240ms var(--maher-ease-out),
+    transform 280ms var(--maher-ease-spring),
+    background-color 240ms var(--maher-ease-out),
+    color 240ms var(--maher-ease-out);
+}
+
+.maher-dash-card:hover .maher-dash-arrow {
+  opacity: 1;
+  transform: translate(2px, -2px) scale(1.05);
+  background-color: var(--maher-brand-soft);
+  color: var(--maher-brand);
+}
+
+[dir='rtl'] .maher-dash-card:hover .maher-dash-arrow {
+  transform: translate(-2px, -2px) scale(1.05);
+}
+
+.maher-dash-card:hover .maher-dash-value {
+  animation: maher-value-glint 900ms ease-in-out;
+}
+
+.maher-dash-action {
+  --rx: 0deg;
+  --ry: 0deg;
+  --mx: 50%;
+  --my: 35%;
+  transform: perspective(900px) rotateX(var(--rx)) rotateY(var(--ry)) translate3d(0, 0, 0);
+  transition:
+    transform 220ms var(--maher-ease-out),
+    box-shadow 280ms var(--maher-ease-out),
+    border-color 220ms var(--maher-ease-out),
+    background-color 220ms var(--maher-ease-out);
+}
+
+.maher-dash-action:hover {
+  box-shadow:
+    0 14px 32px rgba(28, 25, 23, 0.1),
+    0 3px 8px rgba(28, 25, 23, 0.05);
+  border-color: color-mix(in srgb, var(--maher-brand) 35%, var(--maher-border));
+  background-color: color-mix(in srgb, var(--maher-brand-soft) 45%, var(--maher-surface));
+}
+
+.maher-dash-action::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    280px circle at var(--mx) var(--my),
+    rgba(217, 58, 43, 0.14),
+    transparent 55%
+  );
+  transition: opacity 260ms var(--maher-ease-out);
+}
+
+.maher-dash-action:hover::before {
+  opacity: 1;
+}
+
+.maher-dash-action .maher-dash-icon {
+  transition:
+    transform 320ms var(--maher-ease-spring),
+    box-shadow 260ms var(--maher-ease-out);
+}
+
+.maher-dash-action:hover .maher-dash-icon {
+  animation: maher-icon-spring 480ms var(--maher-ease-spring) both;
+  box-shadow: 0 6px 14px rgba(217, 58, 43, 0.22);
+}
+
+.maher-dash-action .maher-dash-arrow {
+  transition:
+    opacity 220ms var(--maher-ease-out),
+    transform 260ms var(--maher-ease-spring);
+}
+
+.maher-dash-action:hover .maher-dash-arrow {
+  opacity: 1;
+  transform: translate(3px, -2px);
+}
+
+[dir='rtl'] .maher-dash-action:hover .maher-dash-arrow {
+  transform: translate(-3px, -2px);
+}
+
+.maher-dash-action .maher-dash-label {
+  transition: color 220ms var(--maher-ease-out), letter-spacing 220ms var(--maher-ease-out);
+}
+
+.maher-dash-action:hover .maher-dash-label {
+  color: var(--maher-brand);
+  letter-spacing: 0.01em;
+}
+
+/* Factory pipeline stage cards */
+.maher-pipeline-card {
+  --rx: 0deg;
+  --ry: 0deg;
+  --mx: 50%;
+  --my: 30%;
+  --pipe-accent: var(--maher-brand);
+  --pipe-soft: var(--maher-brand-soft);
+  --pipe-glow: rgba(217, 58, 43, 0.28);
+  overflow: visible;
+  isolation: isolate;
+  transform: perspective(1000px) rotateX(var(--rx)) rotateY(var(--ry)) translate3d(0, 0, 0);
+  transition:
+    transform 240ms var(--maher-ease-out),
+    box-shadow 300ms var(--maher-ease-out),
+    border-color 240ms var(--maher-ease-out),
+    background-color 240ms var(--maher-ease-out);
+}
+
+.maher-pipeline-card:hover {
+  box-shadow: 0 10px 22px rgba(28, 25, 23, 0.07);
+  border-color: color-mix(in srgb, var(--pipe-accent) 22%, var(--maher-border));
+  background-color: color-mix(in srgb, var(--pipe-soft) 38%, var(--maher-surface));
+}
+
+/* Inset rim only — stays inside the card so parent overflow can't clip it into sharp boxes */
+.maher-pipeline-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 18px 3px color-mix(in srgb, var(--pipe-accent) 18%, transparent);
+  transition: opacity 280ms var(--maher-ease-out);
+  z-index: 2;
+}
+
+.maher-pipeline-card:hover::after {
+  opacity: 1;
+}
+
+.maher-pipeline-card .maher-pipe-orb {
+  display: none;
+}
+
+.maher-pipeline-card .maher-pipe-icon-wrap {
+  position: relative;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.maher-pipeline-card .maher-pipe-ring {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+.maher-pipeline-card .maher-pipe-ring-track {
+  fill: none;
+  stroke: var(--maher-border);
+  stroke-width: 3;
+}
+
+.maher-pipeline-card .maher-pipe-ring-value {
+  fill: none;
+  stroke: var(--pipe-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 88;
+  stroke-dashoffset: 88;
+  transition: stroke-dashoffset 900ms var(--maher-ease-out);
+}
+
+.maher-pipeline-card:hover .maher-pipe-ring-value {
+  filter: drop-shadow(0 0 4px var(--pipe-glow));
+}
+
+.maher-pipeline-card .maher-pipe-icon {
+  position: absolute;
+  inset: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--pipe-accent);
+  color: #fff;
+  box-shadow: 0 3px 10px var(--pipe-glow);
+  transition:
+    transform 320ms var(--maher-ease-spring),
+    box-shadow 280ms var(--maher-ease-out);
+}
+
+.maher-pipeline-card:hover .maher-pipe-icon {
+  animation: maher-icon-spring 560ms var(--maher-ease-spring) both;
+  box-shadow: 0 10px 22px var(--pipe-glow);
+}
+
+.maher-pipeline-card .maher-pipe-step {
+  position: absolute;
+  inset-inline-start: -0.15rem;
+  top: -0.15rem;
+  z-index: 4;
+  display: flex;
+  height: 1.15rem;
+  min-width: 1.15rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--maher-surface);
+  border: 1px solid color-mix(in srgb, var(--pipe-accent) 35%, var(--maher-border));
+  color: var(--pipe-accent);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: var(--maher-shadow-sm);
+  transition:
+    transform 280ms var(--maher-ease-spring),
+    background-color 220ms var(--maher-ease-out),
+    color 220ms var(--maher-ease-out);
+}
+
+.maher-pipeline-card:hover .maher-pipe-step {
+  transform: scale(1.12);
+  background: var(--pipe-accent);
+  color: #fff;
+  border-color: var(--pipe-accent);
+}
+
+.maher-pipeline-card .maher-pipe-label {
+  transition: color 220ms var(--maher-ease-out);
+}
+
+.maher-pipeline-card:hover .maher-pipe-label {
+  color: var(--maher-text-primary);
+}
+
+.maher-pipeline-card .maher-pipe-value {
+  transition:
+    transform 280ms var(--maher-ease-spring),
+    color 220ms var(--maher-ease-out);
+}
+
+.maher-pipeline-card:hover .maher-pipe-value {
+  transform: scale(1.06);
+  color: var(--pipe-accent);
+  animation: maher-value-glint 900ms ease-in-out;
+}
+
+.maher-pipeline-card .maher-pipe-chip {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 240ms var(--maher-ease-out),
+    transform 280ms var(--maher-ease-spring);
+}
+
+.maher-pipeline-card:hover .maher-pipe-chip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.maher-bar-grow {
+  transform-origin: left center;
+  animation: maher-bar-grow 900ms var(--maher-ease-out) backwards;
+}
+
+[dir='rtl'] .maher-bar-grow {
+  transform-origin: right center;
+}
+
 .maher-animate-attention {
   animation: maher-ring-pulse 1.6s var(--maher-ease-out) infinite;
+}
+
+.maher-dash-ring {
+  stroke-dasharray: 120;
+  stroke-dashoffset: 120;
+  animation: maher-dash-draw 1.1s var(--maher-ease-out) forwards;
 }
 
 [dir='rtl'] .maher-animate-in-start,
@@ -328,8 +859,14 @@
 .maher-stagger > *:nth-child(10) {
   animation-delay: 360ms;
 }
-.maher-stagger > *:nth-child(n + 11) {
+.maher-stagger > *:nth-child(11) {
   animation-delay: 390ms;
+}
+.maher-stagger > *:nth-child(12) {
+  animation-delay: 420ms;
+}
+.maher-stagger > *:nth-child(n + 13) {
+  animation-delay: 450ms;
 }
 
 /* Table rows fade in row by row */
@@ -506,6 +1043,178 @@ textarea,
   animation: maher-progress-sweep 1.1s var(--maher-ease-in-out) infinite;
 }
 
+/* ---------- Auth / page chrome ---------- */
+
+.maher-brand-mark {
+  animation: maher-pop-bounce 600ms var(--maher-ease-spring) both;
+}
+
+.maher-auth-panel {
+  animation: maher-rise 500ms var(--maher-ease-out) both;
+}
+
+.maher-auth-highlights > * {
+  opacity: 0;
+  animation: maher-slide-in-start 480ms var(--maher-ease-out) forwards;
+}
+
+.maher-auth-highlights > *:nth-child(1) {
+  animation-delay: 120ms;
+}
+.maher-auth-highlights > *:nth-child(2) {
+  animation-delay: 200ms;
+}
+.maher-auth-highlights > *:nth-child(3) {
+  animation-delay: 280ms;
+}
+.maher-auth-highlights > *:nth-child(4) {
+  animation-delay: 360ms;
+}
+
+.maher-form-section {
+  animation: maher-rise 420ms var(--maher-ease-out) both;
+}
+
+.maher-nav-item {
+  transition:
+    background-color var(--maher-duration) var(--maher-ease-out),
+    color var(--maher-duration) var(--maher-ease-out),
+    padding var(--maher-duration) var(--maher-ease-out),
+    transform var(--maher-duration-fast) var(--maher-ease-out);
+}
+
+/* Sticky header — glassy fade with enough blur to obscure content behind */
+[data-header-tone='on-dark'],
+[data-header-tone='on-light'] {
+  -webkit-backdrop-filter: saturate(140%) blur(18px);
+  backdrop-filter: saturate(140%) blur(18px);
+  isolation: isolate;
+  transition:
+    background-color 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-header-tone='on-dark'] .maher-header-fg,
+[data-header-tone='on-dark'] .maher-header-fg-muted,
+[data-header-tone='on-light'] .maher-header-fg,
+[data-header-tone='on-light'] .maher-header-fg-muted,
+[data-header-tone] .maher-nav-item,
+[data-header-tone] .maher-lang-switch,
+[data-header-tone] .maher-header-icon-btn {
+  transition:
+    color 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    fill 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    stroke 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Light glass — clear faded sheen */
+[data-header-tone='on-light'] {
+  background-color: rgba(255, 255, 255, 0.22) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.5) inset,
+    0 6px 18px rgba(28, 25, 23, 0.03);
+}
+
+/* Dark glass — clear tinted fade over dark heroes */
+[data-header-tone='on-dark'] {
+  background-color: rgba(28, 22, 18, 0.32) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.1) inset,
+    0 8px 22px rgba(0, 0, 0, 0.18);
+}
+
+[data-header-tone='on-dark'] .maher-header-fg {
+  color: #ffffff !important;
+}
+
+[data-header-tone='on-dark'] .maher-header-fg-muted {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+[data-header-tone='on-dark'] .maher-nav-item:not([aria-current='page']) {
+  color: #ffffff !important;
+}
+
+[data-header-tone='on-dark'] .maher-nav-item:not([aria-current='page']):hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff !important;
+}
+
+[data-header-tone='on-dark'] .maher-lang-switch {
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  backdrop-filter: saturate(140%) blur(10px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset;
+}
+
+[data-header-tone='on-light'] .maher-lang-switch {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  backdrop-filter: saturate(140%) blur(10px);
+}
+
+[data-header-tone='on-dark'] .maher-header-icon-btn {
+  color: #ffffff !important;
+}
+
+[data-header-tone='on-dark'] .maher-header-icon-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff !important;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  [data-header-tone='on-light'] {
+    background-color: rgba(255, 255, 255, 0.75) !important;
+  }
+
+  [data-header-tone='on-dark'] {
+    background-color: rgba(28, 22, 18, 0.85) !important;
+  }
+}
+
+.maher-nav-item:active {
+  transform: scale(0.98);
+}
+
+.maher-list-card {
+  transition:
+    transform var(--maher-duration) var(--maher-ease-out),
+    box-shadow var(--maher-duration) var(--maher-ease-out),
+    border-color var(--maher-duration) var(--maher-ease-out);
+}
+
+.maher-list-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--maher-shadow-md);
+  border-color: var(--maher-border-strong);
+}
+
+.maher-table-shell {
+  transition: box-shadow var(--maher-duration) var(--maher-ease-out);
+}
+
+.maher-table-shell:hover {
+  box-shadow: var(--maher-shadow-md);
+}
+
+.maher-detail-sticky-actions {
+  animation: maher-rise 400ms var(--maher-ease-out) both;
+  animation-delay: 120ms;
+}
+
+.maher-page-hero {
+  animation: maher-fade-in 420ms var(--maher-ease-out) both;
+}
+
 html {
   scroll-behavior: smooth;
 }
@@ -526,7 +1235,32 @@ html {
 
   .maher-press:active:not(:disabled),
   .maher-lift:hover,
-  .maher-nudge-icon:hover svg {
+  .maher-nudge-icon:hover svg,
+  .maher-dash-card:hover,
+  .maher-dash-action:hover,
+  .maher-pipeline-card:hover,
+  .maher-list-card:hover,
+  .maher-nav-item:active {
     transform: none;
+  }
+
+  .maher-dash-card:hover::before,
+  .maher-dash-card:hover::after,
+  .maher-dash-action:hover::before,
+  .maher-pipeline-card:hover::after {
+    opacity: 0 !important;
+    animation: none !important;
+  }
+
+  .maher-dash-card:hover .maher-dash-icon,
+  .maher-dash-action:hover .maher-dash-icon,
+  .maher-pipeline-card:hover .maher-pipe-icon {
+    animation: none !important;
+  }
+
+  .maher-pipeline-card:hover .maher-pipe-value,
+  .maher-pipeline-card:hover .maher-pipe-chip,
+  .maher-pipeline-card:hover .maher-pipe-step {
+    transform: none !important;
   }
 }

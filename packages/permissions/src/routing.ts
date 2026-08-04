@@ -100,7 +100,10 @@ export function resolveHomePersona(user: AuthUser | null | undefined): HomePerso
   return 'generic';
 }
 
-/** Expo Router href after mobile login — single home that adapts by persona. */
-export function resolveMobileHomeHref(_user: AuthUser): string {
-  return '/(app)';
+/** Expo Router href after mobile login — routes by admin / customer / employee surface. */
+export function resolveMobileHomeHref(user: AuthUser): string {
+  const surface = resolveAppSurface(user);
+  if (surface === 'customer') return '/(app)/customer';
+  if (surface === 'employee') return '/(app)/employee';
+  return '/(app)/admin';
 }

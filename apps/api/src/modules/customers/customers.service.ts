@@ -1,6 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, SalesOrderStatus } from '@maher/database';
 import type { TranslateProvider } from '@maher/integrations';
+import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
@@ -11,6 +13,24 @@ const CLOSED_ORDER_STATUSES: SalesOrderStatus[] = [
   SalesOrderStatus.DELIVERED,
   SalesOrderStatus.COMPLETED,
   SalesOrderStatus.CANCELLED,
+];
+
+/** Waiting to enter the factory floor */
+const WAITING_ORDER_STATUSES: SalesOrderStatus[] = [
+  SalesOrderStatus.DRAFT,
+  SalesOrderStatus.CONFIRMED,
+  SalesOrderStatus.WAITING_FOR_PAYMENT,
+  SalesOrderStatus.WAITING_FOR_MATERIALS,
+  SalesOrderStatus.READY_FOR_PRODUCTION,
+  SalesOrderStatus.ON_HOLD,
+];
+
+const IN_WORK_ORDER_STATUSES: SalesOrderStatus[] = [SalesOrderStatus.IN_PRODUCTION];
+
+const DONE_ORDER_STATUSES: SalesOrderStatus[] = [
+  SalesOrderStatus.READY_FOR_DELIVERY,
+  SalesOrderStatus.DELIVERED,
+  SalesOrderStatus.COMPLETED,
 ];
 
 function trimOrUndef(value?: string | null) {
@@ -73,27 +93,87 @@ export class CustomersService {
     ]);
 
     const ids = data.map((c) => c.id);
-    const activeCounts =
-      ids.length === 0
-        ? []
-        : await this.prisma.salesOrder.groupBy({
-            by: ['customerId'],
-            where: {
-              customerId: { in: ids },
-              archivedAt: null,
-              status: { notIn: CLOSED_ORDER_STATUSES },
-            },
-            _count: { _all: true },
-          });
-    const countByCustomer = new Map(
-      activeCounts.map((row) => [row.customerId, row._count._all]),
+    if (ids.length === 0) {
+      return { data: [], meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    }
+
+    const [orderGroups, invoiceGroups] = await Promise.all([
+      this.prisma.salesOrder.groupBy({
+        by: ['customerId', 'status'],
+        where: {
+          customerId: { in: ids },
+          archivedAt: null,
+          status: { not: SalesOrderStatus.CANCELLED },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.invoice.groupBy({
+        by: ['customerId'],
+        where: {
+          customerId: { in: ids },
+          archivedAt: null,
+          status: { notIn: ['CANCELLED', 'VOID', 'DRAFT'] },
+        },
+        _sum: {
+          total: true,
+          paidAmount: true,
+          outstandingAmount: true,
+        },
+      }),
+    ]);
+
+    type OrderBucket = { waiting: number; inWork: number; done: number; active: number };
+    const ordersByCustomer = new Map<string, OrderBucket>();
+    for (const row of orderGroups) {
+      const bucket = ordersByCustomer.get(row.customerId) ?? {
+        waiting: 0,
+        inWork: 0,
+        done: 0,
+        active: 0,
+      };
+      const n = row._count._all;
+      if (WAITING_ORDER_STATUSES.includes(row.status)) bucket.waiting += n;
+      else if (IN_WORK_ORDER_STATUSES.includes(row.status)) bucket.inWork += n;
+      else if (DONE_ORDER_STATUSES.includes(row.status)) bucket.done += n;
+      if (!CLOSED_ORDER_STATUSES.includes(row.status)) bucket.active += n;
+      ordersByCustomer.set(row.customerId, bucket);
+    }
+
+    const moneyByCustomer = new Map(
+      invoiceGroups.map((row) => [
+        row.customerId,
+        {
+          invoicedTotal: Number(row._sum.total ?? 0),
+          paidTotal: Number(row._sum.paidAmount ?? 0),
+          outstandingTotal: Number(row._sum.outstandingAmount ?? 0),
+        },
+      ]),
     );
 
     return {
-      data: data.map((customer) => ({
-        ...customer,
-        activeOrdersCount: countByCustomer.get(customer.id) ?? 0,
-      })),
+      data: data.map((customer) => {
+        const orders = ordersByCustomer.get(customer.id) ?? {
+          waiting: 0,
+          inWork: 0,
+          done: 0,
+          active: 0,
+        };
+        const money = moneyByCustomer.get(customer.id) ?? {
+          invoicedTotal: 0,
+          paidTotal: 0,
+          outstandingTotal: 0,
+        };
+        return {
+          ...customer,
+          activeOrdersCount: orders.active,
+          waitingOrdersCount: orders.waiting,
+          inWorkOrdersCount: orders.inWork,
+          doneOrdersCount: orders.done,
+          invoicedTotal: money.invoicedTotal,
+          paidTotal: money.paidTotal,
+          outstandingTotal: money.outstandingTotal,
+        };
+      }),
       meta: paginatedMeta(query.page, query.pageSize, totalItems),
     };
   }
@@ -108,15 +188,52 @@ export class CustomersService {
     });
     if (!customer) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Customer not found.' });
 
-    const activeOrdersCount = await this.prisma.salesOrder.count({
-      where: {
-        customerId: id,
-        archivedAt: null,
-        status: { notIn: CLOSED_ORDER_STATUSES },
-      },
-    });
+    const [orderGroups, invoiceSum] = await Promise.all([
+      this.prisma.salesOrder.groupBy({
+        by: ['status'],
+        where: {
+          customerId: id,
+          archivedAt: null,
+          status: { not: SalesOrderStatus.CANCELLED },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.invoice.aggregate({
+        where: {
+          customerId: id,
+          archivedAt: null,
+          status: { notIn: ['CANCELLED', 'VOID', 'DRAFT'] },
+        },
+        _sum: {
+          total: true,
+          paidAmount: true,
+          outstandingAmount: true,
+        },
+      }),
+    ]);
 
-    return { ...customer, activeOrdersCount };
+    let waiting = 0;
+    let inWork = 0;
+    let done = 0;
+    let active = 0;
+    for (const row of orderGroups) {
+      const n = row._count._all;
+      if (WAITING_ORDER_STATUSES.includes(row.status)) waiting += n;
+      else if (IN_WORK_ORDER_STATUSES.includes(row.status)) inWork += n;
+      else if (DONE_ORDER_STATUSES.includes(row.status)) done += n;
+      if (!CLOSED_ORDER_STATUSES.includes(row.status)) active += n;
+    }
+
+    return {
+      ...customer,
+      activeOrdersCount: active,
+      waitingOrdersCount: waiting,
+      inWorkOrdersCount: inWork,
+      doneOrdersCount: done,
+      invoicedTotal: Number(invoiceSum._sum.total ?? 0),
+      paidTotal: Number(invoiceSum._sum.paidAmount ?? 0),
+      outstandingTotal: Number(invoiceSum._sum.outstandingAmount ?? 0),
+    };
   }
 
   async create(dto: CreateCustomerDto, userId: string) {
@@ -130,26 +247,85 @@ export class CustomersService {
         message: 'At least one customer name (AR, EN, or HE) is required.',
       });
     }
+    if (!trimOrUndef(dto.phone)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Phone is required.',
+      });
+    }
+    if (!dto.address?.city?.trim() || !dto.address?.label?.trim()) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Address label and city are required.',
+      });
+    }
 
     const code = await this.sequences.next('CUST', 'CUST');
-    const customer = await this.prisma.customer.create({
-      data: {
-        code,
-        name,
-        nameAr: nameAr ?? null,
-        nameEn: nameEn ?? null,
-        nameHe: nameHe ?? null,
-        customerType: dto.customerType ?? 'COMPANY',
-        companyName: trimOrUndef(dto.companyName),
-        phone: trimOrUndef(dto.phone),
-        fax: trimOrUndef(dto.fax),
-        email: trimOrUndef(dto.email)?.toLowerCase(),
-        preferredLanguage: dto.preferredLanguage ?? 'ar',
-        status: dto.status ?? 'ACTIVE',
-        notes: trimOrUndef(dto.notes),
-        createdById: userId,
-        updatedById: userId,
-      },
+    const baseUsername = code.toLowerCase().replace(/[^a-z0-9]/g, '');
+    let username = baseUsername;
+    let suffix = 1;
+    while (await this.prisma.user.findUnique({ where: { username } })) {
+      username = `${baseUsername}${suffix++}`;
+    }
+
+    const tempPassword = `Tmp-${randomBytes(6).toString('base64url')}!A1`;
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
+    const customerRole = await this.prisma.role.findUnique({ where: { code: 'CUSTOMER' } });
+    if (!customerRole) {
+      throw new BadRequestException({
+        code: 'CONFIG_ERROR',
+        message: 'CUSTOMER role is not configured.',
+      });
+    }
+
+    const customer = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.customer.create({
+        data: {
+          code,
+          name,
+          nameAr: nameAr ?? null,
+          nameEn: nameEn ?? null,
+          nameHe: nameHe ?? null,
+          customerType: dto.customerType ?? 'COMPANY',
+          companyName: trimOrUndef(dto.companyName),
+          phone: trimOrUndef(dto.phone),
+          fax: trimOrUndef(dto.fax),
+          email: trimOrUndef(dto.email)?.toLowerCase(),
+          preferredLanguage: dto.preferredLanguage ?? 'ar',
+          status: dto.status ?? 'ACTIVE',
+          notes: trimOrUndef(dto.notes),
+          createdById: userId,
+          updatedById: userId,
+          addresses: {
+            create: {
+              label: dto.address.label.trim(),
+              city: dto.address.city.trim(),
+              street: trimOrUndef(dto.address.street),
+              area: trimOrUndef(dto.address.area),
+              country: dto.address.country?.trim() || 'JO',
+              isDefaultBilling: true,
+              isDefaultDelivery: true,
+            },
+          },
+        },
+      });
+
+      await tx.user.create({
+        data: {
+          username,
+          email: trimOrUndef(dto.email)?.toLowerCase(),
+          passwordHash,
+          firstName: nameEn ?? nameAr ?? name,
+          lastName: '',
+          phone: trimOrUndef(dto.phone),
+          preferredLanguage: dto.preferredLanguage ?? 'ar',
+          isActive: true,
+          customerId: created.id,
+          roles: { create: { roleId: customerRole.id } },
+        },
+      });
+
+      return created;
     });
 
     await this.prisma.auditEvent.create({
@@ -162,7 +338,11 @@ export class CustomersService {
       },
     });
 
-    return { ...customer, activeOrdersCount: 0 };
+    return {
+      ...customer,
+      activeOrdersCount: 0,
+      portalCredentials: { username, temporaryPassword: tempPassword },
+    };
   }
 
   async update(id: string, dto: UpdateCustomerDto, userId: string) {

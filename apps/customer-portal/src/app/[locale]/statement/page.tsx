@@ -7,7 +7,8 @@ import {
   Card,
   EmptyState,
   ErrorState,
-  PageHeader,
+  MotionSection,
+  PageHero,
   Skeleton,
   Table,
   TableBody,
@@ -50,9 +51,9 @@ export default function StatementPage() {
 
   if (meLoading || isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
+      <div className="space-y-6">
+        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
+        <Skeleton className="h-64 w-full rounded-xl" />
       </div>
     );
   }
@@ -69,7 +70,8 @@ export default function StatementPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
+        tone="soft"
         title={t('statement')}
         actions={
           <Button
@@ -84,41 +86,47 @@ export default function StatementPage() {
       />
 
       {!data?.entries?.length ? (
-        <EmptyState
-          title="No ledger entries"
-          description="Invoices and payments will appear here."
-        />
+        <MotionSection>
+          <EmptyState
+            title="No ledger entries"
+            description="Invoices and payments will appear here."
+          />
+        </MotionSection>
       ) : (
         <>
-          <Alert variant="info">
-            Closing balance as of {data.asOf.slice(0, 10)}: {data.closingBalance} {data.currency}
-          </Alert>
-          <Card title="Statement of account" padded={false}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableHeaderCell>Date</TableHeaderCell>
-                  <TableHeaderCell>Ref</TableHeaderCell>
-                  <TableHeaderCell>Description</TableHeaderCell>
-                  <TableHeaderCell>Debit</TableHeaderCell>
-                  <TableHeaderCell>Credit</TableHeaderCell>
-                  <TableHeaderCell>Balance</TableHeaderCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {data.entries.map((e) => (
-                  <TableRow key={`${e.reference}-${e.date}`}>
-                    <TableCell>{e.date.slice(0, 10)}</TableCell>
-                    <TableCell>{e.reference}</TableCell>
-                    <TableCell>{e.description}</TableCell>
-                    <TableCell>{e.debit}</TableCell>
-                    <TableCell>{e.credit}</TableCell>
-                    <TableCell>{e.balance}</TableCell>
+          <MotionSection delayMs={40}>
+            <Alert variant="info">
+              Closing balance as of {data.asOf.slice(0, 10)}: {data.closingBalance} {data.currency}
+            </Alert>
+          </MotionSection>
+          <MotionSection delayMs={80}>
+            <Card title="Statement of account" padded={false} className="maher-form-section">
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeaderCell>Date</TableHeaderCell>
+                    <TableHeaderCell>Ref</TableHeaderCell>
+                    <TableHeaderCell>Description</TableHeaderCell>
+                    <TableHeaderCell>Debit</TableHeaderCell>
+                    <TableHeaderCell>Credit</TableHeaderCell>
+                    <TableHeaderCell>Balance</TableHeaderCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
+                </TableHead>
+                <TableBody>
+                  {data.entries.map((e) => (
+                    <TableRow key={`${e.reference}-${e.date}`}>
+                      <TableCell>{e.date.slice(0, 10)}</TableCell>
+                      <TableCell>{e.reference}</TableCell>
+                      <TableCell>{e.description}</TableCell>
+                      <TableCell>{e.debit}</TableCell>
+                      <TableCell>{e.credit}</TableCell>
+                      <TableCell>{e.balance}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          </MotionSection>
         </>
       )}
     </div>

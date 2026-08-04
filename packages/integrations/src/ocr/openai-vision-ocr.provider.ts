@@ -22,12 +22,16 @@ export class OpenAiVisionOcrProvider implements OcrProvider {
           {
             role: 'system',
             content:
-              'Extract all readable text from the image or document. Return plain text only.',
+              'You transcribe handwritten furniture factory order forms photographed on paper or whiteboards. ' +
+              'The writing may be in Hebrew, Arabic, or English (often mixed). ' +
+              'Preserve every number, dimension, quantity, date, fabric/color code, and product label exactly as written. ' +
+              'Keep line breaks where the writer separated items. ' +
+              'Do not translate, summarize, or invent content — return plain text of what was written, including unclear fragments marked with [?] if needed.',
           },
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'OCR this document.' },
+              { type: 'text', text: 'Transcribe all handwriting from this furniture order photo.' },
               { type: 'image_url', image_url: { url: dataUrl } },
             ],
           },

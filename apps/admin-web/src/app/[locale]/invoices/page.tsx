@@ -1,6 +1,5 @@
 'use client';
 
-import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
 import { apiFetch, ApiClientError, API_URL } from '@/lib/api-client';
 import { INVOICE_STATUSES, statusOptions } from '@/lib/status-options';
@@ -11,19 +10,23 @@ import {
   EmptyState,
   ErrorState,
   Input,
+  Ltr,
   Modal,
+  PageHero,
   Select,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
+  cn,
 } from '@maher/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Armchair } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
@@ -37,13 +40,54 @@ interface InvoiceRow {
   dueDate?: string | null;
   customerId?: string;
   customer?: { id: string; name: string };
+  salesOrder?: {
+    id: string;
+    number: string;
+    externalOrderNumber?: string | null;
+  } | null;
 }
 
-interface SalesOrderRow {
+interface SalesOrderOption {
   id: string;
   number: string;
   status: string;
-  customer?: { name: string };
+  title?: string | null;
+  imageUrl?: string | null;
+  total?: string | number | null;
+  sellerPrice?: string | number | null;
+  externalOrderNumber?: string | null;
+  customer?: {
+    name?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+  } | null;
+  quotation?: {
+    request?: {
+      endCustomerName?: string | null;
+      externalOrderNumber?: string | null;
+    } | null;
+  } | null;
+}
+
+function mediaSrc(url: string | null | undefined): string | null {
+  if (!url?.trim()) return null;
+  if (/^https?:\/\//i.test(url) || url.startsWith('blob:')) return url;
+  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function dealerOrderNumber(so: SalesOrderOption) {
+  return (
+    so.externalOrderNumber?.trim() ||
+    so.quotation?.request?.externalOrderNumber?.trim() ||
+    null
+  );
+}
+
+function customerLabel(so: SalesOrderOption) {
+  const c = so.customer;
+  if (!c) return null;
+  return c.nameEn || c.nameAr || c.name || c.nameHe || null;
 }
 
 function isOverdue(row: InvoiceRow) {
@@ -57,6 +101,7 @@ function InvoicesPageInner() {
   const t = useTranslations('navigation');
   const ta = useTranslations('accounting');
   const tc = useTranslations('catalog');
+  const tSales = useTranslations('sales');
   const tStatus = useTranslations('statuses');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
@@ -68,6 +113,7 @@ function InvoicesPageInner() {
   const [banner, setBanner] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [salesOrderId, setSalesOrderId] = useState('');
+  const [soSearch, setSoSearch] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,14 +135,37 @@ function InvoicesPageInner() {
       apiFetch<{ data: InvoiceRow[]; meta: { page: number; totalPages: number } }>(
         `/api/v1/invoices?${listParams}`,
       ),
+    placeholderData: keepPreviousData,
   });
 
   const soQuery = useQuery({
     queryKey: ['sales-orders-for-invoice'],
     queryFn: () =>
-      apiFetch<{ data: SalesOrderRow[] }>('/api/v1/sales-orders?pageSize=50').then((r) => r.data),
+      apiFetch<{ data: SalesOrderOption[] }>('/api/v1/sales-orders?pageSize=100').then(
+        (r) => r.data,
+      ),
     enabled: createOpen,
   });
+
+  const filteredSalesOrders = useMemo(() => {
+    const rows = soQuery.data ?? [];
+    const needle = soSearch.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((so) => {
+      const hay = [
+        so.number,
+        so.title,
+        dealerOrderNumber(so),
+        customerLabel(so),
+        so.quotation?.request?.endCustomerName,
+        so.status,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [soQuery.data, soSearch]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -121,7 +190,7 @@ function InvoicesPageInner() {
 
   const rows = listQuery.data?.data ?? [];
 
-  if (listQuery.isLoading) {
+  if (listQuery.isLoading && !listQuery.data) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -129,7 +198,7 @@ function InvoicesPageInner() {
       </div>
     );
   }
-  if (listQuery.isError) {
+  if (listQuery.isError && !listQuery.data) {
     return (
       <ErrorState
         title={t('invoices')}
@@ -143,13 +212,15 @@ function InvoicesPageInner() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title={t('invoices')}
         description={ta('emptyHint')}
+        tone="soft"
         actions={
           <Button
             onClick={() => {
               setSalesOrderId('');
+              setSoSearch('');
               setFormError(null);
               setCreateOpen(true);
             }}
@@ -162,9 +233,8 @@ function InvoicesPageInner() {
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
           <Input
-            className="ps-9"
+            withSearchIcon
             value={q}
             onChange={(e) => {
               setPage(1);
@@ -192,6 +262,8 @@ function InvoicesPageInner() {
             <TableHead>
               <TableRow>
                 <TableHeaderCell>{ta('invoiceNumber')}</TableHeaderCell>
+                <TableHeaderCell>{tSales('systemOrderNumber')}</TableHeaderCell>
+                <TableHeaderCell>{tSales('dealerOrderNumber')}</TableHeaderCell>
                 <TableHeaderCell>{tc('customer')}</TableHeaderCell>
                 <TableHeaderCell>{ta('amount')}</TableHeaderCell>
                 <TableHeaderCell>{ta('outstanding')}</TableHeaderCell>
@@ -209,13 +281,18 @@ function InvoicesPageInner() {
                       <Link
                         href={`/invoices/${row.id}`}
                         className="font-medium text-brand hover:underline"
+                        dir="ltr"
                       >
                         {row.number}
                       </Link>
                     </TableCell>
+                    <TableNumericCell>{row.salesOrder?.number ?? '—'}</TableNumericCell>
+                    <TableNumericCell>
+                      {row.salesOrder?.externalOrderNumber?.trim() || '—'}
+                    </TableNumericCell>
                     <TableCell>{row.customer?.name ?? '—'}</TableCell>
-                    <TableCell dir="ltr">{Number(row.total ?? 0).toFixed(2)}</TableCell>
-                    <TableCell dir="ltr">{Number(row.outstandingAmount ?? 0).toFixed(2)}</TableCell>
+                    <TableNumericCell>{Number(row.total ?? 0).toFixed(2)}</TableNumericCell>
+                    <TableNumericCell>{Number(row.outstandingAmount ?? 0).toFixed(2)}</TableNumericCell>
                     <TableCell>
                       <span dir="ltr">{row.dueDate ? row.dueDate.slice(0, 10) : '—'}</span>
                       {overdue ? (
@@ -282,6 +359,8 @@ function InvoicesPageInner() {
         open={createOpen}
         onClose={() => !createMutation.isPending && setCreateOpen(false)}
         title={ta('createInvoice')}
+        description={ta('pickSalesOrderHint')}
+        size="lg"
         footer={
           <>
             <Button
@@ -291,26 +370,119 @@ function InvoicesPageInner() {
             >
               {tCommon('cancel')}
             </Button>
-            <Button loading={createMutation.isPending} onClick={() => createMutation.mutate()}>
+            <Button
+              loading={createMutation.isPending}
+              disabled={!salesOrderId}
+              onClick={() => createMutation.mutate()}
+            >
               {tCommon('save')}
             </Button>
           </>
         }
       >
-        <div className="grid gap-3">
+        <div className="maher-form-section space-y-3">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
-          <Select
-            label={tc('salesOrder')}
-            value={salesOrderId}
-            onChange={(e) => setSalesOrderId(e.target.value)}
-          >
-            <option value="">{tc('select')}</option>
-            {(soQuery.data ?? []).map((so) => (
-              <option key={so.id} value={so.id}>
-                {so.number} — {so.customer?.name ?? tStatus(so.status as never)}
-              </option>
-            ))}
-          </Select>
+
+          <Input
+            withSearchIcon
+            value={soSearch}
+            onChange={(e) => setSoSearch(e.target.value)}
+            placeholder={ta('searchSalesOrders')}
+            disabled={soQuery.isLoading}
+          />
+
+          {soQuery.isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-20 w-full rounded-xl" />
+              <Skeleton className="h-20 w-full rounded-xl" />
+              <Skeleton className="h-20 w-full rounded-xl" />
+            </div>
+          ) : (soQuery.data ?? []).length === 0 ? (
+            <EmptyState title={ta('noSalesOrdersAvailable')} />
+          ) : filteredSalesOrders.length === 0 ? (
+            <EmptyState title={ta('noSalesOrdersMatch')} />
+          ) : (
+            <div
+              className="max-h-[min(24rem,55vh)] space-y-2 overflow-y-auto pe-1"
+              role="listbox"
+              aria-label={tc('salesOrder')}
+            >
+              {filteredSalesOrders.map((so) => {
+                const selected = salesOrderId === so.id;
+                const img = mediaSrc(so.imageUrl);
+                const dealerNo = dealerOrderNumber(so);
+                const dealer = customerLabel(so);
+                const endCustomer = so.quotation?.request?.endCustomerName?.trim() || null;
+                const amount = Number(so.sellerPrice ?? so.total ?? NaN);
+                return (
+                  <button
+                    key={so.id}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => setSalesOrderId(so.id)}
+                    className={cn(
+                      'maher-list-card flex w-full gap-3 rounded-xl border p-2.5 text-start transition',
+                      selected
+                        ? 'border-brand bg-[var(--maher-brand-soft)] shadow-sm'
+                        : 'border-border bg-surface hover:border-brand/40 hover:bg-surface-muted',
+                    )}
+                  >
+                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-[var(--maher-surface-muted)]">
+                      {img ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={img}
+                          alt=""
+                          className="absolute inset-0 h-full w-full object-cover object-center"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-text-tertiary">
+                          <Armchair className="h-6 w-6 opacity-40" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="line-clamp-1 text-sm font-semibold text-text-primary">
+                          {so.title?.trim() || so.number}
+                        </p>
+                        <StatusBadge status={so.status} />
+                      </div>
+                      <p className="text-xs text-text-secondary" dir="ltr">
+                        <span className="text-text-tertiary">{tSales('systemOrderNumber')}: </span>
+                        <Ltr>{so.number}</Ltr>
+                        {dealerNo ? (
+                          <>
+                            {' · '}
+                            <span className="text-text-tertiary">
+                              {tSales('dealerOrderNumber')}:{' '}
+                            </span>
+                            <Ltr>{dealerNo}</Ltr>
+                          </>
+                        ) : null}
+                      </p>
+                      <p className="truncate text-xs text-text-secondary">
+                        {dealer ?? '—'}
+                        {endCustomer ? (
+                          <span className="text-text-tertiary">
+                            {' · '}
+                            {tSales('endCustomer')}: {endCustomer}
+                          </span>
+                        ) : null}
+                      </p>
+                      {Number.isFinite(amount) ? (
+                        <p className="text-xs font-medium text-text-primary" dir="ltr">
+                          {amount.toFixed(2)} JOD
+                        </p>
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </Modal>
     </div>

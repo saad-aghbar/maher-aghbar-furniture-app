@@ -71,20 +71,24 @@ npx expo export --platform ios --output-dir /tmp/mobile-export
 
 ## Demo accounts
 
-Password: `Admin@12345!` — **local/demo only, never production**
+Password: **`Admin@12345!`** — **local/demo only, never production**
 
-| Email | Role / portal |
-|-------|----------------|
-| `admin@maher-aghbar.jo` | Admin web |
-| `sales@maher-aghbar.jo` | Admin web (sales) |
-| `worker@maher-aghbar.jo` | Employee portal (material prep / QC) |
-| `carpenter@maher-aghbar.jo` | Employee portal (carpentry) |
-| `painter@maher-aghbar.jo` | Employee portal (painting) |
-| `upholsterer@maher-aghbar.jo` | Employee portal (upholstery) |
-| `assembler@maher-aghbar.jo` | Employee portal (assembly) |
-| `packer@maher-aghbar.jo` | Employee portal (packaging / delivery) |
-| `customer@cedar-hotel.jo` | Customer portal (Cedar Hotel only) |
-| `customer@olive-restaurant.jo` | Customer portal (Olive Restaurant only) |
+Sign in with **username** (login forms no longer accept email):
+
+| Username | Role / portal |
+|----------|----------------|
+| `admin` | Admin web |
+| `sales` | Admin web (sales) |
+| `worker` | Employee portal (material prep / QC) |
+| `carpenter` | Employee portal (carpentry) |
+| `painter` | Employee portal (painting) |
+| `upholsterer` | Employee portal (upholstery) |
+| `assembler` | Employee portal (assembly) |
+| `packer` | Employee portal (packaging / delivery) |
+| `cedar` | Customer portal (Cedar Hotel only) |
+| `olive` | Customer portal (Olive Restaurant only) |
+
+Smoke scripts use **`admin`**, **`cedar`**, and **`worker`** with the same password.
 
 Demo production order `PO-DEMO-001` is mid-pipeline (Material Prep done, Carpentry in progress, Painting ready). Open Admin → Production → assign/track stages; each worker sees only their tasks.
 
@@ -96,7 +100,7 @@ Demo production order `PO-DEMO-001` is mid-pipeline (Material Prep done, Carpent
 - Multi-worker stage pipeline (deps + assign + progress rollup)
 - PO planning fields; task time/notes/photos; QC pass unlock; rework complete
 - Delivery driver picker; DELIVERED closes sales order
-- Customer contracts page; dashboard revenue/receivables/completed SOs/open POs
+- Customer contracts page; dashboard factory KPIs (new orders, in production, nearing delivery)
 - Purchasing PO → approve → GRN → stock
 - Quality checklist templates + inspections
 - Delivery POD (signature + photo)
@@ -110,6 +114,10 @@ Demo production order `PO-DEMO-001` is mid-pipeline (Material Prep done, Carpent
 - Mobile login + permission shell typechecks
 - Smoke: `pnpm smoke:lifecycle`, `pnpm smoke:workflow`, and `pnpm smoke:scope`
 
+## Mobile full-parity QA
+
+For persona scripts (admin / cedar / worker), device × EN/AR RTL matrix, P0–P5 phase gates, and EAS/preview commands, see [mobile-launch-qa.md](./mobile-launch-qa.md).
+
 ## Infra notes
 
 - Postgres: `brew services start postgresql@18` **or** Docker Compose under `infra/docker/`
@@ -118,3 +126,4 @@ Demo production order `PO-DEMO-001` is mid-pipeline (Material Prep done, Carpent
 - Quote `COMPANY_NAME_*` in `.env`
 - Logs: `logs/*.log` · PIDs: `.run/*.pid`
 - Smoke: `pnpm smoke:lifecycle` · `pnpm smoke:workflow` · `pnpm smoke:scope`
+- Phase 2 integrations (IMAP, WhatsApp, Maps): [factory-ux-phase2.md](./factory-ux-phase2.md)

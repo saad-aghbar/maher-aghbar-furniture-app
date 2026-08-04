@@ -2,7 +2,9 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -11,14 +13,18 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsEnum,
+  IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
 } from 'class-validator';
-import { CommunicationType, Locale } from '@maher/database';
+import { Type } from 'class-transformer';
+import { CommunicationType, Locale, Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '@maher/types';
+import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 
 class ContactDto {
   @IsString()
@@ -93,6 +99,16 @@ class AddressDto {
   additionalInstructions?: string;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  longitude?: number;
+
+  @IsOptional()
   @IsBoolean()
   isDefaultBilling?: boolean;
 
@@ -121,14 +137,48 @@ class CommunicationDto {
   nextFollowUpAt?: string;
 }
 
+class DealerPriceDto {
+  @IsUUID()
+  productId!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  price!: number;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
+}
+
+class UpdateDealerPriceDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  price?: number;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
+}
+
 @ApiTags('customers')
 @Controller('customers/:customerId')
 export class CustomerRelationsController {
   constructor(private readonly prisma: PrismaService) {}
 
+  private assertCustomerAccess(user: AuthUser, customerId: string) {
+    if (!assertCustomerOwns(user, customerId)) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'You can only access your own customer record.',
+      });
+    }
+  }
+
   @Get('contacts')
   @RequirePermissions('customer.read')
-  listContacts(@Param('customerId') customerId: string) {
+  listContacts(@Param('customerId') customerId: string, @CurrentUser() user: AuthUser) {
+    this.assertCustomerAccess(user, customerId);
     return this.prisma.customerContact.findMany({
       where: { customerId, archivedAt: null },
       orderBy: [{ isPrimary: 'desc' }, { name: 'asc' }],
@@ -137,7 +187,12 @@ export class CustomerRelationsController {
 
   @Post('contacts')
   @RequirePermissions('contact.manage')
-  createContact(@Param('customerId') customerId: string, @Body() dto: ContactDto) {
+  createContact(
+    @Param('customerId') customerId: string,
+    @Body() dto: ContactDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    this.assertCustomerAccess(user, customerId);
     return this.prisma.customerContact.create({
       data: { customerId, ...dto },
     });
@@ -145,13 +200,28 @@ export class CustomerRelationsController {
 
   @Patch('contacts/:id')
   @RequirePermissions('contact.manage')
-  updateContact(@Param('id') id: string, @Body() dto: ContactDto) {
+  async updateContact(
+    @Param('customerId') customerId: string,
+    @Param('id') id: string,
+    @Body() dto: ContactDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    this.assertCustomerAccess(user, customerId);
+    const row = await this.prisma.customerContact.findFirst({ where: { id, customerId } });
+    if (!row) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Contact not found.' });
     return this.prisma.customerContact.update({ where: { id }, data: dto });
   }
 
   @Delete('contacts/:id')
   @RequirePermissions('contact.manage')
-  archiveContact(@Param('id') id: string) {
+  async archiveContact(
+    @Param('customerId') customerId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    this.assertCustomerAccess(user, customerId);
+    const row = await this.prisma.customerContact.findFirst({ where: { id, customerId } });
+    if (!row) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Contact not found.' });
     return this.prisma.customerContact.update({
       where: { id },
       data: { archivedAt: new Date() },
@@ -160,29 +230,66 @@ export class CustomerRelationsController {
 
   @Get('addresses')
   @RequirePermissions('customer.read')
-  listAddresses(@Param('customerId') customerId: string) {
+  listAddresses(@Param('customerId') customerId: string, @CurrentUser() user: AuthUser) {
+    this.assertCustomerAccess(user, customerId);
     return this.prisma.customerAddress.findMany({
       where: { customerId, archivedAt: null },
+      orderBy: [{ isDefaultDelivery: 'desc' }, { label: 'asc' }],
     });
   }
 
   @Post('addresses')
   @RequirePermissions('address.manage')
-  createAddress(@Param('customerId') customerId: string, @Body() dto: AddressDto) {
+  createAddress(
+    @Param('customerId') customerId: string,
+    @Body() dto: AddressDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    this.assertCustomerAccess(user, customerId);
+    const { latitude, longitude, ...rest } = dto;
     return this.prisma.customerAddress.create({
-      data: { customerId, country: dto.country ?? 'JO', ...dto },
+      data: {
+        customerId,
+        country: dto.country ?? 'JO',
+        ...rest,
+        latitude: latitude ?? undefined,
+        longitude: longitude ?? undefined,
+      },
     });
   }
 
   @Patch('addresses/:id')
   @RequirePermissions('address.manage')
-  updateAddress(@Param('id') id: string, @Body() dto: AddressDto) {
-    return this.prisma.customerAddress.update({ where: { id }, data: dto });
+  async updateAddress(
+    @Param('customerId') customerId: string,
+    @Param('id') id: string,
+    @Body() dto: AddressDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    this.assertCustomerAccess(user, customerId);
+    const row = await this.prisma.customerAddress.findFirst({ where: { id, customerId } });
+    if (!row) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Address not found.' });
+    const { latitude, longitude, ...rest } = dto;
+    return this.prisma.customerAddress.update({
+      where: { id },
+      data: {
+        ...rest,
+        ...(latitude !== undefined ? { latitude } : {}),
+        ...(longitude !== undefined ? { longitude } : {}),
+      },
+    });
   }
 
   @Delete('addresses/:id')
   @RequirePermissions('address.manage')
-  archiveAddress(@Param('id') id: string) {
+  async archiveAddress(
+    @Param('customerId') customerId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    this.assertCustomerAccess(user, customerId);
+    const row = await this.prisma.customerAddress.findFirst({ where: { id, customerId } });
+    if (!row) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Address not found.' });
     return this.prisma.customerAddress.update({
       where: { id },
       data: { archivedAt: new Date() },
@@ -232,5 +339,149 @@ export class CustomerRelationsController {
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
+  }
+
+  @Get('dealer-prices')
+  @RequirePermissions('customer.read')
+  listDealerPrices(@Param('customerId') customerId: string) {
+    return this.prisma.dealerPrice.findMany({
+      where: { customerId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            sku: true,
+            nameEn: true,
+            nameAr: true,
+            nameHe: true,
+            basePrice: true,
+            manufacturingCost: true,
+            imageUrl: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  @Post('dealer-prices')
+  @RequirePermissions('customer.update')
+  async createDealerPrice(
+    @Param('customerId') customerId: string,
+    @Body() dto: DealerPriceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const product = await this.prisma.product.findFirst({
+      where: { id: dto.productId, archivedAt: null },
+    });
+    if (!product) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
+    }
+    const row = await this.prisma.dealerPrice.upsert({
+      where: { customerId_productId: { customerId, productId: dto.productId } },
+      create: {
+        customerId,
+        productId: dto.productId,
+        price: dto.price,
+        currency: dto.currency ?? 'JOD',
+      },
+      update: {
+        price: dto.price,
+        currency: dto.currency ?? 'JOD',
+      },
+      include: {
+        product: {
+          select: {
+            id: true,
+            sku: true,
+            nameEn: true,
+            nameAr: true,
+            nameHe: true,
+            basePrice: true,
+            manufacturingCost: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'dealer-price.upsert',
+        entityType: 'DealerPrice',
+        entityId: row.id,
+        newValues: row,
+      },
+    });
+    return row;
+  }
+
+  @Patch('dealer-prices/:id')
+  @RequirePermissions('customer.update')
+  async updateDealerPrice(
+    @Param('customerId') customerId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateDealerPriceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const existing = await this.prisma.dealerPrice.findFirst({ where: { id, customerId } });
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Dealer price not found.' });
+    }
+    const row = await this.prisma.dealerPrice.update({
+      where: { id },
+      data: {
+        ...(dto.price !== undefined ? { price: dto.price } : {}),
+        ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+      },
+      include: {
+        product: {
+          select: {
+            id: true,
+            sku: true,
+            nameEn: true,
+            nameAr: true,
+            nameHe: true,
+            basePrice: true,
+            manufacturingCost: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'dealer-price.update',
+        entityType: 'DealerPrice',
+        entityId: id,
+        newValues: row,
+      },
+    });
+    return row;
+  }
+
+  @Delete('dealer-prices/:id')
+  @RequirePermissions('customer.update')
+  async deleteDealerPrice(
+    @Param('customerId') customerId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const existing = await this.prisma.dealerPrice.findFirst({ where: { id, customerId } });
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Dealer price not found.' });
+    }
+    await this.prisma.dealerPrice.delete({ where: { id } });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'dealer-price.delete',
+        entityType: 'DealerPrice',
+        entityId: id,
+        newValues: Prisma.JsonNull,
+      },
+    });
+    return { ok: true };
   }
 }

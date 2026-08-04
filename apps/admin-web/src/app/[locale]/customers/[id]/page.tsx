@@ -1,5 +1,6 @@
 'use client';
 
+import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
 import { apiFetch, ApiClientError, API_URL } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
@@ -12,11 +13,24 @@ import {
   Modal,
   Select,
   Skeleton,
+  TextArea,
+  MotionSection,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { DealerSections } from './dealer-sections';
+
+interface CommunicationNote {
+  id: string;
+  type: string;
+  summary: string;
+  subject?: string | null;
+  occurredAt?: string;
+  createdAt?: string;
+  employee?: { firstName?: string | null; lastName?: string | null } | null;
+}
 
 const PHONE_E164 = /^\+[1-9]\d{7,14}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,6 +50,11 @@ interface CustomerDetail {
   notes?: string | null;
   preferredLanguage?: string | null;
   activeOrdersCount?: number;
+  waitingOrdersCount?: number;
+  inWorkOrdersCount?: number;
+  doneOrdersCount?: number;
+  paidTotal?: number;
+  outstandingTotal?: number;
   contacts?: Array<{ id: string; name: string; phone?: string; email?: string; position?: string }>;
   addresses?: Array<{
     id: string;
@@ -46,6 +65,12 @@ interface CustomerDetail {
     isDefaultDelivery: boolean;
     isDefaultBilling: boolean;
   }>;
+}
+
+function money(value: number | undefined, currency: string) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return `0.00 ${currency}`;
+  return `${n.toFixed(2)} ${currency}`;
 }
 
 interface EditForm {
@@ -91,9 +116,16 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     queryFn: () => apiFetch<CustomerDetail>(`/api/v1/customers/${params.id}`),
   });
 
+  const notesQuery = useQuery({
+    queryKey: ['customer-notes', params.id],
+    queryFn: () =>
+      apiFetch<CommunicationNote[]>(`/api/v1/customers/${params.id}/communications`),
+  });
+
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ['customer', params.id] });
     await queryClient.invalidateQueries({ queryKey: ['customers'] });
+    await queryClient.invalidateQueries({ queryKey: ['customer-notes', params.id] });
   };
 
   const saveMutation = useMutation({
@@ -138,7 +170,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
   const contactMutation = useMutation({
     mutationFn: () => {
-      if (!contactForm.name.trim()) throw new ApiClientError('Contact name is required.', 400);
+      if (!contactForm.name.trim()) throw new ApiClientError(t('contactNameRequired'), 400);
       return apiFetch(`/api/v1/customers/${params.id}/contacts`, {
         method: 'POST',
         body: JSON.stringify({
@@ -162,7 +194,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const addressMutation = useMutation({
     mutationFn: () => {
       if (!addressForm.city.trim() || !addressForm.label.trim()) {
-        throw new ApiClientError('Label and city are required.', 400);
+        throw new ApiClientError(t('addressRequired'), 400);
       }
       return apiFetch(`/api/v1/customers/${params.id}/addresses`, {
         method: 'POST',
@@ -184,7 +216,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
 
   const noteMutation = useMutation({
     mutationFn: () => {
-      if (!noteSummary.trim()) throw new ApiClientError('Summary is required.', 400);
+      if (!noteSummary.trim()) throw new ApiClientError(t('noteSummaryRequired'), 400);
       return apiFetch(`/api/v1/customers/${params.id}/communications`, {
         method: 'POST',
         body: JSON.stringify({ type: 'NOTE', summary: noteSummary.trim() }),
@@ -193,6 +225,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     onSuccess: async () => {
       setSubError(null);
       await invalidate();
+      setNoteSummary('');
       setNoteOpen(false);
       setNoteSummary('');
       setBanner(t('noteCreated'));
@@ -207,21 +240,26 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
     );
   }
 
-  const entityNameLabel =
-    (editForm?.customerType ?? data.customerType) === 'INDIVIDUAL'
-      ? t('individualName')
-      : t('companyName');
+  const typeLabel = (type: string) => {
+    if (type === 'SHOWROOM') return t('showroom');
+    if (type === 'INDIVIDUAL') return t('individual');
+    return t('company');
+  };
+  const entityNameLabel = (() => {
+    const type = editForm?.customerType ?? data.customerType;
+    if (type === 'SHOWROOM') return t('showroomName');
+    if (type === 'INDIVIDUAL') return t('individualName');
+    return t('companyName');
+  })();
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-4">
-        <Link href="/customers">
-          <Button variant="ghost" size="sm">
-            {tCommon('back')}
-          </Button>
-        </Link>
-        <h1 className="text-2xl font-bold">{localizedName(locale, data)}</h1>
-        <div className="ms-auto flex flex-wrap gap-2">
+      <PageHeader
+        backHref="/customers"
+        title={localizedName(locale, data)}
+        description={[data.phone, data.fax].filter(Boolean).join(' · ') || undefined}
+        actions={
+          <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="secondary"
@@ -253,30 +291,55 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           >
             {t('edit')}
           </Button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
 
+      <div className="maher-stagger space-y-6">
+      <div className="maher-stagger grid gap-4 sm:grid-cols-3">
+        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+          <p className="text-[11px] text-text-tertiary">{t('ordersWaiting')}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight" dir="ltr">
+            {data.waitingOrdersCount ?? 0}
+          </p>
+        </div>
+        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+          <p className="text-[11px] text-text-tertiary">{t('ordersInWork')}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight" dir="ltr">
+            {data.inWorkOrdersCount ?? 0}
+          </p>
+        </div>
+        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+          <p className="text-[11px] text-text-tertiary">{t('ordersDone')}</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight" dir="ltr">
+            {data.doneOrdersCount ?? 0}
+          </p>
+        </div>
+      </div>
+
+      <div className="maher-stagger grid gap-4 sm:grid-cols-2">
+        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+          <p className="text-[11px] text-text-tertiary">{t('amountPaid')}</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight" dir="ltr">
+            {money(data.paidTotal, tCommon('currency'))}
+          </p>
+        </div>
+        <div className="maher-list-card rounded-2xl border border-border/60 bg-white px-5 py-4">
+          <p className="text-[11px] text-text-tertiary">{t('amountLeft')}</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight" dir="ltr">
+            {money(data.outstandingTotal, tCommon('currency'))}
+          </p>
+        </div>
+      </div>
+
+      <MotionSection className="maher-form-section" as="div">
       <Card title={t('detail')}>
         <dl className="grid gap-4 sm:grid-cols-2">
           <div>
-            <dt className="text-sm text-[var(--maher-text-secondary)]">{t('code')}</dt>
-            <dd className="font-medium" dir="ltr">
-              {data.code}
-            </dd>
-          </div>
-          <div>
             <dt className="text-sm text-[var(--maher-text-secondary)]">{t('type')}</dt>
-            <dd className="font-medium">
-              {data.customerType === 'INDIVIDUAL' ? t('individual') : t('company')}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-[var(--maher-text-secondary)]">{t('activeOrders')}</dt>
-            <dd className="font-medium" dir="ltr">
-              {data.activeOrdersCount ?? 0}
-            </dd>
+            <dd className="font-medium">{typeLabel(data.customerType)}</dd>
           </div>
           <div>
             <dt className="text-sm text-[var(--maher-text-secondary)]">{entityNameLabel}</dt>
@@ -300,15 +363,17 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               {data.fax ?? '—'}
             </dd>
           </div>
-          {data.notes ? (
-            <div className="sm:col-span-2">
-              <dt className="text-sm text-[var(--maher-text-secondary)]">{t('notes')}</dt>
-              <dd className="font-medium">{data.notes}</dd>
-            </div>
-          ) : null}
         </dl>
       </Card>
+      </MotionSection>
 
+      <MotionSection className="maher-form-section" as="div">
+      <Card title={t('dealerSummary')}>
+        <DealerSections customerId={params.id} />
+      </Card>
+      </MotionSection>
+
+      <MotionSection className="maher-form-section" as="div">
       <Card
         title={t('contacts')}
         actions={
@@ -338,7 +403,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           </ul>
         )}
       </Card>
+      </MotionSection>
 
+      <MotionSection className="maher-form-section" as="div">
       <Card
         title={t('addresses')}
         actions={
@@ -368,18 +435,61 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           </ul>
         )}
       </Card>
+      </MotionSection>
 
-      <div>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            setSubError(null);
-            setNoteOpen(true);
-          }}
-        >
-          {t('addNote')}
-        </Button>
+      <MotionSection className="maher-form-section" as="div">
+      <Card
+        title={t('communications')}
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              setSubError(null);
+              setNoteOpen(true);
+            }}
+          >
+            {t('addNote')}
+          </Button>
+        }
+      >
+        <p className="mb-3 text-sm text-text-secondary">{t('notesHint')}</p>
+        {data.notes ? (
+          <div className="mb-4 rounded-xl border border-border/60 bg-[var(--maher-surface-muted)]/50 px-4 py-3">
+            <p className="text-[11px] font-medium text-text-tertiary">{t('profileNotes')}</p>
+            <p className="mt-1 text-sm text-text-primary whitespace-pre-wrap">{data.notes}</p>
+          </div>
+        ) : null}
+        {notesQuery.isLoading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : (notesQuery.data ?? []).length === 0 && !data.notes ? (
+          <p className="text-sm text-text-secondary">{t('noNotes')}</p>
+        ) : (
+          <ul className="space-y-3">
+            {(notesQuery.data ?? []).map((note) => {
+              const when = (note.occurredAt ?? note.createdAt ?? '').slice(0, 16).replace('T', ' ');
+              const author = [note.employee?.firstName, note.employee?.lastName]
+                .filter(Boolean)
+                .join(' ');
+              return (
+                <li
+                  key={note.id}
+                  className="maher-list-card rounded-xl border border-border/60 bg-white px-4 py-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-text-tertiary">
+                    <span dir="ltr">{when || '—'}</span>
+                    {author ? <span>{author}</span> : null}
+                  </div>
+                  {note.subject ? (
+                    <p className="mt-1 text-sm font-medium text-text-primary">{note.subject}</p>
+                  ) : null}
+                  <p className="mt-1 text-sm text-text-primary whitespace-pre-wrap">{note.summary}</p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+      </MotionSection>
       </div>
 
       <Modal
@@ -421,7 +531,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
               onChange={(e) => setEditForm({ ...editForm, customerType: e.target.value })}
             >
               <option value="COMPANY">{t('company')}</option>
-              <option value="INDIVIDUAL">{t('individual')}</option>
+              <option value="SHOWROOM">{t('showroom')}</option>
             </Select>
             <Input
               label={entityNameLabel}
@@ -583,10 +693,11 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       >
         <div className="grid gap-3">
           {subError ? <Alert variant="error">{subError}</Alert> : null}
-          <Input
+          <TextArea
             label={`${t('noteSummary')} *`}
             value={noteSummary}
             onChange={(e) => setNoteSummary(e.target.value)}
+            rows={4}
           />
         </div>
       </Modal>

@@ -51,6 +51,17 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OCR_API_KEY: z.string().optional(),
   SMTP_URL: z.string().optional(),
+
+  EMAIL_INBOUND_HOST: z.string().optional(),
+  EMAIL_INBOUND_PORT: z.coerce.number().int().positive().optional(),
+  EMAIL_INBOUND_SECURE: z.enum(['true', 'false']).optional(),
+  EMAIL_INBOUND_USER: z.string().optional(),
+  EMAIL_INBOUND_PASS: z.string().optional(),
+  EMAIL_INBOUND_MAILBOX: z.string().optional(),
+  EMAIL_INBOUND_POLL_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+  EMAIL_INBOUND_WEBHOOK_SECRET: z.string().optional(),
+  EMAIL_INBOUND_ADMIN_NOTIFY_EMAIL: z.string().email().optional(),
+
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   WHATSAPP_TOKEN: z.string().optional(),

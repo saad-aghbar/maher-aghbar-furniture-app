@@ -56,20 +56,20 @@ function ok(name, cond, detail = '') {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-async function login(email) {
+async function login(username) {
   const res = await request('POST', '/api/v1/auth/login', {
-    body: { email, password: 'Admin@12345!' },
+    body: { username, password: 'Admin@12345!' },
   });
   return { status: res.status, cookie: cookieHeader(res.setCookie), user: res.json?.user };
 }
 
-const admin = await login('admin@maher-aghbar.jo');
+const admin = await login('admin');
 ok('admin login', admin.status === 200 || admin.status === 201);
 
-const cedar = await login('customer@cedar-hotel.jo');
+const cedar = await login('cedar');
 ok('cedar customer login', cedar.status === 200 || cedar.status === 201, cedar.user?.customerId ?? '');
 
-const olive = await login('customer@olive-restaurant.jo');
+const olive = await login('olive');
 ok(
   'olive customer login',
   olive.status === 200 || olive.status === 201,
@@ -121,45 +121,55 @@ if ((cedarOrders.json?.data ?? []).length > 0) {
   );
 }
 
-const carpenter = await login('carpenter@maher-aghbar.jo');
-const worker = await login('worker@maher-aghbar.jo');
+const carpenter = await login('carpenter');
+const carpenter2 = await login('carpenter2');
 ok('carpenter login', carpenter.status === 200 || carpenter.status === 201);
-ok('worker login', worker.status === 200 || worker.status === 201);
+ok('carpenter2 login', carpenter2.status === 200 || carpenter2.status === 201);
 
 const carpenterTasks = await request('GET', '/api/v1/tasks?pageSize=50', {
   cookie: carpenter.cookie,
 });
-const workerTasks = await request('GET', '/api/v1/tasks?pageSize=50', {
-  cookie: worker.cookie,
+const carpenter2Tasks = await request('GET', '/api/v1/tasks?pageSize=50', {
+  cookie: carpenter2.cookie,
 });
 ok('carpenter tasks list', carpenterTasks.status === 200);
-ok('worker tasks list', workerTasks.status === 200);
+ok('carpenter2 tasks list', carpenter2Tasks.status === 200);
+
+const carpenterIds = new Set((carpenterTasks.json?.data ?? []).map((t) => t.id));
+const carpenter2Ids = new Set((carpenter2Tasks.json?.data ?? []).map((t) => t.id));
+const taskOverlap = [...carpenterIds].filter((id) => carpenter2Ids.has(id));
+ok('carpenters see disjoint task sets', taskOverlap.length === 0, `overlap=${taskOverlap.length}`);
 
 const carpenterAssigneeOk = (carpenterTasks.json?.data ?? []).every(
   (t) => !t.assignedEmployeeId || t.assignedEmployeeId === carpenter.user?.id,
 );
-const workerAssigneeOk = (workerTasks.json?.data ?? []).every(
-  (t) => !t.assignedEmployeeId || t.assignedEmployeeId === worker.user?.id,
+const carpenter2AssigneeOk = (carpenter2Tasks.json?.data ?? []).every(
+  (t) => !t.assignedEmployeeId || t.assignedEmployeeId === carpenter2.user?.id,
 );
 ok('carpenter only sees own assigned tasks', carpenterAssigneeOk);
-ok('worker only sees own assigned tasks', workerAssigneeOk);
+ok('carpenter2 only sees own assigned tasks', carpenter2AssigneeOk);
 
-const adminTasks = await request('GET', '/api/v1/tasks?pageSize=50', { cookie: admin.cookie });
-const otherTask = (adminTasks.json?.data ?? []).find(
-  (t) => t.assignedEmployeeId && t.assignedEmployeeId !== carpenter.user?.id,
+const foreignForCarpenter2 = (carpenterTasks.json?.data ?? []).find(
+  (t) => t.assignedEmployeeId === carpenter.user?.id,
 );
-if (otherTask) {
-  const blockedTask = await request('GET', `/api/v1/tasks/${otherTask.id}`, {
-    cookie: carpenter.cookie,
+if (foreignForCarpenter2) {
+  const blocked = await request('GET', `/api/v1/tasks/${foreignForCarpenter2.id}`, {
+    cookie: carpenter2.cookie,
   });
   ok(
-    'carpenter cannot open another worker task',
-    blockedTask.status === 403 || blockedTask.status === 404,
-    String(blockedTask.status),
+    'carpenter2 cannot open carpenter task',
+    blocked.status === 403 || blocked.status === 404,
+    String(blocked.status),
   );
 } else {
-  ok('carpenter cannot open another worker task', true, 'no foreign assigned task in seed');
+  ok('carpenter2 cannot open carpenter task', true, 'no carpenter-owned task in list');
 }
+
+const worker = await login('worker');
+ok('worker (material prep) login', worker.status === 200 || worker.status === 201);
+
+const villa = await login('villa');
+ok('villa customer login', villa.status === 200 || villa.status === 201);
 
 const failed = steps.filter((s) => !s.ok);
 console.log(`\n${steps.length - failed.length}/${steps.length} passed`);

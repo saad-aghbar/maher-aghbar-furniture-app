@@ -1,144 +1,109 @@
 'use client';
 
 import { MasterCrudPage } from '@/components/admin/master-crud-page';
-import { apiFetch } from '@/lib/api-client';
-import { localizedName } from '@maher/i18n';
-import { Alert } from '@maher/ui';
-import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
+import { localizedName } from '@maher/i18n';
 
-interface Stage {
+interface StageRow {
   id: string;
   code: string;
   nameAr: string;
   nameEn: string;
   nameHe?: string | null;
   sortOrder: number;
-  estimatedHours?: string | number | null;
+  estimatedHours?: number | null;
   requiresInspection: boolean;
   requiresPhotos: boolean;
   responsibleDepartment?: string | null;
   isActive: boolean;
 }
 
-interface Department {
-  id: string;
-  code: string;
-  nameAr: string;
-  nameEn: string;
-}
-
-const DEFAULT_PIPELINE = [
-  'MATERIAL_PREP',
-  'CARPENTRY',
-  'PAINTING',
-  'UPHOLSTERY',
-  'ASSEMBLY',
-  'INSPECTION',
-  'PACKAGING',
-  'DELIVERY',
-] as const;
-
 export default function ProductionStagesPage() {
-  const t = useTranslations('catalog');
+  const t = useTranslations('navigation');
+  const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
   const locale = useLocale();
 
-  const departmentsQuery = useQuery({
-    queryKey: ['departments-pick'],
-    queryFn: () =>
-      apiFetch<{ data: Department[] }>('/api/v1/departments?pageSize=100').then((r) => r.data),
-  });
-
-  const deptOptions = [
-    { value: '', label: t('noneOption') },
-    ...(departmentsQuery.data ?? []).map((d) => ({
-      value: d.code,
-      label: `${d.code} — ${localizedName(locale, d)}`,
-    })),
-  ];
-
   return (
-    <div className="space-y-6">
-      <Alert variant="info">
-        <p className="font-medium">{t('defaultStagePipeline')}</p>
-        <p className="mt-1 text-sm">{DEFAULT_PIPELINE.join(' → ')}</p>
-        <p className="mt-2 text-sm text-text-secondary">{t('defaultStagePipelineHint')}</p>
-      </Alert>
-      <MasterCrudPage<Stage>
-        title={t('stages')}
-        queryKey="production-stages"
-        listPath="/api/v1/production-stages"
-        createPath="/api/v1/production-stages"
-        patchPath={(id) => `/api/v1/production-stages/${id}`}
-        activatePath={(id) => `/api/v1/production-stages/${id}/activate`}
-        deactivatePath={(id) => `/api/v1/production-stages/${id}/deactivate`}
-        deletePath={(id) => `/api/v1/production-stages/${id}`}
-        emptyTitle={t('noStages')}
-        activeField="isActive"
-        columns={[
-          { key: 'order', header: tCommon('number'), render: (r) => r.sortOrder },
-          { key: 'code', header: t('code'), render: (r) => r.code },
-          { key: 'name', header: t('name'), render: (r) => localizedName(locale, r) },
-          {
-            key: 'dept',
-            header: t('department'),
-            render: (r) => r.responsibleDepartment ?? '—',
-          },
-          {
-            key: 'hours',
-            header: t('estimatedHours'),
-            render: (r) =>
-              r.estimatedHours != null ? <span dir="ltr">{String(r.estimatedHours)}</span> : '—',
-          },
-          {
-            key: 'active',
-            header: t('active'),
-            render: (r) => (r.isActive ? tCommon('yes') : tCommon('no')),
-          },
-        ]}
-        fields={[
-          { name: 'code', label: t('code'), required: true },
-          { name: 'nameEn', label: t('nameEn'), required: true },
-          { name: 'nameAr', label: t('nameAr'), required: true },
-          { name: 'nameHe', label: t('nameHe') },
-          { name: 'sortOrder', label: tCommon('number'), type: 'number', required: true },
-          { name: 'estimatedHours', label: t('estimatedHours'), type: 'number' },
-          {
-            name: 'responsibleDepartment',
-            label: t('department'),
-            type: 'select',
-            options: deptOptions,
-          },
-          { name: 'requiresInspection', label: t('requiresInspection'), type: 'checkbox' },
-          { name: 'requiresPhotos', label: t('photosRequired'), type: 'checkbox' },
-          { name: 'isActive', label: t('active'), type: 'checkbox' },
-        ]}
-        mapRowToForm={(r) => ({
-          code: r.code,
-          nameEn: r.nameEn,
-          nameAr: r.nameAr,
-          nameHe: r.nameHe ?? '',
-          sortOrder: r.sortOrder,
-          estimatedHours: Number(r.estimatedHours ?? 0),
-          responsibleDepartment: r.responsibleDepartment ?? '',
-          requiresInspection: r.requiresInspection,
-          requiresPhotos: r.requiresPhotos,
-          isActive: r.isActive,
-        })}
-        buildPayload={(form) => ({
-          code: String(form.code).trim(),
-          nameEn: String(form.nameEn).trim(),
-          nameAr: String(form.nameAr).trim(),
-          nameHe: String(form.nameHe ?? '').trim() || undefined,
-          sortOrder: Number(form.sortOrder),
-          estimatedHours: Number(form.estimatedHours) || undefined,
-          responsibleDepartment: String(form.responsibleDepartment ?? '').trim() || undefined,
-          requiresInspection: Boolean(form.requiresInspection),
-          requiresPhotos: Boolean(form.requiresPhotos),
-          isActive: Boolean(form.isActive),
-        })}
-      />
-    </div>
+    <MasterCrudPage<StageRow>
+      title={t('productionStages')}
+      queryKey="production-stages"
+      listPath="/api/v1/production-stages"
+      createPath="/api/v1/production-stages"
+      patchPath={(id) => `/api/v1/production-stages/${id}`}
+      activatePath={(id) => `/api/v1/production-stages/${id}/activate`}
+      deactivatePath={(id) => `/api/v1/production-stages/${id}/deactivate`}
+      deletePath={(id) => `/api/v1/production-stages/${id}`}
+      emptyTitle={tc('noProductionStages')}
+      activeField="isActive"
+      columns={[
+        { key: 'code', header: tc('stageCode'), render: (r) => <span dir="ltr">{r.code}</span> },
+        { key: 'name', header: tc('name'), render: (r) => localizedName(locale, r) },
+        {
+          key: 'sort',
+          header: tc('sortOrder'),
+          render: (r) => <span dir="ltr">{r.sortOrder}</span>,
+        },
+        {
+          key: 'hours',
+          header: tc('estimatedHours'),
+          render: (r) => <span dir="ltr">{r.estimatedHours ?? '—'}</span>,
+        },
+        {
+          key: 'photos',
+          header: tc('photos'),
+          render: (r) => (r.requiresPhotos ? tCommon('yes') : tCommon('no')),
+        },
+        {
+          key: 'inspection',
+          header: tc('requiresInspection'),
+          render: (r) => (r.requiresInspection ? tCommon('yes') : tCommon('no')),
+        },
+        {
+          key: 'active',
+          header: tc('active'),
+          render: (r) => (r.isActive ? tCommon('yes') : tCommon('no')),
+        },
+      ]}
+      fields={[
+        { name: 'code', label: tc('stageCode'), required: true },
+        { name: 'nameEn', label: tc('nameEn'), required: true },
+        { name: 'nameAr', label: tc('nameAr'), required: true },
+        { name: 'nameHe', label: tc('nameHe') },
+        { name: 'sortOrder', label: tc('sortOrder'), type: 'number', required: true },
+        { name: 'estimatedHours', label: tc('estimatedHours'), type: 'number' },
+        { name: 'responsibleDepartment', label: tc('responsibleDepartment') },
+        { name: 'requiresPhotos', label: tc('photos'), type: 'checkbox' },
+        { name: 'requiresInspection', label: tc('requiresInspection'), type: 'checkbox' },
+        { name: 'isActive', label: tc('active'), type: 'checkbox' },
+      ]}
+      mapRowToForm={(row) => ({
+        code: row.code,
+        nameEn: row.nameEn,
+        nameAr: row.nameAr,
+        nameHe: row.nameHe ?? '',
+        sortOrder: row.sortOrder,
+        estimatedHours: row.estimatedHours ?? '',
+        responsibleDepartment: row.responsibleDepartment ?? '',
+        requiresPhotos: row.requiresPhotos,
+        requiresInspection: row.requiresInspection,
+        isActive: row.isActive,
+      })}
+      buildPayload={(form) => ({
+        code: String(form.code).trim(),
+        nameEn: String(form.nameEn).trim(),
+        nameAr: String(form.nameAr).trim(),
+        nameHe: String(form.nameHe || '').trim() || undefined,
+        sortOrder: Number(form.sortOrder),
+        estimatedHours:
+          form.estimatedHours === '' || form.estimatedHours == null
+            ? undefined
+            : Number(form.estimatedHours),
+        responsibleDepartment: String(form.responsibleDepartment || '').trim() || undefined,
+        requiresPhotos: Boolean(form.requiresPhotos),
+        requiresInspection: Boolean(form.requiresInspection),
+        isActive: form.isActive === undefined ? true : Boolean(form.isActive),
+      })}
+    />
   );
 }

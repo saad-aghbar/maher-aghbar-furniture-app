@@ -1,13 +1,9 @@
-import { IsEmail, IsIn, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
-  @ValidateIf((o: LoginDto) => !o.phone)
-  @IsEmail()
-  email?: string;
-
-  @ValidateIf((o: LoginDto) => !o.email)
   @IsString()
-  phone?: string;
+  @MinLength(2)
+  username!: string;
 
   @IsString()
   @MinLength(8)
@@ -50,8 +46,13 @@ export class ResetPasswordDto {
 }
 
 export class InviteUserDto {
+  @IsString()
+  @MinLength(2)
+  username!: string;
+
+  @IsOptional()
   @IsEmail()
-  email!: string;
+  email?: string;
 
   @IsString()
   firstName!: string;

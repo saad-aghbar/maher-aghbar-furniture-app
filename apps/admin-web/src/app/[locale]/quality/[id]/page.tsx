@@ -12,12 +12,14 @@ import {
   EmptyState,
   ErrorState,
   Input,
+  MotionSection,
   Select,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
@@ -139,6 +141,7 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/production"
         title={inspection.number}
         description={inspection.stageCode ?? tNav('quality')}
         actions={
@@ -156,6 +159,7 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
+      <MotionSection className="maher-form-section space-y-6" as="div">
       <Card className="space-y-3 p-4">
         <h2 className="text-base font-semibold">{tc('lineItems')}</h2>
         {items.length === 0 ? (
@@ -172,7 +176,7 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
             <TableBody>
               {items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell dir="ltr">{item.checklistCode}</TableCell>
+                  <TableNumericCell>{item.checklistCode}</TableNumericCell>
                   <TableCell>{item.label}</TableCell>
                   <TableCell>
                     {pending ? (
@@ -268,6 +272,7 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
           </ul>
         </Card>
       ) : null}
+      </MotionSection>
     </div>
   );
 }

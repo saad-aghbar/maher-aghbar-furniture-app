@@ -5,9 +5,11 @@ import {
   Button,
   EmptyState,
   ErrorState,
-  PageHeader,
+  MotionSection,
+  PageHero,
   Skeleton,
   StatusBadge,
+  StaggerGrid,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
@@ -52,9 +54,9 @@ export default function NotificationsPage() {
   if (inboxQuery.isLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <Skeleton className="h-24 w-full rounded-xl" />
       </div>
     );
   }
@@ -67,7 +69,8 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
+        tone="soft"
         title={t('notifications')}
         description={tCommon('notificationsSubtitle')}
         actions={
@@ -84,17 +87,19 @@ export default function NotificationsPage() {
       />
 
       {inbox.length === 0 ? (
-        <EmptyState title={tCommon('noNotifications')} />
+        <MotionSection>
+          <EmptyState title={tCommon('noNotifications')} />
+        </MotionSection>
       ) : (
-        <ul className="space-y-3">
+        <StaggerGrid className="space-y-3">
           {inbox.map((item) => {
             const title =
               locale === 'ar' && item.titleAr ? item.titleAr : item.titleEn;
             const body = locale === 'ar' && item.bodyAr ? item.bodyAr : item.bodyEn;
             return (
-              <li
+              <div
                 key={item.id}
-                className={`rounded-[var(--maher-radius-lg)] border border-border bg-surface p-4 shadow-card ${
+                className={`maher-list-card rounded-[var(--maher-radius-lg)] border border-border bg-surface p-4 shadow-card ${
                   item.readAt ? 'opacity-80' : ''
                 }`}
               >
@@ -120,10 +125,10 @@ export default function NotificationsPage() {
                     </Button>
                   ) : null}
                 </div>
-              </li>
+              </div>
             );
           })}
-        </ul>
+        </StaggerGrid>
       )}
     </div>
   );

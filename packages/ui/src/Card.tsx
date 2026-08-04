@@ -28,8 +28,9 @@ export function Card({
     <div
       className={cn(
         'maher-animate-rise group overflow-hidden rounded-[var(--maher-radius-lg)] border border-[var(--maher-border)] bg-[var(--maher-surface)] shadow-[var(--maher-shadow-sm)]',
-        'transition-shadow duration-200 ease-out hover:shadow-[var(--maher-shadow-md)]',
-        interactive && 'maher-lift cursor-pointer hover:border-[var(--maher-border-strong)]',
+        'transition-[box-shadow,border-color,transform] duration-200 ease-out hover:shadow-[var(--maher-shadow-md)]',
+        interactive &&
+          'maher-lift maher-sheen cursor-pointer hover:border-[var(--maher-border-strong)]',
         className,
       )}
       {...props}

@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   NotFoundException,
+  BadRequestException,
   Param,
   Patch,
   Post,
@@ -21,9 +22,10 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
-import { Locale } from '@maher/database';
+import { Locale, Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -35,6 +37,13 @@ import {
   assertNotLastActiveAdmin,
 } from './users.guards';
 
+function splitCodes(value: unknown): string[] | undefined {
+  if (value == null || value === '') return undefined;
+  const raw = Array.isArray(value) ? value : String(value).split(',');
+  const codes = raw.map((v) => String(v).trim()).filter(Boolean);
+  return codes.length ? codes : undefined;
+}
+
 class ListUsersDto extends PaginationDto {
   @IsOptional()
   @IsString()
@@ -43,11 +52,31 @@ class ListUsersDto extends PaginationDto {
   @IsOptional()
   @IsString()
   roleCode?: string;
+
+  /** Comma-separated role codes (OR match). Ignored when roleCode is set. */
+  @IsOptional()
+  @Transform(({ value }) => splitCodes(value))
+  @IsArray()
+  @IsString({ each: true })
+  roleCodes?: string[];
+
+  @IsOptional()
+  @IsString()
+  departmentCode?: string;
+
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
 }
 
 class CreateUserDto {
+  @IsString()
+  @MinLength(2)
+  username!: string;
+
+  @IsOptional()
   @IsEmail()
-  email!: string;
+  email?: string;
 
   @IsString()
   @MinLength(1)
@@ -75,6 +104,11 @@ class CreateUserDto {
   customerId?: string;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== '')
+  @IsUUID()
+  departmentId?: string | null;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
@@ -85,6 +119,11 @@ class CreateUserDto {
 }
 
 class UpdateUserDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  username?: string;
+
   @IsOptional()
   @IsString()
   @MinLength(1)
@@ -113,6 +152,11 @@ class UpdateUserDto {
   customerId?: string | null;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== '')
+  @IsUUID()
+  departmentId?: string | null;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
@@ -120,10 +164,21 @@ class UpdateUserDto {
   @IsArray()
   @IsUUID('4', { each: true })
   roleIds?: string[];
+
+  /** Optional new password set by admin (min 8). Leave unset to keep current. */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  password?: string;
 }
 
 const userSelect = {
   id: true,
+  username: true,
+  departmentId: true,
+  department: {
+    select: { id: true, code: true, nameAr: true, nameEn: true },
+  },
   email: true,
   phone: true,
   firstName: true,
@@ -146,22 +201,30 @@ export class UsersController {
   @RequirePermissions('user.manage')
   async listUsers(@Query() query: ListUsersDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
-    const where = {
+    const roleFilter = query.roleCode
+      ? { roles: { some: { role: { code: query.roleCode } } } }
+      : query.roleCodes?.length
+        ? { roles: { some: { role: { code: { in: query.roleCodes } } } } }
+        : {};
+    const where: Prisma.UserWhereInput = {
       archivedAt: null,
       ...(query.q
         ? {
             OR: [
-              { email: { contains: query.q, mode: 'insensitive' as const } },
-              { firstName: { contains: query.q, mode: 'insensitive' as const } },
-              { lastName: { contains: query.q, mode: 'insensitive' as const } },
+              { email: { contains: query.q, mode: 'insensitive' } },
+              { username: { contains: query.q, mode: 'insensitive' } },
+              { firstName: { contains: query.q, mode: 'insensitive' } },
+              { lastName: { contains: query.q, mode: 'insensitive' } },
             ],
           }
         : {}),
       ...(query.isActive === 'true' ? { isActive: true } : {}),
       ...(query.isActive === 'false' ? { isActive: false } : {}),
-      ...(query.roleCode
-        ? { roles: { some: { role: { code: query.roleCode } } } }
+      ...roleFilter,
+      ...(query.departmentCode
+        ? { department: { code: query.departmentCode } }
         : {}),
+      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
     };
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.user.count({ where }),
@@ -202,12 +265,13 @@ export class UsersController {
   @Post('users')
   @RequirePermissions('user.manage')
   async createUser(@Body() dto: CreateUserDto, @CurrentUser() actor: AuthUser) {
-    const email = dto.email.toLowerCase();
-    const existing = await this.prisma.user.findUnique({ where: { email } });
+    const username = dto.username.trim().toLowerCase();
+    const email = dto.email?.trim() ? dto.email.toLowerCase() : undefined;
+    const existing = await this.prisma.user.findUnique({ where: { username } });
     if (existing) {
       throw new ConflictException({
-        code: 'EMAIL_IN_USE',
-        message: 'A user with this email already exists.',
+        code: 'USERNAME_IN_USE',
+        message: 'A user with this username already exists.',
       });
     }
 
@@ -217,12 +281,14 @@ export class UsersController {
 
     const user = await this.prisma.user.create({
       data: {
+        username,
         email,
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,
         preferredLanguage: dto.preferredLanguage ?? 'ar',
         customerId: dto.customerId,
+        departmentId: dto.departmentId || undefined,
         passwordHash,
         isActive: dto.isActive ?? true,
         roles: dto.roleIds?.length
@@ -238,7 +304,7 @@ export class UsersController {
         action: 'user.create',
         entityType: 'User',
         entityId: user.id,
-        newValues: { email, roleIds: dto.roleIds ?? [], isActive: user.isActive },
+        newValues: { username, email, roleIds: dto.roleIds ?? [], isActive: user.isActive },
       },
     });
 
@@ -260,6 +326,26 @@ export class UsersController {
       include: { roles: { include: { role: true } } },
     });
     if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'User not found.' });
+
+    let nextUsername: string | undefined;
+    if (dto.username !== undefined) {
+      nextUsername = dto.username.trim().toLowerCase();
+      if (nextUsername.length < 2) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Username must be at least 2 characters.',
+        });
+      }
+      if (nextUsername !== existing.username) {
+        const clash = await this.prisma.user.findUnique({ where: { username: nextUsername } });
+        if (clash) {
+          throw new ConflictException({
+            code: 'USERNAME_IN_USE',
+            message: 'A user with this username already exists.',
+          });
+        }
+      }
+    }
 
     if (dto.email && dto.email.toLowerCase() !== existing.email) {
       const clash = await this.prisma.user.findUnique({
@@ -295,19 +381,38 @@ export class UsersController {
       }
     }
 
+    const passwordHash = dto.password
+      ? await bcrypt.hash(dto.password, 12)
+      : undefined;
+
     const user = await this.prisma.user.update({
       where: { id },
       data: {
+        ...(nextUsername !== undefined ? { username: nextUsername } : {}),
         firstName: dto.firstName,
         lastName: dto.lastName,
         email: dto.email?.toLowerCase(),
         phone: dto.phone,
         preferredLanguage: dto.preferredLanguage,
         customerId: dto.customerId === undefined ? undefined : dto.customerId,
+        departmentId:
+          dto.departmentId === undefined
+            ? undefined
+            : dto.departmentId === null
+              ? null
+              : dto.departmentId,
         isActive: dto.isActive,
+        ...(passwordHash ? { passwordHash } : {}),
       },
       select: userSelect,
     });
+
+    if (passwordHash) {
+      await this.prisma.session.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
 
     await this.prisma.auditEvent.create({
       data: {
@@ -316,12 +421,17 @@ export class UsersController {
         entityType: 'User',
         entityId: id,
         oldValues: {
+          username: existing.username,
           firstName: existing.firstName,
           lastName: existing.lastName,
           email: existing.email,
           isActive: existing.isActive,
+          departmentId: existing.departmentId,
         },
-        newValues: dto as object,
+        newValues: {
+          ...dto,
+          ...(dto.password ? { password: '[changed]' } : {}),
+        },
       },
     });
 

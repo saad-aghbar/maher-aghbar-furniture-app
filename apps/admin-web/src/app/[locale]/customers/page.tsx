@@ -1,6 +1,5 @@
 'use client';
 
-import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
@@ -10,20 +9,15 @@ import {
   EmptyState,
   ErrorState,
   Input,
+  Ltr,
   Modal,
+  PageHero,
   Select,
   Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-  TableSkeleton,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Phone, Plus, Printer } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -41,7 +35,12 @@ interface CustomerRow {
   fax?: string | null;
   email?: string | null;
   customerType: string;
-  activeOrdersCount?: number;
+  waitingOrdersCount?: number;
+  inWorkOrdersCount?: number;
+  doneOrdersCount?: number;
+  paidTotal?: number;
+  outstandingTotal?: number;
+  invoicedTotal?: number;
 }
 
 interface CustomerForm {
@@ -55,6 +54,8 @@ interface CustomerForm {
   email: string;
   preferredLanguage: string;
   notes: string;
+  addressLabel: string;
+  address: string;
 }
 
 const emptyForm = (): CustomerForm => ({
@@ -68,7 +69,15 @@ const emptyForm = (): CustomerForm => ({
   email: '',
   preferredLanguage: 'ar',
   notes: '',
+  addressLabel: 'Main',
+  address: '',
 });
+
+function money(value: number | undefined, currency: string) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return `0.00 ${currency}`;
+  return `${n.toFixed(2)} ${currency}`;
+}
 
 export default function CustomersPage() {
   const locale = useLocale();
@@ -82,6 +91,10 @@ export default function CustomersPage() {
   const [form, setForm] = useState<CustomerForm>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [credentials, setCredentials] = useState<{
+    username: string;
+    temporaryPassword: string;
+  } | null>(null);
 
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: '20' });
@@ -96,6 +109,7 @@ export default function CustomersPage() {
         data: CustomerRow[];
         meta: { page: number; totalPages: number };
       }>(`/api/v1/customers?${listParams}`),
+    placeholderData: keepPreviousData,
   });
 
   const createMutation = useMutation({
@@ -103,8 +117,14 @@ export default function CustomersPage() {
       if (!form.nameAr.trim() && !form.nameEn.trim() && !form.nameHe.trim()) {
         throw new ApiClientError(t('nameRequired'), 400);
       }
-      if (form.phone.trim() && !PHONE_E164.test(form.phone.trim())) {
+      if (!form.phone.trim()) {
+        throw new ApiClientError(t('phoneRequired'), 400);
+      }
+      if (!PHONE_E164.test(form.phone.trim())) {
         throw new ApiClientError(t('invalidPhone'), 400);
+      }
+      if (!form.address.trim() || !form.addressLabel.trim()) {
+        throw new ApiClientError(t('addressRequired'), 400);
       }
       if (form.fax.trim() && !PHONE_E164.test(form.fax.trim())) {
         throw new ApiClientError(t('invalidFax'), 400);
@@ -112,62 +132,69 @@ export default function CustomersPage() {
       if (form.email.trim() && !EMAIL_RE.test(form.email.trim())) {
         throw new ApiClientError(t('invalidEmail'), 400);
       }
-      return apiFetch<CustomerRow>('/api/v1/customers', {
+      return apiFetch<{
+        id: string;
+        portalUser?: { username: string; temporaryPassword: string };
+      }>('/api/v1/customers', {
         method: 'POST',
         body: JSON.stringify({
           nameAr: form.nameAr.trim() || undefined,
           nameEn: form.nameEn.trim() || undefined,
           nameHe: form.nameHe.trim() || undefined,
           customerType: form.customerType,
-          companyName: form.companyName.trim() || undefined,
-          phone: form.phone.trim() || undefined,
+          companyName:
+            form.customerType === 'COMPANY' || form.customerType === 'SHOWROOM'
+              ? form.companyName.trim() || form.nameEn.trim() || form.nameAr.trim()
+              : undefined,
+          phone: form.phone.trim(),
           fax: form.fax.trim() || undefined,
           email: form.email.trim() || undefined,
           preferredLanguage: form.preferredLanguage,
           notes: form.notes.trim() || undefined,
+          addresses: [
+            {
+              label: form.addressLabel.trim(),
+              city: form.address.trim(),
+              isDefaultBilling: true,
+              isDefaultDelivery: true,
+            },
+          ],
         }),
       });
     },
-    onSuccess: async () => {
-      setFormError(null);
-      await queryClient.invalidateQueries({ queryKey: ['customers'] });
+    onSuccess: async (created) => {
       setFormOpen(false);
-      setBanner(t('created'));
+      setBanner(created.portalUser ? t('createdWithPortal') : t('created'));
+      setCredentials(
+        created.portalUser
+          ? {
+              username: created.portalUser.username,
+              temporaryPassword: created.portalUser.temporaryPassword,
+            }
+          : null,
+      );
+      await queryClient.invalidateQueries({ queryKey: ['customers'] });
     },
     onError: (err) => setFormError(mutationErrorMessage(err)),
   });
 
-  if (customersQuery.isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="border-b border-border pb-5">
-          <Skeleton className="h-8 w-52" />
-        </div>
-        <TableSkeleton columns={5} />
-      </div>
-    );
-  }
-
-  if (customersQuery.isError) {
-    return (
-      <ErrorState
-        title={t('title')}
-        description={tCommon('loadFailed')}
-        onRetry={() => customersQuery.refetch()}
-        retryLabel={tCommon('retry')}
-      />
-    );
-  }
-
   const rows = customersQuery.data?.data ?? [];
   const meta = customersQuery.data?.meta;
   const entityNameLabel =
-    form.customerType === 'INDIVIDUAL' ? t('individualName') : t('companyName');
+    form.customerType === 'SHOWROOM'
+      ? t('showroomName')
+      : form.customerType === 'INDIVIDUAL'
+        ? t('individualName')
+        : t('companyName');
+  const currency = tCommon('currency');
+  const initialLoading = customersQuery.isLoading && !customersQuery.data;
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title={t('title')}
+        description={t('listHint')}
+        tone="soft"
         actions={
           <Button
             leadingIcon={<Plus className="h-4 w-4" />}
@@ -183,58 +210,134 @@ export default function CustomersPage() {
       />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
+      {credentials ? (
+        <Alert variant="info">
+          <p className="font-medium">{t('portalCredentials')}</p>
+          <p className="mt-1 text-sm" dir="ltr">
+            {t('portalUsername')}: {credentials.username}
+          </p>
+          <p className="text-sm" dir="ltr">
+            {t('portalPassword')}: {credentials.temporaryPassword}
+          </p>
+          <p className="mt-2 text-xs text-text-secondary">{t('portalCredentialsOnce')}</p>
+        </Alert>
+      ) : null}
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-[240px] flex-1">
-          <Input
-            value={q}
-            onChange={(e) => {
-              setPage(1);
-              setQ(e.target.value);
-            }}
-            placeholder={t('searchPlaceholder')}
-            leadingIcon={<Search className="h-4 w-4" />}
-          />
+      <label className="relative block max-w-md">
+        <Input
+        withSearchIcon
+          value={q}
+          onChange={(e) => {
+            setPage(1);
+            setQ(e.target.value);
+          }}
+          placeholder={t('searchPlaceholder')}
+        />
+      </label>
+
+      {customersQuery.isError && !customersQuery.data ? (
+        <ErrorState
+          title={t('title')}
+          description={tCommon('loadFailed')}
+          onRetry={() => customersQuery.refetch()}
+          retryLabel={tCommon('retry')}
+        />
+      ) : initialLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-52 rounded-2xl" />
+          ))}
         </div>
-      </div>
-
-      {rows.length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState title={t('empty')} />
       ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{t('code')}</TableHeaderCell>
-              <TableHeaderCell>{t('name')}</TableHeaderCell>
-              <TableHeaderCell>{t('phone')}</TableHeaderCell>
-              <TableHeaderCell>{t('fax')}</TableHeaderCell>
-              <TableHeaderCell>{t('activeOrders')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell dir="ltr">{row.code}</TableCell>
-                <TableCell>
-                  <Link href={`/customers/${row.id}`} className="font-medium text-brand hover:underline">
-                    {localizedName(locale, row)}
-                  </Link>
-                </TableCell>
-                <TableCell dir="ltr">{row.phone ?? '—'}</TableCell>
-                <TableCell dir="ltr">{row.fax ?? '—'}</TableCell>
-                <TableCell dir="ltr">{row.activeOrdersCount ?? 0}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div
+          className={`maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3 ${
+            customersQuery.isFetching ? 'opacity-70 transition-opacity' : ''
+          }`}
+        >
+          {rows.map((row) => {
+            const name = localizedName(locale, row);
+            const waiting = row.waitingOrdersCount ?? 0;
+            const inWork = row.inWorkOrdersCount ?? 0;
+            const done = row.doneOrdersCount ?? 0;
+            const paid = Number(row.paidTotal ?? 0);
+            const left = Number(row.outstandingTotal ?? 0);
+
+            return (
+              <Link
+                key={row.id}
+                href={`/customers/${row.id}`}
+                className="maher-list-card group flex flex-col rounded-2xl border border-border/60 bg-white p-6 transition duration-200 hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-[var(--maher-shadow-md)]"
+              >
+                <div className="min-w-0">
+                  <h2 className="truncate text-xl font-semibold tracking-tight text-text-primary transition-colors group-hover:text-brand">
+                    {name}
+                  </h2>
+                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-text-secondary">
+                    <p className="flex items-center gap-2" dir="ltr">
+                      <Phone className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+                      <span>{row.phone || '—'}</span>
+                    </p>
+                    <p className="flex items-center gap-2" dir="ltr">
+                      <Printer className="h-3.5 w-3.5 shrink-0 text-text-tertiary" />
+                      <span>{row.fax || '—'}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-3 divide-x divide-border/70 border-y border-border/70 py-3 rtl:divide-x-reverse">
+                  <div className="px-2 text-center first:ps-0 last:pe-0">
+                    <p className="text-[11px] text-text-tertiary">{t('ordersWaiting')}</p>
+                    <Ltr className="mt-1 block text-xl font-semibold tracking-tight text-text-primary">
+                      {waiting}
+                    </Ltr>
+                  </div>
+                  <div className="px-2 text-center">
+                    <p className="text-[11px] text-text-tertiary">{t('ordersInWork')}</p>
+                    <Ltr className="mt-1 block text-xl font-semibold tracking-tight text-text-primary">
+                      {inWork}
+                    </Ltr>
+                  </div>
+                  <div className="px-2 text-center">
+                    <p className="text-[11px] text-text-tertiary">{t('ordersDone')}</p>
+                    <Ltr className="mt-1 block text-xl font-semibold tracking-tight text-text-primary">
+                      {done}
+                    </Ltr>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-end justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] text-text-tertiary">{t('amountPaid')}</p>
+                    <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
+                      {money(paid, currency)}
+                    </Ltr>
+                  </div>
+                  <div className="text-end">
+                    <p className="text-[11px] text-text-tertiary">{t('amountLeft')}</p>
+                    <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
+                      {money(left, currency)}
+                    </Ltr>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       )}
 
       {meta && meta.totalPages > 1 ? (
         <div className="flex items-center justify-end gap-2">
-          <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+          >
             {tCommon('previous')}
           </Button>
-          <span className="text-sm text-[var(--maher-text-secondary)]" dir="ltr">
+          <span className="text-sm text-text-secondary" dir="ltr">
             {meta.page} / {meta.totalPages}
           </span>
           <Button
@@ -254,7 +357,11 @@ export default function CustomersPage() {
         title={t('add')}
         footer={
           <>
-            <Button variant="ghost" disabled={createMutation.isPending} onClick={() => setFormOpen(false)}>
+            <Button
+              variant="ghost"
+              disabled={createMutation.isPending}
+              onClick={() => setFormOpen(false)}
+            >
               {tCommon('cancel')}
             </Button>
             <Button loading={createMutation.isPending} onClick={() => createMutation.mutate()}>
@@ -263,8 +370,17 @@ export default function CustomersPage() {
           </>
         }
       >
-        <div className="grid gap-3">
+        <div className="maher-form-section grid gap-3">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
+          <Select
+            label={t('type')}
+            value={form.customerType}
+            onChange={(e) => setForm((f) => ({ ...f, customerType: e.target.value }))}
+            options={[
+              { value: 'COMPANY', label: t('company') },
+              { value: 'SHOWROOM', label: t('showroom') },
+            ]}
+          />
           <Input
             label={t('nameAr')}
             value={form.nameAr}
@@ -280,14 +396,6 @@ export default function CustomersPage() {
             value={form.nameHe}
             onChange={(e) => setForm((f) => ({ ...f, nameHe: e.target.value }))}
           />
-          <Select
-            label={t('type')}
-            value={form.customerType}
-            onChange={(e) => setForm((f) => ({ ...f, customerType: e.target.value }))}
-          >
-            <option value="COMPANY">{t('company')}</option>
-            <option value="INDIVIDUAL">{t('individual')}</option>
-          </Select>
           <Input
             label={entityNameLabel}
             value={form.companyName}
@@ -297,7 +405,6 @@ export default function CustomersPage() {
             label={t('phone')}
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            placeholder="+970599123456"
             hint={t('phoneHint')}
             dir="ltr"
           />
@@ -305,12 +412,10 @@ export default function CustomersPage() {
             label={t('fax')}
             value={form.fax}
             onChange={(e) => setForm((f) => ({ ...f, fax: e.target.value }))}
-            placeholder="+97022991234"
             dir="ltr"
           />
           <Input
             label={t('email')}
-            type="email"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             dir="ltr"
@@ -319,11 +424,22 @@ export default function CustomersPage() {
             label={t('language')}
             value={form.preferredLanguage}
             onChange={(e) => setForm((f) => ({ ...f, preferredLanguage: e.target.value }))}
-          >
-            <option value="ar">العربية</option>
-            <option value="en">English</option>
-            <option value="he">עברית</option>
-          </Select>
+            options={[
+              { value: 'ar', label: 'العربية' },
+              { value: 'en', label: 'English' },
+              { value: 'he', label: 'עברית' },
+            ]}
+          />
+          <Input
+            label={t('addressLabel')}
+            value={form.addressLabel}
+            onChange={(e) => setForm((f) => ({ ...f, addressLabel: e.target.value }))}
+          />
+          <Input
+            label={tCommon('address')}
+            value={form.address}
+            onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+          />
           <Input
             label={t('notes')}
             value={form.notes}

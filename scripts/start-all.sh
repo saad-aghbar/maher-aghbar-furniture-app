@@ -169,7 +169,14 @@ fi
 wait_http "http://localhost:3002/ar/login" "employee" || true
 
 if [[ -f "$ROOT/apps/worker/dist/main.js" ]]; then
-  start_bg worker "cd '$ROOT/apps/worker' && DATABASE_URL='$DATABASE_URL' REDIS_URL='$REDIS_URL' NODE_ENV=production pnpm start"
+  start_bg worker "cd '$ROOT/apps/worker' && \
+    DATABASE_URL='$DATABASE_URL' \
+    REDIS_URL='$REDIS_URL' \
+    API_URL='${NEXT_PUBLIC_API_URL:-http://localhost:4000}' \
+    WORKER_SECRET='${WORKER_SECRET:-${EMAIL_INBOUND_WEBHOOK_SECRET:-}}' \
+    EMAIL_INBOUND_WEBHOOK_SECRET='${EMAIL_INBOUND_WEBHOOK_SECRET:-}' \
+    LOW_STOCK_PR_INTERVAL_MS='${LOW_STOCK_PR_INTERVAL_MS:-900000}' \
+    NODE_ENV=production pnpm start"
 fi
 
 echo ""
@@ -180,8 +187,7 @@ curl -sf -o /dev/null -w "Customer   %{http_code}  http://localhost:3001/ar/logi
 curl -sf -o /dev/null -w "Employee   %{http_code}  http://localhost:3002/ar/login\n" http://localhost:3002/ar/login || echo "Employee   DOWN — see logs/employee.log"
 echo ""
 echo "Demo password: Admin@12345!"
-echo "  admin@maher-aghbar.jo | sales@maher-aghbar.jo | customer@cedar-hotel.jo"
-echo "  Workers: worker@ | carpenter@ | painter@ | upholsterer@ | assembler@ | packer@ (…@maher-aghbar.jo)"
+echo "  Usernames: admin | worker | carpenter | carpenter2 | painter | … | cedar | olive | petra | villa"
 echo ""
 echo "Mobile app:  pnpm mobile:start"
 echo "  (Expo Go · leave EXPO_PUBLIC_API_BASE_URL unset — phone derives LAN host)"

@@ -5,7 +5,8 @@ import {
   Button,
   EmptyState,
   ErrorState,
-  PageHeader,
+  MotionSection,
+  PageHero,
   Skeleton,
   StatusBadge,
   Table,
@@ -42,7 +43,7 @@ export default function InvoicesPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
         <TableSkeleton columns={5} />
       </div>
     );
@@ -55,46 +56,50 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t('invoices')} description={tCommon('invoicesSubtitle')} />
+      <PageHero tone="soft" title={t('invoices')} description={tCommon('invoicesSubtitle')} />
       {rows.length === 0 ? (
-        <EmptyState title={tCommon('emptyList')} />
+        <MotionSection>
+          <EmptyState title={tCommon('emptyList')} />
+        </MotionSection>
       ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
-              <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
-              <TableHeaderCell>{tCommon('outstanding')}</TableHeaderCell>
-              <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-              <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-medium">{row.number}</TableCell>
-                <TableCell>
-                  {String(row.total)} {tCommon('currency')}
-                </TableCell>
-                <TableCell>{String(row.outstandingAmount ?? '—')}</TableCell>
-                <TableCell>
-                  <StatusBadge status={row.status} />
-                </TableCell>
-                <TableCell>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() =>
-                      window.open(`${API_URL}/api/v1/invoices/${row.id}/pdf`, '_blank')
-                    }
-                  >
-                    PDF
-                  </Button>
-                </TableCell>
+        <MotionSection delayMs={60}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('outstanding')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium">{row.number}</TableCell>
+                  <TableCell>
+                    {String(row.total)} {tCommon('currency')}
+                  </TableCell>
+                  <TableCell>{String(row.outstandingAmount ?? '—')}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={row.status} />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        window.open(`${API_URL}/api/v1/invoices/${row.id}/pdf`, '_blank')
+                      }
+                    >
+                      PDF
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </MotionSection>
       )}
     </div>
   );

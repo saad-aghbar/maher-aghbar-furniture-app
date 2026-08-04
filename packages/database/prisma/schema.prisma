@@ -26,6 +26,7 @@ enum CustomerStatus {
 enum CustomerType {
   INDIVIDUAL
   COMPANY
+  SHOWROOM
 }
 
 enum RequestStatus {
@@ -281,6 +282,7 @@ enum Priority {
 
 model User {
   id                  String    @id @default(uuid())
+  username            String?   @unique
   email               String?   @unique
   phone               String?   @unique
   passwordHash        String
@@ -297,6 +299,8 @@ model User {
   lastLoginAt         DateTime?
   customerId          String?
   customer            Customer? @relation(fields: [customerId], references: [id])
+  departmentId        String?
+  department          Department? @relation(fields: [departmentId], references: [id])
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   archivedAt          DateTime?
@@ -312,12 +316,14 @@ model User {
   productionTasks    ProductionTask[]       @relation("TaskAssignee")
   inspections        QualityInspection[]
   notifications      Notification[]
+  pushTokens         DevicePushToken[]
   documentsUploaded  Document[]             @relation("DocumentUploader")
   timeEntries        TaskTimeEntry[]
   blockersReported   TaskBlocker[]          @relation("BlockerReporter")
   deliveriesAsDriver Delivery[]             @relation("DeliveryDriver")
 
   @@index([customerId])
+  @@index([departmentId])
   @@map("users")
 }
 
@@ -407,6 +413,7 @@ model Department {
   branch    Branch?   @relation(fields: [branchId], references: [id])
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  users     User[]
 
   @@map("departments")
 }
@@ -458,6 +465,7 @@ model Customer {
   returns        ReturnRequest[]
   deliveries     Delivery[]
   documents      Document[]
+  dealerPrices   DealerPrice[]
 
   @@index([status])
   @@index([phone])
@@ -565,12 +573,46 @@ model Product {
   updatedAt   DateTime        @updatedAt
   archivedAt  DateTime?
 
+  imageUrl         String?
+  galleryUrls      String[]         @default([])
+  manufacturingCost Decimal?        @db.Decimal(18, 3)
+  /// Default BOM quantities/costs for costing stubs
+  bomDefaults      Json?
+  width            Decimal?         @db.Decimal(18, 3)
+  height           Decimal?         @db.Decimal(18, 3)
+  depth            Decimal?         @db.Decimal(18, 3)
+  seatHeight       Decimal?         @db.Decimal(18, 3)
+  /// Extra named measurements: [{ id, nameEn, nameAr, nameHe?, value }]
+  customMeasurements Json?
+  /// Internal factory notes — admin only (never shown to dealers)
+  adminNotes       String?
+
   quotationLines   QuotationLine[]
   salesOrderLines  SalesOrderLine[]
   productionOrders ProductionOrder[]
+  dealerPrices     DealerPrice[]
+  requestItems     RequestItem[]
 
   @@index([categoryId])
   @@map("products")
+}
+
+/// Per-dealer selling price for a catalog product
+model DealerPrice {
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price      Decimal  @db.Decimal(18, 3)
+  currency   String   @default("JOD")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([customerId, productId])
+  @@index([customerId])
+  @@index([productId])
+  @@map("dealer_prices")
 }
 
 model Material {
@@ -639,15 +681,19 @@ model Supplier {
   paymentTermsDays Int      @default(30)
   leadTimeDays    Int       @default(7)
   rating          Decimal?  @db.Decimal(3, 2)
+  isCertified     Boolean   @default(false)
   status          String    @default("ACTIVE")
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   archivedAt      DateTime?
 
-  contacts       SupplierContact[]
-  purchaseOrders PurchaseOrder[]
-  quoteOffers    SupplierQuoteOffer[]
+  contacts         SupplierContact[]
+  purchaseOrders   PurchaseOrder[]
+  quoteOffers      SupplierQuoteOffer[]
+  supplierInvoices SupplierInvoice[]
+  supplierPayments SupplierPayment[]
+  preferredForItems InventoryItem[]
 
   @@map("suppliers")
 }
@@ -698,6 +744,7 @@ model SupplierQuoteOffer {
   unitPrice         Decimal         @db.Decimal(18, 3)
   currency          String          @default("JOD")
   leadTimeDays      Int?
+  qualityScore      Decimal?        @db.Decimal(3, 2)
   notes             String?
   isSelected        Boolean         @default(false)
   createdAt         DateTime        @default(now())
@@ -741,9 +788,10 @@ model PurchaseOrder {
   updatedAt            DateTime            @updatedAt
   archivedAt           DateTime?
 
-  lines           PurchaseOrderLine[]
-  goodsReceipts   GoodsReceipt[]
-  purchaseRequest PurchaseRequest?
+  lines            PurchaseOrderLine[]
+  goodsReceipts    GoodsReceipt[]
+  purchaseRequest  PurchaseRequest?
+  supplierInvoices SupplierInvoice[]
 
   @@index([supplierId])
   @@index([status])
@@ -779,7 +827,8 @@ model GoodsReceipt {
   createdAt       DateTime      @default(now())
   createdById     String?
 
-  lines GoodsReceiptLine[]
+  lines            GoodsReceiptLine[]
+  supplierInvoices SupplierInvoice[]
 
   @@index([purchaseOrderId])
   @@map("goods_receipts")
@@ -855,21 +904,24 @@ model InventoryItem {
   unit        String            @default("pcs")
   materialId  String?           @unique
   material    Material?         @relation(fields: [materialId], references: [id])
-  minStock    Decimal           @default(0) @db.Decimal(18, 3)
-  maxStock    Decimal?          @db.Decimal(18, 3)
-  reorderQty  Decimal?          @db.Decimal(18, 3)
-  isActive    Boolean           @default(true)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  archivedAt  DateTime?
+  preferredSupplierId String?
+  preferredSupplier   Supplier? @relation(fields: [preferredSupplierId], references: [id])
+  minStock     Decimal           @default(0) @db.Decimal(18, 3)
+  maxStock     Decimal?          @db.Decimal(18, 3)
+  reorderQty   Decimal?          @db.Decimal(18, 3)
+  lastAutoPrAt DateTime?
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  archivedAt   DateTime?
 
-  balances            InventoryBalance[]
-  transactions        InventoryTransaction[]
+  balances             InventoryBalance[]
+  transactions         InventoryTransaction[]
   purchaseRequestLines PurchaseRequestLine[]
-  purchaseOrderLines  PurchaseOrderLine[]
-  goodsReceiptLines   GoodsReceiptLine[]
-  countLines          InventoryCountLine[]
-  transferLines       WarehouseTransferLine[]
+  purchaseOrderLines   PurchaseOrderLine[]
+  goodsReceiptLines    GoodsReceiptLine[]
+  countLines           InventoryCountLine[]
+  transferLines        WarehouseTransferLine[]
 
   @@index([category])
   @@map("inventory_items")
@@ -991,6 +1043,13 @@ model RequestForQuotation {
   priority             Priority      @default(NORMAL)
   projectName          String?
   deliveryAddress      String?
+  /// Dealer's end-customer / PO reference
+  externalOrderNumber  String?
+  endCustomerName      String?
+  endCustomerPhone     String?
+  endCustomerFax       String?
+  deliveryLat          Decimal?      @db.Decimal(10, 7)
+  deliveryLng          Decimal?      @db.Decimal(10, 7)
   currency             String        @default("JOD")
   notes                String?
   internalNotes        String?
@@ -1015,6 +1074,8 @@ model RequestItem {
   requestId   String
   request     RequestForQuotation @relation(fields: [requestId], references: [id], onDelete: Cascade)
   category    String?
+  productId   String?
+  product     Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
   productName String
   description String?
   quantity    Decimal             @db.Decimal(18, 3)
@@ -1033,9 +1094,11 @@ model RequestItem {
   finish      String?
   accessories String?
   notes       String?
+  customMeasurements Json?
   sortOrder   Int                 @default(0)
 
   @@index([requestId])
+  @@index([productId])
   @@map("request_items")
 }
 
@@ -1140,6 +1203,8 @@ model SalesOrder {
   orderDate            DateTime         @default(now())
   requiredDeliveryDate DateTime?
   deliveryAddress      String?
+  /// Dealer's own / end-customer PO reference (copied from RFQ at accept)
+  externalOrderNumber  String?
   currency             String           @default("JOD")
   paymentTerms         String?
   status               SalesOrderStatus @default(DRAFT)
@@ -1150,6 +1215,11 @@ model SalesOrder {
   subtotal             Decimal          @default(0) @db.Decimal(18, 3)
   taxTotal             Decimal          @default(0) @db.Decimal(18, 3)
   total                Decimal          @default(0) @db.Decimal(18, 3)
+  /// Factory manufacturing cost (admin-only)
+  manufacturingCost    Decimal?         @db.Decimal(18, 3)
+  /// { fabricQty, fabricCost, woodQty, woodCost, foamQty, foamCost, accessoriesQty, accessoriesCost }
+  costBreakdown        Json?
+  receivingDate        DateTime?
   depositRequired      Decimal?         @db.Decimal(18, 3)
   cancellationReason   String?
   createdAt            DateTime         @default(now())
@@ -1596,21 +1666,96 @@ model StatementEntry {
   @@map("statement_entries")
 }
 
+// ─── Supplier AP (accounts payable) ──────────────────────────────────────────
+
+model SupplierInvoice {
+  id                String        @id @default(uuid())
+  number            String        @unique
+  supplierId        String
+  supplier          Supplier      @relation(fields: [supplierId], references: [id])
+  purchaseOrderId   String
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  goodsReceiptId    String?
+  goodsReceipt      GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id])
+  invoiceDate       DateTime      @default(now())
+  dueDate           DateTime?
+  currency          String        @default("JOD")
+  status            InvoiceStatus @default(ISSUED)
+  subtotal          Decimal       @default(0) @db.Decimal(18, 3)
+  taxTotal          Decimal       @default(0) @db.Decimal(18, 3)
+  total             Decimal       @default(0) @db.Decimal(18, 3)
+  paidAmount        Decimal       @default(0) @db.Decimal(18, 3)
+  outstandingAmount Decimal       @default(0) @db.Decimal(18, 3)
+  notes             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  createdById       String?
+  archivedAt        DateTime?
+
+  lines    SupplierInvoiceLine[]
+  payments SupplierPayment[]
+
+  @@index([supplierId])
+  @@index([purchaseOrderId])
+  @@index([status])
+  @@map("supplier_invoices")
+}
+
+model SupplierInvoiceLine {
+  id                String          @id @default(uuid())
+  supplierInvoiceId String
+  supplierInvoice   SupplierInvoice @relation(fields: [supplierInvoiceId], references: [id], onDelete: Cascade)
+  description       String
+  quantity          Decimal         @db.Decimal(18, 3)
+  unitPrice         Decimal         @db.Decimal(18, 3)
+  taxRate           Decimal         @default(0) @db.Decimal(5, 4)
+  lineTotal         Decimal         @db.Decimal(18, 3)
+  sortOrder         Int             @default(0)
+
+  @@index([supplierInvoiceId])
+  @@map("supplier_invoice_lines")
+}
+
+model SupplierPayment {
+  id                String           @id @default(uuid())
+  number            String           @unique
+  supplierId        String
+  supplier          Supplier         @relation(fields: [supplierId], references: [id])
+  supplierInvoiceId String?
+  supplierInvoice   SupplierInvoice? @relation(fields: [supplierInvoiceId], references: [id])
+  paymentDate       DateTime         @default(now())
+  amount            Decimal          @db.Decimal(18, 3)
+  currency          String           @default("JOD")
+  method            PaymentMethod    @default(BANK_TRANSFER)
+  referenceNumber   String?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  createdById       String?
+
+  @@index([supplierId])
+  @@index([supplierInvoiceId])
+  @@map("supplier_payments")
+}
+
 model ReturnRequest {
-  id           String            @id @default(uuid())
-  number       String            @unique
-  customerId   String
-  customer     Customer          @relation(fields: [customerId], references: [id])
-  salesOrderId String?
-  salesOrder   SalesOrder?       @relation(fields: [salesOrderId], references: [id])
-  productDesc  String
-  quantity     Decimal           @db.Decimal(18, 3)
-  reason       ReturnReason
-  description  String?
-  approvalStatus String          @default("PENDING")
-  resolution   ReturnResolution?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id             String            @id @default(uuid())
+  number         String            @unique
+  customerId     String
+  customer       Customer          @relation(fields: [customerId], references: [id])
+  salesOrderId   String?
+  salesOrder     SalesOrder?       @relation(fields: [salesOrderId], references: [id])
+  productDesc    String
+  quantity       Decimal           @db.Decimal(18, 3)
+  reason         ReturnReason
+  description    String?
+  /// Local storage key or absolute URL for the reason evidence photo
+  reasonPhotoKey String?
+  /// Local storage key or absolute URL for the damage / issue photo
+  issuePhotoKey  String?
+  approvalStatus String            @default("PENDING")
+  resolution     ReturnResolution?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 
   @@index([customerId])
   @@map("return_requests")
@@ -1662,6 +1807,20 @@ model Notification {
 
   @@index([userId, readAt])
   @@map("notifications")
+}
+
+model DevicePushToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String
+  platform  String
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@unique([userId, token])
+  @@index([userId])
+  @@map("device_push_tokens")
 }
 
 model NotificationTemplate {

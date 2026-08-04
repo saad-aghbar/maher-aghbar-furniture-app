@@ -1,7 +1,6 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
-import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import { SALES_ORDER_STATUSES, statusOptions } from '@/lib/status-options';
@@ -12,19 +11,21 @@ import {
   EmptyState,
   ErrorState,
   Input,
+  PageHero,
   Select,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
+  Ltr,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
@@ -36,6 +37,7 @@ interface Row {
   total?: string | number;
   projectName?: string | null;
   requestedDeliveryDate?: string | null;
+  externalOrderNumber?: string | null;
   customer?: {
     id: string;
     name: string;
@@ -100,6 +102,7 @@ function SalesOrdersPageInner() {
       apiFetch<{ data: Row[]; meta: { page: number; totalPages: number } }>(
         `/api/v1/sales-orders?${listParams}`,
       ),
+    placeholderData: keepPreviousData,
   });
 
   const confirmMutation = useMutation({
@@ -149,7 +152,7 @@ function SalesOrdersPageInner() {
     label: tCommon('all'),
   });
 
-  if (listQuery.isLoading) {
+  if (listQuery.isLoading && !listQuery.data) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -157,7 +160,7 @@ function SalesOrdersPageInner() {
       </div>
     );
   }
-  if (listQuery.isError) {
+  if (listQuery.isError && !listQuery.data) {
     return (
       <ErrorState
         title={t('salesOrders')}
@@ -172,15 +175,14 @@ function SalesOrdersPageInner() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t('salesOrders')} description={tSales('emptyHint')} />
+      <PageHero title={t('salesOrders')} description={tSales('emptyHint')} tone="soft" />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
           <Input
-            className="ps-9"
+            withSearchIcon
             value={q}
             onChange={(e) => {
               setPage(1);
@@ -207,7 +209,8 @@ function SalesOrdersPageInner() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableHeaderCell>{tSales('number')}</TableHeaderCell>
+                <TableHeaderCell>{tSales('systemOrderNumber')}</TableHeaderCell>
+                <TableHeaderCell>{tSales('dealerOrderNumber')}</TableHeaderCell>
                 <TableHeaderCell>{tSales('customer')}</TableHeaderCell>
                 <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
                 <TableHeaderCell>{tSales('total')}</TableHeaderCell>
@@ -218,26 +221,27 @@ function SalesOrdersPageInner() {
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>
+                  <TableNumericCell>
                     <Link
                       href={`/sales-orders/${row.id}`}
                       className="font-medium text-brand hover:underline"
                     >
-                      {row.number}
+                      <Ltr>{row.number}</Ltr>
                     </Link>
-                  </TableCell>
+                  </TableNumericCell>
+                  <TableNumericCell>{row.externalOrderNumber?.trim() || '—'}</TableNumericCell>
                   <TableCell>
                     {row.customer ? localizedName(locale, row.customer, row.customer.name) : '—'}
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={row.status} />
                   </TableCell>
-                  <TableCell dir="ltr">{Number(row.total ?? 0).toFixed(2)}</TableCell>
-                  <TableCell dir="ltr">
+                  <TableNumericCell>{Number(row.total ?? 0).toFixed(2)}</TableNumericCell>
+                  <TableNumericCell>
                     {row.requestedDeliveryDate
                       ? row.requestedDeliveryDate.slice(0, 10)
                       : '—'}
-                  </TableCell>
+                  </TableNumericCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-2">
                       {row.status === 'DRAFT' ? (

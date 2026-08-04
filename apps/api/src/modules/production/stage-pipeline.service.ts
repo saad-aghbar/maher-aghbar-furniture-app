@@ -261,6 +261,22 @@ export class StagePipelineService {
           ...(po.actualStartDate ? {} : { actualStartDate: new Date() }),
         },
       });
+      if (po.salesOrderId) {
+        await db.salesOrder.updateMany({
+          where: {
+            id: po.salesOrderId,
+            status: {
+              in: [
+                'CONFIRMED',
+                'READY_FOR_PRODUCTION',
+                'WAITING_FOR_MATERIALS',
+                'WAITING_FOR_PAYMENT',
+              ],
+            },
+          },
+          data: { status: 'IN_PRODUCTION' },
+        });
+      }
     }
 
     await this.rollupProgress(productionOrderId, tx);

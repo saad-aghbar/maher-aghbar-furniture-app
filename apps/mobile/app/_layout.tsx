@@ -5,9 +5,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../src/providers/auth-provider';
-import { I18nProvider, useI18n } from '../src/providers/i18n-provider';
-import { QueryProvider } from '../src/providers/query-provider';
-import { colors } from '../src/theme/tokens';
+import { getUserSurface, surfaceHomeHref } from '../src/lib/surface';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, bootstrapping } = useAuth();
@@ -16,18 +14,29 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (bootstrapping) return;
+
     const inAuth = segments[0] === '(auth)';
+    const inApp = segments[0] === '(app)';
+
     if (!user && !inAuth) {
       router.replace('/(auth)/login');
-    } else if (user && inAuth) {
-      router.replace('/(app)/(tabs)' as never);
+      return;
+    }
+
+    if (user) {
+      const home = surfaceHomeHref(getUserSurface(user));
+      const current = segments[1];
+      const expected = home.split('/').pop();
+      if (inAuth || !inApp || current !== expected) {
+        router.replace(home);
+      }
     }
   }, [user, bootstrapping, segments, router]);
 
   if (bootstrapping) {
     return (
       <View style={styles.splash}>
-        <ActivityIndicator color={colors.brand} size="large" />
+        <ActivityIndicator color="#d93a2b" size="large" />
       </View>
     );
   }
@@ -35,37 +44,19 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RootNav() {
-  const { direction } = useI18n();
-  return (
-    <>
-      <StatusBar style="dark" />
-      <AuthGate>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.background },
-            animation: direction === 'rtl' ? 'slide_from_left' : 'slide_from_right',
-          }}
-        >
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(app)" />
-        </Stack>
-      </AuthGate>
-    </>
-  );
-}
-
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <QueryProvider>
-        <I18nProvider>
-          <AuthProvider>
-            <RootNav />
-          </AuthProvider>
-        </I18nProvider>
-      </QueryProvider>
+      <AuthProvider>
+        <StatusBar style="dark" />
+        <AuthGate>
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#f5f2ee' } }}>
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(app)" />
+            <Stack.Screen name="index" />
+          </Stack>
+        </AuthGate>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
@@ -75,6 +66,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: '#1c1612',
   },
 });

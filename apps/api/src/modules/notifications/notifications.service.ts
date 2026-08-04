@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { EmailProvider, WhatsAppProvider } from '@maher/integrations';
+import type { EmailProvider, SmsProvider, WhatsAppProvider } from '@maher/integrations';
 import { PrismaService } from '../../common/prisma.service';
 import {
   EMAIL_PROVIDER,
+  SMS_PROVIDER,
   WHATSAPP_PROVIDER,
 } from '../../integrations/integrations.module';
 
@@ -28,6 +29,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(EMAIL_PROVIDER) private readonly email: EmailProvider,
+    @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
   ) {}
 
@@ -110,7 +112,14 @@ export class NotificationsService {
     }
 
     if (channel === 'SMS') {
-      this.logger.log(`[sms:console] to=${msg.toPhone ?? 'n/a'} body=${msg.body}`);
+      if (!msg.toPhone) {
+        this.logger.log(`[sms] skip — no recipient for ${msg.templateCode}`);
+        return;
+      }
+      await this.sms.send({
+        to: msg.toPhone,
+        body: msg.body,
+      });
       return;
     }
 

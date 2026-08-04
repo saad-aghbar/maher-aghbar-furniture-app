@@ -14,7 +14,7 @@ export const loginSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 
 export const createCustomerSchema = z.object({
-  type: z.enum(['INDIVIDUAL', 'COMPANY']),
+  type: z.enum(['INDIVIDUAL', 'COMPANY', 'SHOWROOM']),
   legalName: z.string().min(1).max(200),
   tradeName: z.string().max(200).optional(),
   taxNumber: z.string().max(50).optional(),

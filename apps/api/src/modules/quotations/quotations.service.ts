@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ContractStatus, DiscountType, Prisma } from '@maher/database';
+import { DiscountType, Prisma } from '@maher/database';
 import type { EmailProvider, WhatsAppProvider } from '@maher/integrations';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
@@ -34,17 +34,8 @@ export class QuotationsService {
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
   ) {}
 
-  private async getApprovalChain(total: number): Promise<string[]> {
-    const setting = await this.prisma.systemSetting.findUnique({
-      where: { key: 'quotation_approval' },
-    });
-    const value = (setting?.value ?? {}) as { financeThreshold?: number };
-    const financeThreshold = Number(value.financeThreshold ?? 5000);
-    const chain = ['SALES_MANAGER', 'GENERAL_MANAGER'];
-    if (Number(total) >= financeThreshold) {
-      chain.push('FINANCE_MANAGER');
-    }
-    return chain;
+  private async getApprovalChain(_total: number): Promise<string[]> {
+    return ['SYSTEM_ADMINISTRATOR'];
   }
 
   private completedApprovalSteps(
@@ -165,6 +156,8 @@ export class QuotationsService {
             OR: [
               { number: { contains: query.q, mode: 'insensitive' } },
               { customer: { name: { contains: query.q, mode: 'insensitive' } } },
+              { request: { externalOrderNumber: { contains: query.q, mode: 'insensitive' } } },
+              { request: { number: { contains: query.q, mode: 'insensitive' } } },
             ],
           }
         : {}),
@@ -175,7 +168,19 @@ export class QuotationsService {
       this.prisma.quotation.count({ where }),
       this.prisma.quotation.findMany({
         where,
-        include: { customer: { select: { id: true, name: true, code: true, nameAr: true, nameEn: true, nameHe: true } } },
+        include: {
+          customer: {
+            select: { id: true, name: true, code: true, nameAr: true, nameEn: true, nameHe: true },
+          },
+          request: {
+            select: {
+              id: true,
+              number: true,
+              externalOrderNumber: true,
+              endCustomerName: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take,
@@ -198,7 +203,9 @@ export class QuotationsService {
           },
           orderBy: { decidedAt: 'asc' },
         },
-        salesOrders: { select: { id: true, number: true, status: true } },
+        salesOrders: {
+          select: { id: true, number: true, status: true, externalOrderNumber: true },
+        },
       },
     });
     if (!quotation) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Quotation not found.' });
@@ -221,9 +228,72 @@ export class QuotationsService {
     };
   }
 
+  /** Resolve product + seller unit price: dealer price for this customer, else catalog basePrice. */
+  private async resolveSellerLines(
+    customerId: string,
+    lines: CreateQuotationDto['lines'],
+  ): Promise<CreateQuotationDto['lines']> {
+    const [dealerPrices, products] = await Promise.all([
+      this.prisma.dealerPrice.findMany({ where: { customerId } }),
+      this.prisma.product.findMany({
+        where: { archivedAt: null, isActive: true },
+        select: {
+          id: true,
+          sku: true,
+          nameEn: true,
+          nameAr: true,
+          nameHe: true,
+          basePrice: true,
+        },
+      }),
+    ]);
+    const dealerMap = new Map(dealerPrices.map((d) => [d.productId, Number(d.price)]));
+
+    const matchProduct = (line: CreateQuotationDto['lines'][number]) => {
+      if (line.productId) {
+        return products.find((p) => p.id === line.productId) ?? null;
+      }
+      const raw = (line.description ?? '').trim().toLowerCase();
+      if (!raw) return null;
+      return (
+        products.find(
+          (p) =>
+            p.sku.toLowerCase() === raw ||
+            p.nameEn.toLowerCase() === raw ||
+            (p.nameAr && p.nameAr.toLowerCase() === raw) ||
+            (p.nameHe && p.nameHe.toLowerCase() === raw),
+        ) ??
+        products.find(
+          (p) =>
+            raw.includes(p.nameEn.toLowerCase()) ||
+            (p.nameAr && raw.includes(p.nameAr.toLowerCase())) ||
+            raw.includes(p.sku.toLowerCase()),
+        ) ??
+        null
+      );
+    };
+
+    return lines.map((line) => {
+      const product = matchProduct(line);
+      const productId = line.productId ?? product?.id;
+      let unitPrice = Number(line.unitPrice);
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+        if (productId && dealerMap.has(productId)) {
+          unitPrice = dealerMap.get(productId)!;
+        } else if (product?.basePrice != null) {
+          unitPrice = Number(product.basePrice);
+        } else {
+          unitPrice = 0;
+        }
+      }
+      return { ...line, productId, unitPrice };
+    });
+  }
+
   async create(dto: CreateQuotationDto, userId: string) {
     const number = await this.sequences.next('QT', 'QT');
-    const lineData = dto.lines.map((_, i) => this.buildLineData(dto.lines, i));
+    const resolvedLines = await this.resolveSellerLines(dto.customerId, dto.lines);
+    const lineData = resolvedLines.map((_, i) => this.buildLineData(resolvedLines, i));
     const totals = this.sumQuotation(lineData);
 
     const quotation = await this.prisma.quotation.create({
@@ -295,7 +365,7 @@ export class QuotationsService {
     }
 
     const elevated = user.roles.some((r) =>
-      ['SUPER_ADMIN', 'SYSTEM_ADMINISTRATOR', 'GENERAL_MANAGER'].includes(r),
+      ['SUPER_ADMIN', 'SYSTEM_ADMINISTRATOR'].includes(r),
     );
     if (!elevated && !user.roles.includes(nextRole)) {
       throw new ForbiddenException({
@@ -400,24 +470,29 @@ export class QuotationsService {
     this.assertStatus(quotation, ['SENT'], 'accept');
 
     const soNumber = await this.sequences.next('SO', 'SO');
-    const contractNumber = await this.sequences.next('CTR', 'CTR');
     const requiredDeliveryDate =
       this.parseDeliveryDate(quotation.deliveryTerms) ??
       (quotation.request as { requiredDeliveryDate?: Date | null } | null)?.requiredDeliveryDate ??
       undefined;
 
+    const requestRow = quotation.request as {
+      deliveryAddress?: string | null;
+      externalOrderNumber?: string | null;
+      projectName?: string | null;
+    } | null;
+
     const result = await this.prisma.$transaction(async (tx) => {
-      const salesOrder = await tx.salesOrder.create({
+      await tx.salesOrder.create({
         data: {
           number: soNumber,
           customerId: quotation.customerId,
           quotationId: quotation.id,
           currency: quotation.currency,
           paymentTerms: quotation.paymentTerms ?? undefined,
-          deliveryAddress:
-            (quotation.request as { deliveryAddress?: string | null } | null)?.deliveryAddress ??
-            undefined,
+          deliveryAddress: requestRow?.deliveryAddress ?? undefined,
           requiredDeliveryDate: requiredDeliveryDate ?? undefined,
+          externalOrderNumber: requestRow?.externalOrderNumber ?? undefined,
+          projectName: requestRow?.projectName ?? undefined,
           notes: quotation.deliveryTerms ?? undefined,
           status: 'DRAFT',
           subtotal: quotation.subtotal,
@@ -436,23 +511,6 @@ export class QuotationsService {
               sortOrder: index,
             })),
           },
-        },
-        include: { lines: true },
-      });
-
-      await tx.contract.create({
-        data: {
-          number: contractNumber,
-          customerId: quotation.customerId,
-          salesOrderId: salesOrder.id,
-          contractValue: quotation.total,
-          currency: quotation.currency,
-          paymentSchedule: quotation.paymentTerms ?? undefined,
-          deliveryMilestones: quotation.deliveryTerms ?? undefined,
-          warranty: quotation.warrantyTerms ?? undefined,
-          terms: `Auto-created from quotation ${quotation.number} v${quotation.version}`,
-          startDate: new Date(),
-          status: signatureData ? ContractStatus.ACTIVE : ContractStatus.DRAFT,
         },
       });
 
@@ -474,8 +532,12 @@ export class QuotationsService {
       });
     });
 
-    const autoConfirm = await this.isAutoConfirmEnabled();
     const so = result.salesOrders?.[0];
+    if (so) {
+      await this.salesOrders.syncCalculatedCosts(so.id).catch(() => undefined);
+    }
+
+    const autoConfirm = await this.isAutoConfirmEnabled();
     if (autoConfirm && so) {
       try {
         await this.salesOrders.confirm(so.id, userId ?? 'system');

@@ -21,8 +21,8 @@ import {
   TableRow,
   TableSkeleton,
 } from '@maher/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -77,6 +77,7 @@ export function MasterCrudPage<T extends { id: string }>({
   extraActions,
 }: MasterCrudPageProps<T>) {
   const tCommon = useTranslations('common');
+  const tVal = useTranslations('validation');
   const queryClient = useQueryClient();
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
@@ -111,6 +112,7 @@ export function MasterCrudPage<T extends { id: string }>({
       if (Array.isArray(json)) return { data: json, meta: undefined };
       return json;
     },
+    placeholderData: keepPreviousData,
   });
 
   const defaults = () =>
@@ -125,7 +127,7 @@ export function MasterCrudPage<T extends { id: string }>({
     mutationFn: async () => {
       for (const field of fields) {
         if (field.required && !String(form[field.name] ?? '').trim() && field.type !== 'checkbox') {
-          throw new ApiClientError(`${field.label} is required.`, 400);
+          throw new ApiClientError(tVal('fieldRequired', { field: field.label }), 400);
         }
       }
       const payload = buildPayload
@@ -141,7 +143,7 @@ export function MasterCrudPage<T extends { id: string }>({
       if (editing && patchPath) {
         return apiFetch(patchPath(editing.id), { method: 'PATCH', body: JSON.stringify(payload) });
       }
-      if (!createPath) throw new ApiClientError('Create not supported.', 400);
+      if (!createPath) throw new ApiClientError(tVal('createNotSupported'), 400);
       return apiFetch(createPath, { method: 'POST', body: JSON.stringify(payload) });
     },
     onSuccess: async () => {
@@ -176,7 +178,7 @@ export function MasterCrudPage<T extends { id: string }>({
     onError: (err) => setConfirmError(mutationErrorMessage(err)),
   });
 
-  if (listQuery.isLoading) {
+  if (listQuery.isLoading && !listQuery.data) {
     return (
       <div className="space-y-6">
         <div className="space-y-2 border-b border-border pb-5">
@@ -188,7 +190,7 @@ export function MasterCrudPage<T extends { id: string }>({
     );
   }
 
-  if (listQuery.isError) {
+  if (listQuery.isError && !listQuery.data) {
     return (
       <ErrorState
         title={title}
@@ -226,6 +228,7 @@ export function MasterCrudPage<T extends { id: string }>({
           {banner}
         </Alert>
       ) : null}
+      <div className="maher-stagger space-y-6">
       <Input
         value={q}
         onChange={(e) => {
@@ -233,7 +236,7 @@ export function MasterCrudPage<T extends { id: string }>({
           setQ(e.target.value);
         }}
         placeholder={tCommon('search')}
-        leadingIcon={<Search className="h-4 w-4" />}
+        withSearchIcon
         className="max-w-md"
       />
       {rows.length === 0 ? (
@@ -364,6 +367,7 @@ export function MasterCrudPage<T extends { id: string }>({
           </Button>
         </div>
       ) : null}
+      </div>
 
       <Modal
         open={formOpen}
@@ -381,7 +385,7 @@ export function MasterCrudPage<T extends { id: string }>({
           </>
         }
       >
-        <div className="grid gap-4">
+        <div className="maher-form-section grid gap-4">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
           {fields.map((field) => {
             if (field.type === 'checkbox') {

@@ -1,6 +1,8 @@
 import { createLogger } from '@maher/logging';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
+import { startInboundEmailPoller } from './inbound-email';
+import { startLowStockPrPoller } from './low-stock-pr';
 
 const logger = createLogger('worker');
 
@@ -26,6 +28,9 @@ async function main() {
     ai: process.env.AI_PROVIDER ?? 'mock',
     ocr: process.env.OCR_PROVIDER ?? 'mock',
   });
+
+  startInboundEmailPoller();
+  startLowStockPrPoller();
 
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {

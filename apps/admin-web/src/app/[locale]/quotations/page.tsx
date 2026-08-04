@@ -6,7 +6,6 @@ import {
   serializeLineItems,
   type LineItemDraft,
 } from '@/components/admin/line-items-editor';
-import { PageHeader } from '@/components/admin/page-header';
 import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { QUOTATION_STATUSES, statusOptions } from '@/lib/status-options';
@@ -18,19 +17,22 @@ import {
   ErrorState,
   Input,
   Modal,
+  MotionSection,
+  PageHero,
   Select,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
@@ -48,6 +50,11 @@ interface QuotationRow {
     nameEn?: string | null;
     nameHe?: string | null;
   };
+  request?: {
+    id: string;
+    number: string;
+    externalOrderNumber?: string | null;
+  } | null;
 }
 
 interface Customer {
@@ -64,6 +71,7 @@ function QuotationsPageInner() {
   const t = useTranslations('quotations');
   const tc = useTranslations('catalog');
   const tNav = useTranslations('navigation');
+  const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
   const tStatus = useTranslations('statuses');
   const queryClient = useQueryClient();
@@ -104,6 +112,7 @@ function QuotationsPageInner() {
       apiFetch<{ data: QuotationRow[]; meta: { page: number; totalPages: number } }>(
         `/api/v1/quotations?${listParams}`,
       ),
+    placeholderData: keepPreviousData,
   });
 
   const customersQuery = useQuery({
@@ -166,7 +175,7 @@ function QuotationsPageInner() {
     label: tCommon('all'),
   });
 
-  if (listQuery.isLoading) {
+  if (listQuery.isLoading && !listQuery.data) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -174,7 +183,7 @@ function QuotationsPageInner() {
       </div>
     );
   }
-  if (listQuery.isError) {
+  if (listQuery.isError && !listQuery.data) {
     return (
       <ErrorState
         title={tNav('quotations')}
@@ -189,8 +198,9 @@ function QuotationsPageInner() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title={t('title')}
+        tone="soft"
         actions={
           <Button
             type="button"
@@ -206,11 +216,10 @@ function QuotationsPageInner() {
       />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
 
-      <div className="flex flex-wrap items-end gap-3">
+      <MotionSection enter="rise" className="flex flex-wrap items-end gap-3">
         <label className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
           <Input
-            className="ps-9"
+            withSearchIcon
             value={q}
             onChange={(e) => {
               setPage(1);
@@ -243,7 +252,7 @@ function QuotationsPageInner() {
             </option>
           ))}
         </Select>
-      </div>
+      </MotionSection>
 
       {rows.length === 0 ? (
         <EmptyState title={t('empty')} />
@@ -253,6 +262,7 @@ function QuotationsPageInner() {
             <TableHead>
               <TableRow>
                 <TableHeaderCell>{t('number')}</TableHeaderCell>
+                <TableHeaderCell>{tSales('dealerOrderNumber')}</TableHeaderCell>
                 <TableHeaderCell>{t('customer')}</TableHeaderCell>
                 <TableHeaderCell>{t('total')}</TableHeaderCell>
                 <TableHeaderCell>{t('validUntil')}</TableHeaderCell>
@@ -266,25 +276,29 @@ function QuotationsPageInner() {
                     <Link
                       href={`/quotations/${row.id}`}
                       className="font-medium text-brand hover:underline"
+                      dir="ltr"
                     >
                       {row.number}
                     </Link>
                   </TableCell>
+                  <TableNumericCell>
+                    {row.request?.externalOrderNumber?.trim() || '—'}
+                  </TableNumericCell>
                   <TableCell>
                     {row.customer
                       ? localizedName(locale, row.customer, row.customer.name)
                       : '—'}
                   </TableCell>
-                  <TableCell dir="ltr">
+                  <TableNumericCell>
                     {Number(row.total ?? 0).toLocaleString('en-US', {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}{' '}
                     {tCommon('currency')}
-                  </TableCell>
-                  <TableCell dir="ltr">
+                  </TableNumericCell>
+                  <TableNumericCell>
                     {row.expirationDate ? row.expirationDate.slice(0, 10) : '—'}
-                  </TableCell>
+                  </TableNumericCell>
                   <TableCell>
                     <StatusBadge status={row.status} />
                   </TableCell>
@@ -334,7 +348,7 @@ function QuotationsPageInner() {
           </>
         }
       >
-        <div className="space-y-4">
+        <div className="maher-form-section space-y-4">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
           <Select
             label={t('customer')}

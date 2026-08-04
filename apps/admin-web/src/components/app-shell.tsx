@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 import { usePathname } from '@/i18n/navigation';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const tNav = useTranslations('navigation');
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
@@ -30,7 +32,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-50 lg:hidden">
           <button
             type="button"
-            aria-label="Close menu"
+            aria-label={tNav('closeMenu')}
             className="maher-animate-fade absolute inset-0 bg-[#1c1917]/45 backdrop-blur-[2px]"
             onClick={() => setMobileOpen(false)}
           />

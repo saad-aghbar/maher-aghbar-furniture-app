@@ -6,12 +6,12 @@ import {
   serializeLineItems,
   type LineItemDraft,
 } from '@/components/admin/line-items-editor';
-import { PageHeader } from '@/components/admin/page-header';
 import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import {
   PURCHASE_ORDER_STATUSES,
   PURCHASE_REQUEST_STATUSES,
+  INVOICE_STATUSES,
   statusOptions,
 } from '@/lib/status-options';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
@@ -22,6 +22,7 @@ import {
   ErrorState,
   Input,
   Modal,
+  PageHero,
   Select,
   Skeleton,
   StatusBadge,
@@ -37,8 +38,7 @@ import {
   TabPanel,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -83,6 +83,16 @@ interface PRRow {
   reason?: string | null;
 }
 
+interface SupplierInvoiceRow {
+  id: string;
+  number: string;
+  status: string;
+  total?: string | number;
+  outstandingAmount?: string | number;
+  supplier?: { name: string; nameAr?: string | null; nameEn?: string | null };
+  purchaseOrder?: { id: string; number: string } | null;
+}
+
 export default function PurchasingPage() {
   const locale = useLocale();
   const tNav = useTranslations('navigation');
@@ -104,8 +114,10 @@ export default function PurchasingPage() {
   const [prReason, setPrReason] = useState('');
   const [poSearch, setPoSearch] = useState('');
   const [prSearch, setPrSearch] = useState('');
+  const [siSearch, setSiSearch] = useState('');
   const [poStatus, setPoStatus] = useState('');
   const [prStatus, setPrStatus] = useState('');
+  const [siStatus, setSiStatus] = useState('');
 
   const poParams = useMemo(() => {
     const params = new URLSearchParams({ pageSize: '100' });
@@ -121,15 +133,32 @@ export default function PurchasingPage() {
     return params.toString();
   }, [prSearch, prStatus]);
 
+  const siParams = useMemo(() => {
+    const params = new URLSearchParams({ pageSize: '100' });
+    if (siSearch.trim()) params.set('q', siSearch.trim());
+    if (siStatus) params.set('status', siStatus);
+    return params.toString();
+  }, [siSearch, siStatus]);
+
   const poQuery = useQuery({
     queryKey: ['purchase-orders', poParams],
     queryFn: () =>
       apiFetch<{ data: PORow[] }>(`/api/v1/purchase-orders?${poParams}`).then((r) => r.data),
+    placeholderData: keepPreviousData,
   });
   const prQuery = useQuery({
     queryKey: ['purchase-requests', prParams],
     queryFn: () =>
       apiFetch<{ data: PRRow[] }>(`/api/v1/purchase-requests?${prParams}`).then((r) => r.data),
+    placeholderData: keepPreviousData,
+  });
+  const siQuery = useQuery({
+    queryKey: ['supplier-invoices', siParams],
+    queryFn: () =>
+      apiFetch<{ data: SupplierInvoiceRow[] }>(`/api/v1/supplier-invoices?${siParams}`).then(
+        (r) => r.data,
+      ),
+    placeholderData: keepPreviousData,
   });
   const suppliersQuery = useQuery({
     queryKey: ['suppliers-pick'],
@@ -151,6 +180,9 @@ export default function PurchasingPage() {
     label: tCommon('all'),
   });
   const prStatusOpts = statusOptions(tStatus, PURCHASE_REQUEST_STATUSES, {
+    label: tCommon('all'),
+  });
+  const siStatusOpts = statusOptions(tStatus, INVOICE_STATUSES, {
     label: tCommon('all'),
   });
 
@@ -224,7 +256,7 @@ export default function PurchasingPage() {
     onError: (err) => setBanner(mutationErrorMessage(err)),
   });
 
-  if (poQuery.isLoading || prQuery.isLoading) {
+  if ((poQuery.isLoading && !poQuery.data) || (prQuery.isLoading && !prQuery.data) || (siQuery.isLoading && !siQuery.data)) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -246,6 +278,7 @@ export default function PurchasingPage() {
 
   const orders = poQuery.data ?? [];
   const requests = prQuery.data ?? [];
+  const supplierInvoices = siQuery.data ?? [];
   const suppliers = suppliersQuery.data ?? [];
   const warehouses = warehousesQuery.data ?? [];
   const items = itemsQuery.data ?? [];
@@ -284,8 +317,9 @@ export default function PurchasingPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title={tNav('purchasing')}
+        tone="soft"
         actions={
           <>
             <Button
@@ -321,22 +355,24 @@ export default function PurchasingPage() {
         <TabList>
           <Tab value="orders">{tc('purchaseOrders')}</Tab>
           <Tab value="requests">{tc('purchaseRequests')}</Tab>
+          <Tab value="supplier-invoices">{tc('supplierInvoices')}</Tab>
         </TabList>
         <TabPanel value="orders">
-          <div className="mb-4 flex flex-wrap gap-3">
-            <Input
-              value={poSearch}
-              onChange={(e) => setPoSearch(e.target.value)}
-              placeholder={tCommon('search')}
-              leadingIcon={<Search className="h-4 w-4" />}
-              className="max-w-xs"
-            />
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <label className="relative min-w-[220px] flex-1">
+              <Input
+                value={poSearch}
+                onChange={(e) => setPoSearch(e.target.value)}
+                placeholder={tCommon('search')}
+                withSearchIcon
+              />
+            </label>
             <Select
-              label={tCommon('status')}
               value={poStatus}
               onChange={(e) => setPoStatus(e.target.value)}
               options={poStatusOpts}
-              className="max-w-xs"
+              className="w-48"
+              aria-label={tCommon('status')}
             />
           </div>
           {orders.length === 0 ? (
@@ -391,20 +427,21 @@ export default function PurchasingPage() {
           )}
         </TabPanel>
         <TabPanel value="requests">
-          <div className="mb-4 flex flex-wrap gap-3">
-            <Input
-              value={prSearch}
-              onChange={(e) => setPrSearch(e.target.value)}
-              placeholder={tCommon('search')}
-              leadingIcon={<Search className="h-4 w-4" />}
-              className="max-w-xs"
-            />
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <label className="relative min-w-[220px] flex-1">
+              <Input
+                value={prSearch}
+                onChange={(e) => setPrSearch(e.target.value)}
+                placeholder={tCommon('search')}
+                withSearchIcon
+              />
+            </label>
             <Select
-              label={tCommon('status')}
               value={prStatus}
               onChange={(e) => setPrStatus(e.target.value)}
               options={prStatusOpts}
-              className="max-w-xs"
+              className="w-48"
+              aria-label={tCommon('status')}
             />
           </div>
           {requests.length === 0 ? (
@@ -448,6 +485,90 @@ export default function PurchasingPage() {
             </Table>
           )}
         </TabPanel>
+        <TabPanel value="supplier-invoices">
+          <div className="mb-4 flex flex-wrap items-end gap-3">
+            <label className="relative min-w-[220px] flex-1">
+              <Input
+                value={siSearch}
+                onChange={(e) => setSiSearch(e.target.value)}
+                placeholder={tCommon('search')}
+                withSearchIcon
+              />
+            </label>
+            <Select
+              value={siStatus}
+              onChange={(e) => setSiStatus(e.target.value)}
+              options={siStatusOpts}
+              className="w-48"
+              aria-label={tCommon('status')}
+            />
+          </div>
+          {supplierInvoices.length === 0 ? (
+            <EmptyState title={tc('noSupplierInvoices')} />
+          ) : (
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
+                  <TableHeaderCell>{tc('supplier')}</TableHeaderCell>
+                  <TableHeaderCell>{tc('purchaseOrder')}</TableHeaderCell>
+                  <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
+                  <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
+                  <TableHeaderCell>{tc('outstanding')}</TableHeaderCell>
+                  <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {supplierInvoices.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <Link
+                        href={`/purchasing/supplier-invoices/${row.id}`}
+                        className="font-medium text-brand hover:underline"
+                      >
+                        <span dir="ltr">{row.number}</span>
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {row.supplier
+                        ? localizedName(locale, row.supplier, row.supplier.name)
+                        : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {row.purchaseOrder ? (
+                        <Link
+                          href={`/purchasing/${row.purchaseOrder.id}`}
+                          className="text-brand hover:underline"
+                        >
+                          <span dir="ltr">{row.purchaseOrder.number}</span>
+                        </Link>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={row.status} />
+                    </TableCell>
+                    <TableCell>
+                      <span dir="ltr">{String(row.total ?? '—')}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span dir="ltr">{String(row.outstandingAmount ?? '—')}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/purchasing/supplier-invoices/${row.id}`}
+                        className="text-sm text-brand hover:underline"
+                      >
+                        {tCommon('details')}
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </TabPanel>
       </Tabs>
 
       <Modal
@@ -466,7 +587,7 @@ export default function PurchasingPage() {
           </>
         }
       >
-        <div className="grid gap-3">
+        <div className="maher-form-section grid gap-3">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
           <Select
             label={tc('supplier')}
@@ -527,7 +648,7 @@ export default function PurchasingPage() {
           </>
         }
       >
-        <div className="grid gap-3">
+        <div className="maher-form-section grid gap-3">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
           <Input
             label={tc('reason')}

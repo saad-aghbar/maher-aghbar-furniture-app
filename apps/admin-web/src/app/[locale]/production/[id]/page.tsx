@@ -3,7 +3,7 @@
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
 import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
-import { apiFetch } from '@/lib/api-client';
+import { API_URL, apiFetch, apiUpload, apiUploadFromUrl, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { PRIORITY_STATUSES, statusOptions } from '@/lib/status-options';
 import {
@@ -11,28 +11,45 @@ import {
   Button,
   ErrorState,
   Input,
+  PhotoAttachField,
   Select,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
   TextArea,
+  MotionSection,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { localizedName } from '@maher/i18n';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 interface Worker {
   id: string;
   firstName: string;
   lastName: string;
   email: string | null;
+  departmentId?: string | null;
+  department?: {
+    id: string;
+    code: string;
+    nameAr: string;
+    nameEn: string;
+  } | null;
   roles?: Array<{ role: { code: string } }>;
+}
+
+interface DepartmentRow {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
 }
 
 interface Task {
@@ -66,6 +83,15 @@ interface Stage {
   tasks: Task[];
 }
 
+interface TaskDocument {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  category?: string | null;
+  sizeBytes: number;
+  createdAt: string;
+}
+
 interface ProductionDetail {
   id: string;
   number: string;
@@ -76,8 +102,9 @@ interface ProductionDetail {
   plannedStartDate?: string | null;
   plannedCompletionDate?: string | null;
   currentStageCode?: string | null;
-  salesOrder?: { id: string; number: string } | null;
+  salesOrder?: { id: string; number: string; externalOrderNumber?: string | null } | null;
   stages: Stage[];
+  documents?: TaskDocument[];
 }
 
 function toDateInput(value?: string | null) {
@@ -90,6 +117,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   const tCommon = useTranslations('common');
   const tc = useTranslations('catalog');
   const tp = useTranslations('production');
+  const tSales = useTranslations('sales');
   const tStatus = useTranslations('statuses');
   const locale = useLocale();
   const qc = useQueryClient();
@@ -105,7 +133,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   const [estimatedMinutes, setEstimatedMinutes] = useState('');
   const [holdTaskId, setHoldTaskId] = useState<string | null>(null);
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
-  const photoRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [uploadingTaskId, setUploadingTaskId] = useState<string | null>(null);
 
   const priorityOpts = statusOptions(tStatus, PRIORITY_STATUSES);
 
@@ -123,7 +151,17 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   const workersQuery = useQuery({
     queryKey: ['workers-for-assign'],
     queryFn: () =>
-      apiFetch<{ data: Worker[] }>('/api/v1/users?pageSize=100').then((r) => r.data),
+      apiFetch<{ data: Worker[] }>(
+        '/api/v1/users?pageSize=100&roleCodes=PRODUCTION_WORKER',
+      ).then((r) => r.data),
+  });
+
+  const departmentsQuery = useQuery({
+    queryKey: ['departments-for-assign'],
+    queryFn: () =>
+      apiFetch<{ data: DepartmentRow[] }>('/api/v1/departments?pageSize=100')
+        .then((r) => r.data)
+        .catch(() => [] as DepartmentRow[]),
   });
 
   const workers = useMemo(() => {
@@ -132,14 +170,27 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
       u.roles?.some((r) =>
         [
           'PRODUCTION_WORKER',
-          'PRODUCTION_SUPERVISOR',
-          'QUALITY_INSPECTOR',
-          'DELIVERY_EMPLOYEE',
         ].includes(r.role.code),
       ),
     );
     return production.length ? production : all.filter((u) => !u.email?.includes('customer'));
   }, [workersQuery.data]);
+
+  const departmentByCode = useMemo(() => {
+    const map = new Map<string, DepartmentRow>();
+    for (const d of departmentsQuery.data ?? []) map.set(d.code, d);
+    for (const w of workers) {
+      if (w.department && !map.has(w.department.code)) {
+        map.set(w.department.code, w.department);
+      }
+    }
+    return map;
+  }, [departmentsQuery.data, workers]);
+
+  const workersForStage = (stageDept?: string | null) => {
+    if (!stageDept) return workers;
+    return workers.filter((w) => w.department?.code === stageDept);
+  };
 
   const startMutation = useMutation({
     mutationFn: () =>
@@ -154,15 +205,10 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   });
 
   const planMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: Record<string, unknown>) =>
       apiFetch(`/api/v1/production-orders/${params.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          priority: planPriority,
-          plannedStartDate: plannedStart || undefined,
-          plannedCompletionDate: plannedEnd || undefined,
-          estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : undefined,
-        }),
+        body: JSON.stringify(body),
       }),
     onSuccess: async () => {
       setError(null);
@@ -184,6 +230,30 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
     onSuccess: async () => {
       setError(null);
       setBanner(tp('workerAssigned'));
+      await qc.invalidateQueries({ queryKey: ['production-order', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const assignAllMutation = useMutation({
+    mutationFn: async (items: Array<{ taskId: string; employeeId: string; priority: string }>) => {
+      const results = await Promise.allSettled(
+        items.map((args) =>
+          apiFetch(`/api/v1/tasks/${args.taskId}/assign`, {
+            method: 'POST',
+            body: JSON.stringify({
+              employeeId: args.employeeId,
+              priority: args.priority,
+            }),
+          }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      return { total: items.length, failed };
+    },
+    onSuccess: async ({ failed }) => {
+      setError(null);
+      setBanner(failed > 0 ? tp('workersAssignedPartial') : tp('workersAssignedAll'));
       await qc.invalidateQueries({ queryKey: ['production-order', params.id] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
@@ -219,28 +289,49 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
-  async function uploadTaskPhoto(taskId: string, productionOrderId: string) {
-    const input = photoRefs.current[taskId];
-    const file = input?.files?.[0];
-    if (!file) return;
-    setError(null);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-      const qs = new URLSearchParams({ taskId, productionOrderId });
-      const res = await fetch(`${API}/api/v1/uploads?${qs}`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
+  const uploadMutation = useMutation({
+    mutationFn: async (args: {
+      taskId: string;
+      productionOrderId: string;
+      file?: File;
+      url?: string;
+    }) => {
+      const qs = new URLSearchParams({
+        taskId: args.taskId,
+        productionOrderId: args.productionOrderId,
+        category: `TASK_PHOTO:${args.taskId}`,
       });
-      if (!res.ok) throw new Error(tCommon('uploadFailed'));
+      if (args.url) {
+        return apiUploadFromUrl(`/api/v1/uploads/from-url?${qs}`, { url: args.url });
+      }
+      if (!args.file) throw new ApiClientError(tCommon('required'), 400);
+      const form = new FormData();
+      form.append('file', args.file);
+      return apiUpload(`/api/v1/uploads?${qs}`, form);
+    },
+    onSuccess: async () => {
+      setError(null);
       setBanner(tc('documentUploaded'));
-      if (input) input.value = '';
       await qc.invalidateQueries({ queryKey: ['production-order', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+    onSettled: () => setUploadingTaskId(null),
+  });
+
+  async function openDocument(id: string) {
+    try {
+      const link = await apiFetch<{ downloadPath: string }>(`/api/v1/uploads/documents/${id}/link`);
+      window.open(`${API_URL}${link.downloadPath}`, '_blank', 'noopener,noreferrer');
     } catch (err) {
-      setError(err instanceof Error ? err.message : tCommon('uploadFailed'));
+      setError(mutationErrorMessage(err));
     }
+  }
+
+  function documentsForTask(taskId: string) {
+    const docs = detailQuery.data?.documents ?? [];
+    return docs.filter(
+      (d) => d.category === `TASK_PHOTO:${taskId}` || d.category?.endsWith(`:${taskId}`),
+    );
   }
 
   if (detailQuery.isLoading) {
@@ -263,7 +354,29 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   }
 
   const order = detailQuery.data;
-  const canStart = ['DRAFT', 'PLANNED', 'READY', 'WAITING_FOR_MATERIALS'].includes(order.status);
+  const PRE_START_STATUSES = ['DRAFT', 'PLANNED', 'READY', 'WAITING_FOR_MATERIALS'];
+  const LOCKED_STAGE_STATUSES = [
+    'COMPLETED',
+    'SKIPPED',
+    'IN_PROGRESS',
+    'PAUSED',
+    'READY_FOR_INSPECTION',
+    'BLOCKED',
+  ];
+  const LOCKED_TASK_STATUSES = [
+    'COMPLETED',
+    'CANCELLED',
+    'IN_PROGRESS',
+    'PAUSED',
+    'READY_FOR_INSPECTION',
+    'BLOCKED',
+  ];
+  const isCompleted =
+    order.status === 'COMPLETED' ||
+    order.status === 'CANCELLED' ||
+    Number(order.progressPercent) >= 100;
+  const canStart = !isCompleted && PRE_START_STATUSES.includes(order.status);
+  const isInProduction = !isCompleted && !PRE_START_STATUSES.includes(order.status);
 
   function draftFor(task: Task) {
     return (
@@ -274,16 +387,52 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
     );
   }
 
+  function stageAssignable(stage: Stage, task: Task) {
+    if (isCompleted) return false;
+    if (LOCKED_STAGE_STATUSES.includes(stage.status)) return false;
+    if (LOCKED_TASK_STATUSES.includes(task.status)) return false;
+    return true;
+  }
+
+  const assignAllItems = order.stages.flatMap((stage) => {
+    const task = stage.tasks[0];
+    if (!task || !stageAssignable(stage, task)) return [];
+    const draft = draftFor(task);
+    if (!draft.employeeId) return [];
+    return [{ taskId: task.id, employeeId: draft.employeeId, priority: draft.priority }];
+  });
+
+  function departmentLabel(code?: string | null) {
+    if (!code) return '—';
+    const dept = departmentByCode.get(code);
+    if (!dept) return code;
+    return localizedName(locale, dept, code);
+  }
+
+  function savePlanning() {
+    if (isInProduction) {
+      planMutation.mutate({
+        priority: planPriority,
+        plannedCompletionDate: plannedEnd || undefined,
+      });
+      return;
+    }
+    planMutation.mutate({
+      priority: planPriority,
+      plannedStartDate: plannedStart || undefined,
+      plannedCompletionDate: plannedEnd || undefined,
+      estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : undefined,
+    });
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/production"
         title={order.number}
         description={order.productDescription}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link href="/production">
-              <Button variant="secondary">{tCommon('back')}</Button>
-            </Link>
             {canStart ? (
               <Button
                 onClick={() => {
@@ -300,7 +449,10 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error && !confirmStart ? <Alert variant="error">{error}</Alert> : null}
+      {isCompleted ? <Alert variant="info">{tp('orderCompletedReadOnly')}</Alert> : null}
 
+      <div className="maher-stagger space-y-6">
+      <MotionSection className="maher-form-section space-y-4" as="div">
       <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary">
         <StatusBadge status={order.status} />
         <span>
@@ -310,52 +462,123 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
         <span>
           {tc('current')}: {order.currentStageCode ?? '—'}
         </span>
-        {order.salesOrder ? (
-          <span>
-            {tc('salesOrder')} {order.salesOrder.number}
+        {order.salesOrder?.number ? (
+          <span dir="ltr">
+            {tSales('systemOrderNumber')}: {order.salesOrder.number}
+          </span>
+        ) : null}
+        {order.salesOrder?.externalOrderNumber ? (
+          <span dir="ltr">
+            {tSales('dealerOrderNumber')}: {order.salesOrder.externalOrderNumber}
           </span>
         ) : null}
       </div>
 
-      <div className="grid gap-3 rounded-[var(--maher-radius-md)] border border-border p-4 sm:grid-cols-4">
-        <Select
-          label={tc('priority')}
-          value={planPriority}
-          onChange={(e) => setPlanPriority(e.target.value)}
-          options={priorityOpts}
-        />
-        <Input
-          label={tc('plannedStart')}
-          type="date"
-          value={plannedStart}
-          onChange={(e) => setPlannedStart(e.target.value)}
-        />
-        <Input
-          label={tc('plannedEnd')}
-          type="date"
-          value={plannedEnd}
-          onChange={(e) => setPlannedEnd(e.target.value)}
-        />
-        <Input
-          label={tc('estMinutes')}
-          type="number"
-          dir="ltr"
-          value={estimatedMinutes}
-          onChange={(e) => setEstimatedMinutes(e.target.value)}
-        />
-        <div className="sm:col-span-4">
-          <Button size="sm" loading={planMutation.isPending} onClick={() => planMutation.mutate()}>
-            {tc('savePlanning')}
+      <div
+        className={`maher-form-section grid gap-3 rounded-[var(--maher-radius-md)] border border-border p-4 ${
+          isInProduction ? 'sm:grid-cols-2' : 'sm:grid-cols-4'
+        }`}
+      >
+        {isCompleted ? (
+          <>
+            <div>
+              <div className="mb-1 text-xs text-text-tertiary">{tc('priority')}</div>
+              <StatusBadge status={planPriority || order.priority || 'NORMAL'} />
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-text-tertiary">{tc('plannedStart')}</div>
+              <div dir="ltr" className="text-sm">
+                {plannedStart || '—'}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-text-tertiary">{tc('plannedEnd')}</div>
+              <div dir="ltr" className="text-sm">
+                {plannedEnd || '—'}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-text-tertiary">{tc('estMinutes')}</div>
+              <div dir="ltr" className="text-sm">
+                {estimatedMinutes || '—'}
+              </div>
+            </div>
+          </>
+        ) : isInProduction ? (
+          <>
+            <Select
+              label={tc('priority')}
+              value={planPriority}
+              onChange={(e) => setPlanPriority(e.target.value)}
+              options={priorityOpts}
+            />
+            <Input
+              label={tc('plannedEnd')}
+              type="date"
+              value={plannedEnd}
+              onChange={(e) => setPlannedEnd(e.target.value)}
+            />
+            <div className="maher-detail-sticky-actions sm:col-span-2">
+              <Button size="sm" loading={planMutation.isPending} onClick={savePlanning}>
+                {tc('savePlanning')}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <Select
+              label={tc('priority')}
+              value={planPriority}
+              onChange={(e) => setPlanPriority(e.target.value)}
+              options={priorityOpts}
+            />
+            <Input
+              label={tc('plannedStart')}
+              type="date"
+              value={plannedStart}
+              onChange={(e) => setPlannedStart(e.target.value)}
+            />
+            <Input
+              label={tc('plannedEnd')}
+              type="date"
+              value={plannedEnd}
+              onChange={(e) => setPlannedEnd(e.target.value)}
+            />
+            <Input
+              label={tc('estMinutes')}
+              type="number"
+              dir="ltr"
+              value={estimatedMinutes}
+              onChange={(e) => setEstimatedMinutes(e.target.value)}
+            />
+            <div className="maher-detail-sticky-actions sm:col-span-4">
+              <Button size="sm" loading={planMutation.isPending} onClick={savePlanning}>
+                {tc('savePlanning')}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+      </MotionSection>
+
+      {!isCompleted && assignAllItems.length > 0 ? (
+        <div className="maher-detail-sticky-actions flex justify-end">
+          <Button
+            size="sm"
+            loading={assignAllMutation.isPending}
+            onClick={() => assignAllMutation.mutate(assignAllItems)}
+          >
+            {tp('assignAll')}
           </Button>
         </div>
-      </div>
+      ) : null}
 
+      <MotionSection className="maher-form-section maher-table-shell" as="div">
       <Table>
         <TableHead>
           <TableRow>
             <TableHeaderCell>{tc('stage')}</TableHeaderCell>
             <TableHeaderCell>{tc('department')}</TableHeaderCell>
-            <TableHeaderCell>{tc('dependsOn')}</TableHeaderCell>
             <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
             <TableHeaderCell>%</TableHeaderCell>
             <TableHeaderCell>{tc('worker')}</TableHeaderCell>
@@ -367,16 +590,16 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
         <TableBody>
           {order.stages.map((stage) => {
             const task = stage.tasks[0];
+            const stageDept = stage.stageDefinition.responsibleDepartment;
             if (!task) {
               return (
                 <TableRow key={stage.id}>
                   <TableCell>{localizedName(locale, stage.stageDefinition)}</TableCell>
-                  <TableCell>—</TableCell>
-                  <TableCell>—</TableCell>
+                  <TableCell className="text-xs">{departmentLabel(stageDept)}</TableCell>
                   <TableCell>
                     <StatusBadge status={stage.status} />
                   </TableCell>
-                  <TableCell dir="ltr">{stage.progressPercent}%</TableCell>
+                  <TableNumericCell>{stage.progressPercent}%</TableNumericCell>
                   <TableCell>{tc('noTask')}</TableCell>
                   <TableCell>—</TableCell>
                   <TableCell>—</TableCell>
@@ -385,106 +608,190 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
               );
             }
             const draft = draftFor(task);
+            const stageWorkers = workersForStage(stageDept);
+            const assignedMissing =
+              draft.employeeId && !stageWorkers.some((w) => w.id === draft.employeeId)
+                ? workers.find((w) => w.id === draft.employeeId) ??
+                  (task.assignedEmployee
+                    ? {
+                        id: task.assignedEmployee.id,
+                        firstName: task.assignedEmployee.firstName,
+                        lastName: task.assignedEmployee.lastName,
+                        email: task.assignedEmployee.email ?? null,
+                      }
+                    : null)
+                : null;
+            const workerOptions = assignedMissing
+              ? [assignedMissing, ...stageWorkers]
+              : stageWorkers;
+            const workerName = task.assignedEmployee
+              ? `${task.assignedEmployee.firstName} ${task.assignedEmployee.lastName}`.trim()
+              : null;
+            const docs = documentsForTask(task.id);
+            const canAssign = stageAssignable(stage, task);
+            const showWorkerReadOnly = !canAssign;
             return (
               <TableRow key={stage.id}>
-                <TableCell>
-                  <div className="font-medium">
-                    {localizedName(locale, stage.stageDefinition)}
-                  </div>
-                  <div className="text-xs text-text-tertiary">{task.number}</div>
+                <TableCell className="font-medium">
+                  {localizedName(locale, stage.stageDefinition)}
                 </TableCell>
-                <TableCell className="text-xs">
-                  {stage.stageDefinition.responsibleDepartment ?? '—'}
-                </TableCell>
-                <TableCell className="text-xs">
-                  {stage.stageDefinition.dependsOnCodes?.length
-                    ? stage.stageDefinition.dependsOnCodes.join(', ')
-                    : '—'}
-                </TableCell>
+                <TableCell className="text-xs">{departmentLabel(stageDept)}</TableCell>
                 <TableCell>
                   <StatusBadge status={stage.status} />
                 </TableCell>
-                <TableCell dir="ltr">{stage.progressPercent}%</TableCell>
+                <TableNumericCell>{stage.progressPercent}%</TableNumericCell>
                 <TableCell>
-                  <Select
-                    value={draft.employeeId}
-                    onChange={(e) =>
-                      setDrafts((prev) => ({
-                        ...prev,
-                        [task.id]: { ...draft, employeeId: e.target.value },
-                      }))
-                    }
-                  >
-                    <option value="">{tc('unassigned')}</option>
-                    {workers.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.firstName} {w.lastName}
-                      </option>
-                    ))}
-                  </Select>
+                  {showWorkerReadOnly ? (
+                    <div>
+                      <span className="text-sm">{workerName || tp('unassignedWorker')}</span>
+                      {!isCompleted ? (
+                        <p className="mt-0.5 text-[11px] text-text-tertiary">
+                          {tp('stageAssignLocked')}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <Select
+                      value={draft.employeeId}
+                      onChange={(e) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [task.id]: { ...draft, employeeId: e.target.value },
+                        }))
+                      }
+                    >
+                      <option value="">{tc('unassigned')}</option>
+                      {workerOptions.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.firstName} {w.lastName}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
                 </TableCell>
                 <TableCell>
-                  <Select
-                    value={draft.priority}
-                    onChange={(e) =>
-                      setDrafts((prev) => ({
-                        ...prev,
-                        [task.id]: { ...draft, priority: e.target.value },
-                      }))
-                    }
-                    options={priorityOpts}
-                  />
+                  {showWorkerReadOnly ? (
+                    <StatusBadge status={task.priority || 'NORMAL'} />
+                  ) : (
+                    <Select
+                      value={draft.priority}
+                      onChange={(e) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [task.id]: { ...draft, priority: e.target.value },
+                        }))
+                      }
+                      options={priorityOpts}
+                    />
+                  )}
                 </TableCell>
                 <TableCell>
-                  <TextArea
-                    rows={2}
-                    value={taskNotes[task.id] ?? task.notes ?? ''}
-                    onChange={(e) =>
-                      setTaskNotes((prev) => ({ ...prev, [task.id]: e.target.value }))
-                    }
-                    placeholder={tc('notesOptional')}
-                  />
+                  {isCompleted ? (
+                    <p className="whitespace-pre-wrap text-sm text-text-secondary">
+                      {(taskNotes[task.id] ?? task.notes)?.trim() || '—'}
+                    </p>
+                  ) : (
+                    <TextArea
+                      rows={2}
+                      value={taskNotes[task.id] ?? task.notes ?? ''}
+                      onChange={(e) =>
+                        setTaskNotes((prev) => ({ ...prev, [task.id]: e.target.value }))
+                      }
+                      placeholder={tc('notesOptional')}
+                    />
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="flex min-w-[12rem] flex-col gap-1.5">
-                    <Button
-                      size="sm"
-                      disabled={!draft.employeeId}
-                      loading={assignMutation.isPending}
-                      onClick={() =>
-                        assignMutation.mutate({
-                          taskId: task.id,
-                          employeeId: draft.employeeId,
-                          priority: draft.priority,
-                        })
-                      }
-                    >
-                      {tc('assign')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      loading={taskActionMutation.isPending}
-                      onClick={() =>
-                        taskActionMutation.mutate({
-                          taskId: task.id,
-                          action: 'notes',
-                          notes: taskNotes[task.id] ?? task.notes ?? '',
-                        })
-                      }
-                    >
-                      {tc('saveNotes')}
-                    </Button>
-                    {task.status === 'IN_PROGRESS' ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => taskActionMutation.mutate({ taskId: task.id, action: 'pause' })}
-                      >
-                        {tp('hold')}
-                      </Button>
+                    {!isCompleted ? (
+                      <>
+                        {canAssign ? (
+                          <Button
+                            size="sm"
+                            disabled={!draft.employeeId}
+                            loading={assignMutation.isPending}
+                            onClick={() =>
+                              assignMutation.mutate({
+                                taskId: task.id,
+                                employeeId: draft.employeeId,
+                                priority: draft.priority,
+                              })
+                            }
+                          >
+                            {tc('assign')}
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={taskActionMutation.isPending}
+                          onClick={() =>
+                            taskActionMutation.mutate({
+                              taskId: task.id,
+                              action: 'notes',
+                              notes: taskNotes[task.id] ?? task.notes ?? '',
+                            })
+                          }
+                        >
+                          {tc('saveNotes')}
+                        </Button>
+                        {task.status === 'IN_PROGRESS' ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              taskActionMutation.mutate({ taskId: task.id, action: 'pause' })
+                            }
+                          >
+                            {tp('hold')}
+                          </Button>
+                        ) : null}
+                        <PhotoAttachField
+                          className="max-w-xs"
+                          accept="image/jpeg,image/png,image/webp,image/heic,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
+                          uploadLabel={tp('attachFile')}
+                          uploadingLabel={tCommon('uploading')}
+                          attachUrlLabel={tCommon('attachFromUrl')}
+                          disabled={uploadingTaskId === task.id && uploadMutation.isPending}
+                          onUploadFile={async (file) => {
+                            setUploadingTaskId(task.id);
+                            await uploadMutation.mutateAsync({
+                              taskId: task.id,
+                              productionOrderId: order.id,
+                              file,
+                            });
+                          }}
+                          onAttachUrl={async (url) => {
+                            setUploadingTaskId(task.id);
+                            await uploadMutation.mutateAsync({
+                              taskId: task.id,
+                              productionOrderId: order.id,
+                              url,
+                            });
+                          }}
+                        />
+                      </>
                     ) : null}
-                    {!['COMPLETED', 'CANCELLED', 'BLOCKED'].includes(task.status) ? (
+                    {docs.length ? (
+                      <ul className="space-y-1">
+                        {docs.map((d) => (
+                          <li key={d.id}>
+                            <button
+                              type="button"
+                              className="max-w-[11rem] truncate text-left text-xs font-medium text-brand hover:underline"
+                              title={d.fileName}
+                              onClick={() => void openDocument(d.id)}
+                            >
+                              {d.fileName}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-[11px] text-text-tertiary">{tp('noAttachmentsYet')}</p>
+                    )}
+                    {!isCompleted &&
+                    !['COMPLETED', 'CANCELLED', 'BLOCKED'].includes(task.status) ? (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -495,15 +802,6 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                         {tp('block')}
                       </Button>
                     ) : null}
-                    <input
-                      ref={(el) => {
-                        photoRefs.current[task.id] = el;
-                      }}
-                      type="file"
-                      accept="image/*"
-                      className="text-xs"
-                      onChange={() => void uploadTaskPhoto(task.id, order.id)}
-                    />
                   </div>
                 </TableCell>
               </TableRow>
@@ -511,6 +809,8 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
           })}
         </TableBody>
       </Table>
+      </MotionSection>
+      </div>
 
       <ConfirmDialog
         open={Boolean(holdTaskId)}

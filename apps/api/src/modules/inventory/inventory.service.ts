@@ -2,23 +2,32 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InventoryTxType, Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
+import { categoriesForGroup } from '../../common/helpers/inventory-category.util';
 import { roundMoney } from '../../common/helpers/money.util';
+import { PurchasingService } from '../purchasing/purchasing.service';
 
 @Injectable()
 export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    @Inject(forwardRef(() => PurchasingService))
+    private readonly purchasing: PurchasingService,
   ) {}
 
-  async listItems(query: PaginationDto) {
+  async listItems(query: PaginationDto & { category?: string; categoryGroup?: string }) {
+    const groupCategories = categoriesForGroup(query.categoryGroup);
     const where: Prisma.InventoryItemWhereInput = {
       archivedAt: null,
+      ...(query.category ? { category: query.category as never } : {}),
+      ...(groupCategories?.length ? { category: { in: groupCategories } } : {}),
       ...(query.q
         ? {
             OR: [
@@ -55,6 +64,15 @@ export class InventoryService {
     return item;
   }
 
+  async getItem(id: string) {
+    const item = await this.prisma.inventoryItem.findFirst({
+      where: { id, archivedAt: null },
+      include: { balances: { include: { warehouse: true } } },
+    });
+    if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
+    return item;
+  }
+
   async createItem(
     dto: {
       sku: string;
@@ -67,6 +85,9 @@ export class InventoryService {
       barcode?: string;
       materialId?: string;
       color?: string;
+      materialType?: string;
+      size?: string;
+      preferredSupplierId?: string;
       description?: string;
     },
     userId: string,
@@ -82,7 +103,10 @@ export class InventoryService {
         maxStock: dto.maxStock != null ? roundMoney(dto.maxStock) : undefined,
         barcode: dto.barcode?.trim() || undefined,
         materialId: dto.materialId,
-        color: dto.color,
+        color: dto.color?.trim() || undefined,
+        materialType: dto.materialType?.trim() || undefined,
+        size: dto.size?.trim() || undefined,
+        preferredSupplierId: dto.preferredSupplierId || undefined,
         description: dto.description,
       },
     });
@@ -110,6 +134,9 @@ export class InventoryService {
       barcode: string;
       isActive: boolean;
       color: string;
+      materialType: string;
+      size: string;
+      preferredSupplierId: string | null;
       description: string;
     }>,
     userId: string,
@@ -126,7 +153,14 @@ export class InventoryService {
         ...(dto.maxStock !== undefined ? { maxStock: roundMoney(dto.maxStock) } : {}),
         ...(dto.barcode !== undefined ? { barcode: dto.barcode.trim() || null } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-        ...(dto.color !== undefined ? { color: dto.color } : {}),
+        ...(dto.color !== undefined ? { color: dto.color.trim() || null } : {}),
+        ...(dto.materialType !== undefined
+          ? { materialType: dto.materialType.trim() || null }
+          : {}),
+        ...(dto.size !== undefined ? { size: dto.size.trim() || null } : {}),
+        ...(dto.preferredSupplierId !== undefined
+          ? { preferredSupplierId: dto.preferredSupplierId || null }
+          : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
       },
     });
@@ -274,7 +308,7 @@ export class InventoryService {
     });
   }
 
-  receive(
+  async receive(
     dto: {
       inventoryItemId: string;
       warehouseId: string;
@@ -285,14 +319,16 @@ export class InventoryService {
     },
     userId: string,
   ) {
-    return this.applyMovement({
+    const result = await this.applyMovement({
       type: InventoryTxType.PURCHASE_RECEIPT,
       ...dto,
       userId,
     });
+    await this.purchasing.maybeAutoReorderAfterStockChange(dto.inventoryItemId, userId);
+    return result;
   }
 
-  issue(
+  async issue(
     dto: {
       inventoryItemId: string;
       warehouseId: string;
@@ -302,11 +338,13 @@ export class InventoryService {
     },
     userId: string,
   ) {
-    return this.applyMovement({
+    const result = await this.applyMovement({
       type: InventoryTxType.PRODUCTION_ISSUE,
       ...dto,
       userId,
     });
+    await this.purchasing.maybeAutoReorderAfterStockChange(dto.inventoryItemId, userId);
+    return result;
   }
 
   async createTransfer(
@@ -444,6 +482,31 @@ export class InventoryService {
       },
       include: { lines: { include: { inventoryItem: true } } },
     });
+  }
+
+  async scanCount(
+    dto: {
+      warehouseId: string;
+      code: string;
+      countedQty: number;
+      notes?: string;
+      postImmediately?: boolean;
+    },
+    userId: string,
+  ) {
+    const item = await this.findByCode(dto.code.trim());
+    const count = await this.createCount(
+      {
+        warehouseId: dto.warehouseId,
+        notes: dto.notes ?? `Scan ${dto.code.trim()}`,
+        lines: [{ inventoryItemId: item.id, countedQty: Number(dto.countedQty) }],
+      },
+      userId,
+    );
+    if (dto.postImmediately) {
+      return this.postCount(count.id, userId);
+    }
+    return count;
   }
 
   async postCount(id: string, userId: string) {

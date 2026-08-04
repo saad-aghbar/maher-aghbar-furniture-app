@@ -2,10 +2,25 @@ import type {
   ExtractionProvider,
   ExtractionResult,
   ExtractedField,
+  ExtractedLineItem,
   SupportedLocale,
   TranslateProvider,
 } from './types';
 import { MockExtractionProvider } from './mock-ai.provider';
+
+function resolveTargetLocale(opts?: { targetLanguage?: SupportedLocale }): SupportedLocale {
+  const fromOpts = opts?.targetLanguage;
+  if (fromOpts === 'ar' || fromOpts === 'he' || fromOpts === 'en') return fromOpts;
+  const fromEnv = process.env.DEFAULT_LOCALE;
+  if (fromEnv === 'ar' || fromEnv === 'he' || fromEnv === 'en') return fromEnv;
+  return 'ar';
+}
+
+function localeLabel(locale: SupportedLocale): string {
+  if (locale === 'ar') return 'Arabic';
+  if (locale === 'he') return 'Hebrew';
+  return 'English';
+}
 
 async function chatJson(
   apiKey: string,
@@ -51,10 +66,14 @@ export class OpenAiTranslateProvider implements TranslateProvider {
   ) {}
 
   async translate(text: string, from: SupportedLocale | 'auto', to: SupportedLocale): Promise<string> {
+    const sourceNote =
+      from === 'he'
+        ? 'Source is handwritten Hebrew from a furniture order form.'
+        : 'Source may be handwritten Hebrew, Arabic, or English furniture order text.';
     const result = (await chatJson(
       this.apiKey,
       this.model,
-      'You translate furniture RFQ text. Return JSON: {"translated":"..."}',
+      `You translate furniture RFQ/order text into the factory system language (${localeLabel(to)}). ${sourceNote} Preserve numbers, dimensions, quantities, and dates. Return JSON: {"translated":"..."}`,
       `Translate from ${from} to ${to}:\n${text}`,
     )) as { translated?: string };
     return result.translated ?? text;
@@ -86,9 +105,10 @@ export class OpenAiExtractionProvider implements ExtractionProvider {
 
   async extractStructured(
     text: string,
-    opts?: { customerId?: string },
+    opts?: { customerId?: string; targetLanguage?: SupportedLocale },
   ): Promise<ExtractionResult> {
     const originalText = text.trim();
+    const targetLanguage = resolveTargetLocale(opts);
     if (!originalText) {
       return new MockExtractionProvider(this.translate).extractStructured(text, opts);
     }
@@ -96,19 +116,35 @@ export class OpenAiExtractionProvider implements ExtractionProvider {
     const result = (await chatJson(
       this.apiKey,
       this.model,
-      `Extract furniture RFQ fields from OCR text. Return JSON:
-{"detectedLanguage":"ar|en|he","product":"...","quantity":"...","width":null|string,"height":null|string,"depth":null|string,"fabric":null|string,"deliveryDate":null|string,"confidence":{"product":0-1,...}}
-Dimensions may be missing.`,
+      `Extract furniture order / RFQ fields from OCR text. The source is often handwritten Hebrew (sometimes Arabic or English) from a photographed factory order form.
+Return product names and category labels in ${localeLabel(targetLanguage)} where possible. Keep numeric dimensions and quantities as written.
+Return JSON:
+{"detectedLanguage":"ar|en|he","projectName":null|string,"deliveryDate":null|string,"items":[{"productName":"...","quantity":"1","width":null|string,"height":null|string,"depth":null|string,"fabricType":null|string,"material":null|string,"category":null|string,"notes":null|string}],"confidence":{"productName":0-1,...}}
+Include every distinct line item. Dimensions may be missing per item.`,
       originalText,
     )) as {
       detectedLanguage?: SupportedLocale;
+      projectName?: string | null;
+      deliveryDate?: string | null;
+      items?: Array<{
+        productName?: string;
+        product?: string;
+        quantity?: string;
+        width?: string | null;
+        height?: string | null;
+        depth?: string | null;
+        fabricType?: string | null;
+        fabric?: string | null;
+        material?: string | null;
+        category?: string | null;
+        notes?: string | null;
+      }>;
       product?: string;
       quantity?: string;
       width?: string | null;
       height?: string | null;
       depth?: string | null;
       fabric?: string | null;
-      deliveryDate?: string | null;
       confidence?: Record<string, number>;
     };
 
@@ -124,14 +160,43 @@ Dimensions may be missing.`,
       isMissing: value == null || value === '',
     });
 
+    const rawItems = result.items?.length
+      ? result.items
+      : [
+          {
+            productName: result.product,
+            product: result.product,
+            quantity: result.quantity,
+            width: result.width,
+            height: result.height,
+            depth: result.depth,
+            fabricType: result.fabric,
+            fabric: result.fabric,
+          },
+        ];
+
+    const items: ExtractedLineItem[] = rawItems.map((row) => ({
+      productName: row.productName ?? row.product ?? 'Custom furniture',
+      quantity: row.quantity ?? '1',
+      width: row.width ?? null,
+      height: row.height ?? null,
+      depth: row.depth ?? null,
+      fabricType: row.fabricType ?? row.fabric ?? null,
+      material: row.material ?? null,
+      category: row.category ?? null,
+      notes: row.notes ?? null,
+    }));
+
+    const primary = items[0];
     const fields: ExtractedField[] = [
-      field('product', result.product ?? 'Custom furniture', 0.9),
-      { ...field('quantity', result.quantity ?? '1', 0.9), isMissing: !result.quantity },
-      field('width', result.width, 0.85),
-      field('height', result.height, 0.85),
-      field('depth', result.depth, 0.85),
-      field('fabric', result.fabric, 0.8),
+      field('product', primary?.productName ?? 'Custom furniture', 0.9),
+      { ...field('quantity', primary?.quantity ?? '1', 0.9), isMissing: !primary?.quantity },
+      field('width', primary?.width, 0.85),
+      field('height', primary?.height, 0.85),
+      field('depth', primary?.depth, 0.85),
+      field('fabric', primary?.fabricType, 0.8),
       field('deliveryDate', result.deliveryDate, 0.85),
+      field('projectName', result.projectName, 0.8),
       {
         fieldName: 'customer',
         fieldValue: opts?.customerId ?? null,
@@ -141,13 +206,20 @@ Dimensions may be missing.`,
     ];
 
     const detectedLanguage = result.detectedLanguage ?? 'en';
-    const translatedText = await this.translate.translate(originalText, detectedLanguage, 'ar');
+    const translateFrom: SupportedLocale | 'auto' =
+      detectedLanguage === 'he' ? 'he' : detectedLanguage;
+    const translatedText = await this.translate.translate(
+      originalText,
+      translateFrom,
+      targetLanguage,
+    );
 
     return {
       originalText,
       translatedText,
       detectedLanguage,
       fields,
+      items,
       provider: this.name,
     };
   }

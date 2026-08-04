@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 import { AiIntakeService } from './ai-intake.service';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import type { AuthUser } from '@maher/types';
@@ -39,6 +39,45 @@ class RejectAiJobDto {
   reason?: string;
 }
 
+class FromUploadDto {
+  @IsString()
+  storageKey!: string;
+
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceType?: string;
+
+  @IsOptional()
+  @IsString()
+  mimeHint?: string;
+}
+
+class ExtractPreviewDto {
+  @IsString()
+  storageKey!: string;
+
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceType?: string;
+
+  @IsOptional()
+  @IsString()
+  mimeHint?: string;
+}
+
+class LinkJobDto {
+  @IsUUID()
+  requestId!: string;
+}
+
 @ApiTags('ai-intake')
 @Controller('ai-intake')
 export class AiIntakeController {
@@ -54,6 +93,60 @@ export class AiIntakeController {
   @RequirePermissions('ai-intake.manage')
   create(@Body() dto: CreateAiJobDto, @CurrentUser() user: AuthUser) {
     return this.ai.createJob(dto, user.id);
+  }
+
+  @Post('from-upload')
+  @RequireAnyPermissions('ai-intake.manage', 'request.create')
+  fromUpload(@Body() dto: FromUploadDto, @CurrentUser() user: AuthUser) {
+    const customerId = user.customerId ?? dto.customerId;
+    if (!customerId) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'customerId is required.',
+      });
+    }
+    if (user.customerId && dto.customerId && dto.customerId !== user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Cannot create orders for another customer.',
+      });
+    }
+    return this.ai.processUploadIntoDraftOrder({
+      storageKey: dto.storageKey,
+      customerId,
+      userId: user.id,
+      mimeHint: dto.mimeHint,
+      sourceType: dto.sourceType ?? 'IMAGE',
+      dealerOriginated: Boolean(user.customerId),
+    });
+  }
+
+  @Post('extract-preview')
+  @RequireAnyPermissions('ai-intake.manage', 'request.create')
+  extractPreview(@Body() dto: ExtractPreviewDto, @CurrentUser() user: AuthUser) {
+    if (user.customerId && dto.customerId && dto.customerId !== user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Cannot extract for another customer.',
+      });
+    }
+    return this.ai.extractPreview({
+      storageKey: dto.storageKey,
+      customerId: user.customerId ?? dto.customerId,
+      userId: user.id,
+      mimeHint: dto.mimeHint,
+      sourceType: dto.sourceType ?? 'IMAGE',
+    });
+  }
+
+  @Post('jobs/:id/link-request')
+  @RequireAnyPermissions('ai-intake.manage', 'request.create')
+  linkRequest(
+    @Param('id') id: string,
+    @Body() dto: LinkJobDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ai.linkJobToRequest(id, dto.requestId, user.id);
   }
 
   @Get('jobs/:id')

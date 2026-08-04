@@ -12,13 +12,17 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
   MinLength,
+  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InventoryCategory, Prisma } from '@maher/database';
@@ -27,6 +31,11 @@ import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListActiveQueryDto, ListQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
+import {
+  productionUnitCost,
+  type BomDefaults,
+  type MaterialCostMap,
+} from '../../common/helpers/order-costing.util';
 import type { AuthUser } from '@maher/types';
 
 class CategoryDto {
@@ -37,16 +46,103 @@ class CategoryDto {
   @IsOptional() @IsUUID() parentId?: string;
 }
 
+class BomMaterialDto {
+  @IsOptional() @IsString() sku?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() qty?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() unitCost?: number;
+  @IsOptional() @IsString() category?: string;
+}
+
+class BomDefaultsDto {
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BomMaterialDto)
+  materials?: BomMaterialDto[];
+}
+
+class CustomMeasurementDto {
+  @IsOptional() @IsString() id?: string;
+  @IsString() @MinLength(1) nameEn!: string;
+  @IsString() @MinLength(1) nameAr!: string;
+  @IsOptional() @IsString() nameHe?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() value?: number | null;
+}
+
 class ProductDto {
   @IsString() @MinLength(1) sku!: string;
   @IsString() @MinLength(1) nameAr!: string;
   @IsString() @MinLength(1) nameEn!: string;
   @IsOptional() @IsString() nameHe?: string;
   @IsOptional() @IsString() description?: string;
-  @IsOptional() @IsUUID() categoryId?: string;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsUUID()
+  categoryId?: string | null;
   @IsOptional() @Type(() => Number) @IsNumber() basePrice?: number;
   @IsOptional() @IsString() unit?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  imageUrl?: string | null;
+  @IsOptional() @IsArray() @IsString({ each: true }) galleryUrls?: string[];
+  @IsOptional() @Type(() => Number) @IsNumber() manufacturingCost?: number;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber()
+  width?: number | null;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber()
+  height?: number | null;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber()
+  depth?: number | null;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber()
+  seatHeight?: number | null;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsObject()
+  @ValidateNested()
+  @Type(() => BomDefaultsDto)
+  bomDefaults?: BomDefaultsDto | null;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomMeasurementDto)
+  customMeasurements?: CustomMeasurementDto[] | null;
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  adminNotes?: string | null;
+}
+
+class ProductListQueryDto extends ListActiveQueryDto {
+  @IsOptional() @IsUUID() categoryId?: string;
+}
+
+class BrowseProductsQueryDto extends ListActiveQueryDto {
+  @IsOptional() @IsUUID() categoryId?: string;
+}
+
+function stripProductCosts<T extends Record<string, unknown>>(product: T, user?: AuthUser): T {
+  if (!user?.customerId) return product;
+  const {
+    manufacturingCost: _mc,
+    bomDefaults: _bd,
+    adminNotes: _an,
+    ...rest
+  } = product;
+  return rest as T;
 }
 
 class MaterialDto {
@@ -155,14 +251,84 @@ export class CatalogController {
 
   // ── Products ───────────────────────────────────────────────────────────────
 
+  @Get('catalog/browse/categories')
+  @RequirePermissions('catalog.read')
+  async browseCategories() {
+    return this.prisma.productCategory.findMany({
+      orderBy: { code: 'asc' },
+      select: {
+        id: true,
+        code: true,
+        nameEn: true,
+        nameAr: true,
+        nameHe: true,
+      },
+    });
+  }
+
+  @Get('catalog/browse/products')
+  @RequirePermissions('catalog.read')
+  async browseProducts(@Query() query: BrowseProductsQueryDto, @CurrentUser() user: AuthUser) {
+    const { page, pageSize, skip, take } = pageSkipTake(query);
+    const where: Prisma.ProductWhereInput = {
+      archivedAt: null,
+      isActive: true,
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.q
+        ? {
+            OR: [
+              { sku: { contains: query.q, mode: 'insensitive' } },
+              { nameEn: { contains: query.q, mode: 'insensitive' } },
+              { nameAr: { contains: query.q, mode: 'insensitive' } },
+              { nameHe: { contains: query.q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+    const [totalItems, rows] = await this.prisma.$transaction([
+      this.prisma.product.count({ where }),
+      this.prisma.product.findMany({
+        where,
+        include: { category: true },
+        orderBy: { nameEn: 'asc' },
+        skip,
+        take,
+      }),
+    ]);
+
+    const dealerPriceMap = new Map<string, { price: unknown; currency: string }>();
+    if (user.customerId) {
+      const dealerPrices = await this.prisma.dealerPrice.findMany({
+        where: { customerId: user.customerId, productId: { in: rows.map((p) => p.id) } },
+      });
+      for (const dp of dealerPrices) {
+        dealerPriceMap.set(dp.productId, { price: dp.price, currency: dp.currency });
+      }
+    }
+
+    const data = rows.map((product) => {
+      const stripped = stripProductCosts(product, user);
+      const dealerPrice = dealerPriceMap.get(product.id);
+      return {
+        ...stripped,
+        dealerPrice: dealerPrice?.price ?? null,
+        price: dealerPrice?.price ?? product.basePrice ?? null,
+        priceCurrency: dealerPrice?.currency ?? 'JOD',
+      };
+    });
+
+    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+  }
+
   @Get('products')
   @RequirePermissions('catalog.manage')
-  async listProducts(@Query() query: ListActiveQueryDto) {
+  async listProducts(@Query() query: ProductListQueryDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
     const where: Prisma.ProductWhereInput = {
       archivedAt: null,
       ...(query.isActive === 'true' ? { isActive: true } : {}),
       ...(query.isActive === 'false' ? { isActive: false } : {}),
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.q
         ? {
             OR: [
@@ -173,23 +339,109 @@ export class CatalogController {
           }
         : {}),
     };
-    const [totalItems, data] = await this.prisma.$transaction([
+    const [totalItems, rows] = await this.prisma.$transaction([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
         where,
         include: { category: true },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { nameEn: 'asc' },
         skip,
         take,
       }),
     ]);
+    const materialCosts = await this.loadMaterialCosts();
+    const data = rows.map((product) => {
+      const { unitCost } = productionUnitCost(product, materialCosts);
+      return {
+        ...product,
+        productionCost: unitCost > 0 ? unitCost : Number(product.manufacturingCost ?? 0) || null,
+      };
+    });
     return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+  }
+
+  @Get('products/:id')
+  @RequirePermissions('catalog.manage')
+  async getProduct(@Param('id') id: string) {
+    const product = await this.prisma.product.findFirst({
+      where: { id, archivedAt: null },
+      include: { category: true },
+    });
+    if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
+
+    const materialCosts = await this.loadMaterialCosts();
+    const materials = await this.prisma.material.findMany({
+      where: { archivedAt: null },
+      select: {
+        id: true,
+        sku: true,
+        nameEn: true,
+        nameAr: true,
+        category: true,
+      },
+    });
+    const bySku = new Map(materials.map((m) => [m.sku, m]));
+    const bom = (product.bomDefaults ?? null) as BomDefaults | null;
+    const bomLines = (bom?.materials ?? []).map((line) => {
+      const mat = line.sku ? bySku.get(line.sku) : undefined;
+      const qty = Number(line.qty) || 0;
+      const unitCost =
+        line.unitCost != null && Number.isFinite(Number(line.unitCost))
+          ? Number(line.unitCost)
+          : line.sku && materialCosts.has(line.sku)
+            ? materialCosts.get(line.sku)!
+            : 0;
+      return {
+        sku: line.sku ?? '',
+        qty,
+        category: line.category ?? mat?.category ?? null,
+        unitCost,
+        lineCost: qty * unitCost,
+        nameEn: mat?.nameEn ?? line.sku ?? '',
+        nameAr: mat?.nameAr ?? line.sku ?? '',
+        materialId: mat?.id ?? null,
+      };
+    });
+    const { unitCost, breakdown } = productionUnitCost(product, materialCosts);
+    return {
+      ...product,
+      bomLines,
+      productionCost: unitCost > 0 ? unitCost : Number(product.manufacturingCost ?? 0) || null,
+      costBreakdown: breakdown,
+    };
+  }
+
+  /** Per-seller (dealer) sell prices for this product. Production cost is never dealer-scoped. */
+  @Get('products/:id/dealer-prices')
+  @RequirePermissions('catalog.manage')
+  async listProductDealerPrices(@Param('id') id: string) {
+    const product = await this.prisma.product.findFirst({ where: { id, archivedAt: null } });
+    if (!product) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
+    return this.prisma.dealerPrice.findMany({
+      where: { productId: id },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            nameAr: true,
+            nameEn: true,
+            nameHe: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
   }
 
   @Post('products')
   @RequirePermissions('catalog.manage')
   async createProduct(@Body() dto: ProductDto, @CurrentUser() user: AuthUser) {
     await this.assertUnique('product', 'sku', dto.sku);
+    const bomDefaults = this.normalizeBom(dto.bomDefaults);
+    const manufacturingCost = await this.resolveManufacturingCost(dto, bomDefaults);
+    const customMeasurements = this.normalizeCustomMeasurements(dto.customMeasurements);
     const row = await this.prisma.product.create({
       data: {
         sku: dto.sku,
@@ -197,11 +449,22 @@ export class CatalogController {
         nameEn: dto.nameEn,
         nameHe: dto.nameHe,
         description: dto.description,
-        categoryId: dto.categoryId,
+        categoryId: dto.categoryId ?? null,
         basePrice: dto.basePrice,
         unit: dto.unit ?? 'pcs',
         isActive: dto.isActive ?? true,
+        imageUrl: dto.imageUrl,
+        galleryUrls: dto.galleryUrls ?? [],
+        manufacturingCost,
+        width: dto.width ?? null,
+        height: dto.height ?? null,
+        depth: dto.depth ?? null,
+        seatHeight: dto.seatHeight ?? null,
+        bomDefaults: bomDefaults as Prisma.InputJsonValue | undefined,
+        customMeasurements: customMeasurements as Prisma.InputJsonValue | undefined,
+        adminNotes: dto.adminNotes ?? null,
       },
+      include: { category: true },
     });
     await this.audit(user.id, 'product.create', 'Product', row.id, row);
     return row;
@@ -224,7 +487,18 @@ export class CatalogController {
         basePrice: src.basePrice,
         unit: src.unit,
         isActive: false,
+        imageUrl: src.imageUrl,
+        galleryUrls: src.galleryUrls,
+        manufacturingCost: src.manufacturingCost,
+        width: src.width,
+        height: src.height,
+        depth: src.depth,
+        seatHeight: src.seatHeight,
+        bomDefaults: src.bomDefaults ?? undefined,
+        customMeasurements: src.customMeasurements ?? undefined,
+        adminNotes: src.adminNotes,
       },
+      include: { category: true },
     });
     await this.audit(user.id, 'product.duplicate', 'Product', row.id, { from: id });
     return row;
@@ -240,9 +514,55 @@ export class CatalogController {
     const existing = await this.prisma.product.findFirst({ where: { id, archivedAt: null } });
     if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
     if (dto.sku && dto.sku !== existing.sku) await this.assertUnique('product', 'sku', dto.sku);
-    const row = await this.prisma.product.update({ where: { id }, data: dto });
+
+    const bomDefaults =
+      dto.bomDefaults !== undefined ? this.normalizeBom(dto.bomDefaults) : undefined;
+    const manufacturingCost =
+      bomDefaults !== undefined || dto.manufacturingCost !== undefined
+        ? await this.resolveManufacturingCost(
+            {
+              manufacturingCost: dto.manufacturingCost,
+              bomDefaults: bomDefaults ?? (existing.bomDefaults as BomDefaults | null),
+            },
+            bomDefaults ?? (existing.bomDefaults as BomDefaults | null),
+          )
+        : undefined;
+    const customMeasurements =
+      dto.customMeasurements !== undefined
+        ? this.normalizeCustomMeasurements(dto.customMeasurements)
+        : undefined;
+
+    const row = await this.prisma.product.update({
+      where: { id },
+      data: {
+        ...(dto.sku !== undefined ? { sku: dto.sku } : {}),
+        ...(dto.nameAr !== undefined ? { nameAr: dto.nameAr } : {}),
+        ...(dto.nameEn !== undefined ? { nameEn: dto.nameEn } : {}),
+        ...(dto.nameHe !== undefined ? { nameHe: dto.nameHe } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+        ...(dto.basePrice !== undefined ? { basePrice: dto.basePrice } : {}),
+        ...(dto.unit !== undefined ? { unit: dto.unit } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
+        ...(dto.galleryUrls !== undefined ? { galleryUrls: dto.galleryUrls } : {}),
+        ...(dto.width !== undefined ? { width: dto.width } : {}),
+        ...(dto.height !== undefined ? { height: dto.height } : {}),
+        ...(dto.depth !== undefined ? { depth: dto.depth } : {}),
+        ...(dto.seatHeight !== undefined ? { seatHeight: dto.seatHeight } : {}),
+        ...(bomDefaults !== undefined
+          ? { bomDefaults: bomDefaults as Prisma.InputJsonValue }
+          : {}),
+        ...(customMeasurements !== undefined
+          ? { customMeasurements: customMeasurements as Prisma.InputJsonValue }
+          : {}),
+        ...(dto.adminNotes !== undefined ? { adminNotes: dto.adminNotes } : {}),
+        ...(manufacturingCost !== undefined ? { manufacturingCost } : {}),
+      },
+      include: { category: true },
+    });
     await this.audit(user.id, 'product.update', 'Product', id, row);
-    return row;
+    return this.getProduct(id);
   }
 
   @Post('products/:id/deactivate')
@@ -615,5 +935,83 @@ export class CatalogController {
         newValues: (newValues ?? undefined) as Prisma.InputJsonValue | undefined,
       },
     });
+  }
+
+  private normalizeBom(bom: BomDefaultsDto | BomDefaults | null | undefined): BomDefaults | null {
+    if (bom == null) return null;
+    const materials = (bom.materials ?? [])
+      .filter((m) => m && String(m.sku ?? '').trim())
+      .map((m) => ({
+        sku: String(m.sku).trim(),
+        qty: Number(m.qty) || 0,
+        ...(m.unitCost != null && Number.isFinite(Number(m.unitCost))
+          ? { unitCost: Number(m.unitCost) }
+          : {}),
+        ...(m.category ? { category: String(m.category) } : {}),
+      }));
+    return { materials };
+  }
+
+  private normalizeCustomMeasurements(
+    rows: CustomMeasurementDto[] | null | undefined,
+  ): Array<{
+    id: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string;
+    value: number | null;
+  }> | null {
+    if (rows == null) return null;
+    return rows
+      .filter((r) => r && String(r.nameEn ?? '').trim() && String(r.nameAr ?? '').trim())
+      .map((r, index) => ({
+        id: String(r.id || '').trim() || `m-${Date.now().toString(36)}-${index}`,
+        nameEn: String(r.nameEn).trim(),
+        nameAr: String(r.nameAr).trim(),
+        ...(r.nameHe?.trim() ? { nameHe: r.nameHe.trim() } : {}),
+        value:
+          r.value != null && Number.isFinite(Number(r.value)) ? Number(r.value) : null,
+      }));
+  }
+
+  private async loadMaterialCosts(): Promise<MaterialCostMap> {
+    const txs = await this.prisma.inventoryTransaction.findMany({
+      where: { unitCost: { not: null } },
+      orderBy: [{ type: 'asc' }, { createdAt: 'desc' }],
+      select: {
+        type: true,
+        unitCost: true,
+        inventoryItem: { select: { sku: true } },
+      },
+      take: 800,
+    });
+    const map: MaterialCostMap = new Map();
+    const ranked = [...txs].sort((a, b) => {
+      const rank = (t: string) => (t === 'PURCHASE_RECEIPT' ? 0 : 1);
+      return rank(a.type) - rank(b.type);
+    });
+    for (const tx of ranked) {
+      const sku = tx.inventoryItem.sku;
+      if (!map.has(sku) && tx.unitCost != null) {
+        map.set(sku, Number(tx.unitCost));
+      }
+    }
+    return map;
+  }
+
+  /** Prefer BOM-derived cost when materials exist; else explicit manufacturingCost. */
+  private async resolveManufacturingCost(
+    dto: { manufacturingCost?: number; bomDefaults?: BomDefaults | null },
+    bom: BomDefaults | null,
+  ): Promise<number | undefined> {
+    const materialCosts = await this.loadMaterialCosts();
+    const { unitCost } = productionUnitCost(
+      { manufacturingCost: dto.manufacturingCost, bomDefaults: bom },
+      materialCosts,
+    );
+    if (bom?.materials?.length && unitCost > 0) return unitCost;
+    if (dto.manufacturingCost != null) return dto.manufacturingCost;
+    if (unitCost > 0) return unitCost;
+    return dto.manufacturingCost;
   }
 }

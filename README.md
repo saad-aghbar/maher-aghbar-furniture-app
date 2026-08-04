@@ -2,18 +2,30 @@
 
 Production ERP for **مفروشات ماهر الأغبر وأولاده** — furniture manufacturing from inquiry through production, delivery, and payment.
 
+## Account types
+
+The system has exactly **three** account types:
+
+| Type | Role code | Portal |
+|------|-----------|--------|
+| **Admin** | `SYSTEM_ADMINISTRATOR` | Admin web (`:3000`) + mobile |
+| **Customer** | `CUSTOMER` | Customer portal (`:3001`) + mobile — one login per dealer |
+| **Worker** | `PRODUCTION_WORKER` | Employee portal (`:3002`) + mobile — floor tasks, QC, delivery |
+
+Every dealer (customer company/showroom) has a linked **customer** login for the portal.
+
 ## Applications
 
 | App | URL / entry | Audience |
 |-----|-------------|----------|
-| Admin Web | http://localhost:3000 | Management, sales, warehouse, accounting |
-| Customer Portal | http://localhost:3001 | Customers |
-| Employee Portal | http://localhost:3002 | Production floor (web) |
-| **Mobile (unified)** | Expo — `pnpm mobile:start` | **All roles** (permission-based) |
+| Admin Web | http://localhost:3000 | Admin |
+| Customer Portal | http://localhost:3001 | Customers (dealers) |
+| Employee Portal | http://localhost:3002 | Workers |
+| **Mobile (unified)** | Expo — `pnpm mobile:start` | All three account types |
 | API + Swagger | http://localhost:4000/api/docs | Integrations |
 | Worker | background | PDF, AI/OCR, notifications |
 
-One mobile login serves customers, sales, warehouse, production, quality, delivery, finance, and admins. Navigation is built from **backend permissions**, not separate apps.
+One mobile login serves admin, customer, and worker. Navigation is built from **backend permissions**.
 
 Mobile docs: [docs/mobile-audit.md](docs/mobile-audit.md), [docs/mobile-local-development.md](docs/mobile-local-development.md).
 
@@ -72,20 +84,34 @@ docker compose -f infra/docker/docker-compose.yml up -d postgres redis
 
 **Local / demo only — never use these in production.**
 
-Every account below uses the same password:
+Every account below uses password **`Admin@12345!`**. Sign in with **username** (not email).
 
-| Email | Password | App / portal |
-|-------|----------|--------------|
-| `admin@maher-aghbar.jo` | `Admin@12345!` | Admin web — system administrator |
-| `sales@maher-aghbar.jo` | `Admin@12345!` | Admin web — sales manager |
-| `worker@maher-aghbar.jo` | `Admin@12345!` | Employee portal / mobile — material prep & QC |
-| `carpenter@maher-aghbar.jo` | `Admin@12345!` | Employee portal / mobile — carpentry |
-| `painter@maher-aghbar.jo` | `Admin@12345!` | Employee portal / mobile — painting |
-| `upholsterer@maher-aghbar.jo` | `Admin@12345!` | Employee portal / mobile — upholstery |
-| `assembler@maher-aghbar.jo` | `Admin@12345!` | Employee portal / mobile — assembly |
-| `packer@maher-aghbar.jo` | `Admin@12345!` | Employee portal / mobile — packaging & delivery |
-| `customer@cedar-hotel.jo` | `Admin@12345!` | Customer portal / mobile — Cedar Hotel only |
-| `customer@olive-restaurant.jo` | `Admin@12345!` | Customer portal / mobile — Olive Restaurant only |
+Still only three **types** (admin / customer / worker). Specialty floor logins are all Worker accounts — each sees **only their assigned tasks**.
+
+| Username | Password | Type | App / specialty |
+|----------|----------|------|-----------------|
+| `admin` | `Admin@12345!` | Admin | Admin web / mobile — assign stages, run the factory |
+| `worker` | `Admin@12345!` | Worker | Material prep (WH) |
+| `carpenter` | `Admin@12345!` | Worker | Carpentry — Cedar PO |
+| `carpenter2` | `Admin@12345!` | Worker | Carpentry — Olive PO (same specialty, isolated tasks) |
+| `painter` | `Admin@12345!` | Worker | Painting |
+| `upholsterer` | `Admin@12345!` | Worker | Upholstery |
+| `assembler` | `Admin@12345!` | Worker | Assembly |
+| `packer` | `Admin@12345!` | Worker | Packaging |
+| `inspector` | `Admin@12345!` | Worker | Quality inspection |
+| `driver` | `Admin@12345!` | Worker | Delivery |
+| `cedar` | `Admin@12345!` | Customer | Customer portal — Cedar Hotel |
+| `olive` | `Admin@12345!` | Customer | Customer portal — Olive Restaurant |
+| `petra` | `Admin@12345!` | Customer | Customer portal — Petra Showroom |
+| `villa` | `Admin@12345!` | Customer | Customer portal — Amman Villa |
+
+Quick smoke logins: **`admin`**, **`cedar`**, **`carpenter`** — same password.
+
+**Workflow:** Admin opens a production order and assigns a worker per stage (filtered by department). When a worker completes their stage, the pipeline unlocks the next ready stages (e.g. carpentry done → upholstery / assembly can proceed; packaging done → delivery). Workers never see each other’s tasks.
+
+Demo data (`pnpm db:seed`) tells a full Amman factory story: Cedar lobby sofas mid-production with a partial AR payment, Olive dining chairs delivered and paid (with a pending return), Petra showroom quote pending, open fabric purchase request for low stock, and supplier AP against a received timber/foam PO. Each dealer has its own customer portal account.
+
+Legacy email addresses (e.g. `admin@maher-aghbar.jo`) still exist on user records but login accepts **username only**.
 
 Login URLs:
 
@@ -118,6 +144,8 @@ See [docs/launch-checklist.md](docs/launch-checklist.md).
 ## Documentation
 
 See [`docs/`](docs/) for architecture, permissions, workflows, security, deployment, and PDF compliance.
+
+Phase 2 credential-gated integrations (IMAP, WhatsApp, Maps): [docs/factory-ux-phase2.md](docs/factory-ux-phase2.md).
 
 ## Security notes
 

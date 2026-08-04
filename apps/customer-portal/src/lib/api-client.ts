@@ -61,4 +61,15 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Download a remote URL into storage (server-side fetch). */
+export async function apiUploadFromUrl<T>(
+  path: string,
+  body: { url: string; fileName?: string },
+): Promise<T> {
+  return apiFetch<T>(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export { API_URL };

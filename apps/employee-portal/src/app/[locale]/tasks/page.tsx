@@ -5,9 +5,11 @@ import { apiFetch } from '@/lib/api-client';
 import {
   EmptyState,
   ErrorState,
-  PageHeader,
+  PageHero,
   Skeleton,
   StatusBadge,
+  StaggerGrid,
+  SurfaceCard,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useQuery } from '@tanstack/react-query';
@@ -46,10 +48,10 @@ export default function TasksPage() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-10 w-40" />
-        <Skeleton className="h-28 w-full" />
-        <Skeleton className="h-28 w-full" />
-        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
       </div>
     );
   }
@@ -62,64 +64,56 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title={t('todayTasks')} description={tCommon('employeeTasksSubtitle')} />
+      <PageHero tone="soft" title={t('todayTasks')} description={tCommon('employeeTasksSubtitle')} />
 
       {tasks.length === 0 ? (
         <EmptyState title={t('empty')} description={tCommon('employeeTasksEmptyHint')} />
       ) : (
-        <div className="space-y-3">
+        <StaggerGrid className="space-y-3">
           {tasks.map((task) => {
             const locked = task.status === 'NOT_STARTED';
             const waiting = task.stageDefinition?.dependsOnCodes?.length
               ? task.stageDefinition.dependsOnCodes.join(', ')
               : null;
             return (
-              <Link
-                key={task.id}
-                href={`/tasks/${task.id}`}
-                className="block rounded-[var(--maher-radius-lg)] border border-border bg-surface p-4 shadow-card transition-all active:scale-[0.99] hover:border-border-strong hover:shadow-elevated"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-text-primary">
-                      {task.stageDefinition
-                        ? localizedName(locale, task.stageDefinition, task.name)
-                        : task.name}
-                    </p>
-                    <p className="mt-0.5 text-xs text-text-tertiary">
-                      {task.productionOrder?.number ?? '—'} · {task.number}
-                    </p>
-                    {task.productionOrder?.productDescription ? (
-                      <p className="mt-1 truncate text-xs text-text-secondary">
-                        {task.productionOrder.productDescription}
+              <Link key={task.id} href={`/tasks/${task.id}`} className="block">
+                <SurfaceCard tilt className="maher-list-card maher-press p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-text-primary">
+                        {task.stageDefinition
+                          ? localizedName(locale, task.stageDefinition, task.name)
+                          : task.name}
                       </p>
-                    ) : null}
-                    {task.stageDefinition ? (
-                      <p className="mt-1 truncate text-xs text-text-secondary">
-                        {t('stage')}: {localizedName(locale, task.stageDefinition)}
+                      <p className="mt-0.5 text-xs text-text-tertiary">
+                        {task.productionOrder?.number ?? '—'} · {task.number}
                       </p>
-                    ) : null}
+                      {task.productionOrder?.productDescription ? (
+                        <p className="mt-1 truncate text-xs text-text-secondary">
+                          {task.productionOrder.productDescription}
+                        </p>
+                      ) : null}
+                      {task.stageDefinition ? (
+                        <p className="mt-1 truncate text-xs text-text-secondary">
+                          {t('stage')}: {localizedName(locale, task.stageDefinition)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <StatusBadge status={task.status} />
                   </div>
-                  <StatusBadge status={task.status} />
-                </div>
-                {locked && waiting ? (
-                  <p className="mt-3 text-xs text-[var(--maher-warning)]">
-                    {t('waitingFor')}: {waiting}
+                  {locked && waiting ? (
+                    <p className="mt-3 text-xs text-[var(--maher-warning)]">
+                      {t('waitingFor')}: {waiting}
+                    </p>
+                  ) : null}
+                  <p className="mt-3 text-xs text-text-secondary">
+                    {t('priority')}: {task.priority}
                   </p>
-                ) : null}
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-surface-muted">
-                  <div
-                    className="h-full rounded-full bg-brand transition-all"
-                    style={{ width: `${task.progressPercent}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs tabular-nums text-text-secondary">
-                  {t('priority')}: {task.priority} · {task.progressPercent}%
-                </p>
+                </SurfaceCard>
               </Link>
             );
           })}
-        </div>
+        </StaggerGrid>
       )}
     </div>
   );

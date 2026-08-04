@@ -1,12 +1,4 @@
-export type ApiErrorCode =
-  | 'BAD_REQUEST'
-  | 'UNAUTHORIZED'
-  | 'FORBIDDEN'
-  | 'NOT_FOUND'
-  | 'CONFLICT'
-  | 'VALIDATION_ERROR'
-  | 'RATE_LIMITED'
-  | 'INTERNAL_ERROR';
+export type ApiErrorCode = string;
 
 export interface ApiFieldError {
   field: string;
@@ -17,8 +9,8 @@ export interface ApiFieldError {
 export interface ApiError {
   code: ApiErrorCode;
   message: string;
-  fieldErrors?: ApiFieldError[];
-  requestId?: string;
+  fieldErrors?: Record<string, string[]> | ApiFieldError[];
+  requestId?: string | null;
 }
 
 export interface PaginationMeta {
@@ -49,10 +41,13 @@ export const DEFAULT_CURRENCY: Currency = 'JOD';
 
 export interface AuthUser {
   id: string;
+  /** Login identifier — required for all active users. */
+  username: string;
   email: string;
   phone?: string;
   name: string;
   roles: string[];
+  /** Permission codes from `@maher/permissions` (e.g. `catalog.read`). */
   permissions: string[];
   preferredLanguage: Locale;
   customerId?: string;
@@ -60,7 +55,7 @@ export interface AuthUser {
 
 export type UserStatus = 'ACTIVE' | 'INVITED' | 'LOCKED' | 'ARCHIVED';
 
-export type CustomerType = 'INDIVIDUAL' | 'COMPANY';
+export type CustomerType = 'INDIVIDUAL' | 'COMPANY' | 'SHOWROOM';
 
 export type RfqStatus = 'OPEN' | 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'CANCELLED';
 

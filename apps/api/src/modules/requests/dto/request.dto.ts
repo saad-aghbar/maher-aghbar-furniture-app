@@ -9,11 +9,14 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { PHONE_E164_PATTERN } from '../../customers/dto/customer.dto';
 
 export class ListRequestsDto extends PaginationDto {
   @ApiPropertyOptional({ enum: RequestStatus })
@@ -32,11 +35,28 @@ export class ListRequestsDto extends PaginationDto {
   source?: RequestSource;
 }
 
+export class CustomMeasurementItemDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  label!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  value!: string;
+}
+
 export class RequestItemDto {
   @ApiProperty()
   @IsString()
   @MinLength(1)
   productName!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  productId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -96,6 +116,13 @@ export class RequestItemDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({ type: [CustomMeasurementItemDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomMeasurementItemDto)
+  customMeasurements?: CustomMeasurementItemDto[];
 }
 
 export class CreateRequestDto {
@@ -133,6 +160,41 @@ export class CreateRequestDto {
   @IsOptional()
   @IsString()
   deliveryAddress?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  externalOrderNumber?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  endCustomerName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  endCustomerPhone?: string;
+
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
+  @IsString()
+  @Matches(PHONE_E164_PATTERN, {
+    message: 'Fax must start with +country code then digits (e.g. +97022991234).',
+  })
+  endCustomerFax?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  deliveryLat?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  deliveryLng?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -176,6 +238,41 @@ export class UpdateRequestDto {
   @IsOptional()
   @IsString()
   deliveryAddress?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  externalOrderNumber?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  endCustomerName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  endCustomerPhone?: string;
+
+  @ApiPropertyOptional()
+  @ValidateIf((_, v) => v != null && String(v).trim() !== '')
+  @IsString()
+  @Matches(PHONE_E164_PATTERN, {
+    message: 'Fax must start with +country code then digits (e.g. +97022991234).',
+  })
+  endCustomerFax?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  deliveryLat?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  deliveryLng?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

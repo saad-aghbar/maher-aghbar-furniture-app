@@ -17,9 +17,11 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
+  MotionSection,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -46,7 +48,12 @@ interface InvoiceDetail {
   customerId?: string;
   customer?: { id: string; name: string; code?: string };
   salesOrderId?: string | null;
-  salesOrder?: { id: string; number: string; status: string } | null;
+  salesOrder?: {
+    id: string;
+    number: string;
+    status: string;
+    externalOrderNumber?: string | null;
+  } | null;
   lines?: Array<{
     id: string;
     description: string;
@@ -80,6 +87,7 @@ function qrImageSrc(qr: string): string | null {
 export default function InvoiceDetailPage({ params }: { params: { id: string } }) {
   const ta = useTranslations('accounting');
   const tc = useTranslations('catalog');
+  const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
 
@@ -156,6 +164,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/invoices"
         title={invoice.number}
         description={invoice.customer?.name}
         actions={
@@ -176,8 +185,9 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {formError ? <Alert variant="error">{formError}</Alert> : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="p-4">
+      <div className="maher-stagger space-y-6">
+      <div className="maher-stagger grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card className="maher-list-card p-4">
           <p className="text-xs text-text-secondary">{ta('customer')}</p>
           <p className="mt-1 font-semibold">
             {invoice.customer ? (
@@ -192,13 +202,14 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
             )}
           </p>
         </Card>
-        <Card className="p-4">
-          <p className="text-xs text-text-secondary">{ta('salesOrder')}</p>
+        <Card className="maher-list-card p-4">
+          <p className="text-xs text-text-secondary">{tSales('systemOrderNumber')}</p>
           <p className="mt-1 font-semibold">
             {invoice.salesOrder ? (
               <Link
                 href={`/sales-orders/${invoice.salesOrder.id}`}
                 className="text-brand hover:underline"
+                dir="ltr"
               >
                 {invoice.salesOrder.number}
               </Link>
@@ -206,14 +217,19 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               '—'
             )}
           </p>
+          {invoice.salesOrder?.externalOrderNumber ? (
+            <p className="mt-1 text-xs text-text-secondary" dir="ltr">
+              {tSales('dealerOrderNumber')}: {invoice.salesOrder.externalOrderNumber}
+            </p>
+          ) : null}
         </Card>
-        <Card className="p-4">
+        <Card className="maher-list-card p-4">
           <p className="text-xs text-text-secondary">{ta('invoiceDate')}</p>
           <p className="mt-1 font-semibold" dir="ltr">
             {invoice.invoiceDate?.slice(0, 10) ?? '—'}
           </p>
         </Card>
-        <Card className="p-4">
+        <Card className="maher-list-card p-4">
           <p className="text-xs text-text-secondary">{ta('dueDate')}</p>
           <p className="mt-1 font-semibold" dir="ltr">
             {invoice.dueDate?.slice(0, 10) ?? '—'}
@@ -221,6 +237,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
         </Card>
       </div>
 
+      <MotionSection className="maher-form-section" as="div">
       <Card title={ta('jofotara')} className="space-y-3">
         {invoice.jofotaraUuid || invoice.jofotaraStatus || invoice.jofotaraQr ? (
           <dl className="grid gap-3 sm:grid-cols-2">
@@ -270,7 +287,9 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           <EmptyState title={ta('jofotaraNotCleared')} description={ta('jofotaraNotClearedHint')} />
         )}
       </Card>
+      </MotionSection>
 
+      <MotionSection className="maher-form-section" as="div">
       <Card title={ta('total')} className="space-y-0">
         <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div>
@@ -305,7 +324,9 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           </div>
         </dl>
       </Card>
+      </MotionSection>
 
+      <MotionSection className="maher-form-section" as="div">
       <Card title={ta('lines')}>
         {lines.length === 0 ? (
           <EmptyState title={ta('noLines')} />
@@ -323,16 +344,18 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               {lines.map((line) => (
                 <TableRow key={line.id}>
                   <TableCell>{line.description}</TableCell>
-                  <TableCell dir="ltr">{Number(line.quantity)}</TableCell>
-                  <TableCell dir="ltr">{money(line.unitPrice)}</TableCell>
-                  <TableCell dir="ltr">{money(line.lineTotal)}</TableCell>
+                  <TableNumericCell>{Number(line.quantity)}</TableNumericCell>
+                  <TableNumericCell>{money(line.unitPrice)}</TableNumericCell>
+                  <TableNumericCell>{money(line.lineTotal)}</TableNumericCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         )}
       </Card>
+      </MotionSection>
 
+      <MotionSection className="maher-form-section" as="div">
       <Card title={ta('paymentHistory')}>
         {payments.length === 0 ? (
           <EmptyState title={ta('noPayments')} />
@@ -351,20 +374,22 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               {payments.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell>{p.number}</TableCell>
-                  <TableCell dir="ltr">{p.paymentDate?.slice(0, 10) ?? '—'}</TableCell>
+                  <TableNumericCell>{p.paymentDate?.slice(0, 10) ?? '—'}</TableNumericCell>
                   <TableCell>
                     {ta(`method${p.method}` as 'methodCASH')}
                   </TableCell>
-                  <TableCell dir="ltr">{p.referenceNumber ?? '—'}</TableCell>
-                  <TableCell dir="ltr">{money(p.amount)}</TableCell>
+                  <TableNumericCell>{p.referenceNumber ?? '—'}</TableNumericCell>
+                  <TableNumericCell>{money(p.amount)}</TableNumericCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         )}
       </Card>
+      </MotionSection>
 
       {outstanding > 0 ? (
+        <MotionSection className="maher-form-section" as="div">
         <Card title={ta('recordPayment')}>
           <div className="grid max-w-xl gap-3">
             <Input
@@ -385,14 +410,16 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               value={reference}
               onChange={(e) => setReference(e.target.value)}
             />
-            <div>
+            <div className="maher-detail-sticky-actions">
               <Button loading={payMutation.isPending} onClick={() => payMutation.mutate()}>
                 {ta('recordPayment')}
               </Button>
             </div>
           </div>
         </Card>
+        </MotionSection>
       ) : null}
+      </div>
     </div>
   );
 }

@@ -4,7 +4,8 @@ import { apiFetch } from '@/lib/api-client';
 import {
   EmptyState,
   ErrorState,
-  PageHeader,
+  MotionSection,
+  PageHero,
   Skeleton,
   Table,
   TableBody,
@@ -58,9 +59,7 @@ export function ListPage<T extends { id: string }>({
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="border-b border-border pb-5">
-          <Skeleton className="h-8 w-52" />
-        </div>
+        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
         <TableSkeleton columns={columns.length} />
       </div>
     );
@@ -81,28 +80,32 @@ export function ListPage<T extends { id: string }>({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={title} description={description} actions={actions} />
+      <PageHero tone="soft" title={title} description={description} actions={actions} />
       {rows.length === 0 ? (
-        <EmptyState title={emptyTitle} description={emptyDescription} />
+        <MotionSection>
+          <EmptyState title={emptyTitle} description={emptyDescription} />
+        </MotionSection>
       ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              {columns.map((col) => (
-                <TableHeaderCell key={col.key}>{col.header}</TableHeaderCell>
-              ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
+        <MotionSection delayMs={60}>
+          <Table>
+            <TableHead>
+              <TableRow>
                 {columns.map((col) => (
-                  <TableCell key={col.key}>{col.render(row)}</TableCell>
+                  <TableHeaderCell key={col.key}>{col.header}</TableHeaderCell>
                 ))}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  {columns.map((col) => (
+                    <TableCell key={col.key}>{col.render(row)}</TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </MotionSection>
       )}
     </div>
   );

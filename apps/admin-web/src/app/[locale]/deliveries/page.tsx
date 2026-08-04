@@ -1,6 +1,5 @@
 'use client';
 
-import { PageHeader } from '@/components/admin/page-header';
 import { Link } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { DELIVERY_STATUSES, statusOptions } from '@/lib/status-options';
@@ -12,19 +11,20 @@ import {
   ErrorState,
   Input,
   Modal,
+  PageHero,
   Select,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -51,6 +51,11 @@ interface DeliveryRow {
     nameEn?: string | null;
     nameHe?: string | null;
   };
+  salesOrder?: {
+    id: string;
+    number: string;
+    externalOrderNumber?: string | null;
+  } | null;
 }
 
 const STATUS_FLOW = ['PLANNED', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
@@ -65,6 +70,7 @@ export default function DeliveriesPage() {
   const locale = useLocale();
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
+  const tSales = useTranslations('sales');
   const tStatus = useTranslations('statuses');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
@@ -90,6 +96,7 @@ export default function DeliveriesPage() {
     queryKey: ['deliveries', listParams],
     queryFn: () =>
       apiFetch<{ data: DeliveryRow[] }>(`/api/v1/deliveries?${listParams}`).then((r) => r.data),
+    placeholderData: keepPreviousData,
   });
   const driversQuery = useQuery({
     queryKey: ['drivers-pick'],
@@ -104,7 +111,7 @@ export default function DeliveriesPage() {
       }>('/api/v1/users?pageSize=100').then((r) =>
         (r.data ?? []).filter((u) =>
           u.roles?.some((role) =>
-            ['DELIVERY_EMPLOYEE', 'WAREHOUSE_EMPLOYEE', 'PRODUCTION_SUPERVISOR'].includes(
+            ['PRODUCTION_WORKER'].includes(
               role.role.code,
             ),
           ),
@@ -167,7 +174,7 @@ export default function DeliveriesPage() {
     onError: (err) => setBanner(mutationErrorMessage(err)),
   });
 
-  if (listQuery.isLoading) {
+  if (listQuery.isLoading && !listQuery.data) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -175,14 +182,15 @@ export default function DeliveriesPage() {
       </div>
     );
   }
-  if (listQuery.isError) {
+  if (listQuery.isError && !listQuery.data) {
     return <ErrorState title={t('deliveries')} onRetry={() => listQuery.refetch()} />;
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHero
         title={t('deliveries')}
+        tone="soft"
         actions={
           <Button
             type="button"
@@ -205,7 +213,7 @@ export default function DeliveriesPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={tCommon('search')}
-          leadingIcon={<Search className="h-4 w-4" />}
+        withSearchIcon
           className="max-w-xs"
         />
         <Select
@@ -235,6 +243,8 @@ export default function DeliveriesPage() {
           <TableHead>
             <TableRow>
               <TableHeaderCell>{tCommon('number')}</TableHeaderCell>
+              <TableHeaderCell>{tSales('systemOrderNumber')}</TableHeaderCell>
+              <TableHeaderCell>{tSales('dealerOrderNumber')}</TableHeaderCell>
               <TableHeaderCell>{tc('customer')}</TableHeaderCell>
               <TableHeaderCell>{tCommon('address')}</TableHeaderCell>
               <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
@@ -254,6 +264,10 @@ export default function DeliveriesPage() {
                       <span dir="ltr">{row.number}</span>
                     </Link>
                   </TableCell>
+                  <TableNumericCell>{row.salesOrder?.number ?? '—'}</TableNumericCell>
+                  <TableNumericCell>
+                    {row.salesOrder?.externalOrderNumber?.trim() || '—'}
+                  </TableNumericCell>
                   <TableCell>
                     {row.customer
                       ? localizedName(locale, row.customer, row.customer.name)
@@ -312,7 +326,7 @@ export default function DeliveriesPage() {
           </>
         }
       >
-        <div className="space-y-3">
+        <div className="maher-form-section space-y-3">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
           <Select
             label={tc('salesOrder')}

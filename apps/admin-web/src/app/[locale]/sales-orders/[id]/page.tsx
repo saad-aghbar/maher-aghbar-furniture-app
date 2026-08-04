@@ -9,47 +9,98 @@ import {
   Alert,
   Button,
   Card,
-  EmptyState,
   ErrorState,
   Skeleton,
   StatusBadge,
   Table,
   TableBody,
   TableCell,
+  TableNumericCell,
   TableHead,
   TableHeaderCell,
   TableRow,
+  MotionSection,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+interface CustomerRequestItem {
+  id: string;
+  productName: string;
+  description?: string | null;
+  quantity: string | number;
+  unit?: string | null;
+  width?: string | number | null;
+  height?: string | number | null;
+  depth?: string | number | null;
+  material?: string | null;
+  fabricType?: string | null;
+  fabricColor?: string | null;
+  woodType?: string | null;
+  foamDensity?: string | null;
+  finish?: string | null;
+  accessories?: string | null;
+  notes?: string | null;
+}
+
+interface CustomerRequest {
+  id?: string;
+  number?: string;
+  source?: string;
+  projectName?: string | null;
+  contactName?: string | null;
+  notes?: string | null;
+  deliveryAddress?: string | null;
+  requiredDeliveryDate?: string | null;
+  externalOrderNumber?: string | null;
+  endCustomerName?: string | null;
+  endCustomerPhone?: string | null;
+  endCustomerFax?: string | null;
+  priority?: string | null;
+  items?: CustomerRequestItem[];
+  documents?: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    storageKey: string;
+  }>;
+  originalText?: string | null;
+  translatedText?: string | null;
+  detectedLanguage?: string | null;
+  targetLanguage?: string | null;
+}
+
 interface SalesOrderDetail {
   id: string;
   number: string;
   status: string;
   total?: string | number;
+  manufacturingCost?: string | number | null;
+  sellerPrice?: string | number | null;
+  productionPrice?: string | number | null;
+  profit?: string | number | null;
+  costBreakdown?: Record<string, number> | null;
   projectName?: string | null;
+  requiredDeliveryDate?: string | null;
   requestedDeliveryDate?: string | null;
-  createdAt?: string;
+  deliveryAddress?: string | null;
+  externalOrderNumber?: string | null;
+  notes?: string | null;
   customer?: {
     id: string;
     name: string;
     code?: string;
     phone?: string;
+    fax?: string | null;
     nameAr?: string | null;
     nameEn?: string | null;
     nameHe?: string | null;
   };
   quotation?: { id: string; number: string; status: string } | null;
-  lines?: Array<{
-    id: string;
-    description: string;
-    quantity: string | number;
-    unitPrice: string | number;
-    lineTotal: string | number;
-  }>;
+  customerRequest?: CustomerRequest | null;
+  orderedItems?: CustomerRequestItem[];
   productionOrders?: Array<{
     id: string;
     number: string;
@@ -70,11 +121,13 @@ interface SalesOrderDetail {
     status: string;
     deliveryDate?: string | null;
   }>;
-  contracts?: Array<{
+  returns?: Array<{
     id: string;
     number: string;
-    status: string;
-    contractValue?: string | number;
+    approvalStatus: string;
+    reason: string;
+    productDesc: string;
+    quantity?: string | number;
   }>;
 }
 
@@ -94,12 +147,19 @@ const CANCELLABLE = [
   'WAITING_FOR_MATERIALS',
 ];
 
+function dim(item: CustomerRequestItem) {
+  const parts = [item.width, item.height, item.depth]
+    .map((v) => (v != null && String(v) !== '' ? String(v) : null))
+    .filter(Boolean);
+  return parts.length ? parts.join(' × ') : null;
+}
+
 export default function SalesOrderDetailPage({ params }: { params: { id: string } }) {
   const locale = useLocale();
   const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
-  const tCatalog = useTranslations('catalog');
   const tNav = useTranslations('navigation');
+  const tCustomers = useTranslations('customers');
   const queryClient = useQueryClient();
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,18 +238,31 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
   }
 
   const order = detailQuery.data;
-  const lines = order.lines ?? [];
   const customerName = order.customer
     ? localizedName(locale, order.customer, order.customer.name)
     : undefined;
+  const req = order.customerRequest;
+  const items = req?.items?.length ? req.items : order.orderedItems ?? [];
+  const cb = order.costBreakdown ?? {};
+  const seller = Number(order.sellerPrice ?? order.total ?? 0);
+  const production = Number(order.productionPrice ?? order.manufacturingCost ?? 0);
+  const profit = Number(order.profit ?? seller - production);
+  const deliveryDate =
+    order.requiredDeliveryDate?.slice(0, 10) ??
+    order.requestedDeliveryDate?.slice(0, 10) ??
+    req?.requiredDeliveryDate?.slice(0, 10) ??
+    '—';
+  const dealerOrderNo =
+    order.externalOrderNumber?.trim() || req?.externalOrderNumber?.trim() || '—';
 
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/orders"
         title={order.number}
         description={customerName}
         actions={
-          <>
+          <div className="maher-detail-sticky-actions flex flex-wrap items-center gap-2">
             <StatusBadge status={order.status} />
             {order.status === 'DRAFT' ? (
               <Button onClick={() => setConfirmOpen(true)}>{tSales('confirm')}</Button>
@@ -204,15 +277,31 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
                 {tSales('cancelOrder')}
               </Button>
             ) : null}
-          </>
+          </div>
         }
       />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="p-4">
+      <div className="maher-stagger space-y-6">
+      <div className="maher-stagger grid gap-3 sm:grid-cols-2">
+        <Card className="maher-list-card p-4">
+          <p className="text-xs text-text-secondary">{tSales('systemOrderNumber')}</p>
+          <p className="mt-1 font-semibold" dir="ltr">
+            {order.number}
+          </p>
+        </Card>
+        <Card className="maher-list-card p-4">
+          <p className="text-xs text-text-secondary">{tSales('dealerOrderNumber')}</p>
+          <p className="mt-1 font-semibold" dir="ltr">
+            {dealerOrderNo}
+          </p>
+        </Card>
+      </div>
+
+      <div className="maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="maher-list-card p-4">
           <p className="text-xs text-text-secondary">{tSales('customer')}</p>
           <p className="mt-1 font-semibold">
             {order.customer ? (
@@ -224,81 +313,196 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
             )}
           </p>
         </Card>
-        <Card className="p-4">
-          <p className="text-xs text-text-secondary">{tSales('total')}</p>
+        <Card className="maher-list-card p-4">
+          <p className="text-xs text-text-secondary">{tSales('sellerPrice')}</p>
           <p className="mt-1 font-semibold" dir="ltr">
-            {Number(order.total ?? 0).toFixed(2)}
+            {seller.toFixed(2)} JOD
           </p>
+          <p className="mt-0.5 text-[11px] text-text-tertiary">{tSales('autoCalculated')}</p>
         </Card>
-        <Card className="p-4">
-          <p className="text-xs text-text-secondary">{tSales('deliveryDate')}</p>
+        <Card className="maher-list-card p-4">
+          <p className="text-xs text-text-secondary">{tSales('productionPrice')}</p>
           <p className="mt-1 font-semibold" dir="ltr">
-            {order.requestedDeliveryDate?.slice(0, 10) ?? '—'}
+            {production.toFixed(2)} JOD
           </p>
+          <p className="mt-0.5 text-[11px] text-text-tertiary">{tSales('fromInventoryCosts')}</p>
         </Card>
-        <Card className="p-4">
-          <p className="text-xs text-text-secondary">{tSales('quotation')}</p>
-          <p className="mt-1 font-semibold">
-            {order.quotation ? (
-              <Link
-                href={`/quotations/${order.quotation.id}`}
-                className="text-brand hover:underline"
-              >
-                {order.quotation.number}
-              </Link>
-            ) : (
-              '—'
-            )}
+        <Card className="maher-list-card p-4">
+          <p className="text-xs text-text-secondary">{tSales('profit')}</p>
+          <p className="mt-1 font-semibold" dir="ltr">
+            {profit.toFixed(2)} JOD
           </p>
         </Card>
       </div>
 
-      {order.projectName ? (
-        <Card className="p-4">
-          <p className="text-xs text-text-secondary">{tSales('project')}</p>
-          <p className="mt-1 font-medium">{order.projectName}</p>
-        </Card>
-      ) : null}
+      <MotionSection className="maher-form-section" as="div">
+      <Card className="space-y-4 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">{tSales('customerOrder')}</h2>
+          {req?.source ? <StatusBadge status={req.source} /> : null}
+        </div>
 
-      <Card className="space-y-3 p-4">
-        <h2 className="text-base font-semibold">{tSales('lines')}</h2>
-        {lines.length === 0 ? (
-          <EmptyState title={tSales('noLines')} />
-        ) : (
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{tSales('description')}</TableHeaderCell>
-                <TableHeaderCell>{tCatalog('qty')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('unitPrice')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('lineTotal')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {lines.map((line) => (
-                <TableRow key={line.id}>
-                  <TableCell>{line.description}</TableCell>
-                  <TableCell dir="ltr">{Number(line.quantity)}</TableCell>
-                  <TableCell dir="ltr">{Number(line.unitPrice).toFixed(2)}</TableCell>
-                  <TableCell dir="ltr">{Number(line.lineTotal).toFixed(2)}</TableCell>
-                </TableRow>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+          <div>
+            <p className="text-xs text-text-tertiary">{tSales('endCustomer')}</p>
+            <p className="font-medium">{req?.endCustomerName ?? '—'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-text-tertiary">{tSales('phone')}</p>
+            <p className="font-medium" dir="ltr">
+              {req?.endCustomerPhone ?? order.customer?.phone ?? '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-text-tertiary">{tCustomers('fax')}</p>
+            <p className="font-medium" dir="ltr">
+              {req?.endCustomerFax ?? order.customer?.fax ?? '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-text-tertiary">{tSales('deliveryDate')}</p>
+            <p className="font-medium" dir="ltr">
+              {deliveryDate}
+            </p>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-3">
+            <p className="text-xs text-text-tertiary">{tSales('deliveryAddress')}</p>
+            <p className="font-medium">
+              {req?.deliveryAddress ?? order.deliveryAddress ?? '—'}
+            </p>
+          </div>
+          {req?.projectName || order.projectName ? (
+            <div>
+              <p className="text-xs text-text-tertiary">{tSales('project')}</p>
+              <p className="font-medium">{req?.projectName ?? order.projectName}</p>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-3 border-t border-border pt-4">
+          <h3 className="text-sm font-semibold">{tSales('whatTheyOrdered')}</h3>
+          {items.length === 0 ? (
+            <p className="text-sm text-text-secondary">{tSales('noCustomerItems')}</p>
+          ) : (
+            <ul className="space-y-3">
+              {items.map((item) => (
+                <li
+                  key={item.id}
+                  className="rounded-xl border border-border bg-[var(--maher-surface-muted)]/40 p-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="font-semibold text-text-primary">{item.productName}</p>
+                    <p className="text-sm tabular-nums text-text-secondary" dir="ltr">
+                      × {Number(item.quantity)}
+                    </p>
+                  </div>
+                  {item.description ? (
+                    <p className="mt-1 text-sm text-text-secondary">{item.description}</p>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-tertiary">
+                    {dim(item) ? <span dir="ltr">{dim(item)}</span> : null}
+                    {item.fabricType ? (
+                      <span>
+                        {tSales('fabric')}: {item.fabricType}
+                        {item.fabricColor ? ` / ${item.fabricColor}` : ''}
+                      </span>
+                    ) : null}
+                    {item.material ? (
+                      <span>
+                        {tSales('material')}: {item.material}
+                      </span>
+                    ) : null}
+                    {item.woodType ? <span>{item.woodType}</span> : null}
+                    {item.foamDensity ? <span>{item.foamDensity}</span> : null}
+                    {item.finish ? <span>{item.finish}</span> : null}
+                    {item.accessories ? <span>{item.accessories}</span> : null}
+                  </div>
+                  {item.notes ? <p className="mt-2 text-sm text-text-secondary">{item.notes}</p> : null}
+                </li>
               ))}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
+            </ul>
+          )}
+        </div>
 
-      <LinkedSection
-        title={tSales('linkedContracts')}
-        empty={tCatalog('noContracts')}
-        rows={(order.contracts ?? []).map((c) => ({
-          id: c.id,
-          href: '/contracts',
-          number: c.number,
-          status: c.status,
-          meta: c.contractValue != null ? Number(c.contractValue).toFixed(2) : undefined,
-        }))}
-      />
+        {(req?.translatedText || req?.originalText || req?.notes) && (
+          <div className="space-y-2 border-t border-border pt-4">
+            <h3 className="text-sm font-semibold">{tSales('customerNotes')}</h3>
+            {req?.detectedLanguage ? (
+              <p className="text-xs text-text-tertiary">
+                {tSales('detectedLanguage')}: {req.detectedLanguage}
+                {req.targetLanguage ? ` → ${req.targetLanguage}` : ''}
+              </p>
+            ) : null}
+            {req?.translatedText ? (
+              <p className="whitespace-pre-wrap rounded-xl border border-border bg-surface p-3 text-sm">
+                {req.translatedText}
+              </p>
+            ) : req?.notes ? (
+              <p className="whitespace-pre-wrap rounded-xl border border-border bg-surface p-3 text-sm">
+                {req.notes}
+              </p>
+            ) : null}
+            {req?.originalText && req.originalText !== req.translatedText ? (
+              <details className="text-sm">
+                <summary className="cursor-pointer text-text-secondary">
+                  {tSales('originalHandwriting')}
+                </summary>
+                <p className="mt-2 whitespace-pre-wrap rounded-xl border border-dashed border-border p-3 text-text-secondary">
+                  {req.originalText}
+                </p>
+              </details>
+            ) : null}
+          </div>
+        )}
+
+        {(req?.documents?.length ?? 0) > 0 ? (
+          <div className="border-t border-border pt-4">
+            <h3 className="mb-2 text-sm font-semibold">{tSales('attachments')}</h3>
+            <ul className="space-y-1 text-sm">
+              {req!.documents!.map((doc) => (
+                <li key={doc.id} className="text-text-secondary">
+                  {doc.fileName}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </Card>
+      </MotionSection>
+
+      <MotionSection className="maher-form-section" as="div">
+      <Card className="space-y-3 p-4">
+        <div>
+          <h2 className="text-base font-semibold">{tSales('manufacturingCost')}</h2>
+          <p className="text-xs text-text-tertiary">{tSales('fromInventoryCosts')}</p>
+        </div>
+        <p className="text-2xl font-bold tracking-tight" dir="ltr">
+          {production.toFixed(2)} <span className="text-base font-medium text-text-secondary">JOD</span>
+        </p>
+        <div className="maher-stagger grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {(
+            [
+              ['fabric', tSales('fabricCost'), cb.fabricQty, cb.fabricCost],
+              ['wood', tSales('woodCost'), cb.woodQty, cb.woodCost],
+              ['foam', tSales('foamCost'), cb.foamQty, cb.foamCost],
+              ['accessories', tSales('accessoriesCost'), cb.accessoriesQty, cb.accessoriesCost],
+            ] as const
+          ).map(([key, label, qty, cost]) => (
+            <div key={key} className="maher-list-card rounded-xl border border-border p-3">
+              <p className="text-xs text-text-tertiary">{label}</p>
+              <p className="mt-1 font-semibold" dir="ltr">
+                {cost != null ? Number(cost).toFixed(2) : '0.00'} JOD
+              </p>
+              {qty != null && Number(qty) > 0 ? (
+                <p className="text-[11px] text-text-tertiary" dir="ltr">
+                  qty {Number(qty)}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </Card>
+      </MotionSection>
 
       <LinkedSection
         title={tSales('linkedProduction')}
@@ -335,6 +539,19 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
           meta: d.deliveryDate?.slice(0, 10),
         }))}
       />
+
+      <LinkedSection
+        title={tSales('linkedReturns')}
+        empty={tSales('noLinkedReturns')}
+        rows={(order.returns ?? []).map((r) => ({
+          id: r.id,
+          href: '/returns',
+          number: r.number,
+          status: r.approvalStatus,
+          meta: r.productDesc,
+        }))}
+      />
+      </div>
 
       <ConfirmDialog
         open={confirmOpen}
@@ -386,6 +603,7 @@ function LinkedSection({
 }) {
   const tCommon = useTranslations('common');
   return (
+    <MotionSection className="maher-form-section" as="div">
     <Card className="space-y-3 p-4">
       <h2 className="text-base font-semibold">{title}</h2>
       {rows.length === 0 ? (
@@ -410,12 +628,13 @@ function LinkedSection({
                 <TableCell>
                   <StatusBadge status={row.status} />
                 </TableCell>
-                <TableCell dir="ltr">{row.meta ?? '—'}</TableCell>
+                <TableNumericCell>{row.meta ?? '—'}</TableNumericCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
     </Card>
+    </MotionSection>
   );
 }

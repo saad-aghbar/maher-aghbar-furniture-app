@@ -3,7 +3,8 @@
 import { PageHeader } from '@/components/admin/page-header';
 import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
-import { Card, Skeleton, ErrorState, StatusBadge, Button, Alert, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from '@maher/ui';
+import { Card, Skeleton, ErrorState, StatusBadge, Button, Alert, Table, TableBody, TableCell,
+  TableNumericCell, TableHead, TableHeaderCell, TableRow, MotionSection } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -45,13 +46,18 @@ interface QuotationDetail {
   approvalChain?: string[];
   completedApprovalSteps?: string[];
   lines?: QuoteLine[];
-  request?: { id: string; number: string } | null;
+  request?: {
+    id: string;
+    number: string;
+    externalOrderNumber?: string | null;
+  } | null;
 }
 
 export default function QuotationDetailPage({ params }: { params: { id: string } }) {
   const locale = useLocale();
   const t = useTranslations('quotations');
   const tc = useTranslations('catalog');
+  const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -140,18 +146,10 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
   return (
     <div className="space-y-6">
       <PageHeader
+        backHref="/orders"
         title={data.number}
         description={customerLabel}
-        actions={
-          <>
-            <StatusBadge status={data.status} />
-            <Link href="/quotations">
-              <Button variant="ghost" size="sm">
-                {tCommon('back')}
-              </Button>
-            </Link>
-          </>
-        }
+        actions={<StatusBadge status={data.status} />}
       />
       {message ? <Alert variant="success">{message}</Alert> : null}
       {data.pendingApproverRole ? (
@@ -159,6 +157,8 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
           {tc('pendingApproval')}: {data.pendingApproverRole}
         </Alert>
       ) : null}
+      <div className="maher-stagger space-y-6">
+      <MotionSection className="maher-form-section" as="div">
       <Card title={t('detail')}>
         <dl className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -201,6 +201,16 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
               </dd>
             </div>
           ) : null}
+          {data.request?.externalOrderNumber ? (
+            <div>
+              <dt className="text-sm text-[var(--maher-text-secondary)]">
+                {tSales('dealerOrderNumber')}
+              </dt>
+              <dd className="font-medium" dir="ltr">
+                {data.request.externalOrderNumber}
+              </dd>
+            </div>
+          ) : null}
           {data.approvalChain?.length ? (
             <div className="sm:col-span-2">
               <dt className="text-sm text-[var(--maher-text-secondary)]">{tc('approvalChain')}</dt>
@@ -217,7 +227,7 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
             </div>
           ) : null}
         </dl>
-        <div className="mt-6 flex flex-wrap gap-2">
+        <div className="maher-detail-sticky-actions mt-6 flex flex-wrap gap-2">
           <Button
             variant="ghost"
             onClick={() => {
@@ -271,7 +281,9 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
           ) : null}
         </div>
       </Card>
+      </MotionSection>
 
+      <MotionSection className="maher-form-section" as="div">
       <Card title={t('lines')} padded={false}>
         <Table>
           <TableHead>
@@ -288,20 +300,22 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
             {(data.lines ?? []).map((line) => (
               <TableRow key={line.id}>
                 <TableCell>{line.description}</TableCell>
-                <TableCell dir="ltr">{String(line.quantity)}</TableCell>
-                <TableCell dir="ltr">
+                <TableNumericCell>{String(line.quantity)}</TableNumericCell>
+                <TableNumericCell>
                   {[line.width, line.height, line.depth].filter((v) => v != null).join('×') || '—'}
-                </TableCell>
+                </TableNumericCell>
                 <TableCell>
                   {[line.material, line.fabric, line.color].filter(Boolean).join(' / ') || '—'}
                 </TableCell>
-                <TableCell dir="ltr">{Number(line.unitPrice).toFixed(2)}</TableCell>
-                <TableCell dir="ltr">{Number(line.lineTotal).toFixed(2)}</TableCell>
+                <TableNumericCell>{Number(line.unitPrice).toFixed(2)}</TableNumericCell>
+                <TableNumericCell>{Number(line.lineTotal).toFixed(2)}</TableNumericCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Card>
+      </MotionSection>
+      </div>
     </div>
   );
 }

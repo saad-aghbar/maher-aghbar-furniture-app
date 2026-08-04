@@ -1,11 +1,14 @@
 'use client';
 
+import { BackButton } from '@/components/back-button';
 import { Link } from '@/i18n/navigation';
 import { apiFetch, API_URL } from '@/lib/api-client';
 import {
   Alert,
   Button,
   Card,
+  MotionSection,
+  PageHero,
   Skeleton,
   StatusBadge,
   Table,
@@ -113,32 +116,39 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
     }
   }
 
-  if (isLoading || !data) return <Skeleton className="h-48 w-full" />;
+  if (isLoading || !data) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-28 w-full rounded-[var(--maher-radius-xl)]" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+      </div>
+    );
+  }
 
   const canDecide = data.status === 'SENT' || data.status === 'APPROVED';
   const so = data.salesOrders?.[0];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-5">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{data.number}</h1>
-          <div className="mt-2">
-            <StatusBadge status={data.status} />
+      <BackButton fallbackHref="/orders" />
+      <PageHero
+        tone="soft"
+        title={data.number}
+        meta={<StatusBadge status={data.status} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-lg font-semibold">
+              {t('total')}: {String(data.total)} {tCommon('currency')}
+            </p>
+            <Button
+              variant="secondary"
+              onClick={() => window.open(`${API_URL}/api/v1/quotations/${data.id}/pdf`, '_blank')}
+            >
+              {t('downloadPdf')}
+            </Button>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-lg font-semibold">
-            {t('total')}: {String(data.total)} {tCommon('currency')}
-          </p>
-          <Button
-            variant="secondary"
-            onClick={() => window.open(`${API_URL}/api/v1/quotations/${data.id}/pdf`, '_blank')}
-          >
-            {t('downloadPdf')}
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {data.status === 'ACCEPTED' ? <Alert variant="success">{t('accepted')}</Alert> : null}
@@ -146,86 +156,92 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
         <Alert variant="info">{t('revisionRequested')}</Alert>
       ) : null}
 
-      <Card title={t('lines')} padded={false}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{tc('description')}</TableHeaderCell>
-              <TableHeaderCell>{tc('qty')}</TableHeaderCell>
-              <TableHeaderCell>{tc('price')}</TableHeaderCell>
-              <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {(data.lines ?? []).map((line) => (
-              <TableRow key={line.id}>
-                <TableCell>{line.description}</TableCell>
-                <TableCell>{String(line.quantity)}</TableCell>
-                <TableCell>{String(line.unitPrice)}</TableCell>
-                <TableCell>{String(line.lineTotal)}</TableCell>
+      <MotionSection delayMs={60}>
+        <Card title={t('lines')} padded={false} className="maher-form-section">
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell>{tc('description')}</TableHeaderCell>
+                <TableHeaderCell>{tc('qty')}</TableHeaderCell>
+                <TableHeaderCell>{tc('price')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+            </TableHead>
+            <TableBody>
+              {(data.lines ?? []).map((line) => (
+                <TableRow key={line.id}>
+                  <TableCell>{line.description}</TableCell>
+                  <TableCell>{String(line.quantity)}</TableCell>
+                  <TableCell>{String(line.unitPrice)}</TableCell>
+                  <TableCell>{String(line.lineTotal)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      </MotionSection>
 
       {canDecide ? (
-        <Card title={t('signToAccept')}>
-          <canvas
-            ref={canvasRef}
-            width={560}
-            height={160}
-            className="w-full touch-none rounded-[var(--maher-radius-md)] border border-border bg-surface-muted"
-            onMouseDown={() => {
-              setDrawing(true);
-              canvasRef.current?.getContext('2d')?.beginPath();
-            }}
-            onMouseUp={() => setDrawing(false)}
-            onMouseLeave={() => setDrawing(false)}
-            onMouseMove={draw}
-            onTouchStart={() => {
-              setDrawing(true);
-              canvasRef.current?.getContext('2d')?.beginPath();
-            }}
-            onTouchEnd={() => setDrawing(false)}
-            onTouchMove={draw}
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" variant="ghost" onClick={clearSignature}>
-              {t('clearSignature')}
-            </Button>
-            <Button onClick={() => act('accept')} loading={loading}>
-              {t('accept')}
-            </Button>
-            <Button variant="danger" onClick={() => act('reject')} loading={loading}>
-              {t('reject')}
-            </Button>
-          </div>
-          <div className="mt-4 space-y-2 border-t border-border pt-4">
-            <label className="block text-sm text-text-secondary">{t('revisionComment')}</label>
-            <textarea
-              className="w-full rounded-[var(--maher-radius-md)] border border-border bg-surface px-3 py-2 text-sm"
-              rows={2}
-              value={revisionComment}
-              onChange={(e) => setRevisionComment(e.target.value)}
+        <MotionSection delayMs={100}>
+          <Card title={t('signToAccept')} className="maher-form-section">
+            <canvas
+              ref={canvasRef}
+              width={560}
+              height={160}
+              className="w-full touch-none rounded-[var(--maher-radius-md)] border border-border bg-surface-muted"
+              onMouseDown={() => {
+                setDrawing(true);
+                canvasRef.current?.getContext('2d')?.beginPath();
+              }}
+              onMouseUp={() => setDrawing(false)}
+              onMouseLeave={() => setDrawing(false)}
+              onMouseMove={draw}
+              onTouchStart={() => {
+                setDrawing(true);
+                canvasRef.current?.getContext('2d')?.beginPath();
+              }}
+              onTouchEnd={() => setDrawing(false)}
+              onTouchMove={draw}
             />
-            <Button
-              variant="secondary"
-              onClick={() => act('request-revision')}
-              loading={loading}
-            >
-              {t('requestRevision')}
-            </Button>
-          </div>
-        </Card>
+            <div className="maher-detail-sticky-actions mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="ghost" onClick={clearSignature}>
+                {t('clearSignature')}
+              </Button>
+              <Button onClick={() => act('accept')} loading={loading}>
+                {t('accept')}
+              </Button>
+              <Button variant="danger" onClick={() => act('reject')} loading={loading}>
+                {t('reject')}
+              </Button>
+            </div>
+            <div className="mt-4 space-y-2 border-t border-border pt-4">
+              <label className="block text-sm text-text-secondary">{t('revisionComment')}</label>
+              <textarea
+                className="w-full rounded-[var(--maher-radius-md)] border border-border bg-surface px-3 py-2 text-sm"
+                rows={2}
+                value={revisionComment}
+                onChange={(e) => setRevisionComment(e.target.value)}
+              />
+              <Button
+                variant="secondary"
+                onClick={() => act('request-revision')}
+                loading={loading}
+              >
+                {t('requestRevision')}
+              </Button>
+            </div>
+          </Card>
+        </MotionSection>
       ) : null}
 
       {so ? (
-        <Card title={tCommon('details')}>
-          <Link href={`/orders/${so.id}`} className="font-medium text-brand hover:underline">
-            {so.number} →
-          </Link>
-        </Card>
+        <MotionSection delayMs={140}>
+          <Card title={tCommon('details')} className="maher-form-section">
+            <Link href={`/orders/${so.id}`} className="font-medium text-brand hover:underline">
+              {so.number} →
+            </Link>
+          </Card>
+        </MotionSection>
       ) : null}
     </div>
   );

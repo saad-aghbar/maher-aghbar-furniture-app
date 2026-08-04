@@ -1,18 +1,21 @@
 'use client';
 
-import { ApiClientError } from '@/lib/api-client';
+import { detectUiLocale, translateApiError } from '@maher/i18n';
 import {
   useMutation,
   useQueryClient,
   type QueryKey,
   type UseMutationOptions,
 } from '@tanstack/react-query';
+import { useLocale } from 'next-intl';
 import { useState } from 'react';
 
-export function mutationErrorMessage(error: unknown, fallback = 'Request failed'): string {
-  if (error instanceof ApiClientError) return error.body?.message ?? error.message;
-  if (error instanceof Error) return error.message;
-  return fallback;
+/** Localized API / client error text for alerts, banners, and confirm dialogs. */
+export function mutationErrorMessage(error: unknown, fallback?: string): string {
+  const locale = detectUiLocale(
+    typeof document !== 'undefined' ? document.documentElement.lang : undefined,
+  );
+  return translateApiError(locale, error, fallback);
 }
 
 interface UseApiMutationOptions<TData, TVariables> {
@@ -34,6 +37,7 @@ export function useApiMutation<TData, TVariables = void>({
   mutationOptions,
 }: UseApiMutationOptions<TData, TVariables>) {
   const queryClient = useQueryClient();
+  const locale = useLocale();
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +58,7 @@ export function useApiMutation<TData, TVariables = void>({
     },
     onError: (err) => {
       setSuccess(null);
-      setError(mutationErrorMessage(err));
+      setError(translateApiError(locale, err));
     },
   });
 

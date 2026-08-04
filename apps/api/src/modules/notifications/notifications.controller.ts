@@ -1,9 +1,18 @@
-import { Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { IsIn, IsString } from 'class-validator';
+import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import type { AuthUser } from '@maher/types';
+
+class RegisterDeviceTokenDto {
+  @IsString()
+  token!: string;
+
+  @IsIn(['ios', 'android', 'web'])
+  platform!: 'ios' | 'android' | 'web';
+}
 
 @ApiTags('notifications')
 @Controller('notifications')
@@ -24,6 +33,24 @@ export class NotificationsController {
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
+  }
+
+  @Post('device-token')
+  @RequirePermissions('notification.read')
+  async registerDeviceToken(
+    @Body() dto: RegisterDeviceTokenDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const row = await this.prisma.devicePushToken.upsert({
+      where: { userId_token: { userId: user.id, token: dto.token } },
+      create: {
+        userId: user.id,
+        token: dto.token,
+        platform: dto.platform,
+      },
+      update: { platform: dto.platform },
+    });
+    return { ok: true, id: row.id };
   }
 
   @Post('read-all')

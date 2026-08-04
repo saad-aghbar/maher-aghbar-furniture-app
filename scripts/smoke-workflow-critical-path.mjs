@@ -102,7 +102,7 @@ async function completeProductionForDelivery(poId, cookie) {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 const adminLogin = await request('POST', '/api/v1/auth/login', {
-  body: { email: 'admin@maher-aghbar.jo', password: 'Admin@12345!' },
+  body: { username: 'admin', password: 'Admin@12345!' },
 });
 const adminCookie = cookieHeader(adminLogin.setCookie);
 ok('admin login', adminLogin.status === 200 || adminLogin.status === 201, String(adminLogin.status));
@@ -185,7 +185,7 @@ if (quoteId) {
 }
 
 const custLogin = await request('POST', '/api/v1/auth/login', {
-  body: { email: 'customer@cedar-hotel.jo', password: 'Admin@12345!' },
+  body: { username: 'cedar', password: 'Admin@12345!' },
 });
 const custCookie = cookieHeader(custLogin.setCookie);
 ok('customer login', custLogin.status === 200 || custLogin.status === 201);
@@ -403,17 +403,19 @@ if (pr.json?.id && supplierId) {
 
 const dash = await request('GET', '/api/v1/reports/dashboard', { cookie: adminCookie });
 ok(
-  'dashboard finance KPIs',
+  'dashboard factory KPIs',
   dash.status === 200 &&
-    dash.json?.revenueInvoiced != null &&
-    dash.json?.receivablesAmount != null &&
-    dash.json?.completedSalesOrders != null &&
-    dash.json?.openPurchases != null,
+    dash.json?.newOrders != null &&
+    dash.json?.ordersInProduction != null &&
+    dash.json?.ordersNearingDelivery != null &&
+    dash.json?.completedOrders != null &&
+    dash.json?.delayedOrders != null,
   JSON.stringify({
-    revenue: dash.json?.revenueInvoiced,
-    ar: dash.json?.receivablesAmount,
-    done: dash.json?.completedSalesOrders,
-    po: dash.json?.openPurchases,
+    newOrders: dash.json?.newOrders,
+    inProduction: dash.json?.ordersInProduction,
+    nearingDelivery: dash.json?.ordersNearingDelivery,
+    completed: dash.json?.completedOrders,
+    delayed: dash.json?.delayedOrders,
   }),
 );
 

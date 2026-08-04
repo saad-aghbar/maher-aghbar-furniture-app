@@ -70,7 +70,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           <p className="text-xs text-[var(--maher-text-secondary)]">{hint}</p>
         ) : null}
         {error ? (
-          <p role="alert" className="text-xs text-[var(--maher-error)]">
+          <p role="alert" className="maher-animate-drop text-xs text-[var(--maher-error)]">
             {error}
           </p>
         ) : null}
