@@ -189,10 +189,4 @@ echo ""
 echo "Demo password: Admin@12345!"
 echo "  Usernames: admin | worker | carpenter | carpenter2 | painter | … | cedar | olive | petra | villa"
 echo ""
-echo "Mobile app:  pnpm mobile:start"
-echo "  (Expo Go · leave EXPO_PUBLIC_API_BASE_URL unset — phone derives LAN host)"
-LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
-if [[ -n "${LAN_IP:-}" ]]; then
-  echo "Phone API:   http://${LAN_IP}:4000"
-fi
 echo "Stop with:   pnpm stop:all"

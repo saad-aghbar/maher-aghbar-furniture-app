@@ -12,7 +12,7 @@ Phase 1 shipped the father-friendly admin shell: Orders, Products, Inventory, Pr
 
 Everything else (SMTP console, mock AI/OCR, JoFotara mock clearance) works without production keys for demos.
 
-**Also shipped without paid keys:** `OCR_PROVIDER=local` (pdf-parse + tesseract.js), mobile cycle-count camera barcode (`expo-camera`), Twilio SMS/WhatsApp when `TWILIO_*` are set.
+**Also shipped without paid keys:** `OCR_PROVIDER=local` (pdf-parse + tesseract.js), Twilio SMS/WhatsApp when `TWILIO_*` are set.
 
 ## 1. Live IMAP inbound email
 

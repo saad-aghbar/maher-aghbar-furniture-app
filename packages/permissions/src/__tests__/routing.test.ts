@@ -26,7 +26,7 @@ describe('post-login routing', () => {
     expect(resolveAppSurface(user)).toBe('customer');
     expect(resolveWebHomePath(user)).toBe('/dashboard');
     expect(resolveHomePersona(user)).toBe('customer');
-    expect(resolveMobileHomeHref(user)).toBe('/(app)/customer');
+    expect(resolveMobileHomeHref(user)).toBe('/(app)/(customer)/(tabs)');
   });
 
   it('sends production workers to the employee portal', () => {
@@ -37,7 +37,7 @@ describe('post-login routing', () => {
     expect(resolveAppSurface(user)).toBe('employee');
     expect(resolveWebHomePath(user)).toBe('/dashboard');
     expect(resolveHomePersona(user)).toBe('production_worker');
-    expect(resolveMobileHomeHref(user)).toBe('/(app)/employee');
+    expect(resolveMobileHomeHref(user)).toBe('/(app)/(employee)/(tabs)');
   });
 
   it('sends sales/admin to the admin portal', () => {
@@ -48,6 +48,6 @@ describe('post-login routing', () => {
     expect(resolveAppSurface(user)).toBe('admin');
     expect(resolveWebHomePath(user)).toBe('/dashboard');
     expect(resolveHomePersona(user)).toBe('sales');
-    expect(resolveMobileHomeHref(user)).toBe('/(app)/admin');
+    expect(resolveMobileHomeHref(user)).toBe('/(app)/(admin)/(tabs)');
   });
 });

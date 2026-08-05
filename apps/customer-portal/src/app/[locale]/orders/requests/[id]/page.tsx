@@ -167,14 +167,14 @@ export default function CustomerRequestDetailPage() {
           <h1 className="text-2xl font-bold tracking-tight">
             {req.title ?? item?.productName ?? req.number}
           </h1>
-          <p className="text-sm text-text-secondary" dir="ltr">
+          <p className="text-sm text-text-secondary">
             <span className="text-text-tertiary">{t('systemOrderNumber')}: </span>
-            {req.number}
+            <Ltr>{req.number}</Ltr>
             {req.externalOrderNumber ? (
               <>
                 {' · '}
                 <span className="text-text-tertiary">{t('dealerOrderNumber')}: </span>
-                {req.externalOrderNumber}
+                <Ltr>{req.externalOrderNumber}</Ltr>
               </>
             ) : null}
           </p>

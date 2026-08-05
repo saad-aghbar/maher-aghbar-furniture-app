@@ -3,15 +3,15 @@
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
-import { BrandMark, cn, isNavItemActive, useHeaderOverDark } from '@maher/ui';
+import { BrandMark, cn, isNavItemActive } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
-  ChevronDown,
   FileText,
   FolderOpen,
   LayoutDashboard,
   LogOut,
+  Menu,
   Package,
   Receipt,
   Scroll,
@@ -19,13 +19,14 @@ import {
   SquarePen,
   Undo2,
   User,
+  type LucideIcon,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from './language-switcher';
 import { AppThemeToggle } from './theme-toggle';
 
-const items = [
+const items: Array<{ href: string; key: string; icon: LucideIcon }> = [
   { href: '/dashboard', key: 'dashboard', icon: LayoutDashboard },
   { href: '/catalog', key: 'catalog', icon: ShoppingBag },
   { href: '/orders/new', key: 'createOrder', icon: SquarePen },
@@ -36,23 +37,137 @@ const items = [
   { href: '/documents', key: 'documents', icon: FolderOpen },
   { href: '/returns', key: 'returns', icon: Undo2 },
   { href: '/profile', key: 'profile', icon: User },
-] as const;
+];
 
 interface NotificationItem {
   id: string;
   readAt?: string | null;
 }
 
-export function PortalShell({ children }: { children: ReactNode }) {
+function useEmbedded() {
+  const [embedded, setEmbedded] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get('embedded') === '1';
+    const fromClass = document.documentElement.classList.contains('maher-embedded');
+    setEmbedded(fromQuery || fromClass);
+    if (fromQuery) document.documentElement.classList.add('maher-embedded');
+  }, []);
+  return embedded;
+}
+
+function CustomerSidebar({
+  onNavigate,
+  unread,
+  onLogout,
+  userName,
+  userHandle,
+}: {
+  onNavigate?: () => void;
+  unread: number;
+  onLogout: () => void;
+  userName?: string;
+  userHandle?: string;
+}) {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const tAuth = useTranslations('auth');
   const pathname = usePathname();
+  const navHrefs = useMemo(() => items.map((item) => item.href), []);
+
+  return (
+    <div className="flex h-full flex-col bg-surface">
+      <div className="group flex items-center gap-3 border-b border-border px-5 py-4">
+        <span className="transition-transform duration-500 ease-out group-hover:rotate-6 group-hover:scale-110">
+          <BrandMark animated />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[13px] font-bold leading-snug text-text-primary">{tCommon('appName')}</p>
+          <p className="text-[11px] text-text-tertiary">{tCommon('portalCustomer')}</p>
+        </div>
+      </div>
+
+      <nav className="flex flex-1 flex-col overflow-y-auto px-3 py-4">
+        <ul className="maher-stagger space-y-0.5">
+          {items.map((item) => {
+            const active = isNavItemActive(pathname, item.href, navHrefs);
+            const Icon = item.icon;
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  onClick={onNavigate}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'maher-nav-item group relative flex items-center gap-3 rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium',
+                    active
+                      ? 'bg-brand-soft text-brand'
+                      : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary hover:ps-4',
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'absolute inset-y-1.5 start-0 w-0.5 origin-center rounded-full bg-brand transition-transform duration-300 ease-out',
+                      active ? 'scale-y-100' : 'scale-y-0',
+                    )}
+                  />
+                  <Icon
+                    className={cn(
+                      'h-[18px] w-[18px] shrink-0 transition-[color,transform] duration-300 ease-out group-hover:scale-110',
+                      active ? 'text-brand' : 'text-text-tertiary group-hover:text-text-secondary',
+                    )}
+                  />
+                  <span className="truncate">{t(item.key)}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="mt-auto space-y-2 border-t border-border pt-3">
+          <Link
+            href="/notifications"
+            onClick={onNavigate}
+            className="maher-nav-item relative flex items-center gap-3 rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+          >
+            <Bell className="h-[18px] w-[18px]" />
+            <span className="flex-1">{t('notifications')}</span>
+            {unread > 0 ? (
+              <span className="rounded-full bg-brand px-1.5 text-[10px] font-semibold text-white">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            ) : null}
+          </Link>
+          <div className="flex items-center gap-2 px-2 py-1">
+            <AppThemeToggle />
+            <LanguageSwitcher />
+          </div>
+          <div className="px-3 py-2">
+            <p className="truncate text-sm font-semibold text-text-primary">{userName}</p>
+            <p className="truncate text-xs text-text-secondary">{userHandle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="group/logout flex w-full items-center gap-3 rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-muted hover:text-[var(--maher-error)]"
+          >
+            <LogOut className="h-[18px] w-[18px] transition-transform duration-300 ease-out group-hover/logout:translate-x-0.5 rtl:group-hover/logout:-translate-x-0.5" />
+            {tAuth('logout')}
+          </button>
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+export function PortalShell({ children }: { children: ReactNode }) {
+  const t = useTranslations('navigation');
+  const tCommon = useTranslations('common');
+  const pathname = usePathname();
   const router = useRouter();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
-  const overDark = useHeaderOverDark(headerRef, pathname);
+  const embedded = useEmbedded();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const me = useQuery({
     queryKey: ['auth-me'],
@@ -71,13 +186,15 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const unread = (notifications.data ?? []).filter((n) => !n.readAt).length;
 
   useEffect(() => {
-    if (!menuOpen) return;
-    const onClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
     };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [menuOpen]);
+  }, [mobileOpen]);
 
   async function logout() {
     try {
@@ -89,181 +206,76 @@ export function PortalShell({ children }: { children: ReactNode }) {
     router.refresh();
   }
 
-  const navHrefs = useMemo(() => items.map((item) => item.href), []);
-
-  const initials = (me.data?.name ?? '')
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join('');
+  const sidebarProps = {
+    unread,
+    onLogout: logout,
+    userName: me.data?.name,
+    userHandle: me.data?.username ?? me.data?.email,
+  };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header
-        ref={headerRef}
-        data-header-tone={overDark ? 'on-dark' : 'on-light'}
+    <div className={cn('flex min-h-screen bg-background', embedded && 'maher-embedded-shell')}>
+      {/* Desktop / wide: persistent side nav */}
+      <aside
         className={cn(
-          'sticky top-0 z-[1100] border-b',
-          overDark ? 'border-white/10' : 'border-border',
+          'sticky top-0 hidden h-screen w-[264px] shrink-0 border-e border-border bg-surface',
+          embedded ? 'md:block' : 'lg:block',
         )}
       >
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <div className="group flex min-w-0 items-center gap-3">
-            <span className="transition-transform duration-500 ease-out group-hover:rotate-6 group-hover:scale-110">
-              <BrandMark animated />
-            </span>
-            <div className="min-w-0">
-              <p
-                className={cn(
-                  'maher-header-fg truncate text-sm font-bold leading-tight',
-                  overDark ? 'text-white' : 'text-text-primary',
-                )}
-              >
-                {tCommon('appName')}
-              </p>
-              <p
-                className={cn(
-                  'maher-header-fg-muted text-xs',
-                  overDark ? 'text-white/70' : 'text-text-tertiary',
-                )}
-              >
-                {tCommon('portalCustomer')}
-              </p>
-            </div>
-          </div>
+        <CustomerSidebar {...sidebarProps} />
+      </aside>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <AppThemeToggle className="hidden sm:inline-flex" inverted={overDark} />
-            <LanguageSwitcher className="hidden sm:block" inverted={overDark} />
-
-            <Link
-              href="/notifications"
-              aria-label={t('notifications')}
-              className={cn(
-                'maher-header-icon-btn maher-press group relative flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)]',
-                overDark
-                  ? 'text-white hover:bg-white/10 hover:text-white'
-                  : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
-              )}
-            >
-              <Bell className="h-[18px] w-[18px] group-hover:animate-[maher-shake_600ms_ease-in-out]" />
-              {unread > 0 ? (
-                <span className="maher-animate-bounce-in absolute -top-0.5 end-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
-                  <span
-                    className="absolute inset-0 rounded-full bg-brand"
-                    style={{ animation: 'maher-ring-pulse 2s ease-out infinite' }}
-                    aria-hidden="true"
-                  />
-                  <span className="relative">{unread > 9 ? '9+' : unread}</span>
-                </span>
-              ) : null}
-            </Link>
-
-            <div className="relative" ref={menuRef}>
-              <button
-                type="button"
-                onClick={() => setMenuOpen((v) => !v)}
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                className={cn(
-                  'maher-press group flex items-center gap-2 rounded-[var(--maher-radius-md)] py-1 ps-1 pe-2',
-                  overDark
-                    ? cn('hover:bg-white/10', menuOpen && 'bg-white/10')
-                    : cn('hover:bg-surface-muted', menuOpen && 'bg-surface-muted'),
-                )}
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand transition-transform duration-300 ease-out group-hover:scale-105">
-                  {initials || <User className="h-4 w-4" />}
-                </span>
-                <span
-                  className={cn(
-                    'maher-header-fg hidden max-w-[9rem] truncate text-sm font-medium md:block',
-                    overDark ? 'text-white' : 'text-text-primary',
-                  )}
-                >
-                  {me.data?.name ?? ''}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    'maher-header-fg-muted h-4 w-4 transition-transform duration-300 ease-out',
-                    overDark ? 'text-white/70' : 'text-text-tertiary',
-                    menuOpen && 'rotate-180 !text-brand',
-                  )}
-                />
-              </button>
-
-              {menuOpen ? (
-                <div
-                  role="menu"
-                  className="maher-animate-pop absolute end-0 top-full z-40 mt-2 w-60 overflow-hidden rounded-[var(--maher-radius-lg)] border border-border bg-surface text-text-primary shadow-float"
-                >
-                  <div className="border-b border-border px-4 py-3">
-                    <p className="truncate text-sm font-semibold text-text-primary">
-                      {me.data?.name}
-                    </p>
-                    <p className="truncate text-xs text-text-secondary">
-                      {me.data?.username ?? me.data?.email}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 border-b border-border px-3 py-2 sm:hidden">
-                    <AppThemeToggle />
-                    <LanguageSwitcher />
-                  </div>
-                  <Link
-                    href="/profile"
-                    role="menuitem"
-                    onClick={() => setMenuOpen(false)}
-                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-surface-muted hover:text-text-primary"
-                  >
-                    <FileText className="h-4 w-4" />
-                    {t('profile')}
-                  </Link>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={logout}
-                    className="group/logout flex w-full items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-surface-muted hover:text-[var(--maher-error)]"
-                  >
-                    <LogOut className="h-4 w-4 transition-transform duration-300 ease-out group-hover/logout:translate-x-0.5 rtl:group-hover/logout:-translate-x-0.5" />
-                    {tAuth('logout')}
-                  </button>
-                </div>
-              ) : null}
-            </div>
+      {/* Narrow: slide-in side drawer */}
+      {mobileOpen ? (
+        <div className={cn('fixed inset-0 z-50', embedded ? 'md:hidden' : 'lg:hidden')}>
+          <button
+            type="button"
+            aria-label={t('closeMenu')}
+            className="maher-animate-fade absolute inset-0 bg-[#1c1917]/45 backdrop-blur-[2px]"
+            onClick={() => setMobileOpen(false)}
+          />
+          <div className="maher-animate-in-start absolute inset-y-0 start-0 w-[264px] shadow-float">
+            <CustomerSidebar {...sidebarProps} onNavigate={() => setMobileOpen(false)} />
           </div>
         </div>
+      ) : null}
 
-        <nav className="maher-stagger mx-auto flex max-w-6xl gap-1 overflow-x-auto px-3 pb-2">
-          {items.map((item) => {
-            const active = isNavItemActive(pathname, item.href, navHrefs);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'maher-nav-item maher-press group flex items-center gap-2 whitespace-nowrap rounded-[var(--maher-radius-md)] px-3 py-2 text-sm font-medium',
-                  active
-                    ? 'bg-brand-soft text-brand'
-                    : overDark
-                      ? 'text-white hover:bg-white/10 hover:text-white'
-                      : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
-                )}
-              >
-                <Icon className="h-4 w-4 transition-transform duration-300 ease-out group-hover:scale-110" />
-                {t(item.key)}
-              </Link>
-            );
-          })}
-        </nav>
-      </header>
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <div key={pathname} className="maher-page-enter">
-          {children}
-        </div>
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-surface/90 px-4 backdrop-blur-md">
+          <button
+            type="button"
+            aria-label={t('openMenu')}
+            className={cn(
+              'maher-header-icon-btn maher-press flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)] text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+              embedded ? 'md:hidden' : 'lg:hidden',
+            )}
+            onClick={() => setMobileOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-text-primary">{tCommon('portalCustomer')}</p>
+          </div>
+          <Link
+            href="/notifications"
+            aria-label={t('notifications')}
+            className="maher-header-icon-btn maher-press relative flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)] text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+          >
+            <Bell className="h-[18px] w-[18px]" />
+            {unread > 0 ? (
+              <span className="absolute -top-0.5 end-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            ) : null}
+          </Link>
+        </header>
+
+        <main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">
+          <div key={pathname} className="maher-page-enter mx-auto w-full max-w-6xl">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

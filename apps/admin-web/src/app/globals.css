@@ -546,7 +546,7 @@ a {
   }
 }
 
-/* Purchasing list — bottom filters + table entrance choreography */
+/* Purchasing list — panel / filters / results enter */
 .maher-purchasing-panel {
   animation: maher-rise 420ms var(--maher-ease-out) both;
 }
@@ -563,98 +563,24 @@ a {
   animation-delay: 110ms;
 }
 
-.maher-purchasing-table {
-  position: relative;
-  overflow: hidden;
-  animation:
-    maher-rise 460ms var(--maher-ease-out) both,
-    maher-scale-in 520ms var(--maher-ease-out) both;
-  animation-delay: 80ms, 80ms;
-  transition:
-    transform 220ms var(--maher-ease-out),
-    box-shadow 220ms var(--maher-ease-out);
-}
-
-.maher-purchasing-table::after {
-  content: '';
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: linear-gradient(
-    105deg,
-    transparent 35%,
-    color-mix(in srgb, var(--maher-brand) 10%, transparent) 50%,
-    transparent 65%
-  );
-  transform: translateX(-120%) skewX(-16deg);
-  animation: maher-sheen 1100ms var(--maher-ease-out) 220ms both;
-}
-
-.maher-purchasing-table:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--maher-shadow-md);
-}
-
-.maher-purchasing-table tbody.maher-stagger-rows > tr {
-  animation-duration: 420ms;
-}
-
 .maher-purchasing-card {
-  position: relative;
-  overflow: hidden;
   animation-duration: 420ms;
   transition:
-    transform 220ms var(--maher-ease-out),
-    box-shadow 220ms var(--maher-ease-out),
-    border-color 220ms var(--maher-ease-out);
-}
-
-.maher-purchasing-card::after {
-  content: '';
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: linear-gradient(
-    105deg,
-    transparent 35%,
-    color-mix(in srgb, var(--maher-brand) 10%, transparent) 50%,
-    transparent 65%
-  );
-  transform: translateX(-120%) skewX(-16deg);
-  opacity: 0;
-}
-
-.maher-purchasing-card:hover::after {
-  opacity: 1;
-  animation: maher-sheen 900ms var(--maher-ease-out) both;
-}
-
-.maher-purchasing-card .maher-lift {
-  transition:
-    transform 180ms var(--maher-ease-out),
-    box-shadow 180ms var(--maher-ease-out);
-}
-
-.maher-purchasing-card .maher-lift:hover {
-  transform: translateY(-1px);
+    border-color 180ms var(--maher-ease-out),
+    background-color 180ms var(--maher-ease-out);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .maher-purchasing-panel,
   .maher-purchasing-filters > *,
   .maher-purchasing-results,
-  .maher-purchasing-table,
-  .maher-purchasing-table::after,
-  .maher-purchasing-card,
-  .maher-purchasing-card::after {
+  .maher-purchasing-card {
     animation: none !important;
     transform: none !important;
   }
 }
 
-/* Invoices list — filters + card grid choreography */
+/* Invoices list — filters + results enter */
 .maher-invoices-filters > * {
   animation-name: maher-slide-in-start !important;
   animation-duration: 420ms !important;
@@ -668,44 +594,18 @@ a {
 }
 
 .maher-invoices-card {
-  position: relative;
-  overflow: hidden;
   animation-duration: 420ms;
   transition:
-    transform 220ms var(--maher-ease-out),
-    box-shadow 220ms var(--maher-ease-out),
-    border-color 220ms var(--maher-ease-out);
+    border-color 180ms var(--maher-ease-out),
+    background-color 180ms var(--maher-ease-out);
 }
 
-.maher-invoices-card::after {
-  content: '';
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: linear-gradient(
-    105deg,
-    transparent 35%,
-    color-mix(in srgb, var(--maher-brand) 10%, transparent) 50%,
-    transparent 65%
-  );
-  transform: translateX(-120%) skewX(-16deg);
-  opacity: 0;
-}
-
-.maher-invoices-card:hover::after {
-  opacity: 1;
-  animation: maher-sheen 900ms var(--maher-ease-out) both;
-}
-
-.maher-invoices-card .maher-lift,
 .maher-invoices-filters .maher-lift {
   transition:
     transform 180ms var(--maher-ease-out),
     box-shadow 180ms var(--maher-ease-out);
 }
 
-.maher-invoices-card .maher-lift:hover,
 .maher-invoices-filters .maher-lift:hover {
   transform: translateY(-1px);
 }
@@ -713,8 +613,7 @@ a {
 @media (prefers-reduced-motion: reduce) {
   .maher-invoices-filters > *,
   .maher-invoices-results,
-  .maher-invoices-card,
-  .maher-invoices-card::after {
+  .maher-invoices-card {
     animation: none !important;
     transform: none !important;
   }

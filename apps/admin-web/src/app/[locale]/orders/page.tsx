@@ -232,23 +232,27 @@ function OrderCard({
         ) : null}
 
         <div className="mt-auto flex items-end justify-between gap-2 maher-card-rule-t pt-2">
-          <div className="min-w-0 space-y-0.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[10px] text-text-tertiary">{tSales('sellerPrice')}</span>
-              <Ltr className="text-sm font-bold tracking-tight text-text-primary">
-                {hasSeller ? `${sellerPrice.toFixed(2)} ${tCommon('currency')}` : '—'}
-              </Ltr>
+          <div className="min-w-0 space-y-1.5 text-start">
+            <div>
+              <p className="text-[10px] text-text-tertiary">{tSales('sellerPrice')}</p>
+              <p className="text-sm font-bold tracking-tight text-text-primary">
+                <Ltr>
+                  {hasSeller ? `${sellerPrice.toFixed(2)} ${tCommon('currency')}` : '—'}
+                </Ltr>
+              </p>
             </div>
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[10px] text-text-tertiary">{tSales('productionPrice')}</span>
-              <Ltr className="text-xs font-semibold text-text-secondary">
-                {hasProduction ? `${productionPrice.toFixed(2)} ${tCommon('currency')}` : '—'}
-              </Ltr>
+            <div>
+              <p className="text-[10px] text-text-tertiary">{tSales('productionPrice')}</p>
+              <p className="text-xs font-semibold text-text-secondary">
+                <Ltr>
+                  {hasProduction ? `${productionPrice.toFixed(2)} ${tCommon('currency')}` : '—'}
+                </Ltr>
+              </p>
             </div>
             {row.requiredDeliveryDate ? (
-              <Ltr className="truncate text-[10px] text-text-tertiary">
-                {row.requiredDeliveryDate.slice(0, 10)}
-              </Ltr>
+              <p className="truncate text-[10px] text-text-tertiary">
+                <Ltr>{row.requiredDeliveryDate.slice(0, 10)}</Ltr>
+              </p>
             ) : null}
           </div>
 

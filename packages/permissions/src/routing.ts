@@ -103,7 +103,7 @@ export function resolveHomePersona(user: AuthUser | null | undefined): HomePerso
 /** Expo Router href after mobile login — routes by admin / customer / employee surface. */
 export function resolveMobileHomeHref(user: AuthUser): string {
   const surface = resolveAppSurface(user);
-  if (surface === 'customer') return '/(app)/customer';
-  if (surface === 'employee') return '/(app)/employee';
-  return '/(app)/admin';
+  if (surface === 'customer') return '/(app)/(customer)/(tabs)';
+  if (surface === 'employee') return '/(app)/(employee)/(tabs)';
+  return '/(app)/(admin)/(tabs)';
 }

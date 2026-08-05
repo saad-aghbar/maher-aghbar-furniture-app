@@ -232,19 +232,19 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <p className="text-xs text-text-tertiary">{t('factoryOrderNumber')}</p>
-                <p className="mt-0.5 font-semibold tracking-tight" dir="ltr">
-                  {factoryNo}
+                <p className="mt-0.5 font-semibold tracking-tight">
+                  <Ltr>{factoryNo}</Ltr>
                 </p>
                 {salesNo ? (
-                  <p className="mt-1 text-[11px] text-text-tertiary" dir="ltr">
-                    {t('salesOrderNumber')}: {salesNo}
+                  <p className="mt-1 text-[11px] text-text-tertiary">
+                    {t('salesOrderNumber')}: <Ltr>{salesNo}</Ltr>
                   </p>
                 ) : null}
               </div>
               <div>
                 <p className="text-xs text-text-tertiary">{t('taskNumber')}</p>
-                <p className="mt-0.5 font-medium" dir="ltr">
-                  {data.number}
+                <p className="mt-0.5 font-medium">
+                  <Ltr>{data.number}</Ltr>
                 </p>
               </div>
             </div>

@@ -237,7 +237,7 @@ function InvoicesPageInner() {
         <Skeleton className="h-8 w-48 maher-animate-fade" />
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-52 rounded-2xl maher-animate-rise" />
+            <Skeleton key={i} className="h-44 rounded-xl maher-animate-rise" />
           ))}
         </div>
       </div>
@@ -334,116 +334,111 @@ function InvoicesPageInner() {
         ) : (
           <>
             <div
-              className={`maher-invoices-results maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3 ${
+              className={`maher-invoices-results maher-stagger grid gap-3 md:grid-cols-2 ${
                 listQuery.isFetching ? 'opacity-70 transition-opacity' : ''
               }`}
             >
               {rows.map((row) => {
                 const overdue = isOverdue(row);
-                return (
-                  <div
-                    key={row.id}
-                    className="maher-list-card maher-invoices-card group relative flex flex-col rounded-2xl border border-border bg-surface p-6 transition duration-200 hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-[var(--maher-shadow-md)]"
-                  >
-                    <Link
-                      href={`/invoices/${row.id}`}
-                      className="absolute inset-0 z-0 rounded-2xl"
-                      aria-label={row.number}
-                    />
+                const outstanding = Number(row.outstandingAmount ?? 0);
+                const settled = Number.isFinite(outstanding) && outstanding <= 0;
+                const factoryNo = row.salesOrder?.number ?? null;
+                const dealerNo = row.salesOrder?.externalOrderNumber?.trim() || null;
 
-                    <div className="relative z-[1] flex items-start justify-between gap-3">
+                return (
+                  <article
+                    key={row.id}
+                    className={cn(
+                      'maher-invoices-card flex flex-col rounded-xl border bg-surface',
+                      overdue
+                        ? 'border-[color-mix(in_srgb,var(--maher-error)_40%,var(--maher-border))] border-s-[3px] border-s-[var(--maher-error)]'
+                        : 'border-border',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3 px-5 pt-5">
                       <div className="min-w-0">
-                        <Ltr className="block truncate text-xl font-semibold tracking-tight text-text-primary transition-colors group-hover:text-brand">
-                          {row.number}
-                        </Ltr>
-                        <p className="mt-1 truncate text-sm text-text-secondary">
+                        <p className="truncate text-base font-semibold tracking-tight text-text-primary">
+                          <Ltr>{row.number}</Ltr>
+                        </p>
+                        <p className="mt-0.5 truncate text-sm text-text-secondary">
                           {invoiceCustomerName(locale, row.customer)}
                         </p>
                       </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1">
-                        <StatusBadge status={row.status} />
-                        {overdue ? (
-                          <span className="text-[11px] font-medium text-red-600">
-                            {ta('overdueHint')}
-                          </span>
-                        ) : null}
-                      </div>
+                      <StatusBadge status={row.status} />
                     </div>
 
-                    <div className="relative z-[1] mt-6 maher-card-rule-y py-3">
-                      <div className="grid grid-cols-3">
-                        <div className="flex min-w-0 flex-col items-center gap-1.5 px-2.5 py-0.5 text-center">
-                          <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                            {ta('factoryOrderShort')}
-                          </span>
-                          <span
-                            dir="ltr"
-                            className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
+                    <div className="flex flex-1 flex-col justify-center px-5 py-5">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
+                        {ta('outstanding')}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+                        <p
+                          className={cn(
+                            'text-[1.75rem] font-semibold leading-none tracking-tight',
+                            overdue
+                              ? 'text-[var(--maher-error)]'
+                              : settled
+                                ? 'text-text-secondary'
+                                : 'text-text-primary',
+                          )}
+                        >
+                          <Ltr>{money(row.outstandingAmount, currency)}</Ltr>
+                        </p>
+                        <div className="text-start">
+                          <p className="text-[11px] text-text-tertiary">{ta('dueDate')}</p>
+                          <p
+                            className={cn(
+                              'mt-0.5 text-sm font-medium',
+                              overdue ? 'text-[var(--maher-error)]' : 'text-text-primary',
+                            )}
                           >
-                            {row.salesOrder?.number ?? '—'}
-                          </span>
-                        </div>
-                        <div className="flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
-                          <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                            {ta('dealerOrderShort')}
-                          </span>
-                          <span
-                            dir="ltr"
-                            className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
-                          >
-                            {row.salesOrder?.externalOrderNumber?.trim() || '—'}
-                          </span>
-                        </div>
-                        <div className="flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
-                          <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                            {ta('dueDateShort')}
-                          </span>
-                          <span
-                            dir="ltr"
-                            className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
-                          >
-                            {row.dueDate ? row.dueDate.slice(0, 10) : '—'}
-                          </span>
+                            <Ltr>{row.dueDate ? row.dueDate.slice(0, 10) : '—'}</Ltr>
+                          </p>
+                          {overdue ? (
+                            <p className="mt-0.5 text-[11px] font-semibold text-[var(--maher-error)]">
+                              {ta('overdueHint')}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
-                    </div>
-
-                    <div className="relative z-[1] mt-4 flex items-end justify-between gap-4">
-                      <div>
-                        <p className="text-[11px] text-text-tertiary">{ta('amount')}</p>
-                        <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
+                      <p className="mt-2 text-xs text-text-tertiary">
+                        {ta('total')}{' '}
+                        <Ltr className="font-medium text-text-secondary">
                           {money(row.total, currency)}
                         </Ltr>
-                      </div>
-                      <div className="text-end">
-                        <p className="text-[11px] text-text-tertiary">{ta('outstanding')}</p>
-                        <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
-                          {money(row.outstandingAmount, currency)}
-                        </Ltr>
-                      </div>
+                      </p>
                     </div>
 
-                    <div className="relative z-[1] mt-4 flex flex-wrap items-center gap-2 maher-card-rule-t pt-3">
-                      <Link
-                        href={`/invoices/${row.id}`}
-                        className="maher-lift text-sm font-medium text-brand transition hover:underline"
-                      >
-                        {ta('viewDetails')}
-                      </Link>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="maher-lift"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          window.open(`${API_URL}/api/v1/invoices/${row.id}/pdf`, '_blank');
-                        }}
-                      >
-                        {tc('pdf')}
-                      </Button>
+                    <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
+                      <p className="min-w-0 truncate text-xs text-text-tertiary">
+                        {[
+                          factoryNo
+                            ? `${ta('factoryOrderShort')} ${factoryNo}`
+                            : null,
+                          dealerNo ? `${ta('dealerOrderShort')} ${dealerNo}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || '—'}
+                      </p>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Link
+                          href={`/invoices/${row.id}`}
+                          className="rounded-md px-2.5 py-1.5 text-sm font-medium text-brand transition hover:bg-[var(--maher-brand-soft)]"
+                        >
+                          {ta('viewDetails')}
+                        </Link>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            window.open(`${API_URL}/api/v1/invoices/${row.id}/pdf`, '_blank');
+                          }}
+                        >
+                          {tc('pdf')}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>

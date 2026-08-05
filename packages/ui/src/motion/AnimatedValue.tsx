@@ -18,7 +18,13 @@ export function AnimatedValue({
 }: AnimatedValueProps) {
   const n = useCountUp(value, enabled, durationMs);
   return (
-    <span dir="ltr" className={cn(className)}>
+    <span
+      dir="ltr"
+      className={cn(
+        'inline-block tabular-nums [unicode-bidi:isolate] [text-align:match-parent]',
+        className,
+      )}
+    >
       {n.toLocaleString()}
     </span>
   );

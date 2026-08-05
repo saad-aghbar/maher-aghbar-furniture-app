@@ -88,7 +88,7 @@ export function TableCell({ className, ...props }: HTMLAttributes<HTMLTableCellE
   );
 }
 
-/** Table cell for codes, money, qty, %, dates — always LTR so RTL pages stay aligned. */
+/** Table cell for codes, money, qty, %, dates — LTR digits, parent-aligned in RTL. */
 export function TableNumericCell({
   className,
   ...props
@@ -96,7 +96,10 @@ export function TableNumericCell({
   return (
     <TableCell
       dir="ltr"
-      className={cn('whitespace-nowrap tabular-nums', className)}
+      className={cn(
+        'whitespace-nowrap tabular-nums [unicode-bidi:isolate] [text-align:match-parent]',
+        className,
+      )}
       {...props}
     />
   );
@@ -109,7 +112,10 @@ export function TableNumericHeader({
   return (
     <TableHeaderCell
       dir="ltr"
-      className={cn('whitespace-nowrap tabular-nums', className)}
+      className={cn(
+        'whitespace-nowrap tabular-nums [unicode-bidi:isolate] [text-align:match-parent]',
+        className,
+      )}
       {...props}
     />
   );

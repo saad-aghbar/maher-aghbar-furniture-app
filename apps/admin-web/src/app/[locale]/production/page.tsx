@@ -183,9 +183,9 @@ function ProductionCard({
 
       <div className="flex flex-1 flex-col gap-1.5 p-2.5">
         <div className="space-y-0.5">
-          <Ltr className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-            {row.number}
-          </Ltr>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+            <Ltr>{row.number}</Ltr>
+          </p>
           {systemNo ? (
             <p className="truncate text-[11px] text-text-secondary">
               <span className="text-text-tertiary">{systemOrderLabel}: </span>

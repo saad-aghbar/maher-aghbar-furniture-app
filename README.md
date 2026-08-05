@@ -8,9 +8,9 @@ The system has exactly **three** account types:
 
 | Type | Role code | Portal |
 |------|-----------|--------|
-| **Admin** | `SYSTEM_ADMINISTRATOR` | Admin web (`:3000`) + mobile |
-| **Customer** | `CUSTOMER` | Customer portal (`:3001`) + mobile — one login per dealer |
-| **Worker** | `PRODUCTION_WORKER` | Employee portal (`:3002`) + mobile — floor tasks, QC, delivery |
+| **Admin** | `SYSTEM_ADMINISTRATOR` | Admin web (`:3000`) |
+| **Customer** | `CUSTOMER` | Customer portal (`:3001`) — one login per dealer |
+| **Worker** | `PRODUCTION_WORKER` | Employee portal (`:3002`) — floor tasks, QC, delivery |
 
 Every dealer (customer company/showroom) has a linked **customer** login for the portal.
 
@@ -21,13 +21,8 @@ Every dealer (customer company/showroom) has a linked **customer** login for the
 | Admin Web | http://localhost:3000 | Admin |
 | Customer Portal | http://localhost:3001 | Customers (dealers) |
 | Employee Portal | http://localhost:3002 | Workers |
-| **Mobile (unified)** | Expo — `pnpm mobile:start` | All three account types |
 | API + Swagger | http://localhost:4000/api/docs | Integrations |
 | Worker | background | PDF, AI/OCR, notifications |
-
-One mobile login serves admin, customer, and worker. Navigation is built from **backend permissions**.
-
-Mobile docs: [docs/mobile-audit.md](docs/mobile-audit.md), [docs/mobile-local-development.md](docs/mobile-local-development.md).
 
 ## Stack
 
@@ -52,12 +47,7 @@ cp .env.example .env   # first time only
 pnpm install
 pnpm prepare:launch    # infra, schema, seed, build all apps
 pnpm launch            # API + 3 portals + worker
-pnpm mobile:start      # unified Expo app (second terminal)
 ```
-
-For mobile, scan the QR code with **Expo Go** — no Xcode or Android Studio
-needed. The app reads the API host from the Expo dev server, so a physical phone
-works as long as it shares the Mac's Wi-Fi.
 
 Stop web stack:
 
@@ -90,7 +80,7 @@ Still only three **types** (admin / customer / worker). Specialty floor logins a
 
 | Username | Password | Type | App / specialty |
 |----------|----------|------|-----------------|
-| `admin` | `Admin@12345!` | Admin | Admin web / mobile — assign stages, run the factory |
+| `admin` | `Admin@12345!` | Admin | Admin web — assign stages, run the factory |
 | `worker` | `Admin@12345!` | Worker | Material prep (WH) |
 | `carpenter` | `Admin@12345!` | Worker | Carpentry — Cedar PO |
 | `carpenter2` | `Admin@12345!` | Worker | Carpentry — Olive PO (same specialty, isolated tasks) |
@@ -118,7 +108,6 @@ Login URLs:
 - Admin: http://localhost:3000/ar/login
 - Customer: http://localhost:3001/ar/login
 - Employee: http://localhost:3002/ar/login
-- Mobile: Expo Go via `pnpm mobile:start`
 
 ## Scripts
 
@@ -127,9 +116,6 @@ Login URLs:
 | `pnpm prepare:launch` | Ensure Postgres/Redis, push schema, seed, build |
 | `pnpm start:all` | Start API + portals + worker |
 | `pnpm stop:all` | Stop all local services |
-| `pnpm mobile:start` | Expo Metro for unified mobile app |
-| `pnpm mobile:android` / `mobile:ios` | Open Android / iOS |
-| `pnpm mobile:typecheck` | Mobile TypeScript |
 | `pnpm smoke:lifecycle` | API smoke checks |
 | `pnpm smoke:workflow` | Critical-path accept→PO→QC→delivery smoke |
 | `pnpm smoke:scope` | Multi-customer + multi-worker isolation smoke |

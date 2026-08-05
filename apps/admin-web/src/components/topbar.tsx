@@ -19,9 +19,11 @@ interface NotificationItem {
 
 interface TopbarProps {
   onOpenSidebar: () => void;
+  /** Override hamburger visibility (e.g. `md:hidden` when embedded in Expo). */
+  menuButtonClassName?: string;
 }
 
-export function Topbar({ onOpenSidebar }: TopbarProps) {
+export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: TopbarProps) {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const tAuth = useTranslations('auth');
@@ -94,7 +96,8 @@ export function Topbar({ onOpenSidebar }: TopbarProps) {
         variant="ghost"
         size="icon"
         className={cn(
-          'maher-header-icon-btn lg:hidden',
+          'maher-header-icon-btn',
+          menuButtonClassName,
           overDark && 'text-white hover:bg-white/10 hover:text-white',
         )}
         aria-label={t('openMenu')}

@@ -244,14 +244,16 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold tracking-tight">{data.title || data.number}</h1>
-              <p className="mt-1 text-sm text-text-secondary" dir="ltr">
+              <p className="mt-1 text-sm text-text-secondary">
                 <span className="text-text-tertiary">{t('systemOrderNumber')}: </span>
-                {data.number}
+                <Ltr>{data.number}</Ltr>
                 {(data.externalOrderNumber || req?.externalOrderNumber) && (
                   <>
                     {' · '}
                     <span className="text-text-tertiary">{t('dealerOrderNumber')}: </span>
-                    {data.externalOrderNumber?.trim() || req?.externalOrderNumber}
+                    <Ltr>
+                      {data.externalOrderNumber?.trim() || req?.externalOrderNumber}
+                    </Ltr>
                   </>
                 )}
               </p>
@@ -361,8 +363,8 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
             {pos.map((po) => (
               <div key={po.id}>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-semibold" dir="ltr">
-                    {po.number}
+                  <p className="font-semibold">
+                    <Ltr>{po.number}</Ltr>
                   </p>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={po.status} />
@@ -472,8 +474,8 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
             {data.deliveries!.map((d) => (
               <li key={d.id} className="maher-list-card rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium" dir="ltr">
-                    {d.number}
+                  <p className="font-medium">
+                    <Ltr>{d.number}</Ltr>
                   </p>
                   <StatusBadge status={d.status} />
                 </div>

@@ -86,7 +86,7 @@ export const navItems: NavItem[] = [
   },
   {
     href: '/employees',
-    key: 'employees',
+    key: 'users',
     icon: UserCog,
     anyPermissions: ['user.manage'],
   },

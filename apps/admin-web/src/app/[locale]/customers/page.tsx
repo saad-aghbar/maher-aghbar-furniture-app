@@ -289,36 +289,36 @@ export default function CustomersPage() {
                 <div className="mt-6 grid grid-cols-3 maher-card-rule-divide maher-card-rule-y py-3">
                   <div className="px-2 text-center first:ps-0 last:pe-0">
                     <p className="text-[11px] text-text-tertiary">{t('ordersWaiting')}</p>
-                    <Ltr className="mt-1 block text-xl font-semibold tracking-tight text-text-primary">
-                      {waiting}
-                    </Ltr>
+                    <p className="mt-1 text-xl font-semibold tracking-tight text-text-primary">
+                      <Ltr>{waiting}</Ltr>
+                    </p>
                   </div>
                   <div className="px-2 text-center">
                     <p className="text-[11px] text-text-tertiary">{t('ordersInWork')}</p>
-                    <Ltr className="mt-1 block text-xl font-semibold tracking-tight text-text-primary">
-                      {inWork}
-                    </Ltr>
+                    <p className="mt-1 text-xl font-semibold tracking-tight text-text-primary">
+                      <Ltr>{inWork}</Ltr>
+                    </p>
                   </div>
                   <div className="px-2 text-center">
                     <p className="text-[11px] text-text-tertiary">{t('ordersDone')}</p>
-                    <Ltr className="mt-1 block text-xl font-semibold tracking-tight text-text-primary">
-                      {done}
-                    </Ltr>
+                    <p className="mt-1 text-xl font-semibold tracking-tight text-text-primary">
+                      <Ltr>{done}</Ltr>
+                    </p>
                   </div>
                 </div>
 
                 <div className="mt-4 flex items-end justify-between gap-4">
-                  <div>
+                  <div className="text-start">
                     <p className="text-[11px] text-text-tertiary">{t('amountPaid')}</p>
-                    <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
-                      {money(paid, currency)}
-                    </Ltr>
+                    <p className="mt-0.5 text-sm font-medium text-text-primary">
+                      <Ltr>{money(paid, currency)}</Ltr>
+                    </p>
                   </div>
-                  <div className="text-end">
+                  <div className="text-start">
                     <p className="text-[11px] text-text-tertiary">{t('amountLeft')}</p>
-                    <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
-                      {money(left, currency)}
-                    </Ltr>
+                    <p className="mt-0.5 text-sm font-medium text-text-primary">
+                      <Ltr>{money(left, currency)}</Ltr>
+                    </p>
                   </div>
                 </div>
               </Link>

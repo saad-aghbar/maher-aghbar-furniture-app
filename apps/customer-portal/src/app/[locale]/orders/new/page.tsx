@@ -13,6 +13,7 @@ import {
   PageHero,
   Select,
   TextArea,
+  Ltr,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import type { AuthUser } from '@maher/types';
@@ -594,8 +595,8 @@ function CreateOrderForm() {
             : tc('orderSubmittedBody', { number: confirmNumber })}
         </p>
         {confirmNumber ? (
-          <p className="mt-3 text-lg font-semibold tracking-tight text-text-primary" dir="ltr">
-            {confirmNumber}
+          <p className="mt-3 text-lg font-semibold tracking-tight text-text-primary">
+            <Ltr>{confirmNumber}</Ltr>
           </p>
         ) : null}
       </Modal>

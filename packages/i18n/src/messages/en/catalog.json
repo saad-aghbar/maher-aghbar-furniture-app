@@ -409,7 +409,7 @@
     "FINISHED": "Finished",
     "OTHER": "Other"
   },
-  "employeesDescription": "All login accounts in one place — staff, portal customers, roles, and departments. Edit anyone directly from this list.",
+  "employeesDescription": "All login accounts in one place — staff, customers, admins, roles, and departments. Edit anyone directly from this list.",
   "manageUsers": "Manage users",
   "noEmployees": "No people found",
   "roleSaved": "Role saved.",

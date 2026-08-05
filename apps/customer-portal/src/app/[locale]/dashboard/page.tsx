@@ -926,9 +926,9 @@ export default function CustomerDashboard() {
                     </div>
                   </Link>
                   <div className="space-y-1 p-3">
-                    <Ltr className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-                      {row.number}
-                    </Ltr>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+                      <Ltr>{row.number}</Ltr>
+                    </p>
                     {dealerNo(row) ? (
                       <p className="truncate text-[11px] text-text-secondary">
                         <span className="text-text-tertiary">{tSales('dealerOrderNumber')}: </span>
@@ -1007,9 +1007,9 @@ export default function CustomerDashboard() {
                   </div>
                   <div className="space-y-1 p-3">
                     <p className="line-clamp-2 text-sm font-semibold text-text-primary">{title}</p>
-                    <Ltr className="block text-[10px] uppercase tracking-wide text-text-tertiary">
-                      {p.sku}
-                    </Ltr>
+                    <p className="text-[10px] uppercase tracking-wide text-text-tertiary">
+                      <Ltr>{p.sku}</Ltr>
+                    </p>
                     {Number.isFinite(price) ? (
                       <p className="text-sm font-medium text-accent">
                         <Ltr>

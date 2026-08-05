@@ -41,7 +41,7 @@ Status legend: **DONE** | **PARTIAL** | **DEFERRED**
 | AI / OCR | PARTIAL | Mock + local + OpenAI/HTTP when keys set |
 | Live WhatsApp / Email webhooks | PARTIAL | Email IMAP/webhook DONE; WhatsApp inbound + Meta/Twilio when keyed |
 | Supplier AP + ledger | DONE | PR compare/select + AP aging/ledger + cash flow |
-| Barcode / cycle-count mobile UX | PARTIAL | Scan API + expo-camera + typed fallback (no hardware gun) |
+| Barcode / cycle-count | PARTIAL | Inventory scan API + typed fallback (no dedicated hardware gun) |
 | True statutory GL | DEFERRED | No CoA / journals — operational AR/AP + management reports only |
 
 ## Critical path (this pass)

@@ -32,6 +32,7 @@ import {
   TabList,
   Tab,
   TabPanel,
+  cn,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -560,7 +561,7 @@ export default function PurchasingPage() {
                 </Select>
               </div>
               <div
-                className={`maher-purchasing-results maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3 ${
+                className={`maher-purchasing-results maher-stagger grid gap-3 lg:grid-cols-2 ${
                   poQuery.isFetching ? 'opacity-70 transition-opacity' : ''
                 }`}
               >
@@ -571,67 +572,65 @@ export default function PurchasingPage() {
                 ) : (
                   orders.map((row) => {
                     const warehouse = warehouses.find((w) => w.id === row.warehouseId);
+                    const lineCount = row.lines?.length ?? 0;
                     return (
-                      <div
+                      <article
                         key={row.id}
-                        className="maher-list-card maher-purchasing-card group relative flex flex-col rounded-2xl border border-border bg-surface p-6 transition duration-200 hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-[var(--maher-shadow-md)]"
+                        className="maher-purchasing-card flex flex-col rounded-xl border border-border bg-surface"
                       >
-                        <Link
-                          href={`/purchasing/${row.id}`}
-                          className="absolute inset-0 z-0 rounded-2xl"
-                          aria-label={row.number}
-                        />
-                        <div className="relative z-[1] flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <Ltr className="block truncate text-xl font-semibold tracking-tight text-text-primary transition-colors group-hover:text-brand">
-                              {row.number}
-                            </Ltr>
-                            <p className="mt-1 truncate text-sm text-text-secondary">
-                              {displaySupplierName(row.supplier)}
-                            </p>
-                          </div>
+                        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                           <StatusBadge status={row.status} />
-                        </div>
-                        <div className="relative z-[1] mt-6 maher-card-rule-y py-3">
-                          <div className="grid grid-cols-3">
-                            <div className="flex min-w-0 flex-col items-center gap-1.5 px-2.5 py-0.5 text-center">
-                              <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                                {tc('linesShort')}
-                              </span>
-                              <span
-                                dir="ltr"
-                                className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
-                              >
-                                {row.lines?.length ?? 0}
-                              </span>
-                            </div>
-                            <div className="col-span-2 flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
-                              <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                                {tc('warehouseShort')}
-                              </span>
-                              <span className="w-full truncate text-center text-sm font-semibold leading-5 tracking-tight text-text-primary">
-                                {warehouse
-                                  ? localizedName(locale, warehouse) || warehouse.code
-                                  : '—'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="relative z-[1] mt-4 flex items-end justify-between gap-4">
-                          <div>
-                            <p className="text-[11px] text-text-tertiary">{tc('totalShort')}</p>
-                            <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
-                              {money(row.total, currency)}
-                            </Ltr>
-                          </div>
                           <Link
                             href={`/purchasing/${row.id}`}
-                            className="maher-lift relative z-[1] text-sm font-medium text-brand transition hover:underline"
+                            className="rounded-md px-2 py-1 text-sm font-medium text-brand transition hover:bg-[var(--maher-brand-soft)]"
                           >
                             {tCommon('details')}
                           </Link>
                         </div>
-                      </div>
+
+                        <div className="flex flex-1 flex-col px-4 py-4">
+                          <p className="truncate text-lg font-semibold tracking-tight text-text-primary">
+                            <Ltr>{row.number}</Ltr>
+                          </p>
+                          <p className="mt-1 truncate text-sm text-text-secondary">
+                            {displaySupplierName(row.supplier)}
+                          </p>
+
+                          <div className="mt-4 flex min-h-[4.25rem] items-stretch overflow-hidden rounded-lg bg-[var(--maher-surface-muted)]">
+                            <div className="flex min-w-0 flex-1 flex-col justify-center px-3 py-2.5">
+                              <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-text-tertiary">
+                                {tc('linesShort')}
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-text-primary">
+                                <Ltr>{lineCount}</Ltr>
+                              </p>
+                            </div>
+                            <div
+                              className="flex shrink-0 items-center px-1 text-lg text-text-tertiary rtl:rotate-180"
+                              aria-hidden
+                            >
+                              →
+                            </div>
+                            <div className="flex min-w-0 flex-[1.4] flex-col justify-center px-3 py-2.5">
+                              <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-text-tertiary">
+                                {tc('warehouseShort')}
+                              </p>
+                              <p className="mt-1 truncate text-sm font-semibold text-text-primary">
+                                {warehouse
+                                  ? localizedName(locale, warehouse) || warehouse.code
+                                  : '—'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 text-start">
+                            <p className="text-xs text-text-tertiary">{tc('totalShort')}</p>
+                            <p className="mt-0.5 text-base font-semibold tracking-tight text-text-primary">
+                              <Ltr>{money(row.total, currency)}</Ltr>
+                            </p>
+                          </div>
+                        </div>
+                      </article>
                     );
                   })
                 )}
@@ -670,7 +669,7 @@ export default function PurchasingPage() {
                 </Select>
               </div>
               <div
-                className={`maher-purchasing-results maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3 ${
+                className={`maher-purchasing-results maher-stagger grid gap-3 lg:grid-cols-2 ${
                   prQuery.isFetching ? 'opacity-70 transition-opacity' : ''
                 }`}
               >
@@ -679,79 +678,65 @@ export default function PurchasingPage() {
                     <EmptyState title={tc('noPurchaseRequests')} />
                   </div>
                 ) : (
-                  requests.map((row) => (
-                    <div
-                      key={row.id}
-                      className="maher-list-card maher-purchasing-card group relative flex flex-col rounded-2xl border border-border bg-surface p-6 transition duration-200 hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-[var(--maher-shadow-md)]"
-                    >
-                      <Link
-                        href={`/purchasing/requests/${row.id}`}
-                        className="absolute inset-0 z-0 rounded-2xl"
-                        aria-label={row.number}
-                      />
-                      <div className="relative z-[1] flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <Ltr className="block truncate text-xl font-semibold tracking-tight text-text-primary transition-colors group-hover:text-brand">
-                            {row.number}
-                          </Ltr>
-                          <p className="mt-1 truncate text-sm text-text-secondary">
+                  requests.map((row) => {
+                    const offerCount = row.offers?.length ?? 0;
+                    const linkedPo = row.purchaseOrder?.number ?? null;
+                    return (
+                      <article
+                        key={row.id}
+                        className="maher-purchasing-card flex flex-col rounded-xl border border-border bg-surface"
+                      >
+                        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                          <StatusBadge status={row.status} />
+                          <Link
+                            href={`/purchasing/requests/${row.id}`}
+                            className="rounded-md px-2 py-1 text-sm font-medium text-brand transition hover:bg-[var(--maher-brand-soft)]"
+                          >
+                            {tCommon('details')}
+                          </Link>
+                        </div>
+
+                        <div className="flex flex-1 flex-col px-4 py-4">
+                          <p className="truncate text-lg font-semibold tracking-tight text-text-primary">
+                            <Ltr>{row.number}</Ltr>
+                          </p>
+                          <p className="mt-2 text-sm leading-snug text-text-primary">
+                            {row.reason?.trim() || (
+                              <span className="text-text-tertiary">—</span>
+                            )}
+                          </p>
+                          <p className="mt-2 truncate text-sm text-text-secondary">
                             {prSupplierLabel(row)}
                           </p>
-                        </div>
-                        <StatusBadge status={row.status} />
-                      </div>
-                      <div className="relative z-[1] mt-6 maher-card-rule-y py-3">
-                        <div className="grid grid-cols-3">
-                          <div className="flex min-w-0 flex-col items-center gap-1.5 px-2.5 py-0.5 text-center">
-                            <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                              {tc('reasonShort')}
+
+                          <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <span className="rounded-md bg-[var(--maher-surface-muted)] px-2.5 py-1 text-xs font-medium text-text-secondary">
+                              <Ltr>{offerCount}</Ltr> {tc('offersShort')}
                             </span>
-                            <span className="w-full truncate text-center text-xs font-semibold leading-4 tracking-tight text-text-primary">
-                              {row.reason?.trim() || '—'}
-                            </span>
+                            {linkedPo ? (
+                              <span className="rounded-md bg-[var(--maher-brand-soft)] px-2.5 py-1 text-xs font-medium text-brand">
+                                {tc('poShort')}{' '}
+                                <Ltr className="inline">{linkedPo}</Ltr>
+                              </span>
+                            ) : (
+                              <span className="rounded-md border border-dashed border-border px-2.5 py-1 text-xs text-text-tertiary">
+                                {tc('poShort')} —
+                              </span>
+                            )}
                           </div>
-                          <div className="flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
-                            <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                              {tc('poShort')}
+
+                          <p className="mt-4 truncate text-xs text-text-tertiary">
+                            {tc('warehouseShort')}:{' '}
+                            <span className="font-medium text-text-secondary">
+                              {row.warehouse
+                                ? localizedName(locale, row.warehouse) || row.warehouse.code
+                                : '—'}
                             </span>
-                            <span
-                              dir="ltr"
-                              className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
-                            >
-                              {row.purchaseOrder?.number ?? '—'}
-                            </span>
-                          </div>
-                          <div className="flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
-                            <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                              {tc('offersShort')}
-                            </span>
-                            <span
-                              dir="ltr"
-                              className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
-                            >
-                              {row.offers?.length ?? 0}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="relative z-[1] mt-4 flex items-end justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="text-[11px] text-text-tertiary">{tc('warehouseShort')}</p>
-                          <p className="mt-0.5 truncate text-sm font-medium text-text-primary">
-                            {row.warehouse
-                              ? localizedName(locale, row.warehouse) || row.warehouse.code
-                              : '—'}
                           </p>
                         </div>
-                        <Link
-                          href={`/purchasing/requests/${row.id}`}
-                          className="maher-lift shrink-0 text-sm font-medium text-brand transition hover:underline"
-                        >
-                          {tCommon('details')}
-                        </Link>
-                      </div>
-                    </div>
-                  ))
+                      </article>
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -788,7 +773,7 @@ export default function PurchasingPage() {
                 </Select>
               </div>
               <div
-                className={`maher-purchasing-results maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3 ${
+                className={`maher-purchasing-results maher-stagger grid gap-3 lg:grid-cols-2 ${
                   siQuery.isFetching ? 'opacity-70 transition-opacity' : ''
                 }`}
               >
@@ -797,91 +782,90 @@ export default function PurchasingPage() {
                     <EmptyState title={tc('noSupplierInvoices')} />
                   </div>
                 ) : (
-                  supplierInvoices.map((row) => (
-                    <div
-                      key={row.id}
-                      className="maher-list-card maher-purchasing-card group relative flex flex-col rounded-2xl border border-border bg-surface p-6 transition duration-200 hover:-translate-y-0.5 hover:border-brand/30 hover:shadow-[var(--maher-shadow-md)]"
-                    >
-                      <Link
-                        href={`/purchasing/supplier-invoices/${row.id}`}
-                        className="absolute inset-0 z-0 rounded-2xl"
-                        aria-label={row.number}
-                      />
-                      <div className="relative z-[1] flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <Ltr className="block truncate text-xl font-semibold tracking-tight text-text-primary transition-colors group-hover:text-brand">
-                            {row.number}
-                          </Ltr>
+                  supplierInvoices.map((row) => {
+                    const outstanding = Number(row.outstandingAmount ?? 0);
+                    const unpaid = Number.isFinite(outstanding) && outstanding > 0;
+                    return (
+                      <article
+                        key={row.id}
+                        className={cn(
+                          'maher-purchasing-card flex flex-col rounded-xl border bg-surface',
+                          unpaid
+                            ? 'border-[color-mix(in_srgb,var(--maher-warning,_#c48a2a)_35%,var(--maher-border))]'
+                            : 'border-border',
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                          <StatusBadge status={row.status} />
+                          <Link
+                            href={`/purchasing/supplier-invoices/${row.id}`}
+                            className="rounded-md px-2 py-1 text-sm font-medium text-brand transition hover:bg-[var(--maher-brand-soft)]"
+                          >
+                            {tCommon('details')}
+                          </Link>
+                        </div>
+
+                        <div className="flex flex-1 flex-col px-4 py-4">
+                          <p className="truncate text-lg font-semibold tracking-tight text-text-primary">
+                            <Ltr>{row.number}</Ltr>
+                          </p>
                           <p className="mt-1 truncate text-sm text-text-secondary">
                             {displaySupplierName(row.supplier)}
                           </p>
-                        </div>
-                        <StatusBadge status={row.status} />
-                      </div>
-                      <div className="relative z-[1] mt-6 maher-card-rule-y py-3">
-                        <div className="grid grid-cols-3">
-                          <div className="flex min-w-0 flex-col items-center gap-1.5 px-2.5 py-0.5 text-center">
-                            <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                              {tc('poShort')}
-                            </span>
-                            {row.purchaseOrder ? (
+
+                          {row.purchaseOrder ? (
+                            <p className="mt-3 text-xs text-text-tertiary">
+                              {tc('poShort')}{' '}
                               <Link
                                 href={`/purchasing/${row.purchaseOrder.id}`}
-                                className="relative z-[1] w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-brand hover:underline"
-                                dir="ltr"
-                                onClick={(e) => e.stopPropagation()}
+                                className="font-medium text-brand hover:underline"
                               >
-                                {row.purchaseOrder.number}
+                                <Ltr className="inline">{row.purchaseOrder.number}</Ltr>
                               </Link>
-                            ) : (
-                              <span
-                                dir="ltr"
-                                className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
-                              >
-                                —
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
-                            <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
-                              {tc('totalShort')}
-                            </span>
-                            <span
-                              dir="ltr"
-                              className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
-                            >
-                              {money(row.total, currency)}
-                            </span>
-                          </div>
-                          <div className="flex min-w-0 flex-col items-center gap-1.5 maher-card-rule-s px-2.5 py-0.5 text-center">
-                            <span className="h-4 w-full truncate text-center text-[11px] leading-4 text-text-tertiary">
+                            </p>
+                          ) : (
+                            <p className="mt-3 text-xs text-text-tertiary">
+                              {tc('poShort')} —
+                            </p>
+                          )}
+
+                          <div className="mt-4 rounded-lg bg-[var(--maher-surface-muted)] px-3 py-3 text-start">
+                            <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-text-tertiary">
                               {tc('outstandingShort')}
-                            </span>
-                            <span
-                              dir="ltr"
-                              className="w-full truncate text-center text-xs font-semibold leading-4 tabular-nums tracking-tight text-text-primary"
+                            </p>
+                            <p
+                              className={cn(
+                                'mt-1 text-xl font-semibold tracking-tight',
+                                unpaid ? 'text-text-primary' : 'text-text-secondary',
+                              )}
                             >
-                              {money(row.outstandingAmount, currency)}
-                            </span>
+                              <Ltr>{money(row.outstandingAmount, currency)}</Ltr>
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-tertiary">
+                              <span>
+                                {tc('totalShort')}{' '}
+                                <Ltr className="font-medium text-text-secondary">
+                                  {money(row.total, currency)}
+                                </Ltr>
+                              </span>
+                              <span>
+                                {tc('paid')}{' '}
+                                <Ltr className="font-medium text-text-secondary">
+                                  {money(row.paidAmount, currency)}
+                                </Ltr>
+                              </span>
+                            </div>
                           </div>
+
+                          {row.dueDate ? (
+                            <p className="mt-3 text-xs text-text-tertiary">
+                              <Ltr>{row.dueDate.slice(0, 10)}</Ltr>
+                            </p>
+                          ) : null}
                         </div>
-                      </div>
-                      <div className="relative z-[1] mt-4 flex items-end justify-between gap-4">
-                        <div>
-                          <p className="text-[11px] text-text-tertiary">{tc('paid')}</p>
-                          <Ltr className="mt-0.5 block text-sm font-medium text-text-primary">
-                            {money(row.paidAmount, currency)}
-                          </Ltr>
-                        </div>
-                        <Link
-                          href={`/purchasing/supplier-invoices/${row.id}`}
-                          className="maher-lift text-sm font-medium text-brand transition hover:underline"
-                        >
-                          {tCommon('details')}
-                        </Link>
-                      </div>
-                    </div>
-                  ))
+                      </article>
+                    );
+                  })
                 )}
               </div>
             </div>

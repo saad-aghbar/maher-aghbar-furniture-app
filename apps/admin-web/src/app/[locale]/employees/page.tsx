@@ -1,24 +1,25 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
+import {
+  DepartmentSearchPicker,
+  type DepartmentOption,
+} from '@/components/admin/department-search-picker';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
   Alert,
   Button,
+  Card,
   EmptyState,
   ErrorState,
   Input,
+  Ltr,
   Modal,
   PageHero,
   Select,
   Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
+  StatusBadge,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -54,12 +55,7 @@ interface RoleRow {
   nameAr: string;
 }
 
-interface DepartmentRow {
-  id: string;
-  code: string;
-  nameAr: string;
-  nameEn: string;
-}
+type DepartmentRow = DepartmentOption;
 
 interface UserFormState {
   username: string;
@@ -71,10 +67,13 @@ interface UserFormState {
   departmentId: string;
 }
 
-type Segment = 'staff' | 'customers' | 'all';
+type Segment = 'staff' | 'customers' | 'admins' | 'all';
 
-/** Operational staff + system admin (not portal customers). */
-const STAFF_ROLE_CODES = ['SYSTEM_ADMINISTRATOR', 'PRODUCTION_WORKER'] as const;
+const SEGMENT_ROLE_CODE: Record<Exclude<Segment, 'all'>, string> = {
+  staff: 'PRODUCTION_WORKER',
+  customers: 'CUSTOMER',
+  admins: 'SYSTEM_ADMINISTRATOR',
+};
 
 function namesFromUsername(username: string): { firstName: string; lastName: string } {
   const normalized = username.trim().toLowerCase();
@@ -100,7 +99,7 @@ const emptyForm = (): UserFormState => ({
   departmentId: '',
 });
 
-export default function EmployeesPage() {
+export default function UsersPage() {
   return (
     <Suspense
       fallback={
@@ -111,16 +110,14 @@ export default function EmployeesPage() {
         </div>
       }
     >
-      <EmployeesHub />
+      <UsersHub />
     </Suspense>
   );
 }
 
-function EmployeesHub() {
+function UsersHub() {
   const locale = useLocale();
   const t = useTranslations('users');
-  const tNav = useTranslations('navigation');
-  const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
   const tVal = useTranslations('validation');
   const queryClient = useQueryClient();
@@ -143,20 +140,24 @@ function EmployeesHub() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [editDeepLinkHandled, setEditDeepLinkHandled] = useState(false);
 
+  const showRoleFilter = segment === 'all';
+  const showDepartmentFilter = segment !== 'customers';
+  const showDepartmentColumn = segment !== 'customers';
+
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: '20' });
     if (q.trim()) params.set('q', q.trim());
-    if (roleCode) {
+    if (showRoleFilter && roleCode) {
       params.set('roleCode', roleCode);
-    } else if (segment === 'staff') {
-      params.set('roleCodes', STAFF_ROLE_CODES.join(','));
-    } else if (segment === 'customers') {
-      params.set('roleCode', 'CUSTOMER');
+    } else if (segment !== 'all') {
+      params.set('roleCode', SEGMENT_ROLE_CODE[segment]);
     }
-    if (departmentId) params.set('departmentId', departmentId);
+    if (showDepartmentFilter && departmentId) {
+      params.set('departmentId', departmentId);
+    }
     if (isActive) params.set('isActive', isActive);
     return params.toString();
-  }, [q, roleCode, departmentId, isActive, page, segment]);
+  }, [q, roleCode, departmentId, isActive, page, segment, showRoleFilter, showDepartmentFilter]);
 
   const usersQuery = useQuery({
     queryKey: ['people', listParams],
@@ -206,7 +207,10 @@ function EmployeesHub() {
             firstName,
             lastName,
             isActive: form.isActive,
-            departmentId: form.departmentId || null,
+            departmentId:
+              rolesQuery.data?.find((r) => r.id === form.roleId)?.code === 'CUSTOMER'
+                ? null
+                : form.departmentId || null,
             roleIds: [form.roleId],
             ...(form.password.trim() ? { password: form.password.trim() } : {}),
           }),
@@ -218,6 +222,8 @@ function EmployeesHub() {
       }
 
       const { firstName, lastName } = namesFromUsername(username);
+      const isCustomerRole =
+        rolesQuery.data?.find((r) => r.id === form.roleId)?.code === 'CUSTOMER';
 
       return apiFetch<UserRow & { temporaryPassword?: string }>('/api/v1/users', {
         method: 'POST',
@@ -226,7 +232,7 @@ function EmployeesHub() {
           firstName,
           lastName,
           roleIds: [form.roleId],
-          ...(form.departmentId ? { departmentId: form.departmentId } : {}),
+          ...(!isCustomerRole && form.departmentId ? { departmentId: form.departmentId } : {}),
           ...(form.password.trim() ? { password: form.password } : {}),
         }),
       });
@@ -278,13 +284,14 @@ function EmployeesHub() {
     onError: (err) => setConfirmError(mutationErrorMessage(err)),
   });
 
+  function preferredRoleIdForSegment(seg: Segment): string {
+    if (seg === 'all') return '';
+    return (rolesQuery.data ?? []).find((r) => r.code === SEGMENT_ROLE_CODE[seg])?.id ?? '';
+  }
+
   function openCreate() {
     setEditing(null);
-    const preferredRole =
-      segment === 'customers'
-        ? (rolesQuery.data ?? []).find((r) => r.code === 'CUSTOMER')?.id ?? ''
-        : '';
-    setForm({ ...emptyForm(), roleId: preferredRole });
+    setForm({ ...emptyForm(), roleId: preferredRoleIdForSegment(segment) });
     setFormError(null);
     setFormOpen(true);
   }
@@ -325,19 +332,14 @@ function EmployeesHub() {
 
   const roles = rolesQuery.data ?? [];
   const departments = departmentsQuery.data ?? [];
-  const filterRoles = useMemo(() => {
-    if (segment === 'staff') return roles.filter((r) => STAFF_ROLE_CODES.includes(r.code as (typeof STAFF_ROLE_CODES)[number]));
-    if (segment === 'customers') return roles.filter((r) => r.code === 'CUSTOMER');
-    return roles;
-  }, [roles, segment]);
-  const formRoles = useMemo(() => {
-    // Full role list so any account type can be created/edited from one place.
-    return roles;
-  }, [roles]);
+  const formRoles = roles;
+  const selectedFormRoleCode = roles.find((r) => r.id === form.roleId)?.code;
+  const showFormDepartment = selectedFormRoleCode !== 'CUSTOMER';
 
   const segments: Array<{ key: Segment; label: string }> = [
     { key: 'staff', label: t('segmentStaff') },
     { key: 'customers', label: t('segmentCustomers') },
+    { key: 'admins', label: t('segmentAdmins') },
     { key: 'all', label: t('segmentAll') },
   ];
 
@@ -354,7 +356,7 @@ function EmployeesHub() {
   if (usersQuery.isError && !usersQuery.data) {
     return (
       <ErrorState
-        title={tNav('employees')}
+        title={t('title')}
         description={tCommon('loadFailed')}
         onRetry={() => usersQuery.refetch()}
         retryLabel={tCommon('retry')}
@@ -368,10 +370,10 @@ function EmployeesHub() {
   return (
     <div className="space-y-6">
       <PageHero
-        title={tNav('employees')}
-        description={tc('employeesDescription')}
+        title={t('title')}
+        description={t('description')}
         tone="soft"
-        actions={<Button onClick={openCreate}>{t('addPerson')}</Button>}
+        actions={<Button onClick={openCreate}>{t('add')}</Button>}
       />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
@@ -384,6 +386,7 @@ function EmployeesHub() {
             onClick={() => {
               setSegment(s.key);
               setRoleCode('');
+              if (s.key === 'customers') setDepartmentId('');
               setPage(1);
             }}
             className={[
@@ -399,48 +402,53 @@ function EmployeesHub() {
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <Input
-          value={q}
-          onChange={(e) => {
-            setPage(1);
-            setQ(e.target.value);
-          }}
-          placeholder={t('searchPlaceholder')}
-          withSearchIcon
-          className="min-w-[220px] flex-1"
-        />
-        <Select
-          value={roleCode}
-          onChange={(e) => {
-            setPage(1);
-            setRoleCode(e.target.value);
-          }}
-          aria-label={t('filterRole')}
-          className="min-w-[160px]"
-        >
-          <option value="">{tCommon('all')}</option>
-          {filterRoles.map((role) => (
-            <option key={role.id} value={role.code}>
-              {localizedName(locale, role)}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={departmentId}
-          onChange={(e) => {
-            setPage(1);
-            setDepartmentId(e.target.value);
-          }}
-          aria-label={t('department')}
-          className="min-w-[160px]"
-        >
-          <option value="">{t('allDepartments')}</option>
-          {departments.map((dept) => (
-            <option key={dept.id} value={dept.id}>
-              {localizedName(locale, dept)}
-            </option>
-          ))}
-        </Select>
+        <div className="min-w-[min(100%,20rem)] flex-1 basis-[20rem]">
+          <Input
+            value={q}
+            onChange={(e) => {
+              setPage(1);
+              setQ(e.target.value);
+            }}
+            placeholder={t('searchPlaceholder')}
+            withSearchIcon
+          />
+        </div>
+        {showRoleFilter ? (
+          <Select
+            value={roleCode}
+            onChange={(e) => {
+              setPage(1);
+              setRoleCode(e.target.value);
+            }}
+            aria-label={t('filterRole')}
+            className="w-44 shrink-0"
+          >
+            <option value="">{tCommon('all')}</option>
+            {roles.map((role) => (
+              <option key={role.id} value={role.code}>
+                {localizedName(locale, role)}
+              </option>
+            ))}
+          </Select>
+        ) : null}
+        {showDepartmentFilter ? (
+          <Select
+            value={departmentId}
+            onChange={(e) => {
+              setPage(1);
+              setDepartmentId(e.target.value);
+            }}
+            aria-label={t('department')}
+            className="w-48 shrink-0"
+          >
+            <option value="">{t('allDepartments')}</option>
+            {departments.map((dept) => (
+              <option key={dept.id} value={dept.id}>
+                {localizedName(locale, dept)}
+              </option>
+            ))}
+          </Select>
+        ) : null}
         <Select
           value={isActive}
           onChange={(e) => {
@@ -448,7 +456,7 @@ function EmployeesHub() {
             setIsActive(e.target.value);
           }}
           aria-label={t('filterStatus')}
-          className="min-w-[140px]"
+          className="w-36 shrink-0"
         >
           <option value="">{tCommon('all')}</option>
           <option value="true">{t('active')}</option>
@@ -457,46 +465,27 @@ function EmployeesHub() {
       </div>
 
       {rows.length === 0 ? (
-        <EmptyState title={tc('noEmployees')} />
+        <EmptyState title={t('empty')} />
       ) : (
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>{t('name')}</TableHeaderCell>
-              <TableHeaderCell>{t('username')}</TableHeaderCell>
-              <TableHeaderCell>{t('roles')}</TableHeaderCell>
-              <TableHeaderCell>{t('department')}</TableHeaderCell>
-              <TableHeaderCell>{t('status')}</TableHeaderCell>
-              <TableHeaderCell>{t('lastLogin')}</TableHeaderCell>
-              <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  {row.firstName} {row.lastName}
-                </TableCell>
-                <TableCell>
-                  <span dir="ltr">{row.username ?? '—'}</span>
-                </TableCell>
-                <TableCell>
-                  {(row.roles ?? [])
-                    .map((ur) => localizedName(locale, ur.role))
-                    .join(', ') || '—'}
-                </TableCell>
-                <TableCell>
-                  {row.department ? localizedName(locale, row.department) : '—'}
-                </TableCell>
-                <TableCell>{row.isActive ? t('active') : t('inactive')}</TableCell>
-                <TableCell>
-                  {row.lastLoginAt ? (
-                    <span dir="ltr">{new Date(row.lastLoginAt).toLocaleString()}</span>
-                  ) : (
-                    t('never')
-                  )}
-                </TableCell>
-                <TableCell>
+        <div className="maher-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {rows.map((row) => {
+            const roleLabel =
+              (row.roles ?? [])
+                .map((ur) => localizedName(locale, ur.role))
+                .join(', ') || '—';
+            return (
+              <Card
+                key={row.id}
+                className="maher-list-card"
+                title={`${row.firstName} ${row.lastName}`}
+                description={<Ltr>{row.username ?? '—'}</Ltr>}
+                actions={
+                  <StatusBadge
+                    status={row.isActive ? 'ACTIVE' : 'INACTIVE'}
+                    label={row.isActive ? t('active') : t('inactive')}
+                  />
+                }
+                footer={
                   <div className="flex flex-wrap gap-1">
                     <Button size="sm" variant="secondary" onClick={() => openEdit(row)}>
                       {tCommon('edit')}
@@ -535,11 +524,36 @@ function EmployeesHub() {
                       {t('resetPassword')}
                     </Button>
                   </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                }
+              >
+                <dl className="grid gap-2.5 text-sm text-start">
+                  <div>
+                    <dt className="text-text-tertiary">{t('roles')}</dt>
+                    <dd className="mt-0.5 text-text-primary">{roleLabel}</dd>
+                  </div>
+                  {showDepartmentColumn ? (
+                    <div>
+                      <dt className="text-text-tertiary">{t('department')}</dt>
+                      <dd className="mt-0.5 text-text-primary">
+                        {row.department ? localizedName(locale, row.department) : '—'}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt className="text-text-tertiary">{t('lastLogin')}</dt>
+                    <dd className="mt-0.5 text-text-primary">
+                      {row.lastLoginAt ? (
+                        <Ltr>{new Date(row.lastLoginAt).toLocaleString()}</Ltr>
+                      ) : (
+                        t('never')
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
       {meta && meta.totalPages > 1 ? (
@@ -569,7 +583,7 @@ function EmployeesHub() {
       <Modal
         open={formOpen}
         onClose={() => !saveMutation.isPending && setFormOpen(false)}
-        title={editing ? t('editPerson') : t('addPerson')}
+        title={editing ? t('edit') : t('add')}
         className="max-w-xl"
         footer={
           <>
@@ -633,7 +647,15 @@ function EmployeesHub() {
           <Select
             label={`${t('roles')} *`}
             value={form.roleId}
-            onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
+            onChange={(e) => {
+              const nextRoleId = e.target.value;
+              const nextCode = roles.find((r) => r.id === nextRoleId)?.code;
+              setForm((f) => ({
+                ...f,
+                roleId: nextRoleId,
+                ...(nextCode === 'CUSTOMER' ? { departmentId: '' } : {}),
+              }));
+            }}
             required
           >
             <option value="">—</option>
@@ -643,18 +665,16 @@ function EmployeesHub() {
               </option>
             ))}
           </Select>
-          <Select
-            label={t('department')}
-            value={form.departmentId}
-            onChange={(e) => setForm((f) => ({ ...f, departmentId: e.target.value }))}
-          >
-            <option value="">{t('noDepartment')}</option>
-            {departments.map((dept) => (
-              <option key={dept.id} value={dept.id}>
-                {localizedName(locale, dept)}
-              </option>
-            ))}
-          </Select>
+          {showFormDepartment ? (
+            <DepartmentSearchPicker
+              label={t('department')}
+              value={form.departmentId}
+              selectedDepartment={
+                departments.find((d) => d.id === form.departmentId) ?? null
+              }
+              onChange={(id) => setForm((f) => ({ ...f, departmentId: id }))}
+            />
+          ) : null}
         </div>
       </Modal>
 

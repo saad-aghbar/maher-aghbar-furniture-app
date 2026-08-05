@@ -168,38 +168,9 @@ NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/customer-portal 
 NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" pnpm --filter @maher/employee-portal build
 unset NODE_ENV || true
 
-echo "==> Mobile typecheck"
-pnpm --filter @maher/mobile typecheck
-
-# Keep the API URL unpinned for local Expo development. The mobile app derives
-# the Mac's LAN host from Metro, so physical devices do not call themselves.
-python3 - <<PY
-from pathlib import Path
-root = Path("$ROOT")
-mobile_env = root / "apps" / "mobile" / ".env"
-lines = [
-    "EXPO_PUBLIC_ENVIRONMENT=local",
-]
-mobile_env.write_text("\n".join(lines) + "\n")
-# Keep only the environment marker in the root env as well.
-env = root / ".env"
-text = env.read_text()
-out = [
-    line
-    for line in text.splitlines()
-    if not line.startswith("EXPO_PUBLIC_API_BASE_URL=")
-]
-keys = {l.split("=",1)[0] for l in out if "=" in l and not l.strip().startswith("#")}
-if "EXPO_PUBLIC_ENVIRONMENT" not in keys:
-    out.append("EXPO_PUBLIC_ENVIRONMENT=local")
-env.write_text("\n".join(out) + "\n")
-print(f"Wrote {mobile_env}")
-PY
-
 echo ""
 echo "==> Launch ready"
 echo "Web stack:   pnpm start:all"
-echo "Mobile:      pnpm mobile:start"
 echo "Stop web:    pnpm stop:all"
 echo "One-shot:    pnpm launch"
 

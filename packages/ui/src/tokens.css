@@ -624,6 +624,16 @@ html.maher-theme-fade body {
   transform: translate(-2px, -2px) scale(1.05);
 }
 
+/**
+ * Codes, money, phones, and dates use dir="ltr" for correct digit order.
+ * In RTL pages they must still align to the reading start (right) — inherit
+ * the parent's alignment instead of forcing left via LTR start-edge.
+ */
+[dir='rtl'] [dir='ltr'] {
+  unicode-bidi: isolate;
+  text-align: match-parent;
+}
+
 .maher-dash-card:hover .maher-dash-value {
   animation: maher-value-glint 900ms ease-in-out;
 }
