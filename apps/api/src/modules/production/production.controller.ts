@@ -17,6 +17,12 @@ export class ProductionController {
     return this.production.list(query, user);
   }
 
+  @RequirePermissions('production-order.assign')
+  @Get('assignable-workers')
+  listAssignableWorkers(@Query('q') q?: string) {
+    return this.production.listAssignableWorkers(q);
+  }
+
   @RequirePermissions('production-order.read')
   @Get(':id')
   getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {

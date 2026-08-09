@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 :root {
-  --font-primary: var(--font-ibm-sans), var(--font-ibm-arabic), system-ui, sans-serif;
+  --font-primary: var(--font-latin-sans), var(--font-arabic-sans), system-ui, sans-serif;
 }
 
 html,

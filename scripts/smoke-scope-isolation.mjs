@@ -58,7 +58,7 @@ function ok(name, cond, detail = '') {
 
 async function login(username) {
   const res = await request('POST', '/api/v1/auth/login', {
-    body: { username, password: 'Admin@12345!' },
+    body: { username, password: '123' },
   });
   return { status: res.status, cookie: cookieHeader(res.setCookie), user: res.json?.user };
 }
@@ -66,56 +66,56 @@ async function login(username) {
 const admin = await login('admin');
 ok('admin login', admin.status === 200 || admin.status === 201);
 
-const cedar = await login('cedar');
-ok('cedar customer login', cedar.status === 200 || cedar.status === 201, cedar.user?.customerId ?? '');
+const nile = await login('nile');
+ok('nile customer login', nile.status === 200 || nile.status === 201, nile.user?.customerId ?? '');
 
-const olive = await login('olive');
+const oasis = await login('oasis');
 ok(
-  'olive customer login',
-  olive.status === 200 || olive.status === 201,
-  olive.user?.customerId ?? '',
+  'oasis customer login',
+  oasis.status === 200 || oasis.status === 201,
+  oasis.user?.customerId ?? '',
 );
 ok(
   'customers linked to different companies',
-  Boolean(cedar.user?.customerId && olive.user?.customerId) &&
-    cedar.user.customerId !== olive.user.customerId,
-  `${cedar.user?.customerId} vs ${olive.user?.customerId}`,
+  Boolean(nile.user?.customerId && oasis.user?.customerId) &&
+    nile.user.customerId !== oasis.user.customerId,
+  `${nile.user?.customerId} vs ${oasis.user?.customerId}`,
 );
 
-const cedarOrders = await request('GET', '/api/v1/sales-orders?pageSize=50', {
-  cookie: cedar.cookie,
+const nileOrders = await request('GET', '/api/v1/sales-orders?pageSize=50', {
+  cookie: nile.cookie,
 });
-const oliveOrders = await request('GET', '/api/v1/sales-orders?pageSize=50', {
-  cookie: olive.cookie,
+const oasisOrders = await request('GET', '/api/v1/sales-orders?pageSize=50', {
+  cookie: oasis.cookie,
 });
-ok('cedar orders scoped', cedarOrders.status === 200);
-ok('olive orders scoped', oliveOrders.status === 200);
+ok('nile orders scoped', nileOrders.status === 200);
+ok('oasis orders scoped', oasisOrders.status === 200);
 
-const cedarIds = new Set((cedarOrders.json?.data ?? []).map((o) => o.id));
-const oliveIds = new Set((oliveOrders.json?.data ?? []).map((o) => o.id));
-const overlap = [...cedarIds].filter((id) => oliveIds.has(id));
+const nileIds = new Set((nileOrders.json?.data ?? []).map((o) => o.id));
+const oasisIds = new Set((oasisOrders.json?.data ?? []).map((o) => o.id));
+const overlap = [...nileIds].filter((id) => oasisIds.has(id));
 ok('no shared sales orders between customers', overlap.length === 0, `overlap=${overlap.length}`);
 
-for (const order of cedarOrders.json?.data ?? []) {
+for (const order of nileOrders.json?.data ?? []) {
   ok(
-    `cedar order belongs to cedar (${order.number})`,
-    order.customer?.id === cedar.user.customerId || order.customerId === cedar.user.customerId,
+    `nile order belongs to nile (${order.number})`,
+    order.customer?.id === nile.user.customerId || order.customerId === nile.user.customerId,
   );
 }
-for (const order of oliveOrders.json?.data ?? []) {
+for (const order of oasisOrders.json?.data ?? []) {
   ok(
-    `olive order belongs to olive (${order.number})`,
-    order.customer?.id === olive.user.customerId || order.customerId === olive.user.customerId,
+    `oasis order belongs to oasis (${order.number})`,
+    order.customer?.id === oasis.user.customerId || order.customerId === oasis.user.customerId,
   );
 }
 
-if ((cedarOrders.json?.data ?? []).length > 0) {
-  const foreignId = cedarOrders.json.data[0].id;
+if ((nileOrders.json?.data ?? []).length > 0) {
+  const foreignId = nileOrders.json.data[0].id;
   const blocked = await request('GET', `/api/v1/sales-orders/${foreignId}`, {
-    cookie: olive.cookie,
+    cookie: oasis.cookie,
   });
   ok(
-    'olive cannot open cedar sales order',
+    'oasis cannot open nile sales order',
     blocked.status === 403 || blocked.status === 404,
     String(blocked.status),
   );
@@ -165,11 +165,11 @@ if (foreignForCarpenter2) {
   ok('carpenter2 cannot open carpenter task', true, 'no carpenter-owned task in list');
 }
 
-const worker = await login('worker');
+const worker = await login('cutter');
 ok('worker (material prep) login', worker.status === 200 || worker.status === 201);
 
-const villa = await login('villa');
-ok('villa customer login', villa.status === 200 || villa.status === 201);
+const balqis = await login('balqis');
+ok('balqis customer login', balqis.status === 200 || balqis.status === 201);
 
 const failed = steps.filter((s) => !s.ok);
 console.log(`\n${steps.length - failed.length}/${steps.length} passed`);

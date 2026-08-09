@@ -73,6 +73,17 @@ class ExtractPreviewDto {
   mimeHint?: string;
 }
 
+class CorrectAiJobDto {
+  @IsObject()
+  fieldOverrides!: Record<string, string>;
+}
+
+class ManualAiJobDto {
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 class LinkJobDto {
   @IsUUID()
   requestId!: string;
@@ -153,6 +164,26 @@ export class AiIntakeController {
   @RequirePermissions('ai-intake.read')
   get(@Param('id') id: string) {
     return this.ai.get(id);
+  }
+
+  @Post('jobs/:id/correct')
+  @RequirePermissions('ai-intake.manage')
+  correct(
+    @Param('id') id: string,
+    @Body() dto: CorrectAiJobDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ai.correctFields(id, dto.fieldOverrides ?? {}, user.id);
+  }
+
+  @Post('jobs/:id/manual')
+  @RequirePermissions('ai-intake.manage')
+  manual(
+    @Param('id') id: string,
+    @Body() dto: ManualAiJobDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ai.requestManualHandling(id, user.id, dto.notes);
   }
 
   @Post('jobs/:id/approve')

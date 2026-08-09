@@ -18,7 +18,7 @@ import { extname } from 'path';
 import { memoryStorage } from 'multer';
 import { DocumentVisibility } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
-import { Public, RequirePermissions } from '../../common/decorators/auth.decorators';
+import { Public, RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import type { AuthUser } from '@maher/types';
@@ -67,7 +67,11 @@ function mimeFromKey(key: string): string {
 
 function tokenTtlForCategory(category: string | null | undefined): number {
   if (!category) return 900;
-  if (category === 'PRODUCT_IMAGE' || category.startsWith('CATALOG')) {
+  if (
+    category === 'PRODUCT_IMAGE' ||
+    category === 'INVENTORY_IMAGE' ||
+    category.startsWith('CATALOG')
+  ) {
     return LONG_LIVED_TTL_SECONDS;
   }
   return 900;
@@ -123,7 +127,28 @@ export class UploadsController {
     requestId?: string;
     productionOrderId?: string;
     taskId?: string;
+    idempotencyKey?: string;
   }) {
+    if (params.idempotencyKey) {
+      const existing = await this.prisma.document.findFirst({
+        where: {
+          description: `idempotency:${params.idempotencyKey}`,
+          archivedAt: null,
+        },
+      });
+      if (existing) {
+        const ttl = tokenTtlForCategory(existing.category);
+        const token = this.storage.createAccessToken(existing.storageKey, ttl);
+        return {
+          document: existing,
+          accessToken: token,
+          downloadPath: `/api/v1/uploads/download?token=${token}`,
+          expiresInSeconds: ttl,
+          replayed: true,
+        };
+      }
+    }
+
     const isCustomer = Boolean(params.user.customerId);
     const resolvedCategory =
       params.category ??
@@ -147,6 +172,9 @@ export class UploadsController {
         sizeBytes: params.stored.sizeBytes,
         storageKey: params.stored.key,
         category: resolvedCategory,
+        description: params.idempotencyKey
+          ? `idempotency:${params.idempotencyKey}`
+          : undefined,
         visibility: isCustomer || isProductImage
           ? DocumentVisibility.CUSTOMER_VISIBLE
           : ((params.visibility as DocumentVisibility | undefined) ?? DocumentVisibility.INTERNAL),
@@ -164,11 +192,12 @@ export class UploadsController {
       accessToken: token,
       downloadPath: `/api/v1/uploads/download?token=${token}`,
       expiresInSeconds: ttl,
+      replayed: false,
     };
   }
 
   @Post()
-  @RequirePermissions('document.manage')
+  @RequireAnyPermissions('document.manage', 'catalog.manage', 'inventory.adjust')
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -183,6 +212,7 @@ export class UploadsController {
     @Query('requestId') requestId?: string,
     @Query('productionOrderId') productionOrderId?: string,
     @Query('taskId') taskId?: string,
+    @Query('idempotencyKey') idempotencyKey?: string,
   ) {
     if (!file) throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'File required.' });
     if (!ALLOWED.has(file.mimetype)) {
@@ -200,11 +230,12 @@ export class UploadsController {
       requestId,
       productionOrderId,
       taskId,
+      idempotencyKey,
     });
   }
 
   @Post('from-url')
-  @RequirePermissions('document.manage')
+  @RequireAnyPermissions('document.manage', 'catalog.manage', 'inventory.adjust')
   async uploadFromUrl(
     @Body() dto: UploadFromUrlDto,
     @CurrentUser() user: AuthUser,

@@ -11,6 +11,7 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsNumber,
   IsOptional,
   IsString,
@@ -64,6 +65,10 @@ class CreatePurchaseOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsDateString()
+  expectedDeliveryDate?: string;
 
   @IsArray()
   @ValidateNested({ each: true })
@@ -549,6 +554,9 @@ export class PurchasingController {
         supplierId: dto.supplierId,
         warehouseId: dto.warehouseId,
         notes: dto.notes,
+        ...(dto.expectedDeliveryDate
+          ? { expectedDeliveryDate: new Date(dto.expectedDeliveryDate) }
+          : {}),
         status: PurchaseOrderStatus.DRAFT,
         subtotal: roundMoney(subtotal),
         taxAmount: roundMoney(taxAmount),

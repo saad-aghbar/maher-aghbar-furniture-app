@@ -60,6 +60,17 @@ interface Task {
   priority: string;
   progressPercent: number;
   notes?: string | null;
+  plannedCompletion?: string | null;
+  estimatedMinutes?: number | null;
+  actualMinutes?: number | null;
+  timing?: {
+    status: string;
+    actualMinutes: number;
+    openStartedAt: string | null;
+    estimatedMinutes: number | null;
+    plannedCompletion: string | null;
+    elapsedMinutes: number;
+  };
   assignedEmployee?: {
     id: string;
     firstName: string;
@@ -112,6 +123,28 @@ function toDateInput(value?: string | null) {
   return value.slice(0, 10);
 }
 
+function todayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function buildAssignDueIso(dateYmd: string, hour: string, minute: string): string | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) return undefined;
+  const h = Math.min(23, Math.max(0, Number(hour) || 0));
+  const m = Math.min(59, Math.max(0, Number(minute) || 0));
+  const d = new Date(`${dateYmd}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toISOString();
+}
+
+function draftEstimateMinutes(estHours: string, estMinutes: string): number | undefined {
+  const h = Number(estHours);
+  const m = Number(estMinutes);
+  if (!Number.isFinite(h) && !Number.isFinite(m)) return undefined;
+  const total = Math.max(0, Math.round((Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)));
+  return total > 0 ? total : undefined;
+}
+
 export default function ProductionDetailPage({ params }: { params: { id: string } }) {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
@@ -125,7 +158,18 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   const [error, setError] = useState<string | null>(null);
   const [confirmStart, setConfirmStart] = useState(false);
   const [drafts, setDrafts] = useState<
-    Record<string, { employeeId: string; priority: string }>
+    Record<
+      string,
+      {
+        employeeId: string;
+        priority: string;
+        dueDate: string;
+        dueHour: string;
+        dueMinute: string;
+        estHours: string;
+        estMinutes: string;
+      }
+    >
   >({});
   const [planPriority, setPlanPriority] = useState('NORMAL');
   const [plannedStart, setPlannedStart] = useState('');
@@ -219,12 +263,20 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   });
 
   const assignMutation = useMutation({
-    mutationFn: (args: { taskId: string; employeeId: string; priority: string }) =>
+    mutationFn: (args: {
+      taskId: string;
+      employeeId: string;
+      priority: string;
+      plannedCompletion?: string;
+      estimatedMinutes?: number;
+    }) =>
       apiFetch(`/api/v1/tasks/${args.taskId}/assign`, {
         method: 'POST',
         body: JSON.stringify({
           employeeId: args.employeeId,
           priority: args.priority,
+          ...(args.plannedCompletion ? { plannedCompletion: args.plannedCompletion } : {}),
+          ...(args.estimatedMinutes != null ? { estimatedMinutes: args.estimatedMinutes } : {}),
         }),
       }),
     onSuccess: async () => {
@@ -236,7 +288,15 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   });
 
   const assignAllMutation = useMutation({
-    mutationFn: async (items: Array<{ taskId: string; employeeId: string; priority: string }>) => {
+    mutationFn: async (
+      items: Array<{
+        taskId: string;
+        employeeId: string;
+        priority: string;
+        plannedCompletion?: string;
+        estimatedMinutes?: number;
+      }>,
+    ) => {
       const results = await Promise.allSettled(
         items.map((args) =>
           apiFetch(`/api/v1/tasks/${args.taskId}/assign`, {
@@ -244,6 +304,10 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
             body: JSON.stringify({
               employeeId: args.employeeId,
               priority: args.priority,
+              ...(args.plannedCompletion ? { plannedCompletion: args.plannedCompletion } : {}),
+              ...(args.estimatedMinutes != null
+                ? { estimatedMinutes: args.estimatedMinutes }
+                : {}),
             }),
           }),
         ),
@@ -383,6 +447,15 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
       drafts[task.id] ?? {
         employeeId: task.assignedEmployee?.id ?? '',
         priority: task.priority || 'NORMAL',
+        dueDate: toDateInput(task.plannedCompletion) || todayYmd(),
+        dueHour: '17',
+        dueMinute: '0',
+        estHours:
+          task.estimatedMinutes != null
+            ? String(Math.floor(task.estimatedMinutes / 60))
+            : '',
+        estMinutes:
+          task.estimatedMinutes != null ? String(task.estimatedMinutes % 60) : '',
       }
     );
   }
@@ -399,7 +472,15 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
     if (!task || !stageAssignable(stage, task)) return [];
     const draft = draftFor(task);
     if (!draft.employeeId) return [];
-    return [{ taskId: task.id, employeeId: draft.employeeId, priority: draft.priority }];
+    return [
+      {
+        taskId: task.id,
+        employeeId: draft.employeeId,
+        priority: draft.priority,
+        plannedCompletion: buildAssignDueIso(draft.dueDate, draft.dueHour, draft.dueMinute),
+        estimatedMinutes: draftEstimateMinutes(draft.estHours, draft.estMinutes),
+      },
+    ];
   });
 
   function departmentLabel(code?: string | null) {
@@ -644,6 +725,12 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                   {showWorkerReadOnly ? (
                     <div>
                       <span className="text-sm">{workerName || tp('unassignedWorker')}</span>
+                      {task.timing || task.actualMinutes != null ? (
+                        <p className="mt-0.5 text-[11px] text-text-tertiary" dir="ltr">
+                          {task.timing?.status === 'running' ? '● ' : ''}
+                          {Math.round(task.timing?.elapsedMinutes ?? task.actualMinutes ?? 0)}m
+                        </p>
+                      ) : null}
                       {!isCompleted ? (
                         <p className="mt-0.5 text-[11px] text-text-tertiary">
                           {tp('stageAssignLocked')}
@@ -651,6 +738,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                       ) : null}
                     </div>
                   ) : (
+                    <div className="space-y-2">
                     <Select
                       value={draft.employeeId}
                       onChange={(e) =>
@@ -667,6 +755,77 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                         </option>
                       ))}
                     </Select>
+                    <div className="grid grid-cols-3 gap-1">
+                      <input
+                        type="date"
+                        className="maher-input text-xs"
+                        value={draft.dueDate}
+                        onChange={(e) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [task.id]: { ...draft, dueDate: e.target.value },
+                          }))
+                        }
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={23}
+                        className="maher-input text-xs"
+                        placeholder="HH"
+                        value={draft.dueHour}
+                        onChange={(e) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [task.id]: { ...draft, dueHour: e.target.value },
+                          }))
+                        }
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        className="maher-input text-xs"
+                        placeholder="MM"
+                        value={draft.dueMinute}
+                        onChange={(e) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [task.id]: { ...draft, dueMinute: e.target.value },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        className="maher-input text-xs"
+                        placeholder="Est h"
+                        value={draft.estHours}
+                        onChange={(e) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [task.id]: { ...draft, estHours: e.target.value },
+                          }))
+                        }
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        className="maher-input text-xs"
+                        placeholder="Est m"
+                        value={draft.estMinutes}
+                        onChange={(e) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [task.id]: { ...draft, estMinutes: e.target.value },
+                          }))
+                        }
+                      />
+                    </div>
+                    </div>
                   )}
                 </TableCell>
                 <TableCell>
@@ -715,6 +874,15 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                                 taskId: task.id,
                                 employeeId: draft.employeeId,
                                 priority: draft.priority,
+                                plannedCompletion: buildAssignDueIso(
+                                  draft.dueDate,
+                                  draft.dueHour,
+                                  draft.dueMinute,
+                                ),
+                                estimatedMinutes: draftEstimateMinutes(
+                                  draft.estHours,
+                                  draft.estMinutes,
+                                ),
                               })
                             }
                           >

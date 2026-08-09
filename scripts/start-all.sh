@@ -48,9 +48,10 @@ export COMPANY_NAME_EN="${COMPANY_NAME_EN:-Maher Al-Aghbar & Sons Furniture}"
 
 needs_prepare=0
 [[ -f "$ROOT/apps/api/dist/main.js" ]] || needs_prepare=1
-[[ -d "$ROOT/apps/admin-web/.next" ]] || needs_prepare=1
-[[ -d "$ROOT/apps/customer-portal/.next" ]] || needs_prepare=1
-[[ -d "$ROOT/apps/employee-portal/.next" ]] || needs_prepare=1
+# next start requires BUILD_ID; a partial .next dir is not enough
+[[ -f "$ROOT/apps/admin-web/.next/BUILD_ID" ]] || needs_prepare=1
+[[ -f "$ROOT/apps/customer-portal/.next/BUILD_ID" ]] || needs_prepare=1
+[[ -f "$ROOT/apps/employee-portal/.next/BUILD_ID" ]] || needs_prepare=1
 if [[ "$needs_prepare" -eq 1 ]]; then
   echo "==> Builds missing — running prepare:launch first"
   bash "$ROOT/scripts/prepare-launch.sh"
@@ -186,7 +187,7 @@ curl -sf -o /dev/null -w "Admin      %{http_code}  http://localhost:3000/ar/logi
 curl -sf -o /dev/null -w "Customer   %{http_code}  http://localhost:3001/ar/login\n" http://localhost:3001/ar/login || echo "Customer   DOWN — see logs/customer.log"
 curl -sf -o /dev/null -w "Employee   %{http_code}  http://localhost:3002/ar/login\n" http://localhost:3002/ar/login || echo "Employee   DOWN — see logs/employee.log"
 echo ""
-echo "Demo password: Admin@12345!"
-echo "  Usernames: admin | worker | carpenter | carpenter2 | painter | … | cedar | olive | petra | villa"
+echo "Demo password: 123"
+echo "  Usernames: admin | cutter | carpenter | painter | … | nile | oasis | balqis | jerash"
 echo ""
 echo "Stop with:   pnpm stop:all"

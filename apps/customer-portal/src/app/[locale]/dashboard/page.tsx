@@ -104,7 +104,8 @@ function mediaSrc(url: string | null | undefined): string | null {
 function money(value: number | undefined, currency: string) {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n)) return `0.00 ${currency}`;
-  return `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+  // Always Western separators (1,112.93) — Arabic UI must not drop ,/.
+  return `${n.toLocaleString('en-JO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
 function orderTitle(row: HubItem) {
@@ -233,7 +234,7 @@ function PipelineStep({
     brand: {
       accent: 'var(--maher-brand)',
       soft: 'var(--maher-brand-soft)',
-      glow: 'rgba(217, 58, 43, 0.28)',
+      glow: 'rgba(119, 98, 69, 0.28)',
     },
     info: {
       accent: 'var(--maher-info)',
@@ -498,7 +499,7 @@ export default function CustomerDashboard() {
           className="pointer-events-none absolute inset-0 opacity-90"
           style={{
             background:
-              'radial-gradient(ellipse 80% 70% at 10% 20%, rgba(217,58,43,0.35), transparent 55%), radial-gradient(ellipse 60% 50% at 90% 80%, rgba(138,90,43,0.4), transparent 50%), linear-gradient(135deg, #241c16 0%, #1a1410 45%, #2a2018 100%)',
+              'radial-gradient(ellipse 80% 70% at 10% 20%, color-mix(in srgb, var(--maher-brand) 35%, transparent), transparent 55%), radial-gradient(ellipse 60% 50% at 90% 80%, color-mix(in srgb, var(--maher-accent) 40%, transparent), transparent 50%), linear-gradient(135deg, #2a2425 0%, #1e1a1b 45%, #322c2d 100%)',
           }}
           aria-hidden
         />
@@ -1007,9 +1008,6 @@ export default function CustomerDashboard() {
                   </div>
                   <div className="space-y-1 p-3">
                     <p className="line-clamp-2 text-sm font-semibold text-text-primary">{title}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-text-tertiary">
-                      <Ltr>{p.sku}</Ltr>
-                    </p>
                     {Number.isFinite(price) ? (
                       <p className="text-sm font-medium text-accent">
                         <Ltr>

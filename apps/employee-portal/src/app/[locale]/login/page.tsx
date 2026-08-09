@@ -25,13 +25,13 @@ export default function LoginPage() {
         <AppThemeToggle />
         <LanguageSwitcher />
       </div>
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-[#2a1512] p-12 text-white lg:flex">
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-[var(--maher-text-primary)] p-12 text-[var(--maher-background)] lg:flex">
         <div
           aria-hidden="true"
           className="absolute inset-0"
           style={{
             background:
-              'radial-gradient(120% 90% at 12% 8%, #d93a2b 0%, rgba(217,58,43,0.35) 38%, transparent 68%), radial-gradient(90% 80% at 95% 100%, #8a5a2b 0%, rgba(138,90,43,0.25) 45%, transparent 72%)',
+              'radial-gradient(120% 90% at 12% 8%, var(--maher-brand) 0%, color-mix(in srgb, var(--maher-brand) 35%, transparent) 38%, transparent 68%), radial-gradient(90% 80% at 95% 100%, var(--maher-accent) 0%, color-mix(in srgb, var(--maher-accent) 25%, transparent) 45%, transparent 72%)',
           }}
         />
         <div
@@ -57,8 +57,7 @@ export default function LoginPage() {
         />
 
         <div className="relative flex items-center gap-3 maher-animate-rise">
-          <BrandMark size="lg" animated />
-          <span className="text-base font-semibold">{tCommon('appNameFull')}</span>
+          <BrandMark size="xl" variant="lockup" tone="on-dark" animated />
         </div>
 
         <div className="relative max-w-md">
@@ -97,9 +96,8 @@ export default function LoginPage() {
       <div className="flex items-center justify-center bg-background px-6 py-12">
         <div className="maher-auth-panel w-full max-w-md">
           <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <BrandMark size="lg" animated />
+            <BrandMark size="lg" variant="lockup" animated />
             <div>
-              <p className="text-base font-semibold text-text-primary">{tCommon('appName')}</p>
               <p className="text-xs text-text-tertiary">{tCommon('portalEmployee')}</p>
             </div>
           </div>

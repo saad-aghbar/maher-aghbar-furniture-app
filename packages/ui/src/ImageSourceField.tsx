@@ -15,9 +15,14 @@ export interface ImageSourceFieldProps {
   id?: string;
   /** When provided, shows a device upload control that fills `value` with the returned URL/key. */
   onUploadFile?: (file: File) => Promise<string>;
+  /** Multi-file upload — preferred for product galleries. */
+  onUploadFiles?: (files: File[]) => Promise<void>;
   uploadLabel?: string;
   uploadingLabel?: string;
   urlPlaceholder?: string;
+  /** When false, hides the URL text field (upload / preview only). */
+  allowUrl?: boolean;
+  multiple?: boolean;
   accept?: string;
   showPreview?: boolean;
   className?: string;
@@ -32,9 +37,12 @@ export function ImageSourceField({
   disabled,
   id,
   onUploadFile,
+  onUploadFiles,
   uploadLabel = 'Upload from device',
   uploadingLabel = 'Uploading…',
   urlPlaceholder = 'https://…',
+  allowUrl = true,
+  multiple = false,
   accept = 'image/jpeg,image/png,image/webp,image/heic',
   showPreview = true,
   className,
@@ -53,14 +61,18 @@ export function ImageSourceField({
   const displayError = error ?? uploadError ?? undefined;
 
   async function handleFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    if (!file || !onUploadFile) return;
+    if (!files.length) return;
     setUploading(true);
     setUploadError(null);
     try {
-      const next = await onUploadFile(file);
-      onChange(next);
+      if (onUploadFiles) {
+        await onUploadFiles(files);
+      } else if (onUploadFile) {
+        const next = await onUploadFile(files[0]!);
+        onChange(next);
+      }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -68,28 +80,45 @@ export function ImageSourceField({
     }
   }
 
+  const canUpload = Boolean(onUploadFile || onUploadFiles);
+
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <Input
-        id={fieldId}
-        label={label}
-        value={value}
-        onChange={(e) => {
-          setUploadError(null);
-          onChange(e.target.value);
-        }}
-        hint={hint}
-        error={displayError}
-        disabled={disabled || uploading}
-        placeholder={urlPlaceholder}
-        dir="ltr"
-      />
-      {onUploadFile ? (
+      {allowUrl ? (
+        <Input
+          id={fieldId}
+          label={label}
+          value={value}
+          onChange={(e) => {
+            setUploadError(null);
+            onChange(e.target.value);
+          }}
+          hint={hint}
+          error={displayError}
+          disabled={disabled || uploading}
+          placeholder={urlPlaceholder}
+          dir="ltr"
+        />
+      ) : label || hint || displayError ? (
+        <div className="space-y-1">
+          {label ? (
+            <p className="text-sm font-medium text-[var(--maher-text-primary)]">{label}</p>
+          ) : null}
+          {hint ? (
+            <p className="text-xs text-[var(--maher-text-secondary)]">{hint}</p>
+          ) : null}
+          {displayError ? (
+            <p className="text-xs text-[var(--maher-error)]">{displayError}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {canUpload ? (
         <div className="flex flex-wrap items-center gap-2">
           <input
             ref={fileRef}
             type="file"
             accept={accept}
+            multiple={multiple || Boolean(onUploadFiles)}
             className="sr-only"
             disabled={disabled || uploading}
             onChange={(e) => void handleFile(e)}

@@ -92,7 +92,7 @@ class CreateUserDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(8)
+  @MinLength(1)
   password?: string;
 
   @IsOptional()
@@ -165,10 +165,10 @@ class UpdateUserDto {
   @IsUUID('4', { each: true })
   roleIds?: string[];
 
-  /** Optional new password set by admin (min 8). Leave unset to keep current. */
+  /** Optional new password set by admin. Leave unset to keep current. */
   @IsOptional()
   @IsString()
-  @MinLength(8)
+  @MinLength(1)
   password?: string;
 }
 

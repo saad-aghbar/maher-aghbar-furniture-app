@@ -11,6 +11,7 @@ import { join } from 'path';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { pageSkipTake, paginatedMeta } from '../../common/dto/pagination.dto';
+import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import {
   EXTRACTION_PROVIDER,
   OCR_PROVIDER,
@@ -21,6 +22,8 @@ import {
   lineItemsToRequestCreate,
   resolveLineItems,
 } from './ai-intake.mapper';
+import { buildReviewFromJob, validateApprovePayload } from './ai-intake.review';
+import { NotificationsService } from '../notifications/notifications.service';
 
 function toLocale(lang: string | undefined): Locale {
   if (lang === 'ar') return Locale.ar;
@@ -43,22 +46,51 @@ export class AiIntakeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    private readonly storage: LocalStorageService,
     @Inject(OCR_PROVIDER) private readonly ocr: OcrProvider,
     @Inject(EXTRACTION_PROVIDER) private readonly extract: ExtractionProvider,
+    private readonly notifications: NotificationsService,
   ) {}
 
+  private withReviewPayload<T extends {
+    id: string;
+    number: string;
+    status: AIJobStatus;
+    storageKey?: string | null;
+    originalText?: string | null;
+    translatedText?: string | null;
+    errorMessage?: string | null;
+    provider?: string | null;
+    request?: { id: string; number: string } | null;
+    fields?: Array<{
+      fieldName: string;
+      fieldValue?: string | null;
+      reviewedValue?: string | null;
+      confidence?: unknown;
+      isMissing?: boolean;
+    }>;
+  }>(job: T) {
+    const originalDownloadPath = job.storageKey
+      ? `/api/v1/uploads/download?token=${this.storage.createAccessToken(job.storageKey, 3600)}`
+      : null;
+    const review = buildReviewFromJob({ ...job, originalDownloadPath });
+    return { ...job, originalDownloadPath, review };
+  }
   async list(query: { page?: number | string; pageSize?: number | string }) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.aIExtractionJob.count(),
       this.prisma.aIExtractionJob.findMany({
-        include: { fields: true, request: true },
+        include: { fields: true, request: { select: { id: true, number: true } } },
         orderBy: { createdAt: 'desc' },
         skip,
         take,
       }),
     ]);
-    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+    return {
+      data: data.map((job) => this.withReviewPayload(job)),
+      meta: paginatedMeta(page, pageSize, totalItems),
+    };
   }
 
   private async resolveTargetLanguage(): Promise<Locale> {
@@ -164,10 +196,11 @@ export class AiIntakeService {
     userId: string,
   ) {
     const number = await this.sequences.next('AI', 'AI');
+    // Preserve original upload key; progress through explicit phases (no fake %).
     const job = await this.prisma.aIExtractionJob.create({
       data: {
         number,
-        status: AIJobStatus.PROCESSING,
+        status: AIJobStatus.UPLOADED,
         sourceType: dto.sourceType,
         storageKey: dto.storageKey,
         provider: this.extract.name,
@@ -175,12 +208,40 @@ export class AiIntakeService {
     });
 
     try {
+      await this.prisma.aIExtractionJob.update({
+        where: { id: job.id },
+        data: { status: AIJobStatus.QUEUED },
+      });
+
+      await this.prisma.aIExtractionJob.update({
+        where: { id: job.id },
+        data: { status: AIJobStatus.PROCESSING },
+      });
+
       const originalText = await this.resolveSourceText(dto);
+      if (!originalText?.trim()) {
+        throw new BadRequestException({
+          code: 'INVALID_EXTRACTION',
+          message: 'Could not read any text from the upload.',
+        });
+      }
+
       const targetLanguage = await this.resolveTargetLanguage();
       const extracted = await this.extract.extractStructured(originalText, {
         customerId: dto.customerId,
         targetLanguage: fromLocale(targetLanguage),
       });
+
+      const fieldRows = this.buildFieldRows(extracted);
+      const hasProduct = fieldRows.some(
+        (f) => f.fieldName === 'product' && Boolean(String(f.fieldValue ?? '').trim()),
+      );
+      if (!hasProduct) {
+        throw new BadRequestException({
+          code: 'INVALID_EXTRACTION',
+          message: 'Extraction did not identify a product/model.',
+        });
+      }
 
       const updated = await this.prisma.aIExtractionJob.update({
         where: { id: job.id },
@@ -191,9 +252,9 @@ export class AiIntakeService {
           detectedLanguage: toLocale(extracted.detectedLanguage),
           targetLanguage,
           provider: extracted.provider,
-          fields: { create: this.buildFieldRows(extracted) },
+          fields: { create: fieldRows },
         },
-        include: { fields: true },
+        include: { fields: true, request: { select: { id: true, number: true } } },
       });
 
       await this.prisma.auditEvent.create({
@@ -209,7 +270,15 @@ export class AiIntakeService {
         },
       });
 
-      return updated;
+      await this.notifications
+        .notifyAdminUsers({
+          templateCode: 'AI_DRAFT_READY',
+          vars: { jobNumber: updated.id.slice(0, 8) },
+          linkUrl: `/ai-intake/${updated.id}`,
+        })
+        .catch(() => undefined);
+
+      return this.withReviewPayload(updated);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'AI intake failed';
       await this.prisma.aIExtractionJob.update({
@@ -225,10 +294,94 @@ export class AiIntakeService {
   async get(id: string) {
     const job = await this.prisma.aIExtractionJob.findUnique({
       where: { id },
-      include: { fields: true, request: true },
+      include: { fields: true, request: { select: { id: true, number: true } } },
     });
     if (!job) throw new NotFoundException({ code: 'NOT_FOUND', message: 'AI job not found.' });
-    return job;
+    return this.withReviewPayload(job);
+  }
+
+  async correctFields(
+    id: string,
+    fieldOverrides: Record<string, string>,
+    userId: string,
+  ) {
+    const job = await this.get(id);
+    if (job.status !== AIJobStatus.NEEDS_REVIEW) {
+      throw new BadRequestException({
+        code: 'INVALID_STATUS',
+        message: 'Only jobs awaiting review can be corrected.',
+      });
+    }
+
+    for (const [fieldName, value] of Object.entries(fieldOverrides)) {
+      if (fieldName === '__items') continue;
+      const existing = job.fields?.find((f) => f.fieldName === fieldName);
+      if (existing) {
+        await this.prisma.aIExtractionField.updateMany({
+          where: { jobId: id, fieldName },
+          data: {
+            reviewedValue: value,
+            isMissing: !String(value ?? '').trim(),
+          },
+        });
+      } else {
+        await this.prisma.aIExtractionField.create({
+          data: {
+            jobId: id,
+            fieldName,
+            fieldValue: value,
+            reviewedValue: value,
+            isMissing: !String(value ?? '').trim(),
+            confidence: 1,
+          },
+        });
+      }
+    }
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'ai-intake.correct',
+        entityType: 'AIExtractionJob',
+        entityId: id,
+        newValues: { fields: Object.keys(fieldOverrides) } as Prisma.InputJsonValue,
+      },
+    });
+
+    return this.get(id);
+  }
+
+  async requestManualHandling(id: string, userId: string, notes?: string) {
+    const job = await this.get(id);
+    if (job.status !== AIJobStatus.NEEDS_REVIEW) {
+      throw new BadRequestException({
+        code: 'INVALID_STATUS',
+        message: 'Only jobs awaiting review can be sent to manual handling.',
+      });
+    }
+
+    const updated = await this.prisma.aIExtractionJob.update({
+      where: { id },
+      data: {
+        status: AIJobStatus.FAILED,
+        errorMessage: `MANUAL: ${notes?.trim() || 'Manual handling requested'}`,
+        reviewedById: userId,
+        reviewedAt: new Date(),
+      },
+      include: { fields: true, request: { select: { id: true, number: true } } },
+    });
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'ai-intake.manual',
+        entityType: 'AIExtractionJob',
+        entityId: id,
+        newValues: { reason: notes ?? null } as Prisma.InputJsonValue,
+      },
+    });
+
+    return this.withReviewPayload(updated);
   }
 
   async reject(id: string, userId: string, reason?: string) {
@@ -239,7 +392,7 @@ export class AiIntakeService {
         message: 'Completed jobs cannot be rejected.',
       });
     }
-    return this.prisma.aIExtractionJob.update({
+    const updated = await this.prisma.aIExtractionJob.update({
       where: { id },
       data: {
         status: AIJobStatus.FAILED,
@@ -247,13 +400,23 @@ export class AiIntakeService {
         reviewedById: userId,
         reviewedAt: new Date(),
       },
-      include: { fields: true },
+      include: { fields: true, request: { select: { id: true, number: true } } },
     });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'ai-intake.reject',
+        entityType: 'AIExtractionJob',
+        entityId: id,
+        newValues: { reason: reason ?? null } as Prisma.InputJsonValue,
+      },
+    });
+    return this.withReviewPayload(updated);
   }
 
   /**
    * Human review gate: approve creates a DRAFT RFQ only.
-   * Structured extraction items map to RequestItem rows (multi-line supported).
+   * AI never auto-approves, never creates invoices, never touches inventory.
    */
   async approve(
     id: string,
@@ -268,13 +431,48 @@ export class AiIntakeService {
       });
     }
 
-    const request = await this.createDraftRfqFromJob(job, dto.customerId, userId, {
+    const validation = validateApprovePayload({
+      customerId: dto.customerId,
+      fieldOverrides: dto.fieldOverrides,
+      fields: job.fields ?? [],
+    });
+    if (!validation.ok) {
+      throw new BadRequestException({
+        code: validation.code,
+        message: validation.message,
+      });
+    }
+
+    if (dto.fieldOverrides && Object.keys(dto.fieldOverrides).length) {
+      await this.correctFields(id, dto.fieldOverrides, userId);
+    }
+
+    const fresh = await this.prisma.aIExtractionJob.findUniqueOrThrow({
+      where: { id },
+      include: { fields: true },
+    });
+
+    const request = await this.createDraftRfqFromJob(fresh, dto.customerId, userId, {
       fieldOverrides: dto.fieldOverrides,
       markJobCompleted: true,
       reviewerId: userId,
     });
 
-    return { jobId: id, request };
+    // Explicit contract: draft RFQ only — no invoice, inventory, or order confirm here.
+    return {
+      jobId: id,
+      request: {
+        id: request.id,
+        number: request.number,
+        status: request.status,
+      },
+      created: {
+        draftRfq: true,
+        invoice: false,
+        inventoryMovement: false,
+        salesOrder: false,
+      },
+    };
   }
 
   async createDraftRfqFromJob(

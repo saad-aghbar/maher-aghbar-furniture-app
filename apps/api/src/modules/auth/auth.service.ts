@@ -1,13 +1,16 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'crypto';
 import * as bcrypt from 'bcryptjs';
+import { Locale } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
-import { LoginDto } from './dto/auth.dto';
+import { LoginDto, MobileLoginDto, UpdateMeDto } from './dto/auth.dto';
 import type { AuthUser } from '@maher/types';
 import type { Response } from 'express';
 import {
@@ -47,6 +50,8 @@ export class AuthService {
       username: user.username ?? '',
       email: user.email ?? '',
       phone: user.phone ?? undefined,
+      firstName: user.firstName,
+      lastName: user.lastName,
       name: `${user.firstName} ${user.lastName}`.trim(),
       roles,
       permissions,
@@ -73,6 +78,37 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, res: Response, meta: { ip?: string; userAgent?: string }) {
+    const { authUser, tokens } = await this.authenticateWithPassword(dto, meta);
+    this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
+
+    if (dto.client === 'mobile') {
+      return {
+        user: authUser,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      };
+    }
+
+    return { user: authUser };
+  }
+
+  /**
+   * Cookie-free mobile login. Returns access + rotating refresh in the body.
+   * Never logs token values.
+   */
+  async loginMobile(dto: MobileLoginDto, meta: { ip?: string; userAgent?: string }) {
+    const { authUser, tokens } = await this.authenticateWithPassword(dto, meta);
+    return {
+      user: authUser,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
+  }
+
+  private async authenticateWithPassword(
+    dto: { username: string; password: string; mfaCode?: string },
+    meta: { ip?: string; userAgent?: string },
+  ) {
     const username = (dto.username ?? '').trim().toLowerCase();
     if (!username) {
       throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Username required.' });
@@ -140,7 +176,6 @@ export class AuthService {
 
     const authUser = await this.loadAuthUser(user.id);
     const tokens = await this.issueTokens(user.id, meta);
-    this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
 
     await this.prisma.auditEvent.create({
       data: {
@@ -153,15 +188,7 @@ export class AuthService {
       },
     });
 
-    if (dto.client === 'mobile') {
-      return {
-        user: authUser,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-      };
-    }
-
-    return { user: authUser };
+    return { authUser, tokens };
   }
 
   private async issueTokens(userId: string, meta: { ip?: string; userAgent?: string }) {
@@ -190,6 +217,36 @@ export class AuthService {
     meta: { ip?: string; userAgent?: string },
     client?: 'web' | 'mobile',
   ) {
+    const result = await this.rotateRefreshToken(refreshToken, meta, { requireActiveUser: false });
+    this.setAuthCookies(res, result.accessToken, result.refreshToken);
+    if (client === 'mobile') {
+      return {
+        user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      };
+    }
+    return { user: result.user };
+  }
+
+  /**
+   * Cookie-free mobile refresh with rotating opaque token.
+   * Rejects disabled/archived users before issuing a new session.
+   */
+  async refreshMobile(refreshToken: string, meta: { ip?: string; userAgent?: string }) {
+    const result = await this.rotateRefreshToken(refreshToken, meta, { requireActiveUser: true });
+    return {
+      user: result.user,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    };
+  }
+
+  private async rotateRefreshToken(
+    refreshToken: string | undefined,
+    meta: { ip?: string; userAgent?: string },
+    options: { requireActiveUser: boolean },
+  ) {
     if (!refreshToken) {
       throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Refresh token required.' });
     }
@@ -201,22 +258,35 @@ export class AuthService {
       throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'Invalid refresh token.' });
     }
 
+    if (options.requireActiveUser) {
+      const account = await this.prisma.user.findFirst({
+        where: { id: session.userId, archivedAt: null },
+        select: { id: true, isActive: true },
+      });
+      if (!account || !account.isActive) {
+        await this.prisma.session.update({
+          where: { id: session.id },
+          data: { revokedAt: new Date() },
+        });
+        throw new UnauthorizedException({
+          code: 'ACCOUNT_SUSPENDED',
+          message: 'Account suspended.',
+        });
+      }
+    }
+
     await this.prisma.session.update({
       where: { id: session.id },
       data: { revokedAt: new Date() },
     });
 
     const tokens = await this.issueTokens(session.userId, meta);
-    this.setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
     const user = await this.loadAuthUser(session.userId);
-    if (client === 'mobile') {
-      return {
-        user,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-      };
-    }
-    return { user };
+    return {
+      user,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
 
   async logout(refreshToken: string | undefined, userId: string | undefined, res: Response) {
@@ -238,6 +308,40 @@ export class AuthService {
       });
     }
     this.clearAuthCookies(res);
+    return { ok: true };
+  }
+
+  /**
+   * Cookie-free mobile logout — revokes the refresh session by hash.
+   * Optional userId (from Bearer) for audit only; tokens are never logged.
+   */
+  async logoutMobile(refreshToken: string, userId?: string) {
+    const hash = this.hashToken(refreshToken);
+    const updated = await this.prisma.session.updateMany({
+      where: { refreshTokenHash: hash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    let auditUserId = userId;
+    if (!auditUserId && updated.count > 0) {
+      const session = await this.prisma.session.findFirst({
+        where: { refreshTokenHash: hash },
+        select: { userId: true },
+      });
+      auditUserId = session?.userId;
+    }
+
+    if (auditUserId) {
+      await this.prisma.auditEvent.create({
+        data: {
+          userId: auditUserId,
+          action: 'auth.logout',
+          entityType: 'User',
+          entityId: auditUserId,
+        },
+      });
+    }
+
     return { ok: true };
   }
 
@@ -263,6 +367,118 @@ export class AuthService {
     };
   }
 
+  async updateMe(userId: string, dto: UpdateMeDto) {
+    if (
+      dto.firstName === undefined &&
+      dto.lastName === undefined &&
+      dto.email === undefined &&
+      dto.phone === undefined &&
+      dto.preferredLanguage === undefined
+    ) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'No profile fields to update.',
+      });
+    }
+
+    if (dto.email !== undefined) {
+      const email = dto.email.trim().toLowerCase();
+      if (!email) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Email is required.',
+        });
+      }
+      const taken = await this.prisma.user.findFirst({
+        where: {
+          email,
+          archivedAt: null,
+          NOT: { id: userId },
+        },
+        select: { id: true },
+      });
+      if (taken) {
+        throw new ConflictException({
+          code: 'EMAIL_TAKEN',
+          message: 'Email is already in use.',
+        });
+      }
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.firstName !== undefined ? { firstName: dto.firstName.trim() } : {}),
+        ...(dto.lastName !== undefined ? { lastName: dto.lastName.trim() } : {}),
+        ...(dto.email !== undefined ? { email: dto.email.trim().toLowerCase() } : {}),
+        ...(dto.phone !== undefined ? { phone: dto.phone.trim() || null } : {}),
+        ...(dto.preferredLanguage !== undefined
+          ? { preferredLanguage: dto.preferredLanguage as Locale }
+          : {}),
+      },
+    });
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'auth.profile_updated',
+        entityType: 'User',
+        entityId: userId,
+        newValues: {
+          ...(dto.firstName !== undefined ? { firstName: dto.firstName.trim() } : {}),
+          ...(dto.lastName !== undefined ? { lastName: dto.lastName.trim() } : {}),
+          ...(dto.email !== undefined ? { email: dto.email.trim().toLowerCase() } : {}),
+          ...(dto.phone !== undefined ? { phone: dto.phone.trim() || null } : {}),
+          ...(dto.preferredLanguage !== undefined
+            ? { preferredLanguage: dto.preferredLanguage }
+            : {}),
+        },
+      },
+    });
+
+    return this.me(userId);
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 1) {
+      throw new BadRequestException({
+        code: 'WEAK_PASSWORD',
+        message: 'Password is required.',
+      });
+    }
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { passwordHash: true, customerId: true },
+    });
+    if (user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Dealer portal passwords are managed by the admin.',
+      });
+    }
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) {
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Current password is incorrect.',
+      });
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'auth.password_changed',
+        entityType: 'User',
+        entityId: userId,
+      },
+    });
+    return { ok: true };
+  }
+
   /** In-memory reset tokens for local/dev; production should use Redis. */
   private static resetTokens = new Map<string, { userId: string; exp: number }>();
 
@@ -272,6 +488,10 @@ export class AuthService {
     });
     // Always return ok to avoid email enumeration
     if (!user) return { ok: true, message: 'If the account exists, a reset code was issued.' };
+    // Dealer portal passwords are admin-managed — do not issue reset tokens.
+    if (user.customerId) {
+      return { ok: true, message: 'If the account exists, a reset code was issued.' };
+    }
 
     const token = randomBytes(24).toString('hex');
     AuthService.resetTokens.set(token, {
@@ -304,8 +524,8 @@ export class AuthService {
     if (!entry || entry.exp < Date.now()) {
       throw new BadRequestException({ code: 'INVALID_TOKEN', message: 'Reset token invalid or expired.' });
     }
-    if (newPassword.length < 8) {
-      throw new BadRequestException({ code: 'WEAK_PASSWORD', message: 'Password too short.' });
+    if (!newPassword || newPassword.length < 1) {
+      throw new BadRequestException({ code: 'WEAK_PASSWORD', message: 'Password is required.' });
     }
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await this.prisma.user.update({

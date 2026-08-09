@@ -45,6 +45,8 @@ export interface AuthUser {
   username: string;
   email: string;
   phone?: string;
+  firstName?: string;
+  lastName?: string;
   name: string;
   roles: string[];
   /** Permission codes from `@maher/permissions` (e.g. `catalog.read`). */

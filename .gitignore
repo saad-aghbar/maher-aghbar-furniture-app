@@ -7,6 +7,9 @@ dist
 coverage
 *.tsbuildinfo
 
+# Expo
+.expo
+
 # Env / secrets
 .env
 .env.local

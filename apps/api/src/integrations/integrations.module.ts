@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, Logger } from '@nestjs/common';
 import {
   createAiProviders,
   createEmailProvider,
@@ -45,6 +45,22 @@ const ai = createAiProviders();
     {
       provide: JOFOTARA_PROVIDER,
       useFactory: (): JoFotaraProvider => createJoFotaraProvider(),
+    },
+    {
+      provide: 'INTEGRATIONS_BOOT_LOG',
+      useFactory: (
+        email: EmailProvider,
+        sms: SmsProvider,
+        ocr: OcrProvider,
+        extract: ExtractionProvider,
+      ) => {
+        const logger = new Logger('Integrations');
+        logger.log(
+          `Providers: email=${email.name} sms=${sms.name} ocr=${ocr.name} ai=${extract.name}`,
+        );
+        return true;
+      },
+      inject: [EMAIL_PROVIDER, SMS_PROVIDER, OCR_PROVIDER, EXTRACTION_PROVIDER],
     },
   ],
   exports: [

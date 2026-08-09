@@ -56,6 +56,9 @@ interface CustomerForm {
   notes: string;
   addressLabel: string;
   address: string;
+  portalUsername: string;
+  portalPassword: string;
+  portalPasswordConfirm: string;
 }
 
 const emptyForm = (): CustomerForm => ({
@@ -71,6 +74,9 @@ const emptyForm = (): CustomerForm => ({
   notes: '',
   addressLabel: 'Main',
   address: '',
+  portalUsername: '',
+  portalPassword: '',
+  portalPasswordConfirm: '',
 });
 
 function money(value: number | undefined, currency: string) {
@@ -132,9 +138,19 @@ export default function CustomersPage() {
       if (form.email.trim() && !EMAIL_RE.test(form.email.trim())) {
         throw new ApiClientError(t('invalidEmail'), 400);
       }
+      const portalUsername = form.portalUsername.trim().toLowerCase();
+      if (portalUsername.length < 2) {
+        throw new ApiClientError(t('portalUsernameRequired'), 400);
+      }
+      if (!form.portalPassword) {
+        throw new ApiClientError(t('portalPasswordRequired'), 400);
+      }
+      if (form.portalPassword !== form.portalPasswordConfirm) {
+        throw new ApiClientError(t('portalPasswordMismatch'), 400);
+      }
       return apiFetch<{
         id: string;
-        portalUser?: { username: string; temporaryPassword: string };
+        portalCredentials?: { username: string; temporaryPassword: string };
       }>('/api/v1/customers', {
         method: 'POST',
         body: JSON.stringify({
@@ -151,25 +167,23 @@ export default function CustomersPage() {
           email: form.email.trim() || undefined,
           preferredLanguage: form.preferredLanguage,
           notes: form.notes.trim() || undefined,
-          addresses: [
-            {
-              label: form.addressLabel.trim(),
-              city: form.address.trim(),
-              isDefaultBilling: true,
-              isDefaultDelivery: true,
-            },
-          ],
+          portalUsername,
+          portalPassword: form.portalPassword,
+          address: {
+            label: form.addressLabel.trim(),
+            city: form.address.trim(),
+          },
         }),
       });
     },
     onSuccess: async (created) => {
       setFormOpen(false);
-      setBanner(created.portalUser ? t('createdWithPortal') : t('created'));
+      setBanner(created.portalCredentials ? t('createdWithPortal') : t('created'));
       setCredentials(
-        created.portalUser
+        created.portalCredentials
           ? {
-              username: created.portalUser.username,
-              temporaryPassword: created.portalUser.temporaryPassword,
+              username: created.portalCredentials.username,
+              temporaryPassword: created.portalCredentials.temporaryPassword,
             }
           : null,
       );
@@ -444,6 +458,30 @@ export default function CustomersPage() {
             label={t('notes')}
             value={form.notes}
             onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+          />
+          <p className="mt-2 text-sm font-medium text-text-primary">{t('portalCredentials')}</p>
+          <Input
+            label={t('portalUsername')}
+            value={form.portalUsername}
+            onChange={(e) => setForm((f) => ({ ...f, portalUsername: e.target.value }))}
+            autoComplete="off"
+            dir="ltr"
+          />
+          <Input
+            label={t('portalPassword')}
+            type="password"
+            value={form.portalPassword}
+            onChange={(e) => setForm((f) => ({ ...f, portalPassword: e.target.value }))}
+            autoComplete="off"
+            dir="ltr"
+          />
+          <Input
+            label={t('portalPasswordConfirm')}
+            type="password"
+            value={form.portalPasswordConfirm}
+            onChange={(e) => setForm((f) => ({ ...f, portalPasswordConfirm: e.target.value }))}
+            autoComplete="off"
+            dir="ltr"
           />
         </div>
       </Modal>

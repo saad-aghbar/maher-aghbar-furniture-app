@@ -167,19 +167,10 @@ export default function CatalogPage() {
                   ) : (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary">
                       <Armchair className="h-8 w-8 opacity-40" />
-                      <span className="text-[10px] font-medium uppercase tracking-wide" dir="ltr">
-                        {product.sku}
-                      </span>
                     </div>
                   )}
                 </div>
                 <div className="flex flex-1 flex-col gap-1.5 p-3">
-                  <p
-                    className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary"
-                    dir="ltr"
-                  >
-                    {product.sku}
-                  </p>
                   <h2 className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary">
                     {title}
                   </h2>

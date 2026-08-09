@@ -294,8 +294,7 @@ function CreateOrderForm() {
     if (preview.productName && !productId) {
       const match = (productsQuery.data ?? []).find(
         (p) =>
-          localizedName(locale, p).toLowerCase() === preview.productName!.trim().toLowerCase() ||
-          p.sku.toLowerCase() === preview.productName!.trim().toLowerCase(),
+          localizedName(locale, p).toLowerCase() === preview.productName!.trim().toLowerCase(),
       );
       if (match) setProductId(match.id);
     }
@@ -624,7 +623,7 @@ function CreateOrderForm() {
             <option value="">{tc('select')}</option>
             {(productsQuery.data ?? []).map((product) => (
               <option key={product.id} value={product.id}>
-                {product.sku} — {localizedName(locale, product)}
+                {localizedName(locale, product)}
               </option>
             ))}
           </Select>

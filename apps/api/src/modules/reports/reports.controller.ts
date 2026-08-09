@@ -1,9 +1,11 @@
-import { Controller, Get, Header, Query, Res } from '@nestjs/common';
+import { Controller, Get, Header, Query, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 import type { Response } from 'express';
+import type { AuthUser } from '@maher/types';
 import { ReportsService } from './reports.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 class SalesReportQueryDto {
   @IsOptional() @IsString() from?: string;
@@ -28,6 +30,27 @@ export class ReportsController {
   @RequirePermissions('report.sales.read')
   dashboard() {
     return this.reports.dashboard();
+  }
+
+  @Get('admin-home')
+  @RequirePermissions('report.sales.read')
+  adminHome(@CurrentUser() user: AuthUser) {
+    return this.reports.adminHome(user);
+  }
+
+  @Get('dealer-home')
+  @RequirePermissions('sales-order.read')
+  dealerHome(@CurrentUser() user: AuthUser) {
+    return this.reports.dealerHome(user);
+  }
+
+  @Get('worker-home')
+  @RequirePermissions('production-task.read')
+  workerHome(@CurrentUser() user: AuthUser, @Req() req: { headers?: Record<string, string | string[] | undefined> }) {
+    const accept = req.headers?.['accept-language'];
+    const header = Array.isArray(accept) ? accept[0] : accept;
+    const localeOverride = header?.split(',')[0]?.trim().split('-')[0] ?? null;
+    return this.reports.workerHome(user, localeOverride);
   }
 
   @Get('sales')

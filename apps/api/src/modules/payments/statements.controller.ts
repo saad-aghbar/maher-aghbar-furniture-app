@@ -105,8 +105,12 @@ export class StatementsController {
     ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
     let balance = 0;
+    let totalInvoiced = 0;
+    let totalPaid = 0;
     const withBalance = entries.map((e) => {
       balance += Number(e.debit) - Number(e.credit);
+      totalInvoiced += Number(e.debit);
+      totalPaid += Number(e.credit);
       return { ...e, balance: roundMoney(balance), date: e.date.toISOString() };
     });
 
@@ -115,8 +119,21 @@ export class StatementsController {
       asOf: asOfDate.toISOString(),
       openingBalance: '0.000',
       closingBalance: roundMoney(balance),
+      outstandingBalance: roundMoney(balance),
+      totalInvoiced: roundMoney(totalInvoiced),
+      totalPaid: roundMoney(totalPaid),
       currency: 'JOD',
       entries: withBalance,
+      payments: payments.map((p) => ({
+        id: p.id,
+        number: p.number,
+        amount: String(p.amount),
+        method: p.method,
+        paymentDate: p.paymentDate.toISOString(),
+        referenceNumber: p.referenceNumber,
+        bank: p.bank,
+        notes: p.notes,
+      })),
     };
   }
 }

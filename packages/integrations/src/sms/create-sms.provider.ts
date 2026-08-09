@@ -12,5 +12,10 @@ export function createSmsProvider(env: NodeJS.ProcessEnv = process.env): SmsProv
   if ((forced === 'twilio' || (!forced && sid && token && from)) && sid && token && from) {
     return new TwilioSmsProvider(sid, token, from);
   }
+  if (forced === 'twilio') {
+    console.warn(
+      '[sms] SMS_PROVIDER=twilio but TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_SMS_FROM incomplete — using console',
+    );
+  }
   return new ConsoleSmsProvider();
 }

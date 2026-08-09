@@ -1,6 +1,6 @@
 # Security
 
-Security model for **Maher Al-Aghbar & Sons Furniture ERP** — coral-red enterprise platform for a Jordan furniture factory handling commercial, production, and financial data.
+Security model for **Maher Al-Aghbar & Sons Furniture ERP** — Army Camo brand enterprise platform for a Jordan furniture factory handling commercial, production, and financial data.
 
 ---
 

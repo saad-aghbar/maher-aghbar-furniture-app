@@ -1,8 +1,28 @@
-import { Injectable } from '@nestjs/common';
-import { InvoiceStatus, Prisma, ProductionOrderStatus, SalesOrderStatus } from '@maher/database';
+import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  InvoiceStatus,
+  Priority,
+  Prisma,
+  ProductionOrderStatus,
+  SalesOrderStatus,
+  TaskStatus,
+} from '@maher/database';
+import { hasPermission, type Permission } from '@maher/permissions';
+import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { calculateOrderCosts } from '../../common/helpers/order-costing.util';
+import { mapProgressForDealer } from '../../common/helpers/dealer-progress.util';
 import { roundMoney } from '../../common/helpers/money.util';
+import { buildTaskTimingSummary } from '../../common/helpers/task-timing.util';
+
+const OPEN_TASK_STATUSES: TaskStatus[] = [
+  TaskStatus.NOT_STARTED,
+  TaskStatus.READY,
+  TaskStatus.IN_PROGRESS,
+  TaskStatus.PAUSED,
+  TaskStatus.BLOCKED,
+  TaskStatus.READY_FOR_INSPECTION,
+];
 
 export type SalesReportFilters = {
   from?: string;
@@ -213,6 +233,661 @@ export class ReportsService {
       pendingReturns,
       lowStockItems,
       recentOrders,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Mobile admin Home aggregate — dashboard metrics plus completed-today,
+   * urgent tasks, unread notifications, and optional audit activity.
+   */
+  async adminHome(user: AuthUser) {
+    const perms = user.permissions ?? [];
+    const can = (p: Permission) => hasPermission(perms, p);
+
+    const canTasks = can('production-task.read');
+    const canNotifications = can('notification.read');
+    const canAudit = can('audit.read');
+
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const soon = new Date(now);
+    soon.setDate(soon.getDate() + 7);
+
+    const closedStatuses: SalesOrderStatus[] = [
+      SalesOrderStatus.COMPLETED,
+      SalesOrderStatus.CANCELLED,
+      SalesOrderStatus.DELIVERED,
+    ];
+    const productionStatuses: SalesOrderStatus[] = [
+      SalesOrderStatus.READY_FOR_PRODUCTION,
+      SalesOrderStatus.IN_PRODUCTION,
+      SalesOrderStatus.WAITING_FOR_MATERIALS,
+    ];
+
+    const spotlightSelect = {
+      id: true,
+      number: true,
+      status: true,
+      requiredDeliveryDate: true,
+      externalOrderNumber: true,
+      customer: {
+        select: { name: true, nameEn: true, nameAr: true, nameHe: true },
+      },
+      lines: {
+        orderBy: { sortOrder: 'asc' as const },
+        take: 1,
+        select: {
+          description: true,
+          product: {
+            select: {
+              nameEn: true,
+              nameAr: true,
+              nameHe: true,
+              imageUrl: true,
+            },
+          },
+        },
+      },
+      quotation: {
+        select: {
+          request: {
+            select: {
+              externalOrderNumber: true,
+              endCustomerName: true,
+              items: {
+                orderBy: { sortOrder: 'asc' as const },
+                take: 1,
+                select: { productName: true },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const urgentWhere: Prisma.ProductionTaskWhereInput = {
+      priority: { in: ['URGENT', 'HIGH'] },
+      status: { in: OPEN_TASK_STATUSES },
+    };
+
+    const [
+      dashboard,
+      completedToday,
+      urgentTasksCount,
+      urgentTasksRows,
+      unreadNotifications,
+      activityRows,
+      lateSpotlight,
+      nearSpotlight,
+      prodSpotlight,
+    ] =
+      await Promise.all([
+        this.dashboard(),
+        this.prisma.productionOrder.count({
+          where: {
+            archivedAt: null,
+            status: ProductionOrderStatus.COMPLETED,
+            actualCompletionDate: { gte: startOfDay },
+          },
+        }),
+        canTasks ? this.prisma.productionTask.count({ where: urgentWhere }) : Promise.resolve(0),
+        canTasks
+          ? this.prisma.productionTask.findMany({
+              where: urgentWhere,
+              orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+              take: 3,
+              select: {
+                id: true,
+                number: true,
+                name: true,
+                priority: true,
+                status: true,
+                plannedCompletion: true,
+                assignedEmployee: {
+                  select: { firstName: true, lastName: true },
+                },
+              },
+            })
+          : Promise.resolve([]),
+        canNotifications
+          ? this.prisma.notification.count({
+              where: { userId: user.id, readAt: null },
+            })
+          : Promise.resolve(0),
+        canAudit
+          ? this.prisma.auditEvent.findMany({
+              orderBy: { createdAt: 'desc' },
+              take: 8,
+              select: {
+                id: true,
+                action: true,
+                entityType: true,
+                entityId: true,
+                createdAt: true,
+                user: { select: { firstName: true, lastName: true } },
+              },
+            })
+          : Promise.resolve([]),
+        // Floor spotlight candidates — priority decided after fetch (late > near > production).
+        this.prisma.salesOrder.findFirst({
+          where: {
+            archivedAt: null,
+            requiredDeliveryDate: { lt: now },
+            status: { notIn: closedStatuses },
+          },
+          orderBy: { requiredDeliveryDate: 'asc' },
+          select: spotlightSelect,
+        }),
+        this.prisma.salesOrder.findFirst({
+          where: {
+            archivedAt: null,
+            requiredDeliveryDate: { lte: soon, gte: now },
+            status: { notIn: closedStatuses },
+          },
+          orderBy: { requiredDeliveryDate: 'asc' },
+          select: spotlightSelect,
+        }),
+        this.prisma.salesOrder.findFirst({
+          where: {
+            archivedAt: null,
+            status: { in: productionStatuses },
+          },
+          orderBy: [{ requiredDeliveryDate: 'asc' }, { createdAt: 'asc' }],
+          select: spotlightSelect,
+        }),
+      ]);
+
+    const mapSpotlightOrder = (so: NonNullable<typeof lateSpotlight>) => {
+      const line = so.lines[0];
+      const product = line?.product;
+      const title =
+        product?.nameEn ||
+        product?.nameAr ||
+        line?.description ||
+        so.quotation?.request?.items?.[0]?.productName ||
+        so.number;
+      return {
+        id: so.id,
+        number: so.number,
+        status: so.status,
+        title,
+        imageUrl: product?.imageUrl ?? null,
+        customerName:
+          so.customer.nameEn || so.customer.nameAr || so.customer.name || so.customer.nameHe || null,
+        externalOrderNumber:
+          so.externalOrderNumber?.trim() ||
+          so.quotation?.request?.externalOrderNumber?.trim() ||
+          null,
+        endCustomerName: so.quotation?.request?.endCustomerName ?? null,
+        requiredDeliveryDate: so.requiredDeliveryDate?.toISOString() ?? null,
+      };
+    };
+
+    /**
+     * One exemplar from the hottest open queue — never “newest of 8 recent”.
+     * late (soonest overdue) → nearing (soonest due) → in production (oldest due / oldest created).
+     */
+    let floorSpotlight:
+      | {
+          order: ReturnType<typeof mapSpotlightOrder>;
+          reason: 'late' | 'nearing' | 'in_production';
+          peerCount: number;
+        }
+      | null = null;
+
+    if (lateSpotlight && dashboard.delayedOrders > 0) {
+      floorSpotlight = {
+        order: mapSpotlightOrder(lateSpotlight),
+        reason: 'late',
+        peerCount: dashboard.delayedOrders,
+      };
+    } else if (nearSpotlight && dashboard.ordersNearingDelivery > 0) {
+      floorSpotlight = {
+        order: mapSpotlightOrder(nearSpotlight),
+        reason: 'nearing',
+        peerCount: dashboard.ordersNearingDelivery,
+      };
+    } else if (prodSpotlight && dashboard.ordersInProduction > 0) {
+      floorSpotlight = {
+        order: mapSpotlightOrder(prodSpotlight),
+        reason: 'in_production',
+        peerCount: dashboard.ordersInProduction,
+      };
+    }
+
+    return {
+      ...dashboard,
+      completedToday,
+      urgentTasksCount,
+      urgentTasks: urgentTasksRows.map((t) => ({
+        id: t.id,
+        number: t.number,
+        name: t.name,
+        priority: t.priority,
+        status: t.status,
+        plannedCompletion: t.plannedCompletion?.toISOString() ?? null,
+        assigneeName: t.assignedEmployee
+          ? `${t.assignedEmployee.firstName} ${t.assignedEmployee.lastName}`.trim()
+          : null,
+      })),
+      unreadNotifications,
+      recentActivity: canAudit
+        ? activityRows.map((e) => ({
+            id: e.id,
+            action: e.action,
+            entityType: e.entityType,
+            entityId: e.entityId,
+            createdAt: e.createdAt.toISOString(),
+            actorName: e.user ? `${e.user.firstName} ${e.user.lastName}`.trim() : null,
+          }))
+        : null,
+      floorSpotlight,
+    };
+  }
+
+  /**
+   * Mobile dealer Home — customer-scoped only. Never includes costs, workers, or stages.
+   */
+  async dealerHome(user: AuthUser) {
+    if (!user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Dealer home requires a linked customer account.',
+      });
+    }
+
+    const customerId = user.customerId;
+    const now = new Date();
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 7);
+
+    const closed: SalesOrderStatus[] = [
+      SalesOrderStatus.COMPLETED,
+      SalesOrderStatus.CANCELLED,
+      SalesOrderStatus.DELIVERED,
+    ];
+    const productionStatuses: SalesOrderStatus[] = [
+      SalesOrderStatus.READY_FOR_PRODUCTION,
+      SalesOrderStatus.IN_PRODUCTION,
+      SalesOrderStatus.WAITING_FOR_MATERIALS,
+    ];
+    const openInvoiceStatuses: InvoiceStatus[] = [
+      InvoiceStatus.ISSUED,
+      InvoiceStatus.PARTIALLY_PAID,
+      InvoiceStatus.OVERDUE,
+    ];
+
+    const baseSo: Prisma.SalesOrderWhereInput = { archivedAt: null, customerId };
+    const canNotifications = hasPermission(user.permissions ?? [], 'notification.read');
+
+    const [
+      activeOrders,
+      ordersInProduction,
+      ordersNearingDelivery,
+      completedOrders,
+      outstandingAgg,
+      dueInvoice,
+      unreadNotifications,
+      recentSalesOrders,
+      recentInvoiceRows,
+    ] = await Promise.all([
+      this.prisma.salesOrder.count({
+        where: { ...baseSo, status: { notIn: closed } },
+      }),
+      this.prisma.salesOrder.count({
+        where: { ...baseSo, status: { in: productionStatuses } },
+      }),
+      this.prisma.salesOrder.count({
+        where: {
+          ...baseSo,
+          requiredDeliveryDate: { lte: soon, gte: now },
+          status: { notIn: closed },
+        },
+      }),
+      this.prisma.salesOrder.count({
+        where: {
+          ...baseSo,
+          status: { in: [SalesOrderStatus.COMPLETED, SalesOrderStatus.DELIVERED] },
+        },
+      }),
+      this.prisma.invoice.aggregate({
+        where: {
+          archivedAt: null,
+          customerId,
+          status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID, InvoiceStatus.DRAFT] },
+        },
+        _sum: { outstandingAmount: true },
+      }),
+      this.prisma.invoice.findFirst({
+        where: {
+          archivedAt: null,
+          customerId,
+          status: { in: openInvoiceStatuses },
+          outstandingAmount: { gt: 0 },
+          dueDate: { not: null },
+        },
+        orderBy: { dueDate: 'asc' },
+        select: { dueDate: true },
+      }),
+      canNotifications
+        ? this.prisma.notification.count({
+            where: { userId: user.id, readAt: null },
+          })
+        : Promise.resolve(0),
+      this.prisma.salesOrder.findMany({
+        where: { ...baseSo, status: { notIn: [SalesOrderStatus.CANCELLED] } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          requiredDeliveryDate: true,
+          externalOrderNumber: true,
+          lines: {
+            orderBy: { sortOrder: 'asc' },
+            take: 1,
+            select: {
+              description: true,
+              product: {
+                select: {
+                  nameEn: true,
+                  nameAr: true,
+                  nameHe: true,
+                  imageUrl: true,
+                },
+              },
+            },
+          },
+          quotation: {
+            select: {
+              request: {
+                select: {
+                  externalOrderNumber: true,
+                  endCustomerName: true,
+                  items: {
+                    orderBy: { sortOrder: 'asc' },
+                    take: 1,
+                    select: { productName: true },
+                  },
+                },
+              },
+            },
+          },
+          productionOrders: {
+            select: { progressPercent: true },
+          },
+        },
+      }),
+      this.prisma.invoice.findMany({
+        where: {
+          archivedAt: null,
+          customerId,
+          status: { notIn: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED, InvoiceStatus.VOID] },
+        },
+        orderBy: { invoiceDate: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          total: true,
+          outstandingAmount: true,
+          invoiceDate: true,
+          dueDate: true,
+        },
+      }),
+    ]);
+
+    const outstandingBalance = Number(outstandingAgg._sum.outstandingAmount ?? 0);
+    let balanceDueInDays: number | null = null;
+    if (dueInvoice?.dueDate && outstandingBalance > 0) {
+      const ms = dueInvoice.dueDate.getTime() - now.getTime();
+      balanceDueInDays = Math.ceil(ms / (1000 * 60 * 60 * 24));
+    }
+
+    const recentOrders = recentSalesOrders.map((so) => {
+      const line = so.lines[0];
+      const product = line?.product;
+      const title =
+        product?.nameEn ||
+        product?.nameAr ||
+        line?.description ||
+        so.quotation?.request?.items?.[0]?.productName ||
+        so.number;
+      const rawProgress = so.productionOrders.reduce(
+        (max, po) => Math.max(max, po.progressPercent ?? 0),
+        so.status === SalesOrderStatus.DELIVERED || so.status === SalesOrderStatus.COMPLETED
+          ? 100
+          : 0,
+      );
+      const coarse = mapProgressForDealer({ progressPercent: rawProgress });
+      return {
+        id: so.id,
+        number: so.number,
+        status: so.status,
+        title,
+        imageUrl: product?.imageUrl ?? null,
+        progressPercent: coarse.progressPercent,
+        progressLabel: coarse.progressLabel,
+        externalOrderNumber:
+          so.externalOrderNumber?.trim() ||
+          so.quotation?.request?.externalOrderNumber?.trim() ||
+          null,
+        endCustomerName: so.quotation?.request?.endCustomerName ?? null,
+        requiredDeliveryDate: so.requiredDeliveryDate?.toISOString() ?? null,
+      };
+    });
+
+    return {
+      activeOrders,
+      ordersInProduction,
+      ordersNearingDelivery,
+      completedOrders,
+      outstandingBalance: roundMoney(outstandingBalance),
+      balanceDueInDays,
+      unreadNotifications,
+      recentOrders,
+      recentInvoices: recentInvoiceRows.map((inv) => ({
+        id: inv.id,
+        number: inv.number,
+        status: inv.status,
+        total: roundMoney(Number(inv.total)),
+        outstandingAmount: roundMoney(Number(inv.outstandingAmount)),
+        issuedAt: inv.invoiceDate.toISOString(),
+        dueDate: inv.dueDate?.toISOString() ?? null,
+      })),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Mobile worker Home — always scoped to assignedEmployeeId = user.id.
+   * Never honors update-any; never returns progress %, costs, or other workers.
+   */
+  async workerHome(user: AuthUser, localeOverride?: string | null) {
+    const assigneeId = user.id;
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const mine: Prisma.ProductionTaskWhereInput = { assignedEmployeeId: assigneeId };
+    const openMine: Prisma.ProductionTaskWhereInput = {
+      ...mine,
+      status: { in: OPEN_TASK_STATUSES },
+    };
+    const canNotifications = hasPermission(user.permissions ?? [], 'notification.read');
+    const rawLang = String(localeOverride || user.preferredLanguage || 'en').toLowerCase();
+    const lang = rawLang.startsWith('ar') ? 'ar' : rawLang.startsWith('he') ? 'he' : 'en';
+
+    const taskSelect = {
+      id: true,
+      number: true,
+      name: true,
+      priority: true,
+      status: true,
+      plannedCompletion: true,
+      estimatedMinutes: true,
+      actualMinutes: true,
+      timeEntries: {
+        where: { endedAt: null },
+        orderBy: { startedAt: 'desc' as const },
+        take: 1,
+        select: { startedAt: true },
+      },
+      stageDefinition: {
+        select: {
+          estimatedHours: true,
+          nameEn: true,
+          nameAr: true,
+          nameHe: true,
+        },
+      },
+      productionOrder: {
+        select: {
+          number: true,
+          productDescription: true,
+          salesOrder: { select: { number: true } },
+          product: {
+            select: {
+              nameEn: true,
+              nameAr: true,
+              nameHe: true,
+              imageUrl: true,
+            },
+          },
+        },
+      },
+    } as const;
+
+    const [
+      completedTodayCount,
+      unreadNotifications,
+      openTasks,
+      notificationRows,
+    ] = await Promise.all([
+      this.prisma.productionTask.count({
+        where: {
+          ...mine,
+          status: TaskStatus.COMPLETED,
+          actualCompletion: { gte: startOfDay, lte: endOfDay },
+        },
+      }),
+      canNotifications
+        ? this.prisma.notification.count({
+            where: { userId: assigneeId, readAt: null },
+          })
+        : Promise.resolve(0),
+      this.prisma.productionTask.findMany({
+        where: openMine,
+        orderBy: [{ priority: 'desc' }, { plannedCompletion: 'asc' }, { createdAt: 'desc' }],
+        take: 12,
+        select: taskSelect,
+      }),
+      canNotifications
+        ? this.prisma.notification.findMany({
+            where: { userId: assigneeId },
+            orderBy: { createdAt: 'desc' },
+            take: 20,
+            select: {
+              id: true,
+              titleEn: true,
+              titleAr: true,
+              bodyEn: true,
+              bodyAr: true,
+              createdAt: true,
+              readAt: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const mapTask = (t: (typeof openTasks)[number]) => {
+      const product = t.productionOrder.product;
+      const stage = t.stageDefinition;
+      const productTitle =
+        (lang === 'ar' ? product?.nameAr : lang === 'he' ? product?.nameHe : product?.nameEn) ||
+        product?.nameEn ||
+        product?.nameAr ||
+        product?.nameHe ||
+        t.productionOrder.productDescription ||
+        t.name;
+      const stageName =
+        (lang === 'ar' ? stage?.nameAr : lang === 'he' ? stage?.nameHe : stage?.nameEn) ||
+        stage?.nameEn ||
+        stage?.nameAr ||
+        stage?.nameHe ||
+        t.name;
+      const fromHours = stage?.estimatedHours
+        ? Math.round(Number(stage.estimatedHours) * 60)
+        : null;
+      const estimatedMinutes =
+        typeof t.estimatedMinutes === 'number' && t.estimatedMinutes > 0
+          ? t.estimatedMinutes
+          : fromHours && fromHours > 0
+            ? fromHours
+            : null;
+      const timing = buildTaskTimingSummary({
+        status: t.status,
+        actualMinutes: t.actualMinutes,
+        estimatedMinutes,
+        plannedCompletion: t.plannedCompletion,
+        openStartedAt: t.timeEntries?.[0]?.startedAt ?? null,
+      });
+      return {
+        id: t.id,
+        number: t.number,
+        /** Localized stage label (legacy). Prefer nameEn/Ar/He on the client. */
+        name: stageName,
+        nameEn: stage?.nameEn ?? null,
+        nameAr: stage?.nameAr ?? null,
+        nameHe: stage?.nameHe ?? null,
+        priority: t.priority,
+        status: t.status,
+        orderNumber:
+          t.productionOrder.salesOrder?.number ?? t.productionOrder.number,
+        productTitle,
+        productNameEn: product?.nameEn ?? null,
+        productNameAr: product?.nameAr ?? null,
+        productNameHe: product?.nameHe ?? null,
+        imageUrl: product?.imageUrl ?? null,
+        deadline: t.plannedCompletion?.toISOString() ?? null,
+        estimatedMinutes,
+        timing,
+      };
+    };
+
+    const urgentRaw =
+      openTasks.find((t) => t.priority === Priority.URGENT) ??
+      openTasks.find((t) => t.priority === Priority.HIGH) ??
+      null;
+    const urgentTask = urgentRaw ? mapTask(urgentRaw) : null;
+    const todaysTasks = openTasks
+      .filter((t) => t.id !== urgentRaw?.id)
+      .slice(0, 10)
+      .map(mapTask);
+
+    return {
+      completedTodayCount,
+      unreadNotifications,
+      urgentTask,
+      todaysTasks,
+      notifications: notificationRows.map((n) => ({
+        id: n.id,
+        title:
+          lang === 'ar' ? n.titleAr : lang === 'he' ? n.titleEn : n.titleEn,
+        body: lang === 'ar' ? n.bodyAr : lang === 'he' ? n.bodyEn : n.bodyEn,
+        titleEn: n.titleEn,
+        titleAr: n.titleAr,
+        bodyEn: n.bodyEn,
+        bodyAr: n.bodyAr,
+        createdAt: n.createdAt.toISOString(),
+        readAt: n.readAt?.toISOString() ?? null,
+      })),
       generatedAt: new Date().toISOString(),
     };
   }
@@ -699,32 +1374,74 @@ export class ReportsService {
       status: ProductionOrderStatus.COMPLETED,
     } as const;
 
-    const [completedToday, completedThisWeek, completedThisMonth, inProduction] =
-      await Promise.all([
-        this.prisma.productionOrder.count({
-          where: { ...completedFilter, actualCompletionDate: { gte: startOfDay } },
-        }),
-        this.prisma.productionOrder.count({
-          where: { ...completedFilter, actualCompletionDate: { gte: startOfWeek } },
-        }),
-        this.prisma.productionOrder.count({
-          where: { ...completedFilter, actualCompletionDate: { gte: startOfMonth } },
-        }),
-        this.prisma.productionOrder.count({
-          where: {
-            archivedAt: null,
-            status: {
-              in: [
-                ProductionOrderStatus.IN_PROGRESS,
-                ProductionOrderStatus.READY_FOR_PACKAGING,
-                ProductionOrderStatus.READY_FOR_DELIVERY,
-              ],
-            },
-          },
-        }),
-      ]);
+    const inProductionStatuses = [
+      ProductionOrderStatus.IN_PROGRESS,
+      ProductionOrderStatus.READY_FOR_PACKAGING,
+      ProductionOrderStatus.READY_FOR_DELIVERY,
+      ProductionOrderStatus.WAITING_FOR_MATERIALS,
+      ProductionOrderStatus.READY,
+    ];
 
-    return { completedToday, completedThisWeek, completedThisMonth, inProduction };
+    const [
+      completedToday,
+      completedThisWeek,
+      completedThisMonth,
+      completedOrders,
+      inProduction,
+      lateOrders,
+      inProductionProgress,
+    ] = await Promise.all([
+      this.prisma.productionOrder.count({
+        where: { ...completedFilter, actualCompletionDate: { gte: startOfDay } },
+      }),
+      this.prisma.productionOrder.count({
+        where: { ...completedFilter, actualCompletionDate: { gte: startOfWeek } },
+      }),
+      this.prisma.productionOrder.count({
+        where: { ...completedFilter, actualCompletionDate: { gte: startOfMonth } },
+      }),
+      this.prisma.productionOrder.count({ where: completedFilter }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: { in: inProductionStatuses },
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          requiredDeliveryDate: { lt: now },
+          status: {
+            notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
+          },
+        },
+      }),
+      this.prisma.productionOrder.aggregate({
+        where: {
+          archivedAt: null,
+          status: { in: inProductionStatuses },
+        },
+        _avg: { progressPercent: true },
+      }),
+    ]);
+
+    const overallProgress = Math.round(Number(inProductionProgress._avg.progressPercent ?? 0));
+
+    return {
+      /** Alias for daily completed */
+      dailyProduction: completedToday,
+      /** Alias for weekly completed */
+      weeklyProduction: completedThisWeek,
+      /** Alias for monthly completed */
+      monthlyProduction: completedThisMonth,
+      completedToday,
+      completedThisWeek,
+      completedThisMonth,
+      completedOrders,
+      inProduction,
+      lateOrders,
+      overallProgress,
+    };
   }
 
   async inventory() {

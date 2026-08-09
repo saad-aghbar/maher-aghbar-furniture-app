@@ -65,5 +65,6 @@
   "PASS": "Pass",
   "FAIL": "Fail",
   "NOT_APPLICABLE": "N/A",
-  "IN_TRANSIT": "In transit"
+  "IN_TRANSIT": "In transit",
+  "POSTED": "Posted"
 }

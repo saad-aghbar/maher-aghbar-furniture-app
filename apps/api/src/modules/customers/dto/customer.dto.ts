@@ -83,7 +83,7 @@ export class CreateCustomerDto {
 
   @IsString()
   @Matches(PHONE_E164_PATTERN, {
-    message: 'Phone must start with +country code then digits (e.g. +970599123456).',
+    message: 'Enter a valid phone number.',
   })
   phone!: string;
 
@@ -91,7 +91,7 @@ export class CreateCustomerDto {
   @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
   @Matches(PHONE_E164_PATTERN, {
-    message: 'Fax must start with +country code then digits (e.g. +97022991234).',
+    message: 'Enter a valid fax number.',
   })
   fax?: string;
 
@@ -115,9 +115,30 @@ export class CreateCustomerDto {
   @IsString()
   notes?: string;
 
+  /** Admin-chosen dealer portal login (required). */
+  @IsString()
+  @MinLength(2)
+  portalUsername!: string;
+
+  /** Admin-chosen dealer portal password (required; any non-empty value). */
+  @IsString()
+  @MinLength(1)
+  portalPassword!: string;
+
   @ValidateNested()
   @Type(() => CreateCustomerAddressDto)
   address!: CreateCustomerAddressDto;
+}
+
+/** Soft-delete confirmation — must match the dealer’s portal login. */
+export class DeleteCustomerDto {
+  @IsString()
+  @MinLength(2)
+  portalUsername!: string;
+
+  @IsString()
+  @MinLength(1)
+  portalPassword!: string;
 }
 
 export class UpdateCustomerDto {
@@ -155,7 +176,7 @@ export class UpdateCustomerDto {
   @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
   @Matches(PHONE_E164_PATTERN, {
-    message: 'Phone must start with +country code then digits (e.g. +970599123456).',
+    message: 'Enter a valid phone number.',
   })
   phone?: string;
 
@@ -163,7 +184,7 @@ export class UpdateCustomerDto {
   @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
   @Matches(PHONE_E164_PATTERN, {
-    message: 'Fax must start with +country code then digits (e.g. +97022991234).',
+    message: 'Enter a valid fax number.',
   })
   fax?: string;
 

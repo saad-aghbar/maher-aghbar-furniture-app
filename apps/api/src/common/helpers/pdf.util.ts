@@ -20,13 +20,13 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.fillColor('#e03c31').fontSize(18).text(docSpec.title, { align: 'left' });
+    doc.fillColor('#776245').fontSize(18).text(docSpec.title, { align: 'left' });
     doc.moveDown(0.3);
     if (docSpec.subtitle) {
-      doc.fillColor('#1a1a1a').fontSize(12).text(docSpec.subtitle);
+      doc.fillColor('#1e1a1b').fontSize(12).text(docSpec.subtitle);
     }
     doc.moveDown(0.5);
-    doc.fillColor('#5c5c5c').fontSize(10);
+    doc.fillColor('#5c574f').fontSize(10);
     for (const line of docSpec.meta ?? []) {
       doc.text(line);
     }
@@ -37,7 +37,7 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
     const usable = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const colW = usable / colCount;
 
-    doc.fillColor('#1a1a1a').fontSize(10).font('Helvetica-Bold');
+    doc.fillColor('#1e1a1b').fontSize(10).font('Helvetica-Bold');
     docSpec.columns.forEach((h, i) => {
       doc.text(String(h), startX + i * colW, doc.y, { width: colW - 4, continued: i < colCount - 1 });
     });
@@ -50,7 +50,7 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
       .stroke();
     doc.moveDown(0.4);
 
-    doc.font('Helvetica').fillColor('#1a1a1a');
+    doc.font('Helvetica').fillColor('#1e1a1b');
     for (const row of docSpec.rows) {
       const y = doc.y;
       row.forEach((cell, i) => {

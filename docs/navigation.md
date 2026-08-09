@@ -1,6 +1,6 @@
 # Navigation Maps
 
-Information architecture for the three client applications. Coral-red (`#E03C31`) primary accent on white enterprise chrome. Sidebar collapses on tablet; bottom nav on employee mobile.
+Information architecture for the three client applications. Army Camo (`#776245`) primary accent on Apple White / white enterprise chrome with Liquorice dark theme. Sidebar collapses on tablet; bottom nav on employee mobile.
 
 Permission gates hide items — empty sections never render.
 

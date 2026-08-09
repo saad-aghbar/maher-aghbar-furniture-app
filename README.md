@@ -74,32 +74,34 @@ docker compose -f infra/docker/docker-compose.yml up -d postgres redis
 
 **Local / demo only — never use these in production.**
 
-Every account below uses password **`Admin@12345!`**. Sign in with **username** (not email).
+Every account below uses password **`123`**. Sign in with **username** (not email).
 
 Still only three **types** (admin / customer / worker). Specialty floor logins are all Worker accounts — each sees **only their assigned tasks**.
 
 | Username | Password | Type | App / specialty |
 |----------|----------|------|-----------------|
-| `admin` | `Admin@12345!` | Admin | Admin web — assign stages, run the factory |
-| `worker` | `Admin@12345!` | Worker | Material prep (WH) |
-| `carpenter` | `Admin@12345!` | Worker | Carpentry — Cedar PO |
-| `carpenter2` | `Admin@12345!` | Worker | Carpentry — Olive PO (same specialty, isolated tasks) |
-| `painter` | `Admin@12345!` | Worker | Painting |
-| `upholsterer` | `Admin@12345!` | Worker | Upholstery |
-| `assembler` | `Admin@12345!` | Worker | Assembly |
-| `packer` | `Admin@12345!` | Worker | Packaging |
-| `inspector` | `Admin@12345!` | Worker | Quality inspection |
-| `driver` | `Admin@12345!` | Worker | Delivery |
-| `cedar` | `Admin@12345!` | Customer | Customer portal — Cedar Hotel |
-| `olive` | `Admin@12345!` | Customer | Customer portal — Olive Restaurant |
-| `petra` | `Admin@12345!` | Customer | Customer portal — Petra Showroom |
-| `villa` | `Admin@12345!` | Customer | Customer portal — Amman Villa |
+| `admin` | `123` | Admin | Admin web — assign stages, run the factory |
+| `cutter` | `123` | Worker | Material prep (WH) |
+| `carpenter` | `123` | Worker | Carpentry |
+| `carpenter2` | `123` | Worker | Carpentry (parallel lane) |
+| `painter` | `123` | Worker | Painting |
+| `upholsterer` | `123` | Worker | Upholstery |
+| `assembler` | `123` | Worker | Assembly |
+| `packer` | `123` | Worker | Packaging |
+| `inspector` | `123` | Worker | Quality inspection |
+| `driver` | `123` | Worker | Delivery |
+| `nile` | `123` | Customer | Customer portal — Nile Interiors |
+| `oasis` | `123` | Customer | Customer portal — Oasis Living |
+| `balqis` | `123` | Customer | Customer portal — Balqis Hospitality |
+| `jerash` | `123` | Customer | Customer portal — Jerash Furnishings |
 
-Quick smoke logins: **`admin`**, **`cedar`**, **`carpenter`** — same password.
+Additional dealers (`aqaba`, `zarqa`, `irbid`, `madaba`, `salt`, `karak`, `mafraq`, `ajloun`, `rum`, `deadsea`) and workers (`cutter2`, `carpenter3`, `painter2`, `upholsterer2`, `assembler2`, `driver2`) are also seeded.
+
+Quick smoke logins: **`admin`**, **`nile`**, **`carpenter`** — same password.
 
 **Workflow:** Admin opens a production order and assigns a worker per stage (filtered by department). When a worker completes their stage, the pipeline unlocks the next ready stages (e.g. carpentry done → upholstery / assembly can proceed; packaging done → delivery). Workers never see each other’s tasks.
 
-Demo data (`pnpm db:seed`) tells a full Amman factory story: Cedar lobby sofas mid-production with a partial AR payment, Olive dining chairs delivered and paid (with a pending return), Petra showroom quote pending, open fabric purchase request for low stock, and supplier AP against a received timber/foam PO. Each dealer has its own customer portal account.
+Demo data (`pnpm db:seed`) builds an **~8-month** Amman factory history: ~14 dealers, full catalog, multi-month purchasing/AP, ~180+ sales orders with RFQ→quote→production→delivery→AR chains, open fabric PR for low stock, QC/returns samples, and notifications. Each dealer has its own customer portal account.
 
 Legacy email addresses (e.g. `admin@maher-aghbar.jo`) still exist on user records but login accepts **username only**.
 

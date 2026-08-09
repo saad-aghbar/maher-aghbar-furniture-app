@@ -33,6 +33,47 @@ export class NotificationsService {
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
   ) {}
 
+  /** In-app inbox for portal users linked to a customer. */
+  async notifyCustomerUsers(
+    customerId: string,
+    payload: Omit<NotifyPayload, 'to'> & { to?: NotifyPayload['to'] },
+  ) {
+    const users = await this.prisma.user.findMany({
+      where: { customerId, isActive: true, archivedAt: null },
+      select: { id: true },
+      take: 50,
+    });
+    for (const u of users) {
+      await this.sendFromTemplate({
+        ...payload,
+        channel: 'IN_APP',
+        to: { ...payload.to, userId: u.id },
+      });
+    }
+    return { ok: true as const, count: users.length };
+  }
+
+  /** In-app inbox for system admins (new order / AI draft alerts). */
+  async notifyAdminUsers(payload: Omit<NotifyPayload, 'to'>) {
+    const admins = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        archivedAt: null,
+        roles: { some: { role: { code: { in: ['SYSTEM_ADMINISTRATOR'] } } } },
+      },
+      select: { id: true },
+      take: 20,
+    });
+    for (const admin of admins) {
+      await this.sendFromTemplate({
+        ...payload,
+        channel: 'IN_APP',
+        to: { userId: admin.id },
+      });
+    }
+    return { ok: true as const, count: admins.length };
+  }
+
   async sendFromTemplate(payload: NotifyPayload) {
     const template = await this.prisma.notificationTemplate.findUnique({
       where: { code: payload.templateCode },

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -11,13 +12,47 @@ import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
 import { CreateRequestDto, ListRequestsDto, UpdateRequestDto } from './dto/request.dto';
+import {
+  computeDealerEditPolicy,
+  detectsFabricMutation,
+  isFabricInProduction,
+  preserveFabricOnItems,
+  type DealerEditPolicy,
+} from './dealer-edit-policy';
+import { NotificationsService } from '../notifications/notifications.service';
+import { LocalStorageService } from '../../integrations/storage/local-storage.service';
+import { firstImageDocument } from '../../common/helpers/document-image.util';
 
 @Injectable()
 export class RequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    private readonly notifications: NotificationsService,
+    private readonly storage: LocalStorageService,
   ) {}
+
+  /** Short-lived download URL for list/detail thumbnails. */
+  private documentImageUrl(doc: { storageKey: string } | null | undefined): string | null {
+    if (!doc?.storageKey) return null;
+    const token = this.storage.createAccessToken(doc.storageKey, 3600);
+    return `/api/v1/uploads/download?token=${token}`;
+  }
+
+  private async notifyNewOrder(request: {
+    id: string;
+    number: string;
+    customer?: { name?: string | null; nameEn?: string | null } | null;
+  }) {
+    await this.notifications.notifyAdminUsers({
+      templateCode: 'NEW_ORDER',
+      vars: {
+        number: request.number,
+        customerName: request.customer?.nameEn || request.customer?.name || '—',
+      },
+      linkUrl: `/requests/${request.id}`,
+    });
+  }
 
   async list(query: ListRequestsDto, user?: AuthUser) {
     const where: Prisma.RequestForQuotationWhereInput = {
@@ -60,7 +95,13 @@ export class RequestsService {
           items: true,
           documents: {
             where: { archivedAt: null },
-            select: { id: true, fileName: true, mimeType: true, category: true },
+            select: {
+              id: true,
+              fileName: true,
+              mimeType: true,
+              category: true,
+              storageKey: true,
+            },
             orderBy: { createdAt: 'asc' },
             take: 8,
           },
@@ -155,10 +196,17 @@ export class RequestsService {
       }
 
       const match = exact ?? fuzzy;
+      const catalogImage = match?.imageUrl ?? null;
+      const attachmentImage = catalogImage
+        ? null
+        : this.documentImageUrl(firstImageDocument(row.documents));
+      const { documents, ...rest } = row;
+      const safeDocuments = documents.map(({ storageKey: _k, ...doc }) => doc);
       return {
-        ...row,
+        ...rest,
+        documents: safeDocuments,
         title: primaryName || row.number,
-        imageUrl: match?.imageUrl ?? null,
+        imageUrl: catalogImage ?? attachmentImage,
       };
     });
 
@@ -185,7 +233,13 @@ export class RequestsService {
         quotations: { select: { id: true, number: true, status: true } },
         documents: {
           where: { archivedAt: null },
-          select: { id: true, fileName: true, mimeType: true, category: true },
+          select: {
+            id: true,
+            fileName: true,
+            mimeType: true,
+            category: true,
+            storageKey: true,
+          },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -197,15 +251,62 @@ export class RequestsService {
 
     const primary = request.items[0];
     const primaryName = primary?.productName?.trim() ?? '';
-    const imageUrl = await this.resolveProductImage({
+    const catalogImage = await this.resolveProductImage({
       productId: primary?.productId,
       productName: primaryName,
     });
+    const imageUrl =
+      catalogImage ?? this.documentImageUrl(firstImageDocument(request.documents));
+    const editPolicy = await this.buildEditPolicy(request, user);
+    // Never expose storage keys to clients
+    const documents = request.documents.map(({ storageKey: _storageKey, ...doc }) => doc);
     return {
       ...request,
+      documents,
       title: primaryName || request.number,
       imageUrl,
+      editPolicy,
     };
+  }
+
+  private async buildEditPolicy(
+    request: {
+      id: string;
+      status: string;
+      createdAt: Date;
+      submittedAt?: Date | null;
+      items: Array<{
+        fabricType?: string | null;
+        fabricColor?: string | null;
+        fabricCode?: string | null;
+      }>;
+    },
+    user?: AuthUser,
+  ): Promise<DealerEditPolicy> {
+    const isDealer = Boolean(user?.customerId);
+    const fabricInProduction = await this.isFabricProductionStarted(request.id);
+    return computeDealerEditPolicy({
+      status: request.status,
+      submittedAt: request.submittedAt ?? null,
+      createdAt: request.createdAt,
+      serverNow: new Date(),
+      fabricInProduction,
+      isDealer,
+    });
+  }
+
+  private async isFabricProductionStarted(requestId: string): Promise<boolean> {
+    const production = await this.prisma.productionOrder.findFirst({
+      where: {
+        salesOrder: {
+          quotation: { requestId },
+        },
+      },
+      select: { currentStageCode: true, progressPercent: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!production) return false;
+    return isFabricInProduction(production);
   }
 
   private async resolveProductImage(opts: {
@@ -299,7 +400,7 @@ export class RequestsService {
     }
 
     const number = await this.sequences.next('RFQ', 'RFQ');
-    return this.prisma.requestForQuotation.create({
+    const created = await this.prisma.requestForQuotation.create({
       data: {
         number,
         customerId: dto.customerId,
@@ -319,6 +420,7 @@ export class RequestsService {
         deliveryLng: dto.deliveryLng,
         notes: dto.notes,
         status: opts?.submit ? 'SUBMITTED' : 'DRAFT',
+        submittedAt: opts?.submit ? new Date() : undefined,
         createdById: userId,
         items: {
           create: dto.items.map((item, index) => ({
@@ -344,48 +446,76 @@ export class RequestsService {
       },
       include: { items: true, customer: true },
     });
+    if (opts?.submit) {
+      await this.notifyNewOrder(created).catch(() => undefined);
+    }
+    return created;
   }
 
   async update(id: string, dto: UpdateRequestDto, user?: AuthUser) {
+    // Reject client attempts to smuggle authorization via unknown lock/unlock flags.
+    const raw = dto as UpdateRequestDto & Record<string, unknown>;
+    for (const banned of [
+      'editWindowEndsAt',
+      'remainingMs',
+      'canEdit',
+      'fabricLocked',
+      'serverNow',
+      'submittedAt',
+      'unlocked',
+      'forceUnlock',
+    ]) {
+      if (Object.prototype.hasOwnProperty.call(raw, banned) && raw[banned] != null) {
+        throw new ConflictException({
+          code: 'ORDER_LOCKED',
+          message: 'Client-supplied edit authorization is not allowed.',
+        });
+      }
+    }
+
     const existing = await this.getById(id, user);
     const isDealer = Boolean(user?.customerId);
-    const ageMs = Date.now() - new Date(existing.createdAt).getTime();
-    const within3Days = ageMs <= 3 * 24 * 60 * 60 * 1000;
+    const serverNow = new Date();
+    const fabricInProduction = await this.isFabricProductionStarted(id);
+    const policy = computeDealerEditPolicy({
+      status: existing.status,
+      submittedAt: existing.submittedAt ?? null,
+      createdAt: existing.createdAt,
+      serverNow,
+      fabricInProduction,
+      isDealer,
+    });
 
-    if (isDealer) {
-      if (!within3Days && !['DRAFT', 'NEEDS_INFORMATION'].includes(existing.status)) {
-        throw new BadRequestException({
-          code: 'ORDER_LOCKED',
-          message: 'Order can only be edited within 3 days of creation.',
-        });
-      }
-      // Fabric lock: if any linked production has progressed past material prep, block fabric fields
-      const fabricLocked = await this.prisma.productionOrder.findFirst({
-        where: {
-          salesOrder: {
-            quotation: { requestId: id },
-          },
-          OR: [
-            { currentStageCode: { in: ['UPHOLSTERY', 'FABRIC', 'ASSEMBLY', 'FINISHING', 'PACKING'] } },
-            { progressPercent: { gte: 40 } },
-          ],
-        },
-      });
-      if (fabricLocked && dto.items?.some((i) => i.fabric || i.color)) {
-        throw new BadRequestException({
-          code: 'FABRIC_LOCKED',
-          message: 'Fabric cannot be changed after fabric production has started.',
-        });
-      }
-    } else if (!['DRAFT', 'NEEDS_INFORMATION'].includes(existing.status)) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'Only draft or needs-information requests can be updated.',
+    if (isDealer && !policy.canEdit) {
+      throw new ConflictException({
+        code: 'ORDER_LOCKED',
+        message: policy.lockReasons[0]?.message ?? 'Order is locked and cannot be edited.',
+        details: { editPolicy: policy },
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      if (dto.items) {
+    let items = dto.items;
+    if (isDealer && policy.fabricLocked && items) {
+      const existingItems = (existing.items ?? []).map((i) => ({
+        fabricType: i.fabricType,
+        fabricColor: i.fabricColor,
+        fabricCode: i.fabricCode,
+        fabric: i.fabricType,
+        color: i.fabricColor,
+      }));
+      if (detectsFabricMutation(existingItems, items)) {
+        throw new ConflictException({
+          code: 'FABRIC_LOCKED',
+          message: 'Fabric cannot be changed after fabric production has started.',
+          details: { editPolicy: policy },
+        });
+      }
+      // Notes / dimensions may still change — preserve fabric from server rows.
+      items = preserveFabricOnItems(existingItems, items);
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (items) {
         await tx.requestItem.deleteMany({ where: { requestId: id } });
       }
 
@@ -407,11 +537,12 @@ export class RequestsService {
           deliveryLat: dto.deliveryLat,
           deliveryLng: dto.deliveryLng,
           notes: dto.notes,
-          internalNotes: dto.internalNotes,
-          ...(dto.items
+          // Dealers never write internalNotes.
+          internalNotes: isDealer ? undefined : dto.internalNotes,
+          ...(items
             ? {
                 items: {
-                  create: dto.items.map((item, index) => ({
+                  create: items.map((item, index) => ({
                     category: item.category,
                     productId: item.productId,
                     productName: item.productName,
@@ -437,6 +568,38 @@ export class RequestsService {
         include: { items: true, customer: true },
       });
     });
+
+    if (user?.id) {
+      await this.prisma.auditEvent.create({
+        data: {
+          userId: user.id,
+          action: 'request.update',
+          entityType: 'RequestForQuotation',
+          entityId: id,
+          oldValues: {
+            status: existing.status,
+            notes: existing.notes,
+            deliveryAddress: existing.deliveryAddress,
+            externalOrderNumber: existing.externalOrderNumber,
+            endCustomerName: existing.endCustomerName,
+            endCustomerPhone: existing.endCustomerPhone,
+            fabricLocked: policy.fabricLocked,
+          } as Prisma.InputJsonValue,
+          newValues: {
+            notes: updated.notes,
+            deliveryAddress: updated.deliveryAddress,
+            externalOrderNumber: updated.externalOrderNumber,
+            endCustomerName: updated.endCustomerName,
+            endCustomerPhone: updated.endCustomerPhone,
+            itemCount: updated.items?.length ?? 0,
+            serverNow: serverNow.toISOString(),
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    const editPolicy = await this.buildEditPolicy(updated, user);
+    return { ...updated, editPolicy };
   }
 
   async submit(id: string, user?: AuthUser) {
@@ -448,11 +611,36 @@ export class RequestsService {
       });
     }
 
-    return this.prisma.requestForQuotation.update({
+    const submittedAt = new Date();
+    const updated = await this.prisma.requestForQuotation.update({
       where: { id },
-      data: { status: 'SUBMITTED' },
+      data: {
+        status: 'SUBMITTED',
+        submittedAt: request.submittedAt ?? submittedAt,
+      },
       include: { items: true, customer: true },
     });
+
+    if (user?.id) {
+      await this.prisma.auditEvent.create({
+        data: {
+          userId: user.id,
+          action: 'request.submit',
+          entityType: 'RequestForQuotation',
+          entityId: id,
+          oldValues: { status: request.status } as Prisma.InputJsonValue,
+          newValues: {
+            status: 'SUBMITTED',
+            submittedAt: updated.submittedAt?.toISOString() ?? submittedAt.toISOString(),
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    await this.notifyNewOrder(updated).catch(() => undefined);
+
+    const editPolicy = await this.buildEditPolicy(updated, user);
+    return { ...updated, editPolicy };
   }
 
   async markUnderReview(id: string) {

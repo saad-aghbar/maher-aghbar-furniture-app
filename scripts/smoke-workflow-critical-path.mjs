@@ -102,16 +102,16 @@ async function completeProductionForDelivery(poId, cookie) {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 const adminLogin = await request('POST', '/api/v1/auth/login', {
-  body: { username: 'admin', password: 'Admin@12345!' },
+  body: { username: 'admin', password: '123' },
 });
 const adminCookie = cookieHeader(adminLogin.setCookie);
 ok('admin login', adminLogin.status === 200 || adminLogin.status === 201, String(adminLogin.status));
 
-const customers = await request('GET', '/api/v1/customers?pageSize=50&q=cedar', {
+const customers = await request('GET', '/api/v1/customers?pageSize=50&q=nile', {
   cookie: adminCookie,
 });
 const customerId =
-  (customers.json?.data ?? []).find((c) => String(c.email ?? '').includes('cedar'))?.id ??
+  (customers.json?.data ?? []).find((c) => String(c.email ?? '').includes('nile'))?.id ??
   customers.json?.data?.[0]?.id;
 ok('customer exists', Boolean(customerId), customerId ?? '');
 
@@ -185,7 +185,7 @@ if (quoteId) {
 }
 
 const custLogin = await request('POST', '/api/v1/auth/login', {
-  body: { username: 'cedar', password: 'Admin@12345!' },
+  body: { username: 'nile', password: '123' },
 });
 const custCookie = cookieHeader(custLogin.setCookie);
 ok('customer login', custLogin.status === 200 || custLogin.status === 201);

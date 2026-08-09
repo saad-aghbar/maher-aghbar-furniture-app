@@ -15,6 +15,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsNumber,
   IsObject,
   IsOptional,
@@ -77,10 +78,13 @@ class CustomMeasurementDto {
   @IsString() @MinLength(1) nameAr!: string;
   @IsOptional() @IsString() nameHe?: string;
   @IsOptional() @Type(() => Number) @IsNumber() value?: number | null;
+  /** Display unit — cm, m, mm, in (stored with the JSON measurement). */
+  @IsOptional() @IsString() unit?: string | null;
 }
 
 class ProductDto {
-  @IsString() @MinLength(1) sku!: string;
+  /** Optional — auto-generated when omitted. Not shown in product UIs. */
+  @IsOptional() @IsString() @MinLength(1) sku?: string;
   @IsString() @MinLength(1) nameAr!: string;
   @IsString() @MinLength(1) nameEn!: string;
   @IsOptional() @IsString() nameHe?: string;
@@ -142,6 +146,8 @@ class ProductListQueryDto extends ListActiveQueryDto {
 
 class BrowseProductsQueryDto extends ListActiveQueryDto {
   @IsOptional() @IsUUID() categoryId?: string;
+  @IsOptional() @IsIn(['name', 'price']) sortBy?: 'name' | 'price';
+  @IsOptional() @IsIn(['asc', 'desc']) sortDir?: 'asc' | 'desc';
 }
 
 function stripProductCosts<T extends Record<string, unknown>>(product: T, user?: AuthUser): T {
@@ -150,6 +156,7 @@ function stripProductCosts<T extends Record<string, unknown>>(product: T, user?:
     manufacturingCost: _mc,
     bomDefaults: _bd,
     adminNotes: _an,
+    basePrice: _bp,
     ...rest
   } = product;
   return rest as T;
@@ -193,10 +200,15 @@ class UnitDto {
 
 const UNITS_KEY = 'units_of_measure';
 
+import { SequenceService } from '../../common/sequence.service';
+
 @ApiTags('catalog')
 @Controller()
 export class CatalogController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sequences: SequenceService,
+  ) {}
 
   // ── Categories ─────────────────────────────────────────────────────────────
 
@@ -280,6 +292,8 @@ export class CatalogController {
   @RequirePermissions('catalog.read')
   async browseProducts(@Query() query: BrowseProductsQueryDto, @CurrentUser() user: AuthUser) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
+    const sortBy = query.sortBy ?? 'name';
+    const sortDir = query.sortDir ?? 'asc';
     const where: Prisma.ProductWhereInput = {
       archivedAt: null,
       isActive: true,
@@ -295,29 +309,35 @@ export class CatalogController {
           }
         : {}),
     };
+
+    // Price sort needs enrichment first; fetch a wider window then paginate in memory.
+    const fetchAllForPriceSort = sortBy === 'price';
     const [totalItems, rows] = await this.prisma.$transaction([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
         where,
         include: { category: true },
-        orderBy: { nameEn: 'asc' },
-        skip,
-        take,
+        orderBy: { nameEn: sortDir },
+        ...(fetchAllForPriceSort ? {} : { skip, take }),
       }),
     ]);
 
     const dealerPriceMap = new Map<string, { price: unknown; currency: string }>();
     if (user.customerId) {
+      const productIds = rows.map((p) => p.id);
       const dealerPrices = await this.prisma.dealerPrice.findMany({
-        where: { customerId: user.customerId, productId: { in: rows.map((p) => p.id) } },
+        where: { customerId: user.customerId, productId: { in: productIds } },
       });
       for (const dp of dealerPrices) {
         dealerPriceMap.set(dp.productId, { price: dp.price, currency: dp.currency });
       }
     }
 
-    const data = rows.map((product) => {
-      const stripped = stripProductCosts(product, user);
+    let data = rows.map((product) => {
+      const stripped = stripProductCosts(
+        product as unknown as Record<string, unknown>,
+        user,
+      );
       const dealerPrice = dealerPriceMap.get(product.id);
       return {
         ...stripped,
@@ -327,7 +347,55 @@ export class CatalogController {
       };
     });
 
+    if (fetchAllForPriceSort) {
+      const dir = sortDir === 'desc' ? -1 : 1;
+      data = [...data].sort((a, b) => {
+        const pa = Number(a.price ?? 0);
+        const pb = Number(b.price ?? 0);
+        return (pa - pb) * dir;
+      });
+      data = data.slice(skip, skip + take);
+    }
+
     return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+  }
+
+  @Get('catalog/browse/products/:id')
+  @RequirePermissions('catalog.read')
+  async browseProductById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const product = await this.prisma.product.findFirst({
+      where: { id, archivedAt: null, isActive: true },
+      include: { category: true },
+    });
+    if (!product) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
+    }
+
+    let dealerPrice: { price: unknown; currency: string } | null = null;
+    if (user.customerId) {
+      const row = await this.prisma.dealerPrice.findUnique({
+        where: {
+          customerId_productId: {
+            customerId: user.customerId,
+            productId: product.id,
+          },
+        },
+      });
+      if (row) {
+        dealerPrice = { price: row.price, currency: row.currency };
+      }
+    }
+
+    const stripped = stripProductCosts(
+      product as unknown as Record<string, unknown>,
+      user,
+    );
+    return {
+      ...stripped,
+      dealerPrice: dealerPrice?.price ?? null,
+      price: dealerPrice?.price ?? product.basePrice ?? null,
+      priceCurrency: dealerPrice?.currency ?? 'JOD',
+    };
   }
 
   @Get('products')
@@ -448,13 +516,14 @@ export class CatalogController {
   @Post('products')
   @RequirePermissions('catalog.manage')
   async createProduct(@Body() dto: ProductDto, @CurrentUser() user: AuthUser) {
-    await this.assertUnique('product', 'sku', dto.sku);
+    const sku = await this.sequences.next('PRD', 'PRD');
+    await this.assertUnique('product', 'sku', sku);
     const bomDefaults = this.normalizeBom(dto.bomDefaults);
     const manufacturingCost = await this.resolveManufacturingCost(dto, bomDefaults);
     const customMeasurements = this.normalizeCustomMeasurements(dto.customMeasurements);
     const row = await this.prisma.product.create({
       data: {
-        sku: dto.sku,
+        sku,
         nameAr: dto.nameAr,
         nameEn: dto.nameEn,
         nameHe: dto.nameHe,
@@ -523,7 +592,10 @@ export class CatalogController {
   ) {
     const existing = await this.prisma.product.findFirst({ where: { id, archivedAt: null } });
     if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Product not found.' });
-    if (dto.sku && dto.sku !== existing.sku) await this.assertUnique('product', 'sku', dto.sku);
+    // Product SKU is system-managed — ignore client updates.
+    const { sku: _ignoredSku, ...safeDto } = dto;
+    void _ignoredSku;
+    dto = safeDto;
 
     const bomDefaults =
       dto.bomDefaults !== undefined ? this.normalizeBom(dto.bomDefaults) : undefined;
@@ -545,7 +617,6 @@ export class CatalogController {
     const row = await this.prisma.product.update({
       where: { id },
       data: {
-        ...(dto.sku !== undefined ? { sku: dto.sku } : {}),
         ...(dto.nameAr !== undefined ? { nameAr: dto.nameAr } : {}),
         ...(dto.nameEn !== undefined ? { nameEn: dto.nameEn } : {}),
         ...(dto.nameHe !== undefined ? { nameHe: dto.nameHe } : {}),
@@ -975,18 +1046,24 @@ export class CatalogController {
     nameAr: string;
     nameHe?: string;
     value: number | null;
+    unit?: string;
   }> | null {
     if (rows == null) return null;
     return rows
       .filter((r) => r && String(r.nameEn ?? '').trim() && String(r.nameAr ?? '').trim())
-      .map((r, index) => ({
-        id: String(r.id || '').trim() || `m-${Date.now().toString(36)}-${index}`,
-        nameEn: String(r.nameEn).trim(),
-        nameAr: String(r.nameAr).trim(),
-        ...(r.nameHe?.trim() ? { nameHe: r.nameHe.trim() } : {}),
-        value:
-          r.value != null && Number.isFinite(Number(r.value)) ? Number(r.value) : null,
-      }));
+      .map((r, index) => {
+        const unitRaw = String(r.unit ?? 'cm').trim().slice(0, 24);
+        const unit = unitRaw || 'cm';
+        return {
+          id: String(r.id || '').trim() || `m-${Date.now().toString(36)}-${index}`,
+          nameEn: String(r.nameEn).trim(),
+          nameAr: String(r.nameAr).trim(),
+          ...(r.nameHe?.trim() ? { nameHe: r.nameHe.trim() } : {}),
+          value:
+            r.value != null && Number.isFinite(Number(r.value)) ? Number(r.value) : null,
+          unit,
+        };
+      });
   }
 
   private async loadMaterialCosts(): Promise<MaterialCostMap> {

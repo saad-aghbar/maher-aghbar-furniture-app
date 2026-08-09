@@ -32,15 +32,15 @@ pnpm launch
 
 ## Demo accounts
 
-Password: **`Admin@12345!`** — **local/demo only, never production**
+Password: **`123`** — **local/demo only, never production**
 
 Sign in with **username** (login forms no longer accept email):
 
 | Username | Role / portal |
 |----------|----------------|
 | `admin` | Admin web |
-| `cedar` / `olive` / `petra` / `villa` | Customer portal |
-| `carpenter` / `painter` / `worker` / … | Employee portal |
+| `nile` / `oasis` / `balqis` / `jerash` / … | Customer portal |
+| `carpenter` / `painter` / `cutter` / … | Employee portal |
 
 ## Smoke checks
 

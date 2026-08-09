@@ -1,6 +1,7 @@
 'use client';
 
-import type { ElementType, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import type { AppLinkComponent } from '../AppLinkComponent';
 import { cn } from '../cn';
 import { useCardMotion } from './useCardMotion';
 
@@ -10,7 +11,7 @@ export interface QuickActionTileProps {
   icon: ReactNode;
   delayMs?: number;
   /** Pass next-intl / next Link to keep client navigation */
-  LinkComponent?: ElementType;
+  LinkComponent?: AppLinkComponent;
   trailingIcon?: ReactNode;
 }
 

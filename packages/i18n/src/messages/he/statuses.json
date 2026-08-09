@@ -65,5 +65,6 @@
   "PASS": "עבר",
   "FAIL": "נכשל",
   "NOT_APPLICABLE": "לא רלוונטי",
-  "IN_TRANSIT": "במעבר"
+  "IN_TRANSIT": "במעבר",
+  "POSTED": "נרשם"
 }

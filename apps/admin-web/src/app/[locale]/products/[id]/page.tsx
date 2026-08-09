@@ -133,10 +133,9 @@ export default function ProductDetailPage() {
 
   const [nameEn, setNameEn] = useState('');
   const [nameAr, setNameAr] = useState('');
-  const [sku, setSku] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [basePrice, setBasePrice] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [adminNotes, setAdminNotes] = useState('');
   const [width, setWidth] = useState('');
@@ -178,10 +177,16 @@ export default function ProductDetailPage() {
     if (!data) return;
     setNameEn(data.nameEn);
     setNameAr(data.nameAr);
-    setSku(data.sku);
     setCategoryId(data.categoryId ?? '');
     setBasePrice(data.basePrice != null ? String(data.basePrice) : '');
-    setImageUrl(data.imageUrl ?? '');
+    const merged: string[] = [];
+    const add = (u?: string | null) => {
+      const v = u?.trim();
+      if (v && !merged.includes(v)) merged.push(v);
+    };
+    add(data.imageUrl);
+    for (const g of data.galleryUrls ?? []) add(g);
+    setPhotos(merged);
     setDescription(data.description ?? '');
     setWidth(data.width != null ? String(data.width) : '');
     setHeight(data.height != null ? String(data.height) : '');
@@ -255,18 +260,18 @@ export default function ProductDetailPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!nameEn.trim() || !nameAr.trim() || !sku.trim()) {
+      if (!nameEn.trim() || !nameAr.trim()) {
         throw new ApiClientError(t('namesRequired'), 400);
       }
       return apiFetch<ProductDetail>(`/api/v1/products/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          sku: sku.trim(),
           nameEn: nameEn.trim(),
           nameAr: nameAr.trim(),
           categoryId: categoryId || null,
           basePrice: basePrice ? Number(basePrice) : null,
-          imageUrl: imageUrl.trim() || null,
+          imageUrl: photos[0] || null,
+          galleryUrls: photos.slice(1),
           description: description.trim() || null,
           width: width ? Number(width) : null,
           height: height ? Number(height) : null,
@@ -324,7 +329,7 @@ export default function ProductDetailPage() {
       <PageHeader
         backHref="/products"
         title={title}
-        description={data.sku}
+        description={data.category ? localizedName(locale, data.category) : undefined}
         actions={
           <div className="maher-detail-sticky-actions flex flex-wrap items-center gap-2">
             <StatusBadge
@@ -347,37 +352,63 @@ export default function ProductDetailPage() {
         <Card title={t('product')}>
           <div className="space-y-4">
             <div className="overflow-hidden rounded-xl border border-border bg-[var(--maher-surface-muted)] aspect-[5/4]">
-              {imageUrl ? (
+              {photos[0] ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={imageUrl} alt={title} className="h-full w-full object-cover" />
+                <img src={photos[0]} alt={title} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-text-tertiary">
                   <Armchair className="h-12 w-12 opacity-40" />
-                  <span className="text-xs">{t('imageUrl')}</span>
+                  <span className="text-xs">{t('changeProductPhoto')}</span>
                 </div>
               )}
             </div>
             <ImageSourceField
-              label={t('imageUrl')}
-              value={imageUrl}
-              onChange={setImageUrl}
+              label={t('changeProductPhoto')}
+              value={photos[0] ?? ''}
+              onChange={(url) => setPhotos(url ? [url, ...photos.slice(1)] : photos.slice(1))}
               hint={t('imageUrlHint')}
               uploadLabel={tCommon('uploadFromDevice')}
               uploadingLabel={tCommon('uploading')}
-              urlPlaceholder="https://…"
+              allowUrl={false}
+              multiple
               showPreview={false}
-              onUploadFile={async (file) => {
-                const form = new FormData();
-                form.append('file', file);
-                const res = await apiUpload<{ downloadPath: string }>(
-                  '/api/v1/uploads?category=PRODUCT_IMAGE',
-                  form,
-                );
-                return `${API_URL}${res.downloadPath}`;
+              onUploadFiles={async (files) => {
+                const uploaded: string[] = [];
+                for (const file of files) {
+                  const form = new FormData();
+                  form.append('file', file);
+                  const res = await apiUpload<{ downloadPath: string }>(
+                    '/api/v1/uploads?category=PRODUCT_IMAGE',
+                    form,
+                  );
+                  uploaded.push(`${API_URL}${res.downloadPath}`);
+                }
+                setPhotos((prev) => {
+                  const next = [...prev];
+                  for (const u of uploaded) {
+                    if (!next.includes(u)) next.push(u);
+                  }
+                  return next;
+                });
               }}
             />
+            {photos.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {photos.map((url, i) => (
+                  <button
+                    key={`${url}-${i}`}
+                    type="button"
+                    className="relative h-16 w-16 overflow-hidden rounded-lg border border-border"
+                    onClick={() => setPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+                    title={t('removeProductPhoto')}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Input label={t('sku')} value={sku} onChange={(e) => setSku(e.target.value)} dir="ltr" />
               <Select
                 label={t('category')}
                 value={categoryId}

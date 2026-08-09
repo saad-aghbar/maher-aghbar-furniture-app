@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   ForbiddenException,
@@ -137,6 +139,24 @@ class CommunicationDto {
   nextFollowUpAt?: string;
 }
 
+class UpdateCommunicationDto {
+  @IsOptional()
+  @IsString()
+  contactName?: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  summary?: string;
+
+  @IsOptional()
+  @IsString()
+  nextFollowUpAt?: string;
+}
+
 class DealerPriceDto {
   @IsUUID()
   productId!: string;
@@ -240,21 +260,45 @@ export class CustomerRelationsController {
 
   @Post('addresses')
   @RequirePermissions('address.manage')
-  createAddress(
+  async createAddress(
     @Param('customerId') customerId: string,
     @Body() dto: AddressDto,
     @CurrentUser() user: AuthUser,
   ) {
     this.assertCustomerAccess(user, customerId);
-    const { latitude, longitude, ...rest } = dto;
-    return this.prisma.customerAddress.create({
-      data: {
-        customerId,
-        country: dto.country ?? 'JO',
-        ...rest,
-        latitude: latitude ?? undefined,
-        longitude: longitude ?? undefined,
-      },
+    const { latitude, longitude, isDefaultDelivery, isDefaultBilling, ...rest } = dto;
+    const wantDelivery = Boolean(isDefaultDelivery);
+    const wantBilling = Boolean(isDefaultBilling);
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.assertAddressDefaultsAvailable(tx, customerId, null, {
+        wantDelivery,
+        wantBilling,
+      });
+      // Defense: clear any stale duplicate defaults before insert.
+      if (wantDelivery) {
+        await tx.customerAddress.updateMany({
+          where: { customerId, archivedAt: null, isDefaultDelivery: true },
+          data: { isDefaultDelivery: false },
+        });
+      }
+      if (wantBilling) {
+        await tx.customerAddress.updateMany({
+          where: { customerId, archivedAt: null, isDefaultBilling: true },
+          data: { isDefaultBilling: false },
+        });
+      }
+      return tx.customerAddress.create({
+        data: {
+          customerId,
+          country: dto.country ?? 'JO',
+          ...rest,
+          isDefaultDelivery: wantDelivery,
+          isDefaultBilling: wantBilling,
+          latitude: latitude ?? undefined,
+          longitude: longitude ?? undefined,
+        },
+      });
     });
   }
 
@@ -269,15 +313,101 @@ export class CustomerRelationsController {
     this.assertCustomerAccess(user, customerId);
     const row = await this.prisma.customerAddress.findFirst({ where: { id, customerId } });
     if (!row) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Address not found.' });
-    const { latitude, longitude, ...rest } = dto;
-    return this.prisma.customerAddress.update({
-      where: { id },
-      data: {
-        ...rest,
-        ...(latitude !== undefined ? { latitude } : {}),
-        ...(longitude !== undefined ? { longitude } : {}),
-      },
+    const { latitude, longitude, isDefaultDelivery, isDefaultBilling, ...rest } = dto;
+
+    return this.prisma.$transaction(async (tx) => {
+      const nextDelivery =
+        isDefaultDelivery !== undefined ? Boolean(isDefaultDelivery) : row.isDefaultDelivery;
+      const nextBilling =
+        isDefaultBilling !== undefined ? Boolean(isDefaultBilling) : row.isDefaultBilling;
+
+      // Claiming a new default (this row did not have it) requires availability.
+      await this.assertAddressDefaultsAvailable(tx, customerId, id, {
+        wantDelivery: nextDelivery && !row.isDefaultDelivery,
+        wantBilling: nextBilling && !row.isDefaultBilling,
+      });
+
+      // Keep / set default: clear duplicates on other rows.
+      if (nextDelivery) {
+        await tx.customerAddress.updateMany({
+          where: {
+            customerId,
+            archivedAt: null,
+            isDefaultDelivery: true,
+            id: { not: id },
+          },
+          data: { isDefaultDelivery: false },
+        });
+      }
+      if (nextBilling) {
+        await tx.customerAddress.updateMany({
+          where: {
+            customerId,
+            archivedAt: null,
+            isDefaultBilling: true,
+            id: { not: id },
+          },
+          data: { isDefaultBilling: false },
+        });
+      }
+
+      return tx.customerAddress.update({
+        where: { id },
+        data: {
+          ...rest,
+          ...(isDefaultDelivery !== undefined ? { isDefaultDelivery: nextDelivery } : {}),
+          ...(isDefaultBilling !== undefined ? { isDefaultBilling: nextBilling } : {}),
+          ...(latitude !== undefined ? { latitude } : {}),
+          ...(longitude !== undefined ? { longitude } : {}),
+        },
+      });
     });
+  }
+
+  /**
+   * At most one default delivery and one default billing per customer.
+   * Rejects if another address already holds the requested flag.
+   */
+  private async assertAddressDefaultsAvailable(
+    tx: Prisma.TransactionClient,
+    customerId: string,
+    exceptId: string | null,
+    opts: { wantDelivery: boolean; wantBilling: boolean },
+  ) {
+    if (opts.wantDelivery) {
+      const other = await tx.customerAddress.findFirst({
+        where: {
+          customerId,
+          archivedAt: null,
+          isDefaultDelivery: true,
+          ...(exceptId ? { id: { not: exceptId } } : {}),
+        },
+        select: { id: true, label: true },
+      });
+      if (other) {
+        throw new ConflictException({
+          code: 'DEFAULT_DELIVERY_TAKEN',
+          message: 'Another address is already the default for delivery.',
+        });
+      }
+    }
+    if (opts.wantBilling) {
+      const other = await tx.customerAddress.findFirst({
+        where: {
+          customerId,
+          archivedAt: null,
+          isDefaultBilling: true,
+          ...(exceptId ? { id: { not: exceptId } } : {}),
+        },
+        select: { id: true, label: true },
+      });
+      if (other) {
+        throw new ConflictException({
+          code: 'DEFAULT_BILLING_TAKEN',
+          message: 'Another address is already the default for billing.',
+        });
+      }
+    }
   }
 
   @Delete('addresses/:id')
@@ -323,6 +453,42 @@ export class CustomerRelationsController {
         employeeId: user.id,
         nextFollowUpAt: dto.nextFollowUpAt ? new Date(dto.nextFollowUpAt) : undefined,
       },
+    });
+  }
+
+  @Patch('communications/:id')
+  @RequirePermissions('customer.update')
+  async updateComm(
+    @Param('customerId') customerId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateCommunicationDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    this.assertCustomerAccess(user, customerId);
+    const row = await this.prisma.communicationLog.findFirst({
+      where: { id, customerId },
+    });
+    if (!row) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Note not found.' });
+    }
+    const summary = dto.summary !== undefined ? dto.summary.trim() : undefined;
+    if (summary !== undefined && !summary) {
+      throw new BadRequestException({
+        code: 'SUMMARY_REQUIRED',
+        message: 'Note summary is required.',
+      });
+    }
+    return this.prisma.communicationLog.update({
+      where: { id },
+      data: {
+        ...(dto.contactName !== undefined ? { contactName: dto.contactName } : {}),
+        ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
+        ...(summary !== undefined ? { summary } : {}),
+        ...(dto.nextFollowUpAt !== undefined
+          ? { nextFollowUpAt: dto.nextFollowUpAt ? new Date(dto.nextFollowUpAt) : null }
+          : {}),
+      },
+      include: { employee: { select: { id: true, firstName: true, lastName: true } } },
     });
   }
 

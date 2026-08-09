@@ -1,6 +1,7 @@
 'use client';
 
-import type { ElementType, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import type { AppLinkComponent } from '../AppLinkComponent';
 import { cn } from '../cn';
 import { useCardMotion } from './useCardMotion';
 
@@ -20,7 +21,7 @@ const toneStyles: Record<
     icon: 'bg-[var(--maher-brand-soft)] text-[var(--maher-brand)]',
     accent: 'bg-[var(--maher-brand)]',
     soft: 'from-[var(--maher-brand-soft)]/80 to-transparent',
-    glow: 'rgba(217, 58, 43, 0.22)',
+    glow: 'rgba(119, 98, 69, 0.22)',
   },
   success: {
     icon: 'bg-[var(--maher-success-soft)] text-[var(--maher-success)]',
@@ -66,7 +67,7 @@ export interface BentoMetricCardProps {
   animateValue?: boolean;
   trailingIcon?: ReactNode;
   /** Pass next-intl / next Link to keep client navigation */
-  LinkComponent?: ElementType;
+  LinkComponent?: AppLinkComponent;
 }
 
 export function BentoMetricCard({

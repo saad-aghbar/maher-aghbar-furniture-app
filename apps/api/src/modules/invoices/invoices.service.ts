@@ -14,6 +14,7 @@ import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { JOFOTARA_PROVIDER } from '../../integrations/integrations.module';
 import type { ListInvoicesDto } from './dto/invoice.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class InvoicesService {
@@ -21,6 +22,7 @@ export class InvoicesService {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     @Inject(JOFOTARA_PROVIDER) private readonly jofotara: JoFotaraProvider,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(query: ListInvoicesDto) {
@@ -148,7 +150,7 @@ export class InvoicesService {
       throw err;
     }
 
-    return this.prisma.invoice.create({
+    const invoice = await this.prisma.invoice.create({
       data: {
         number,
         customerId: so.customerId,
@@ -171,6 +173,16 @@ export class InvoicesService {
       },
       include: { lines: true, customer: true },
     });
+
+    await this.notifications
+      .notifyCustomerUsers(so.customerId, {
+        templateCode: 'INVOICE_CREATED',
+        vars: { number: invoice.number, total: String(invoice.total) },
+        linkUrl: `/invoices/${invoice.id}`,
+      })
+      .catch(() => undefined);
+
+    return invoice;
   }
 
   /** Idempotent — skips when a non-cancelled invoice already exists for the SO. */

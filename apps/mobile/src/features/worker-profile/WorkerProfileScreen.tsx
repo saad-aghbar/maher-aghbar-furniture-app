@@ -1,0 +1,250 @@
+import { type ReactNode } from 'react';
+import { View } from 'react-native';
+import { useRouter, type Href } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useAuth } from '@/auth/AuthProvider';
+import { AppText } from '@/components/AppText';
+import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { DestructiveButton } from '@/components/buttons/DestructiveButton';
+import { OfflineBanner } from '@/components/feedback/OfflineBanner';
+import { Divider } from '@/components/layout/Divider';
+import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
+import { useNetwork } from '@/components/network/NetworkProvider';
+import { MoreBoard } from '@/features/more/components/MoreBoard';
+import { useLocale } from '@/i18n';
+import { useReducedMotion } from '@/motion';
+import { useTheme } from '@/theme';
+
+/**
+ * Worker profile — same floor-board / prefs language as admin More + account.
+ */
+export function WorkerProfileScreen() {
+  const { user, logout } = useAuth();
+  const router = useRouter();
+  const { t, isRTL, locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const { showOfflineBanner } = useNetwork();
+  const reduce = useReducedMotion();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+
+  if (!user) return null;
+
+  const displayName = user.name?.trim() || user.username || '—';
+  const first = displayName.trim().split(/\s+/)[0] || displayName;
+  const roles =
+    user.roles.length > 0
+      ? user.roles.map((r) => r.replace(/_/g, ' ')).join(' · ')
+      : t('mobile.persona.production_worker');
+
+  const enter = (delay: number) =>
+    reduce ? undefined : FadeInDown.delay(delay).duration(380).damping(22);
+
+  return (
+    <ScrollableScreen>
+      {showOfflineBanner ? <OfflineBanner /> : null}
+
+      <View
+        style={{
+          marginBottom: theme.spacing.md,
+          gap: theme.spacing.xs,
+          alignItems: isRTL ? 'flex-end' : 'flex-start',
+        }}
+      >
+        <AppText
+          variant="caption"
+          weight={locale === 'ar' ? 'regular' : 'medium'}
+          style={{
+            letterSpacing: locale === 'ar' ? 0 : 1.4,
+            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            color: colors.brand,
+            textAlign: isRTL ? 'right' : 'left',
+          }}
+        >
+          {t('mobile.workerProfile.floorEyebrow')}
+        </AppText>
+        <AppText
+          variant="title"
+          weight={titleWeight}
+          style={{ textAlign: isRTL ? 'right' : 'left' }}
+        >
+          {t('mobile.workerProfile.title')}
+        </AppText>
+        <AppText
+          variant="caption"
+          color="muted"
+          weight="regular"
+          style={{ textAlign: isRTL ? 'right' : 'left' }}
+        >
+          {t('mobile.workerProfile.subtitle')}
+        </AppText>
+      </View>
+
+      <View style={{ gap: theme.spacing.lg }}>
+        <Animated.View entering={enter(40)}>
+          <MoreBoard
+            style={{
+              padding: theme.spacing.lg,
+              paddingLeft: isRTL ? theme.spacing.lg : theme.spacing.lg + 4,
+              paddingRight: isRTL ? theme.spacing.lg + 4 : theme.spacing.lg,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                gap: theme.spacing.md,
+              }}
+            >
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  backgroundColor: colors.surfaceSecondary,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="person-outline" size={26} color={colors.brand} />
+              </View>
+              <View
+                style={{
+                  flex: 1,
+                  gap: theme.spacing.xs,
+                  alignItems: isRTL ? 'flex-end' : 'flex-start',
+                }}
+              >
+                <AppText
+                  variant="caption"
+                  weight={locale === 'ar' ? 'regular' : 'medium'}
+                  style={{
+                    letterSpacing: locale === 'ar' ? 0 : 1.2,
+                    textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                    color: colors.brand,
+                  }}
+                >
+                  {t('mobile.workerProfile.identityEyebrow')}
+                </AppText>
+                <AppText variant="heading" weight={titleWeight} numberOfLines={1}>
+                  {t('mobile.workerProfile.identityHello', { name: first })}
+                </AppText>
+                {user.username ? (
+                  <AppText variant="caption" color="muted" weight="regular" numberOfLines={1}>
+                    @{user.username}
+                  </AppText>
+                ) : null}
+                <AppText
+                  variant="caption"
+                  color="secondary"
+                  weight="regular"
+                  numberOfLines={2}
+                >
+                  {roles}
+                </AppText>
+              </View>
+            </View>
+          </MoreBoard>
+        </Animated.View>
+
+        <Animated.View entering={enter(100)} style={{ gap: theme.spacing.sm }}>
+          <SectionLabel label={t('mobile.workerProfile.appearanceSection')} locale={locale} />
+          <MoreBoard
+            style={{
+              padding: theme.spacing.lg,
+              paddingLeft: isRTL ? theme.spacing.lg : theme.spacing.lg + 4,
+              paddingRight: isRTL ? theme.spacing.lg + 4 : theme.spacing.lg,
+              gap: theme.spacing.md,
+            }}
+          >
+            <PrefRow
+              label={t('mobile.themeMode')}
+              hint={t('mobile.workerProfile.themeHint')}
+              isRTL={isRTL}
+              titleWeight={titleWeight}
+              control={<ThemeSwitcher />}
+            />
+            <Divider compact />
+            <PrefRow
+              label={t('mobile.switchLanguage')}
+              hint={t('mobile.workerProfile.languageHint')}
+              isRTL={isRTL}
+              titleWeight={titleWeight}
+              control={
+                <ExpandableLocaleSwitcher expandToward={isRTL ? 'start' : 'end'} />
+              }
+            />
+          </MoreBoard>
+        </Animated.View>
+
+        <Divider />
+
+        <Animated.View entering={enter(160)}>
+          <DestructiveButton
+            label={t('auth.logout')}
+            onPress={() => {
+              void logout().then(() => router.replace('/(auth)/login' as Href));
+            }}
+            style={{ borderRadius: theme.radius.xl }}
+          />
+        </Animated.View>
+      </View>
+    </ScrollableScreen>
+  );
+}
+
+function SectionLabel({ label, locale }: { label: string; locale: string }) {
+  const { colors } = useTheme();
+  return (
+    <AppText
+      variant="caption"
+      weight={locale === 'ar' ? 'regular' : 'medium'}
+      style={{
+        letterSpacing: locale === 'ar' ? 0 : 0.8,
+        textTransform: locale === 'ar' ? 'none' : 'uppercase',
+        color: colors.brand,
+        fontSize: 11,
+      }}
+    >
+      {label}
+    </AppText>
+  );
+}
+
+function PrefRow({
+  label,
+  hint,
+  isRTL,
+  titleWeight,
+  control,
+}: {
+  label: string;
+  hint: string;
+  isRTL: boolean;
+  titleWeight: 'medium' | 'semibold';
+  control: ReactNode;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+      }}
+    >
+      <View style={{ flex: 1, gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+        <AppText variant="label" weight={titleWeight}>
+          {label}
+        </AppText>
+        <AppText variant="caption" color="muted" weight="regular">
+          {hint}
+        </AppText>
+      </View>
+      {control}
+    </View>
+  );
+}

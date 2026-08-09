@@ -9,8 +9,13 @@ import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
-import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
+import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { mapProgressForDealer } from '../../common/helpers/dealer-progress.util';
+import {
+  mapWorkflowStageAdmin,
+  mapWorkflowStageSafe,
+  sanitizeWorkflowStageForDealer,
+} from '../../common/helpers/production-workflow-stages.util';
 import {
   calculateOrderCosts,
   type CostLine,
@@ -19,21 +24,96 @@ import {
 } from '../../common/helpers/order-costing.util';
 import { buildStageTaskInstructions } from '../../common/helpers/stage-task-instructions';
 import { ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { LocalStorageService } from '../../integrations/storage/local-storage.service';
+import { firstImageDocument } from '../../common/helpers/document-image.util';
+import { buildSalesOrderSearchOr } from './build-sales-order-search-or';
 
 function stripSalesOrderCosts<T extends object>(order: T, user?: AuthUser): T {
   if (!user?.customerId) return order;
-  const copy = { ...order } as T & {
-    manufacturingCost?: unknown;
-    costBreakdown?: unknown;
-    productionPrice?: unknown;
-    profit?: unknown;
-  };
+  const copy = { ...(order as Record<string, unknown>) };
+
   delete copy.manufacturingCost;
   delete copy.costBreakdown;
   delete copy.productionPrice;
   delete copy.profit;
-  return copy;
+  delete copy.assignedEmployeeId;
+  delete copy.assignedEmployee;
+  // Floor stage is factory-only; dealers get coarse progressLabel instead.
+  delete copy.currentStage;
+
+  const lines = copy.lines;
+  if (Array.isArray(lines)) {
+    copy.lines = lines.map((line) => {
+      if (!line || typeof line !== 'object') return line;
+      const lineCopy = { ...(line as Record<string, unknown>) };
+      const product = lineCopy.product;
+      if (product && typeof product === 'object') {
+        const productCopy = { ...(product as Record<string, unknown>) };
+        delete productCopy.manufacturingCost;
+        delete productCopy.bomDefaults;
+        delete productCopy.basePrice;
+        lineCopy.product = productCopy;
+      }
+      return lineCopy;
+    });
+  }
+
+  const productionOrders = copy.productionOrders;
+  if (Array.isArray(productionOrders)) {
+    copy.productionOrders = productionOrders.map((po) => {
+      if (!po || typeof po !== 'object') return po;
+      const poCopy = { ...(po as Record<string, unknown>) };
+      delete poCopy.currentStageCode;
+      // Dealers keep completed-stage work photos; strip floor ops via sanitize.
+      const stages = poCopy.stages;
+      if (Array.isArray(stages)) {
+        poCopy.stages = stages.map((s) =>
+          s && typeof s === 'object'
+            ? sanitizeWorkflowStageForDealer(s as Record<string, unknown>)
+            : s,
+        );
+      }
+      poCopy.photos = [];
+      return poCopy;
+    });
+  }
+
+  const stripEndCustomer = (value: unknown): unknown => {
+    if (!value || typeof value !== 'object') return value;
+    const cr = { ...(value as Record<string, unknown>) };
+    delete cr.endCustomerName;
+    delete cr.endCustomerPhone;
+    delete cr.endCustomerFax;
+    delete cr.deliveryLat;
+    delete cr.deliveryLng;
+    return cr;
+  };
+
+  copy.customerRequest = stripEndCustomer(copy.customerRequest);
+
+  const quotation = copy.quotation;
+  if (quotation && typeof quotation === 'object') {
+    const q = { ...(quotation as Record<string, unknown>) };
+    q.request = stripEndCustomer(q.request);
+    copy.quotation = q;
+  }
+
+  return copy as T;
 }
+
+const STATUS_GROUPS: Record<'pending' | 'production' | 'delivered', SalesOrderStatus[]> = {
+  pending: [
+    SalesOrderStatus.DRAFT,
+    SalesOrderStatus.CONFIRMED,
+    SalesOrderStatus.WAITING_FOR_PAYMENT,
+    SalesOrderStatus.WAITING_FOR_MATERIALS,
+    SalesOrderStatus.ON_HOLD,
+    SalesOrderStatus.READY_FOR_PRODUCTION,
+  ],
+  production: [SalesOrderStatus.IN_PRODUCTION, SalesOrderStatus.READY_FOR_DELIVERY],
+  delivered: [SalesOrderStatus.DELIVERED, SalesOrderStatus.COMPLETED],
+};
 
 function maxProgress(
   productionOrders: Array<{ progressPercent?: number | null }> | undefined,
@@ -42,12 +122,98 @@ function maxProgress(
   return Math.max(...productionOrders.map((po) => Number(po.progressPercent ?? 0)));
 }
 
+type PoWithStage = {
+  progressPercent?: number | null;
+  currentStageCode?: string | null;
+  stages?: Array<{
+    code: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    status?: string;
+    progressPercent?: number | null;
+    sortOrder?: number;
+  }>;
+};
+
+export type CurrentStageDto = {
+  code: string;
+  nameEn: string;
+  nameAr: string | null;
+  nameHe: string | null;
+};
+
+/** PO that drives the sales-order rollup % (same rule as maxProgress). */
+function pickMaxProgressPo<T extends PoWithStage>(pos: T[] | undefined): T | null {
+  if (!pos?.length) return null;
+  return pos.reduce((best, po) =>
+    Number(po.progressPercent ?? 0) > Number(best.progressPercent ?? 0) ? po : best,
+  );
+}
+
+function stageDtoFromDef(def: {
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+}): CurrentStageDto {
+  return {
+    code: def.code,
+    nameEn: def.nameEn,
+    nameAr: def.nameAr,
+    nameHe: def.nameHe ?? null,
+  };
+}
+
+/** Resolve floor stage for the PO driving progress (admin surfaces). */
+function resolveCurrentStage(
+  productionOrders: PoWithStage[] | undefined,
+  defsByCode?: Map<string, { code: string; nameEn: string; nameAr: string; nameHe: string | null }>,
+): CurrentStageDto | null {
+  const po = pickMaxProgressPo(productionOrders);
+  if (!po) return null;
+
+  const stages = po.stages ?? [];
+  const incomplete = stages.filter(
+    (s) => s.status !== 'COMPLETED' && s.status !== 'SKIPPED',
+  );
+  const code =
+    po.currentStageCode ??
+    stages.find((s) => s.status === 'IN_PROGRESS')?.code ??
+    stages.find((s) => s.status === 'READY')?.code ??
+    [...incomplete]
+      .filter((s) => Number(s.progressPercent ?? 0) > 0)
+      .sort((a, b) => Number(b.progressPercent ?? 0) - Number(a.progressPercent ?? 0))[0]
+      ?.code ??
+    incomplete[0]?.code ??
+    null;
+
+  if (!code) return null;
+
+  const fromStages = stages.find((s) => s.code === code);
+  if (fromStages) return stageDtoFromDef(fromStages);
+
+  const fromDefs = defsByCode?.get(code);
+  if (fromDefs) return stageDtoFromDef(fromDefs);
+
+  return { code, nameEn: code, nameAr: code, nameHe: null };
+}
+
 @Injectable()
 export class SalesOrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
+    private readonly notifications: NotificationsService,
+    private readonly storage: LocalStorageService,
   ) {}
+
+  /** Short-lived download URL for list thumbnails from request attachments. */
+  private documentImageUrl(doc: { storageKey: string } | null | undefined): string | null {
+    if (!doc?.storageKey) return null;
+    const token = this.storage.createAccessToken(doc.storageKey, 3600);
+    return `/api/v1/uploads/download?token=${token}`;
+  }
 
   /** Latest purchase/stock unit cost per material SKU (inventory stays in sync with order costing). */
   async loadMaterialCosts(): Promise<MaterialCostMap> {
@@ -208,23 +374,45 @@ export class SalesOrdersService {
   }
 
   async list(query: ListSalesOrdersDto, user?: AuthUser) {
+    const isDealer = Boolean(user?.customerId);
+    const scopedCustomerId = isDealer
+      ? user!.customerId!
+      : query.customerId;
+
+    const deliveryDate: Prisma.DateTimeFilter | undefined =
+      query.deliveryFrom || query.deliveryTo
+        ? {
+            ...(query.deliveryFrom
+              ? { gte: new Date(`${query.deliveryFrom}T00:00:00.000Z`) }
+              : {}),
+            ...(query.deliveryTo
+              ? { lte: new Date(`${query.deliveryTo}T23:59:59.999Z`) }
+              : {}),
+          }
+        : undefined;
+
+    const statusFilter = query.status
+      ? { status: query.status }
+      : query.statusGroup
+        ? { status: { in: STATUS_GROUPS[query.statusGroup] } }
+        : {};
+
     const where: Prisma.SalesOrderWhereInput = {
       archivedAt: null,
-      ...customerScopeFilter(user),
-      ...(query.customerId ? { customerId: query.customerId } : {}),
-      ...(query.status ? { status: query.status } : {}),
+      ...(scopedCustomerId ? { customerId: scopedCustomerId } : {}),
+      ...statusFilter,
+      ...(deliveryDate ? { requiredDeliveryDate: deliveryDate } : {}),
       ...(query.q
         ? {
-            OR: [
-              { number: { contains: query.q, mode: 'insensitive' } },
-              { externalOrderNumber: { contains: query.q, mode: 'insensitive' } },
-              { projectName: { contains: query.q, mode: 'insensitive' } },
-              { customer: { name: { contains: query.q, mode: 'insensitive' } } },
-              { customer: { nameAr: { contains: query.q, mode: 'insensitive' } } },
-              { customer: { nameEn: { contains: query.q, mode: 'insensitive' } } },
-            ],
+            OR: buildSalesOrderSearchOr(query.q),
           }
         : {}),
+    };
+
+    const sortBy = query.sortBy ?? 'createdAt';
+    const sortDir = query.sortDir ?? 'desc';
+    const orderBy: Prisma.SalesOrderOrderByWithRelationInput = {
+      [sortBy]: sortDir,
     };
 
     const [totalItems, data] = await this.prisma.$transaction([
@@ -247,6 +435,17 @@ export class SalesOrdersService {
                   endCustomerPhone: true,
                   endCustomerFax: true,
                   externalOrderNumber: true,
+                  documents: {
+                    where: { archivedAt: null },
+                    select: {
+                      id: true,
+                      fileName: true,
+                      mimeType: true,
+                      storageKey: true,
+                    },
+                    orderBy: { createdAt: 'asc' },
+                    take: 8,
+                  },
                 },
               },
             },
@@ -285,14 +484,32 @@ export class SalesOrdersService {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
     ]);
 
-    const materialCosts = user?.customerId ? new Map<string, number>() : await this.loadMaterialCosts();
+    const materialCosts = isDealer ? new Map<string, number>() : await this.loadMaterialCosts();
     const dealerPriceCache = new Map<string, Map<string, number>>();
+
+    // Resolve floor stage names for the page (admin only — dealers strip currentStage).
+    const stageCodes = [
+      ...new Set(
+        data
+          .flatMap((row) => row.productionOrders ?? [])
+          .map((po) => po.currentStageCode)
+          .filter((c): c is string => Boolean(c)),
+      ),
+    ];
+    const stageDefs =
+      !isDealer && stageCodes.length > 0
+        ? await this.prisma.productionStageDefinition.findMany({
+            where: { code: { in: stageCodes } },
+            select: { code: true, nameEn: true, nameAr: true, nameHe: true },
+          })
+        : [];
+    const defsByCode = new Map(stageDefs.map((d) => [d.code, d]));
 
     const enriched = await Promise.all(
       data.map(async (row) => {
@@ -320,12 +537,34 @@ export class SalesOrdersService {
         if (!imageUrl && title) {
           imageUrl = await this.resolveCatalogImage(title);
         }
+        if (!imageUrl) {
+          imageUrl = this.documentImageUrl(
+            firstImageDocument(row.quotation?.request?.documents),
+          );
+        }
+        const requestWithoutStorageKeys = row.quotation?.request
+          ? {
+              ...row.quotation.request,
+              documents: (row.quotation.request.documents ?? []).map(
+                ({ storageKey: _k, ...doc }) => doc,
+              ),
+            }
+          : null;
         const base = stripSalesOrderCosts(
           {
             ...row,
+            quotation: row.quotation
+              ? {
+                  ...row.quotation,
+                  request: requestWithoutStorageKeys,
+                }
+              : row.quotation,
             manufacturingCost: costs.productionPrice,
             costBreakdown: costs.costBreakdown,
             progressPercent: maxProgress(row.productionOrders),
+            currentStage: isDealer
+              ? null
+              : resolveCurrentStage(row.productionOrders, defsByCode),
             title,
             imageUrl,
             lineCount: row.lines.length,
@@ -335,7 +574,7 @@ export class SalesOrdersService {
           },
           user,
         );
-        return user?.customerId ? mapProgressForDealer(base) : base;
+        return isDealer ? mapProgressForDealer(base) : base;
       }),
     );
 
@@ -435,7 +674,23 @@ export class SalesOrdersService {
                     code: true,
                     nameEn: true,
                     nameAr: true,
+                    nameHe: true,
                     sortOrder: true,
+                    dependsOnCodes: true,
+                  },
+                },
+                tasks: {
+                  include: {
+                    assignedEmployee: {
+                      select: { id: true, firstName: true, lastName: true },
+                    },
+                    blockers: true,
+                    timeEntries: {
+                      where: { endedAt: null },
+                      orderBy: { startedAt: 'desc' as const },
+                      take: 1,
+                      select: { startedAt: true, endedAt: true },
+                    },
                   },
                 },
               },
@@ -492,6 +747,7 @@ export class SalesOrdersService {
       throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Not your sales order.' });
     }
 
+    const isDealer = Boolean(user?.customerId);
     const productionOrders = order.productionOrders.map((po) => {
       const photos = (po.documents ?? []).map((doc) => ({
         id: doc.id,
@@ -500,25 +756,20 @@ export class SalesOrdersService {
         category: doc.category,
         createdAt: doc.createdAt,
       }));
+      const stages = po.stages.map((s) =>
+        isDealer ? mapWorkflowStageSafe(s, photos) : mapWorkflowStageAdmin(s, photos),
+      );
       const mapped = {
         id: po.id,
         number: po.number,
         status: po.status,
         currentStageCode: po.currentStageCode,
         progressPercent: po.progressPercent,
-        stages: po.stages.map((s) => ({
-          code: s.stageDefinition.code,
-          nameEn: s.stageDefinition.nameEn,
-          nameAr: s.stageDefinition.nameAr,
-          sortOrder: s.stageDefinition.sortOrder,
-          status: s.status,
-          progressPercent: s.progressPercent,
-          actualStart: s.actualStart,
-          actualEnd: s.actualEnd,
-        })),
-        photos,
+        stages,
+        // PO-level flat photo list stays admin-only; dealers get stage.photos instead.
+        photos: isDealer ? [] : photos,
       };
-      return user?.customerId ? mapProgressForDealer(mapped) : mapped;
+      return isDealer ? mapProgressForDealer(mapped) : mapped;
     });
 
     // Seller price is always per-dealer; production cost stays factory-global (hidden from portal).
@@ -534,7 +785,7 @@ export class SalesOrdersService {
       fallbackSellerTotal: order.total,
     });
 
-    if (!user?.customerId) {
+    if (!user?.customerId && order.status !== SalesOrderStatus.DRAFT) {
       await this.prisma.salesOrder.update({
         where: { id: order.id },
         data: {
@@ -543,6 +794,25 @@ export class SalesOrdersService {
         },
       });
     }
+
+    // Draft: prefer factory-edited costs when present; otherwise use live BOM calc.
+    const storedBreakdown =
+      order.status === SalesOrderStatus.DRAFT && order.costBreakdown != null
+        ? (order.costBreakdown as OrderCostResult['costBreakdown'])
+        : null;
+    const storedMfg =
+      order.status === SalesOrderStatus.DRAFT && order.manufacturingCost != null
+        ? Number(order.manufacturingCost)
+        : null;
+    const productionPrice =
+      storedMfg != null && Number.isFinite(storedMfg)
+        ? storedMfg
+        : costs.productionPrice;
+    const costBreakdown = storedBreakdown ?? costs.costBreakdown;
+    const profit =
+      storedMfg != null && Number.isFinite(storedMfg)
+        ? Number(costs.sellerPrice) - productionPrice
+        : costs.profit;
 
     const request = order.quotation?.request ?? null;
     const aiJob = request?.aiJobs?.[0] ?? null;
@@ -625,20 +895,46 @@ export class SalesOrdersService {
     if (!imageUrl && title) {
       imageUrl = await this.resolveCatalogImage(title);
     }
+    if (!imageUrl) {
+      const docs = (customerRequest.documents ?? []) as Array<{
+        id: string;
+        fileName?: string | null;
+        mimeType?: string | null;
+        storageKey: string;
+      }>;
+      imageUrl = this.documentImageUrl(firstImageDocument(docs));
+    }
+
+    let assignedEmployee: { id: string; name: string } | null = null;
+    if (!user?.customerId && order.assignedEmployeeId) {
+      const emp = await this.prisma.user.findUnique({
+        where: { id: order.assignedEmployeeId },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      if (emp) {
+        assignedEmployee = {
+          id: emp.id,
+          name: `${emp.firstName} ${emp.lastName}`.trim(),
+        };
+      }
+    }
+
     const result = {
       ...orderWithoutContracts,
-      manufacturingCost: costs.productionPrice,
-      costBreakdown: costs.costBreakdown,
+      manufacturingCost: productionPrice,
+      costBreakdown,
       productionOrders,
       progressPercent: maxProgress(productionOrders),
+      currentStage: user?.customerId ? null : resolveCurrentStage(productionOrders),
       sellerPrice: costs.sellerPrice,
-      productionPrice: costs.productionPrice,
-      profit: costs.profit,
+      productionPrice,
+      profit,
       customerRequest,
       /** Alias used by UIs that previously showed ERP "lines" */
       orderedItems: customerRequest.items,
       title,
       imageUrl,
+      assignedEmployee,
     };
     const withProgress = user?.customerId ? mapProgressForDealer(result) : result;
 
@@ -649,13 +945,47 @@ export class SalesOrdersService {
     if (user?.customerId) {
       throw new ForbiddenException({
         code: 'FORBIDDEN',
-        message: 'Dealers cannot update sales order costs.',
+        message: 'Dealers cannot update sales orders.',
       });
     }
-    await this.getById(id, user);
+    const order = await this.getById(id, user);
+    if (order.status !== SalesOrderStatus.DRAFT) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Only draft sales orders can be edited.',
+      });
+    }
+
+    let requiredDeliveryDate: Date | null | undefined;
+    if (dto.requiredDeliveryDate !== undefined) {
+      if (!dto.requiredDeliveryDate) {
+        requiredDeliveryDate = null;
+      } else {
+        const parsed = new Date(dto.requiredDeliveryDate);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new BadRequestException({
+            code: 'BAD_REQUEST',
+            message: 'Invalid requiredDeliveryDate.',
+          });
+        }
+        requiredDeliveryDate = parsed;
+      }
+    }
+
     return this.prisma.salesOrder.update({
       where: { id },
       data: {
+        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+        ...(dto.projectName !== undefined ? { projectName: dto.projectName } : {}),
+        ...(dto.externalOrderNumber !== undefined
+          ? { externalOrderNumber: dto.externalOrderNumber }
+          : {}),
+        ...(requiredDeliveryDate !== undefined
+          ? { requiredDeliveryDate }
+          : {}),
+        ...(dto.deliveryAddress !== undefined
+          ? { deliveryAddress: dto.deliveryAddress }
+          : {}),
         ...(dto.manufacturingCost !== undefined
           ? { manufacturingCost: dto.manufacturingCost }
           : {}),
@@ -766,6 +1096,15 @@ export class SalesOrdersService {
           productionOrders: { include: { stages: true, tasks: true } },
         },
       });
+    }).then(async (updated) => {
+      await this.notifications
+        .notifyCustomerUsers(order.customerId, {
+          templateCode: 'ORDER_CONFIRMED',
+          vars: { number: order.number },
+          linkUrl: `/sales-orders/${order.id}`,
+        })
+        .catch(() => undefined);
+      return updated;
     });
   }
 

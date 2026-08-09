@@ -18,6 +18,7 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { AiIntakeModule } from './modules/ai-intake/ai-intake.module';
+import { AiChatModule } from './modules/ai-chat/ai-chat.module';
 import { InboundEmailModule } from './modules/inbound-email/inbound-email.module';
 import { InboundWhatsAppModule } from './modules/inbound-whatsapp/inbound-whatsapp.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -36,6 +37,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { WarehousesModule } from './modules/warehouses/warehouses.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { GeoModule } from './modules/geo/geo.module';
+import { SearchModule } from './modules/search/search.module';
 
 @Module({
   imports: [
@@ -55,6 +57,7 @@ import { GeoModule } from './modules/geo/geo.module';
     PaymentsModule,
     ReportsModule,
     AiIntakeModule,
+    AiChatModule,
     InboundEmailModule,
     InboundWhatsAppModule,
     AuditModule,
@@ -73,6 +76,7 @@ import { GeoModule } from './modules/geo/geo.module';
     WarehousesModule,
     RolesModule,
     GeoModule,
+    SearchModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

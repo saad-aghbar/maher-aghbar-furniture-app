@@ -30,6 +30,14 @@ interface TaskDetail {
   factoryOrderNumber?: string | null;
   salesOrderNumber?: string | null;
   productImageUrl?: string | null;
+  timing?: {
+    status: string;
+    actualMinutes: number;
+    openStartedAt: string | null;
+    estimatedMinutes: number | null;
+    plannedCompletion: string | null;
+    elapsedMinutes: number;
+  };
   productionOrder?: {
     id: string;
     number: string;
@@ -81,23 +89,36 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     queryFn: () => apiFetch<TaskDetail>(`/api/v1/tasks/${params.id}`),
   });
 
-  async function finish() {
+  async function runAction(path: 'start' | 'pause' | 'resume' | 'complete') {
     setLoading(true);
     setError(null);
     setBanner(null);
     try {
-      await apiFetch(`/api/v1/tasks/${params.id}/complete`, {
+      await apiFetch(`/api/v1/tasks/${params.id}/${path}`, {
         method: 'POST',
         body: JSON.stringify({}),
       });
       await qc.invalidateQueries({ queryKey: ['task', params.id] });
       await qc.invalidateQueries({ queryKey: ['my-tasks'] });
       await qc.invalidateQueries({ queryKey: ['my-tasks-completed'] });
+      setBanner(
+        path === 'start'
+          ? 'Started'
+          : path === 'pause'
+            ? 'Timer stopped'
+            : path === 'resume'
+              ? 'Resumed'
+              : 'Completed',
+      );
     } catch (err) {
       setError(translateApiError(locale, err, tCommon('actionFailed')));
     } finally {
       setLoading(false);
     }
+  }
+
+  async function finish() {
+    await runAction('complete');
   }
 
   function uploadQuery() {
@@ -159,12 +180,15 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
     return <ErrorState title={t('taskDetail')} onRetry={() => refetch()} />;
   }
 
-  const canFinish = !['COMPLETED', 'CANCELLED', 'BLOCKED'].includes(data.status);
-  const canAttach = canFinish;
   const waiting =
     data.status === 'NOT_STARTED' && (data.stageDefinition?.dependsOnCodes?.length ?? 0) > 0
       ? data.stageDefinition!.dependsOnCodes!.join(', ')
       : null;
+  const canFinish = !['COMPLETED', 'CANCELLED', 'BLOCKED'].includes(data.status);
+  const canStart = ['NOT_STARTED', 'READY'].includes(data.status) && !waiting;
+  const canStop = data.status === 'IN_PROGRESS';
+  const canResume = data.status === 'PAUSED' && !waiting;
+  const canAttach = canFinish;
   const openBlockers = (data.blockers ?? []).filter((b) => !b.resolvedAt);
   const needsPhotos = Boolean(data.stageDefinition?.requiresPhotos) && !(data.photos?.length);
   const factoryNo =
@@ -336,7 +360,51 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
               )}
             </div>
 
-            <div className="maher-detail-sticky-actions">
+            {data.timing ? (
+              <div className="rounded-xl border border-[var(--maher-border)] bg-[var(--maher-surface-secondary)] p-3">
+                <p className="text-xs text-text-tertiary">Work timer</p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums" dir="ltr">
+                  {Math.floor((data.timing.elapsedMinutes ?? 0) / 60)}h{' '}
+                  {(data.timing.elapsedMinutes ?? 0) % 60}m
+                  {data.timing.status === 'running' ? (
+                    <span className="ms-2 text-sm text-[var(--maher-brand)]">Live</span>
+                  ) : null}
+                </p>
+              </div>
+            ) : null}
+
+            <div className="maher-detail-sticky-actions flex flex-col gap-2">
+              {canStart ? (
+                <Button
+                  size="lg"
+                  className="w-full"
+                  onClick={() => void runAction('start')}
+                  loading={loading}
+                >
+                  Start
+                </Button>
+              ) : null}
+              {canStop ? (
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => void runAction('pause')}
+                  loading={loading}
+                >
+                  Stop timer
+                </Button>
+              ) : null}
+              {canResume ? (
+                <Button
+                  size="lg"
+                  className="w-full"
+                  onClick={() => void runAction('resume')}
+                  loading={loading}
+                >
+                  Resume
+                </Button>
+              ) : null}
               <Button
                 size="lg"
                 className="w-full"

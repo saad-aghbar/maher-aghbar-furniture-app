@@ -24,10 +24,10 @@ User preference stored on **User.locale** and **Customer.preferredLocale**. Port
 - Tables: numeric columns remain LTR (`dir="ltr"` on cell) for amounts and phone numbers.
 - Modals and drawers anchor from logical start/end.
 
-Brand typography (from assumptions):
+Brand typography (from brand guidelines; see `docs/brand.md`):
 
-- **Arabic:** IBM Plex Sans Arabic
-- **Latin:** IBM Plex Sans
+- **Arabic:** KO Sans (interim: Noto Sans Arabic)
+- **Latin:** Gendy (interim: Outfit)
 - **Hebrew:** Heebo
 
 ---

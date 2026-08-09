@@ -20,7 +20,7 @@
   "ACCOUNT_LOCKED": "Account temporarily locked.",
   "ACCOUNT_SUSPENDED": "Account suspended.",
   "INVALID_TOKEN": "Reset token is invalid or expired.",
-  "WEAK_PASSWORD": "Password is too short.",
+  "WEAK_PASSWORD": "Password is required.",
   "INVALID_ROLE": "Role not found.",
 
   "DUPLICATE_CODE": "This code already exists.",
@@ -44,8 +44,8 @@
   "JOFOTARA_FAILED": "Electronic invoice submission failed.",
 
   "SUPPLIER_NOT_CERTIFIED": "Supplier must be certified before creating a purchase order.",
-  "ORDER_LOCKED": "This order field is locked and cannot be changed.",
-  "FABRIC_LOCKED": "Fabric selection is locked and cannot be changed.",
+  "ORDER_LOCKED": "This order is locked and can no longer be edited.",
+  "FABRIC_LOCKED": "Fabric fields are locked because production has started.",
 
   "STAGE_LOCKED": "This stage is locked until prerequisites are completed.",
   "ASSIGN_LOCKED": "Task assignment cannot be changed in the current state.",

@@ -25,7 +25,7 @@ export function AnimatedValue({
         className,
       )}
     >
-      {n.toLocaleString()}
+      {n.toLocaleString('en-JO')}
     </span>
   );
 }

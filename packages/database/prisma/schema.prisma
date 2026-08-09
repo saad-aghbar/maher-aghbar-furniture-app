@@ -321,6 +321,7 @@ model User {
   timeEntries        TaskTimeEntry[]
   blockersReported   TaskBlocker[]          @relation("BlockerReporter")
   deliveriesAsDriver Delivery[]             @relation("DeliveryDriver")
+  aiChatConversations AiChatConversation[]
 
   @@index([customerId])
   @@index([departmentId])
@@ -906,6 +907,8 @@ model InventoryItem {
   materialType String?
   color       String?
   size        String?
+  /// Optional photo URL (accessories) — durable /uploads download link
+  imageUrl    String?
   unit        String            @default("pcs")
   /// Fixed purchase / catalog unit cost used when creating purchase orders
   standardCost Decimal          @default(0) @db.Decimal(18, 3)
@@ -1061,6 +1064,8 @@ model RequestForQuotation {
   notes                String?
   internalNotes        String?
   aiProcessingStatus   AIJobStatus?
+  /// Set when the dealer (or staff) first submits the RFQ. Edit window anchors here.
+  submittedAt          DateTime?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   createdById          String?
@@ -1910,6 +1915,21 @@ model AuditEvent {
   @@map("audit_events")
 }
 
+/** Dedupes mutating API calls (task complete, uploads, notes) across retries. */
+model IdempotencyRecord {
+  id        String   @id @default(uuid())
+  scope     String
+  key       String
+  userId    String?
+  entityId  String?
+  response  Json?
+  createdAt DateTime @default(now())
+
+  @@unique([scope, key])
+  @@index([entityId])
+  @@map("idempotency_records")
+}
+
 model SystemSetting {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -1928,4 +1948,34 @@ model SequenceCounter {
 
   @@unique([key, year])
   @@map("sequence_counters")
+}
+
+/** Mobile system chatbot thread (admin or dealer). */
+model AiChatConversation {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  locale     Locale    @default(ar)
+  surface    String
+  title      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+  messages   AiChatMessage[]
+
+  @@index([userId, updatedAt])
+  @@map("ai_chat_conversations")
+}
+
+model AiChatMessage {
+  id             String            @id @default(uuid())
+  conversationId String
+  conversation   AiChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  blocks         Json
+  suggestions    Json?
+  createdAt      DateTime          @default(now())
+
+  @@index([conversationId, createdAt])
+  @@map("ai_chat_messages")
 }

@@ -28,16 +28,34 @@
     "dev:admin": "pnpm --filter @maher/admin-web dev",
     "dev:customer": "pnpm --filter @maher/customer-portal dev",
     "dev:employee": "pnpm --filter @maher/employee-portal dev",
+    "dev:mobile": "pnpm --filter @maher/mobile start",
     "dev:apps": "turbo run dev --filter=@maher/api --filter=@maher/admin-web --filter=@maher/customer-portal --filter=@maher/employee-portal --parallel",
+    "mobile:start": "pnpm --filter @maher/mobile start",
+    "mobile:android": "pnpm --filter @maher/mobile android",
+    "mobile:ios": "pnpm --filter @maher/mobile ios",
+    "mobile:typecheck": "pnpm --filter @maher/mobile typecheck",
+    "mobile:lint": "pnpm --filter @maher/mobile lint",
+    "mobile:test": "pnpm --filter @maher/mobile test",
+    "mobile:doctor": "pnpm --filter @maher/mobile run doctor",
+    "mobile:eas:preview:android": "pnpm --filter @maher/mobile run eas:preview:android",
     "start:api": "pnpm --filter @maher/api start:prod",
     "format": "prettier --write \"**/*.{ts,tsx,md,json,yml}\""
   },
   "devDependencies": {
+    "@playwright/test": "1.49.1",
     "prettier": "^3.4.2",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
   },
   "engines": {
     "node": ">=20"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/react": "18.3.31",
+      "@types/react-dom": "18.3.7",
+      "@maher/mobile>@types/react": "19.1.17",
+      "@maher/mobile>@types/react-dom": "19.1.11"
+    }
   }
 }

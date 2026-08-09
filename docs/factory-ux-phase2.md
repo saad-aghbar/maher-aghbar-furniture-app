@@ -78,7 +78,7 @@ Local default remains Nominatim (no key).
 - [ ] Webhook secret rotated from dev default
 - [ ] WhatsApp template approval (Meta) or Twilio sender verified
 - [ ] Maps key restricted and billed alerts enabled
-- [ ] Run `pnpm smoke:workflow` and `pnpm smoke:scope` against staging with username logins (`admin`, `cedar`, `worker`)
+- [ ] Run `pnpm smoke:workflow` and `pnpm smoke:scope` against staging with username logins (`admin`, `nile`, `cutter`)
 
 ## Related docs
 

@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -12,11 +13,32 @@ import {
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
+export const PRODUCTION_LIST_BUCKETS = [
+  'all',
+  'daily',
+  'weekly',
+  'monthly',
+  'in_production',
+  'late',
+  'completed',
+] as const;
+export type ProductionListBucket = (typeof PRODUCTION_LIST_BUCKETS)[number];
+
 export class ListProductionOrdersDto extends PaginationDto {
   @ApiPropertyOptional({ enum: ProductionOrderStatus })
   @IsOptional()
   @IsEnum(ProductionOrderStatus)
   status?: ProductionOrderStatus;
+
+  @ApiPropertyOptional({ enum: PRODUCTION_LIST_BUCKETS })
+  @IsOptional()
+  @IsIn(PRODUCTION_LIST_BUCKETS)
+  bucket?: ProductionListBucket;
+
+  @ApiPropertyOptional({ enum: Priority })
+  @IsOptional()
+  @IsEnum(Priority)
+  priority?: Priority;
 
   @ApiPropertyOptional()
   @IsOptional()

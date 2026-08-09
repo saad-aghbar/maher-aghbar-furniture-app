@@ -1,6 +1,7 @@
 export type { OcrProvider, OcrResult } from './ocr/types';
 export { MockOcrProvider } from './ocr/mock-ocr.provider';
 export { OpenAiVisionOcrProvider } from './ocr/openai-vision-ocr.provider';
+export { GoogleVisionOcrProvider } from './ocr/google-vision-ocr.provider';
 export { HttpOcrProvider } from './ocr/http-ocr.provider';
 export {
   LocalFreeOcrProvider,
@@ -25,6 +26,7 @@ export { createAiProviders } from './ai/create-ai.provider';
 export type { EmailMessage, EmailProvider } from './email/types';
 export { ConsoleEmailProvider } from './email/console-email.provider';
 export { SmtpEmailProvider } from './email/smtp-email.provider';
+export { ResendEmailProvider } from './email/resend-email.provider';
 export { createEmailProvider } from './email/create-email.provider';
 
 export type { SmsMessage, SmsProvider } from './sms/types';

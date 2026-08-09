@@ -1,11 +1,16 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsString, MinLength } from 'class-validator';
 import type { AuthUser } from '@maher/types';
 import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CustomersService } from './customers.service';
-import { CreateCustomerDto, ListCustomersDto, UpdateCustomerDto } from './dto/customer.dto';
+import {
+  CreateCustomerDto,
+  DeleteCustomerDto,
+  ListCustomersDto,
+  UpdateCustomerDto,
+} from './dto/customer.dto';
 
 class SuggestTranslationsDto {
   @IsString()
@@ -51,5 +56,16 @@ export class CustomersController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.customers.update(id, dto, user.id);
+  }
+
+  /** Soft-delete dealer — requires the dealer’s portal username + password. */
+  @RequirePermissions('customer.delete')
+  @Delete(':id')
+  remove(
+    @Param('id') id: string,
+    @Body() dto: DeleteCustomerDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.customers.remove(id, dto, user.id);
   }
 }

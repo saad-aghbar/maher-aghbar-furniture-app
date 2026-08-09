@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@maher/types';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
@@ -9,6 +9,7 @@ import {
   ListQuotationsDto,
   RejectQuotationDto,
   RequestRevisionDto,
+  UpdateQuotationDto,
 } from './dto/quotation.dto';
 import { QuotationsService } from './quotations.service';
 
@@ -33,6 +34,16 @@ export class QuotationsController {
   @Get(':id')
   getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.quotations.getById(id, user);
+  }
+
+  @RequirePermissions('quotation.update')
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateQuotationDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.quotations.updateDraft(id, dto, user);
   }
 
   @RequirePermissions('quotation.update')

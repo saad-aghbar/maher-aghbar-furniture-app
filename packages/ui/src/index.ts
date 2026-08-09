@@ -1,5 +1,6 @@
 export { cn } from './cn';
 export { isNavItemActive } from './isNavItemActive';
+export type { AppLinkComponent } from './AppLinkComponent';
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from './Button';
 export { Spinner, type SpinnerProps } from './Spinner';
 export { Input, type InputProps } from './Input';
@@ -30,7 +31,18 @@ export { Skeleton, TableSkeleton, type SkeletonProps, type TableSkeletonProps } 
 export { LoadingOverlay, type LoadingOverlayProps } from './LoadingOverlay';
 export { Alert, type AlertProps, type AlertVariant } from './Alert';
 export { Tabs, TabList, Tab, TabPanel, type TabsProps } from './Tabs';
-export { BrandMark, BRAND_LOGO_SRC, type BrandMarkProps } from './BrandMark';
+export {
+  BrandMark,
+  BRAND_LOGO_SRC,
+  type BrandMarkProps,
+} from './BrandMark';
+export {
+  BRAND_LOGO_DATA_URI,
+  BRAND_LOGO_MARK_LIGHT_URI,
+  BRAND_LOGO_MARK_DARK_URI,
+  BRAND_LOGO_LOCKUP_LIGHT_URI,
+  BRAND_LOGO_LOCKUP_DARK_URI,
+} from './brand-logo-data';
 export { PageHeader, type PageHeaderProps } from './PageHeader';
 export { useHeaderOverDark } from './useHeaderOverDark';
 export {

@@ -8,7 +8,7 @@ export const loginSchema = z.object({
       (value) => value.includes('@') || /^\+?[0-9]{7,15}$/.test(value),
       'Must be a valid email or phone number',
     ),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string().min(1, 'Password is required'),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

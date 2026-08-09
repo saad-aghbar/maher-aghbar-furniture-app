@@ -48,7 +48,10 @@ const INTEGRATION_DEFAULTS = {
   jofotaraConfigured: Boolean(
     process.env.JOFOTARA_CLIENT_ID?.trim() && process.env.JOFOTARA_SECRET_KEY?.trim(),
   ),
-  smtpConfigured: Boolean(process.env.SMTP_URL?.trim()),
+  smtpConfigured: Boolean(
+    process.env.SMTP_URL?.trim() || process.env.RESEND_API_KEY?.trim(),
+  ),
+  resendConfigured: Boolean(process.env.RESEND_API_KEY?.trim()),
   openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
   ocrLiveConfigured: Boolean(
     process.env.OCR_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim(),
@@ -56,6 +59,10 @@ const INTEGRATION_DEFAULTS = {
   ocrLocalConfigured: ['local', 'tesseract', 'pdf', 'auto'].includes(
     (process.env.OCR_PROVIDER ?? '').toLowerCase(),
   ),
+  ocrGoogleConfigured:
+    ['google', 'google-vision', 'vision'].includes(
+      (process.env.OCR_PROVIDER ?? '').toLowerCase(),
+    ) && Boolean(process.env.OCR_API_KEY?.trim()),
   whatsappLiveConfigured: Boolean(
     (process.env.WHATSAPP_TOKEN?.trim() && process.env.WHATSAPP_PHONE_NUMBER_ID?.trim()) ||
       (process.env.TWILIO_ACCOUNT_SID?.trim() &&

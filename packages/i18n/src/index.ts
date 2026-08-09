@@ -163,40 +163,44 @@ export function localizedName(
   row: LocalizedNamed | null | undefined,
   fallback = '—',
 ): string {
-  if (!row) return fallback;
+  if (!row) return fallback || '—';
   if (locale === 'ar') {
     return (
       row.nameAr ||
       row.titleAr ||
+      row.name ||
+      fallback ||
       row.nameEn ||
       row.titleEn ||
       row.nameHe ||
       row.titleHe ||
-      row.name ||
-      fallback
+      '—'
     );
   }
   if (locale === 'he') {
     return (
       row.nameHe ||
       row.titleHe ||
+      row.name ||
+      fallback ||
       row.nameEn ||
       row.titleEn ||
       row.nameAr ||
       row.titleAr ||
-      row.name ||
-      fallback
+      '—'
     );
   }
+  // English (and unknown): prefer English fields, then caller fallback, before other locales.
   return (
     row.nameEn ||
     row.titleEn ||
+    row.name ||
+    fallback ||
     row.nameAr ||
     row.titleAr ||
     row.nameHe ||
     row.titleHe ||
-    row.name ||
-    fallback
+    '—'
   );
 }
 

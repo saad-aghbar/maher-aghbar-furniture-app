@@ -1,8 +1,11 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Param, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { buildSimplePdf, sendPdf } from '../../common/helpers/pdf.util';
 import { roundMoney } from '../../common/helpers/money.util';
 
@@ -41,11 +44,21 @@ export class PdfController {
 
   @Get('invoices/:id/pdf')
   @RequirePermissions('invoice.read')
-  async invoicePdf(@Param('id') id: string, @Res() res: Response) {
+  async invoicePdf(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
     const inv = await this.prisma.invoice.findUniqueOrThrow({
       where: { id },
       include: { customer: true, lines: true },
     });
+    if (!assertCustomerOwns(user, inv.customerId)) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Not your invoice.',
+      });
+    }
     const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
     const buffer = await buildSimplePdf({
       title: company,

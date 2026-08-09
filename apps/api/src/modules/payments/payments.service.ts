@@ -136,6 +136,11 @@ export class PaymentsService {
         to: { email: customer?.email, phone: customer?.phone },
         vars: { amount: String(dto.amount), number: payment.number },
       });
+      await this.notifications.notifyCustomerUsers(dto.customerId, {
+        templateCode: 'PAYMENT_RECEIVED',
+        vars: { amount: String(dto.amount), number: payment.number },
+        linkUrl: `/account/statement`,
+      });
       return payment;
     });
   }

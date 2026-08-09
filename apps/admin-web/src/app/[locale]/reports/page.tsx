@@ -442,7 +442,7 @@ export default function ReportsPage() {
                 { value: '', label: ta('allProducts') },
                 ...(productsQuery.data ?? []).map((p) => ({
                   value: p.id,
-                  label: `${p.sku ? `${p.sku} — ` : ''}${localizedName(locale, p)}`,
+                  label: localizedName(locale, p),
                 })),
               ]}
             />
@@ -639,7 +639,6 @@ export default function ReportsPage() {
                     {(sales.data.topProducts ?? []).map((p) => (
                       <TableRow key={p.productId ?? p.name ?? 'unknown'}>
                         <TableCell>
-                          {p.sku ? <span dir="ltr">{p.sku} — </span> : null}
                           {p.name}
                         </TableCell>
                         <TableNumericCell>{p.lineCount}</TableNumericCell>

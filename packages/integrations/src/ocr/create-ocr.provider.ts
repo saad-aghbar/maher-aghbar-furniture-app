@@ -1,11 +1,16 @@
 import type { OcrProvider } from './types';
 import { MockOcrProvider } from './mock-ocr.provider';
 import { OpenAiVisionOcrProvider } from './openai-vision-ocr.provider';
+import { GoogleVisionOcrProvider } from './google-vision-ocr.provider';
 import { HttpOcrProvider } from './http-ocr.provider';
 import { LocalFreeOcrProvider, PreferPdfTextOcrProvider } from './local-ocr.provider';
 
 function wrapPdfPrefer(inner: OcrProvider): OcrProvider {
   return new PreferPdfTextOcrProvider(inner);
+}
+
+function looksLikeGoogleApiKey(value: string): boolean {
+  return value.startsWith('AIza');
 }
 
 export function createOcrProvider(env: NodeJS.ProcessEnv = process.env): OcrProvider {
@@ -18,22 +23,36 @@ export function createOcrProvider(env: NodeJS.ProcessEnv = process.env): OcrProv
   const ocrKey = env.OCR_API_KEY?.trim();
   const openAiKey = env.OPENAI_API_KEY?.trim();
 
+  if (forced === 'google' || forced === 'google-vision' || forced === 'vision') {
+    if (ocrKey) return wrapPdfPrefer(new GoogleVisionOcrProvider(ocrKey));
+    console.warn('[ocr] OCR_PROVIDER=google but OCR_API_KEY missing — using mock');
+    return new MockOcrProvider();
+  }
+
   if (ocrKey && env.OCR_API_URL && !env.OCR_API_URL.includes('openai.com')) {
     return wrapPdfPrefer(new HttpOcrProvider(ocrKey, env.OCR_API_URL));
   }
 
   if (forced === 'openai' || forced === 'http') {
-    if (ocrKey || openAiKey) {
-      return wrapPdfPrefer(new OpenAiVisionOcrProvider(ocrKey || openAiKey!));
-    }
+    const key = openAiKey || (ocrKey && !looksLikeGoogleApiKey(ocrKey) ? ocrKey : undefined);
+    if (key) return wrapPdfPrefer(new OpenAiVisionOcrProvider(key));
+    console.warn('[ocr] OCR_PROVIDER=openai but no OpenAI key — using mock');
+    return new MockOcrProvider();
   }
 
-  if (ocrKey || openAiKey) {
-    return wrapPdfPrefer(new OpenAiVisionOcrProvider(ocrKey || openAiKey!));
+  // Auto-select when provider not forced to mock/local
+  if (ocrKey && looksLikeGoogleApiKey(ocrKey)) {
+    return wrapPdfPrefer(new GoogleVisionOcrProvider(ocrKey));
   }
 
-  // No cloud keys — use free local path when explicitly requested via default override,
-  // otherwise keep deterministic mock for CI/demos.
+  if (openAiKey) {
+    return wrapPdfPrefer(new OpenAiVisionOcrProvider(openAiKey));
+  }
+
+  if (ocrKey) {
+    return wrapPdfPrefer(new OpenAiVisionOcrProvider(ocrKey));
+  }
+
   if (forced === 'auto') return new LocalFreeOcrProvider();
   return new MockOcrProvider();
 }

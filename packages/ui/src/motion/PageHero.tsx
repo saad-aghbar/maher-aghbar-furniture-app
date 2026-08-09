@@ -42,7 +42,7 @@ export function PageHero({
             className="pointer-events-none absolute inset-0 opacity-90"
             style={{
               background:
-                'radial-gradient(ellipse 80% 70% at 10% 20%, rgba(217,58,43,0.28), transparent 55%), radial-gradient(ellipse 60% 50% at 90% 80%, rgba(138,90,43,0.32), transparent 50%), linear-gradient(135deg, #241c16 0%, #1a1410 45%, #2a2018 100%)',
+                'radial-gradient(ellipse 80% 70% at 10% 20%, color-mix(in srgb, var(--maher-brand) 28%, transparent), transparent 55%), radial-gradient(ellipse 60% 50% at 90% 80%, color-mix(in srgb, var(--maher-accent) 32%, transparent), transparent 50%), linear-gradient(135deg, #2a2425 0%, #1e1a1b 45%, #322c2d 100%)',
             }}
             aria-hidden
           />

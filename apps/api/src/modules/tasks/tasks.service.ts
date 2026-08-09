@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@maher/database';
+import { Prisma, TaskStatus } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
+import { IdempotencyService } from '../../common/idempotency.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
@@ -16,6 +18,26 @@ import {
   TaskBlockDto,
   TaskProgressDto,
 } from './dto/task.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import {
+  buildTaskTimingSummary,
+  closedSecondsFromTimeEntries,
+} from '../../common/helpers/task-timing.util';
+
+function startOfUtcDay(d = new Date()) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+}
+
+function endOfUtcDay(d = new Date()) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
+}
+
+/** Parse YYYY-MM-DD as a UTC calendar day; null if invalid. */
+function parseYmd(value?: string | null): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const d = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 @Injectable()
 export class TasksService {
@@ -24,6 +46,8 @@ export class TasksService {
     private readonly pipeline: StagePipelineService,
     private readonly invoices: InvoicesService,
     private readonly storage: LocalStorageService,
+    private readonly idempotency: IdempotencyService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(query: ListTasksDto, userId: string, permissions: string[]) {
@@ -31,14 +55,91 @@ export class TasksService {
     // Floor workers share the same role but must only ever see their assigned tasks.
     const forceMine = query.mine === true || !canSeeAll;
 
+    let statusWhere: Prisma.ProductionTaskWhereInput = {};
+    if (query.status) {
+      statusWhere = { status: query.status };
+    } else if (query.scope === 'completed') {
+      statusWhere = { status: TaskStatus.COMPLETED };
+    } else if (query.scope === 'open' || (forceMine && query.scope !== 'all')) {
+      statusWhere = {
+        status: { notIn: [TaskStatus.COMPLETED, TaskStatus.CANCELLED] },
+      };
+    }
+
+    const completedFrom = parseYmd(query.completedFrom);
+    const completedTo = parseYmd(query.completedTo);
+    const q = query.q?.trim();
+
+    let dealerIdsFromSearch: string[] | undefined;
+    if (q) {
+      const dealers = await this.prisma.customer.findMany({
+        where: {
+          OR: [
+            { code: { contains: q, mode: 'insensitive' } },
+            { name: { contains: q, mode: 'insensitive' } },
+            { nameEn: { contains: q, mode: 'insensitive' } },
+            { nameAr: { contains: q, mode: 'insensitive' } },
+            { nameHe: { contains: q, mode: 'insensitive' } },
+            { companyName: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+        take: 40,
+      });
+      dealerIdsFromSearch = dealers.map((d) => d.id);
+    }
+
     const where: Prisma.ProductionTaskWhereInput = {
-      ...(query.status ? { status: query.status } : {}),
+      ...statusWhere,
       ...(forceMine ? { assignedEmployeeId: userId } : {}),
-      ...(query.q
+      ...(query.dueToday
+        ? {
+            plannedCompletion: {
+              gte: startOfUtcDay(),
+              lte: endOfUtcDay(),
+            },
+          }
+        : {}),
+      ...(query.customerId
+        ? { productionOrder: { customerId: query.customerId } }
+        : {}),
+      ...(completedFrom || completedTo
+        ? {
+            actualCompletion: {
+              ...(completedFrom ? { gte: startOfUtcDay(completedFrom) } : {}),
+              ...(completedTo ? { lte: endOfUtcDay(completedTo) } : {}),
+            },
+          }
+        : {}),
+      ...(q
         ? {
             OR: [
-              { number: { contains: query.q, mode: 'insensitive' } },
-              { name: { contains: query.q, mode: 'insensitive' } },
+              { number: { contains: q, mode: 'insensitive' } },
+              { name: { contains: q, mode: 'insensitive' } },
+              {
+                productionOrder: {
+                  number: { contains: q, mode: 'insensitive' },
+                },
+              },
+              {
+                productionOrder: {
+                  productDescription: { contains: q, mode: 'insensitive' },
+                },
+              },
+              {
+                productionOrder: {
+                  salesOrder: { number: { contains: q, mode: 'insensitive' } },
+                },
+              },
+              ...(dealerIdsFromSearch?.length
+                ? [
+                    {
+                      productionOrder: {
+                        customerId: { in: dealerIdsFromSearch },
+                      },
+                    },
+                  ]
+                : []),
             ],
           }
         : {}),
@@ -50,7 +151,22 @@ export class TasksService {
         where,
         include: {
           productionOrder: {
-            select: { id: true, number: true, status: true, productDescription: true },
+            select: {
+              id: true,
+              number: true,
+              status: true,
+              productDescription: true,
+              salesOrder: { select: { id: true, number: true } },
+              product: {
+                select: {
+                  id: true,
+                  imageUrl: true,
+                  nameEn: true,
+                  nameAr: true,
+                  nameHe: true,
+                },
+              },
+            },
           },
           stageDefinition: {
             select: {
@@ -58,23 +174,124 @@ export class TasksService {
               code: true,
               nameEn: true,
               nameAr: true,
+              nameHe: true,
               dependsOnCodes: true,
               sortOrder: true,
+              requiresPhotos: true,
             },
           },
-          stageInstance: { select: { id: true, status: true, progressPercent: true } },
-          assignedEmployee: {
-            select: { id: true, firstName: true, lastName: true, email: true },
+          stageInstance: {
+            select: canSeeAll
+              ? { id: true, status: true, progressPercent: true }
+              : { id: true, status: true },
           },
+          ...(canSeeAll
+            ? {
+                assignedEmployee: {
+                  select: { id: true, firstName: true, lastName: true, email: true },
+                },
+              }
+            : {}),
           blockers: true,
+          timeEntries: {
+            where: { endedAt: null },
+            orderBy: { startedAt: 'desc' as const },
+            take: 1,
+            select: { startedAt: true },
+          },
         },
-        orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+        orderBy:
+          query.scope === 'completed'
+            ? [{ actualCompletion: 'desc' as const }, { createdAt: 'desc' as const }]
+            : [
+                { priority: 'desc' as const },
+                { plannedCompletion: 'asc' as const },
+                { createdAt: 'desc' as const },
+              ],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
     ]);
 
-    return { data, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    const mapped = data.map((task) => {
+      const product = task.productionOrder.product;
+      const openStartedAt = task.timeEntries?.[0]?.startedAt ?? null;
+      const { timeEntries: _entries, ...rest } = task;
+      const timing = buildTaskTimingSummary({
+        status: task.status,
+        actualMinutes: task.actualMinutes,
+        estimatedMinutes: task.estimatedMinutes,
+        plannedCompletion: task.plannedCompletion,
+        openStartedAt,
+        // List query only loads open entries; fall back to minute storage.
+      });
+      const row = {
+        ...rest,
+        timing,
+        productImageUrl: product?.imageUrl?.trim() || null,
+        factoryOrderNumber: task.productionOrder.number,
+        salesOrderNumber: task.productionOrder.salesOrder?.number ?? null,
+      };
+      if (canSeeAll) return row;
+      const { progressPercent: _omit, ...safe } = row;
+      return safe;
+    });
+
+    return { data: mapped, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+  }
+
+  /**
+   * Distinct dealers from completed tasks the worker can see (for floor filters).
+   * Avoids requiring customer.read for production workers.
+   */
+  async listCompletedDealers(userId: string, permissions: string[]) {
+    const canSeeAll = permissions.includes('production-task.update-any');
+    const rows = await this.prisma.productionTask.findMany({
+      where: {
+        status: TaskStatus.COMPLETED,
+        ...(canSeeAll ? {} : { assignedEmployeeId: userId }),
+      },
+      select: {
+        productionOrder: {
+          select: { customerId: true },
+        },
+      },
+      take: 500,
+      orderBy: { actualCompletion: 'desc' },
+    });
+
+    const ids = [
+      ...new Set(
+        rows
+          .map((r) => r.productionOrder.customerId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    if (!ids.length) return { data: [] };
+
+    const customers = await this.prisma.customer.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        nameEn: true,
+        nameAr: true,
+        nameHe: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return {
+      data: customers.map((c) => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        nameEn: c.nameEn ?? null,
+        nameAr: c.nameAr ?? null,
+        nameHe: c.nameHe ?? null,
+      })),
+    };
   }
 
   private async getTask(id: string) {
@@ -92,6 +309,8 @@ export class TasksService {
   }
 
   async getById(id: string, userId?: string, permissions: string[] = []) {
+    const canSeeAll = permissions.includes('production-task.update-any');
+
     const task = await this.prisma.productionTask.findUniqueOrThrow({
       where: { id },
       include: {
@@ -104,7 +323,7 @@ export class TasksService {
             quantity: true,
             specifications: true,
             currentStageCode: true,
-            progressPercent: true,
+            ...(canSeeAll ? { progressPercent: true } : {}),
             salesOrder: { select: { id: true, number: true } },
             product: {
               select: {
@@ -114,22 +333,37 @@ export class TasksService {
                 nameEn: true,
                 nameHe: true,
                 imageUrl: true,
+                galleryUrls: true,
               },
             },
           },
         },
         stageDefinition: true,
-        stageInstance: true,
-        assignedEmployee: {
-          select: { id: true, firstName: true, lastName: true, email: true },
-        },
+        ...(canSeeAll
+          ? {
+              stageInstance: true,
+              assignedEmployee: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
+              timeEntries: {
+                orderBy: { startedAt: 'desc' as const },
+                select: { startedAt: true, endedAt: true },
+              },
+            }
+          : {
+              stageInstance: {
+                select: { id: true, status: true, actualStart: true, actualEnd: true },
+              },
+              timeEntries: {
+                orderBy: { startedAt: 'desc' as const },
+                select: { startedAt: true, endedAt: true },
+              },
+            }),
         blockers: true,
-        timeEntries: { orderBy: { startedAt: 'desc' } },
       },
     });
 
     if (userId) {
-      const canSeeAll = permissions.includes('production-task.update-any');
       if (!canSeeAll && task.assignedEmployeeId !== userId) {
         throw new ForbiddenException({
           code: 'FORBIDDEN',
@@ -144,27 +378,88 @@ export class TasksService {
         category: `TASK_PHOTO:${task.id}`,
         archivedAt: null,
       },
-      select: { id: true, fileName: true, storageKey: true, createdAt: true },
+      select: { id: true, fileName: true, storageKey: true, mimeType: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
     });
 
-    const photos = photoDocs.map((doc) => {
+    const attachmentDocs = await this.prisma.document.findMany({
+      where: {
+        productionOrderId: task.productionOrderId,
+        archivedAt: null,
+        OR: [
+          { category: null },
+          { NOT: { category: { startsWith: 'TASK_PHOTO:' } } },
+        ],
+      },
+      select: { id: true, fileName: true, storageKey: true, mimeType: true, category: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    const toFile = (doc: {
+      id: string;
+      fileName: string;
+      storageKey: string;
+      mimeType?: string | null;
+      category?: string | null;
+      createdAt: Date;
+    }) => {
       const token = this.storage.createAccessToken(doc.storageKey, 3600);
       return {
         id: doc.id,
         fileName: doc.fileName,
+        mimeType: doc.mimeType ?? null,
+        category: doc.category ?? null,
         createdAt: doc.createdAt,
         downloadPath: `/api/v1/uploads/download?token=${token}`,
       };
+    };
+
+    const photos = photoDocs.map(toFile);
+    const attachments = attachmentDocs.map(toFile);
+
+    const openStartedAt =
+      task.status === 'IN_PROGRESS'
+        ? (task.timeEntries?.find((e: { endedAt?: Date | null; startedAt: Date }) => !e.endedAt)
+            ?.startedAt ??
+          task.timeEntries?.[0]?.startedAt ??
+          null)
+        : null;
+
+    const hasClosedEntries = (task.timeEntries ?? []).some(
+      (e: { endedAt?: Date | null }) => e.endedAt != null,
+    );
+    const timing = buildTaskTimingSummary({
+      status: task.status,
+      actualMinutes: task.actualMinutes,
+      actualSeconds: hasClosedEntries
+        ? closedSecondsFromTimeEntries(task.timeEntries)
+        : undefined,
+      estimatedMinutes: task.estimatedMinutes,
+      plannedCompletion: task.plannedCompletion,
+      openStartedAt,
     });
 
-    return {
+    const product = task.productionOrder.product;
+    const productImageUrls = [
+      product?.imageUrl?.trim() || null,
+      ...((product?.galleryUrls as string[] | undefined) ?? []).map((u) => u?.trim() || null),
+    ].filter((u, i, arr): u is string => Boolean(u) && arr.indexOf(u) === i);
+
+    const payload = {
       ...task,
+      timing,
       photos,
-      productImageUrl: task.productionOrder.product?.imageUrl?.trim() || null,
+      attachments,
+      productImageUrl: productImageUrls[0] ?? null,
+      productImageUrls,
       factoryOrderNumber: task.productionOrder.number,
       salesOrderNumber: task.productionOrder.salesOrder?.number ?? null,
     };
+
+    if (canSeeAll) return payload;
+    const { progressPercent: _omit, timeEntries: _te, ...safe } = payload;
+    return safe;
   }
 
   private async closeOpenTimeEntries(
@@ -175,23 +470,28 @@ export class TasksService {
     const open = await tx.taskTimeEntry.findMany({
       where: { taskId, endedAt: null },
     });
+    if (open.length === 0) return;
+
     const now = new Date();
-    let added = 0;
     for (const entry of open) {
-      const minutes = Math.max(1, Math.round((now.getTime() - entry.startedAt.getTime()) / 60000));
-      added += minutes;
+      const durationMs = Math.max(0, now.getTime() - entry.startedAt.getTime());
+      // Floor — never round a 1m2s session up to 2 minutes.
+      const minutes = Math.floor(durationMs / 60000);
       await tx.taskTimeEntry.update({
         where: { id: entry.id },
         data: { endedAt: now, minutes, userId: entry.userId || userId },
       });
     }
-    if (added > 0) {
-      const task = await tx.productionTask.findUnique({ where: { id: taskId } });
-      await tx.productionTask.update({
-        where: { id: taskId },
-        data: { actualMinutes: (task?.actualMinutes ?? 0) + added },
-      });
-    }
+
+    const closed = await tx.taskTimeEntry.findMany({
+      where: { taskId, endedAt: { not: null } },
+      select: { startedAt: true, endedAt: true },
+    });
+    const totalSeconds = closedSecondsFromTimeEntries(closed);
+    await tx.productionTask.update({
+      where: { id: taskId },
+      data: { actualMinutes: Math.floor(totalSeconds / 60) },
+    });
   }
 
   private assertCanModify(
@@ -267,11 +567,25 @@ export class TasksService {
       throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Employee not found.' });
     }
 
-    return this.prisma.productionTask.update({
+    if (dto.plannedCompletion) {
+      const due = new Date(dto.plannedCompletion);
+      if (Number.isNaN(due.getTime())) {
+        throw new BadRequestException({
+          code: 'BAD_REQUEST',
+          message: 'plannedCompletion must be a valid ISO datetime.',
+        });
+      }
+    }
+
+    const updated = await this.prisma.productionTask.update({
       where: { id },
       data: {
         assignedEmployeeId: dto.employeeId,
         ...(dto.priority ? { priority: dto.priority } : {}),
+        ...(dto.plannedCompletion
+          ? { plannedCompletion: new Date(dto.plannedCompletion) }
+          : {}),
+        ...(dto.estimatedMinutes != null ? { estimatedMinutes: dto.estimatedMinutes } : {}),
       },
       include: {
         assignedEmployee: {
@@ -281,6 +595,40 @@ export class TasksService {
         productionOrder: { select: { id: true, number: true } },
       },
     });
+
+    const timing = buildTaskTimingSummary({
+      status: updated.status,
+      actualMinutes: updated.actualMinutes,
+      estimatedMinutes: updated.estimatedMinutes,
+      plannedCompletion: updated.plannedCompletion,
+      openStartedAt: null,
+    });
+
+    const orderNumber = updated.productionOrder?.number ?? '';
+    const taskName = updated.name ?? updated.stageDefinition?.nameEn ?? 'Task';
+    const priority = dto.priority ?? updated.priority;
+    await this.notifications
+      .sendFromTemplate({
+        templateCode: 'WORKER_ASSIGNED',
+        channel: 'IN_APP',
+        to: { userId: dto.employeeId },
+        vars: { taskName, orderNumber },
+        linkUrl: `/tasks/${updated.id}`,
+      })
+      .catch(() => undefined);
+    if (priority === 'URGENT') {
+      await this.notifications
+        .sendFromTemplate({
+          templateCode: 'URGENT_TASK',
+          channel: 'IN_APP',
+          to: { userId: dto.employeeId },
+          vars: { taskName, orderNumber },
+          linkUrl: `/tasks/${updated.id}`,
+        })
+        .catch(() => undefined);
+    }
+
+    return { ...updated, timing };
   }
 
   async start(id: string, userId: string, permissions: string[]) {
@@ -349,10 +697,10 @@ export class TasksService {
   async resume(id: string, userId: string, permissions: string[]) {
     const task = await this.getTask(id);
     this.assertCanModify(task, userId, permissions);
-    if (task.status !== 'PAUSED') {
+    if (!['PAUSED', 'BLOCKED'].includes(task.status)) {
       throw new BadRequestException({
         code: 'BAD_REQUEST',
-        message: 'Only paused tasks can be resumed.',
+        message: 'Only paused or blocked tasks can be resumed.',
       });
     }
     await this.assertPrereqsMet(task);
@@ -365,6 +713,12 @@ export class TasksService {
         where: { id },
         data: { status: 'IN_PROGRESS' },
       });
+      if (task.stageInstanceId && task.status === 'BLOCKED') {
+        await tx.productionStageInstance.update({
+          where: { id: task.stageInstanceId },
+          data: { status: 'IN_PROGRESS' },
+        });
+      }
       await this.pipeline.onTaskStart(task.productionOrderId, task.stageInstanceId, tx);
       return updated;
     });
@@ -396,31 +750,57 @@ export class TasksService {
     });
   }
 
+  /**
+   * Floor "report problem" — logs a blocker for supervisors but does **not**
+   * pause the task. Workers keep the timer and action dock and can finish.
+   * Legacy hard-BLOCKED tasks are released to PAUSED so work can continue.
+   */
   async block(id: string, dto: TaskBlockDto, userId: string, permissions: string[]) {
-    const task = await this.getTask(id);
-    this.assertCanModify(task, userId, permissions);
+    const scope = `task.block:${id}`;
+    const { result } = await this.idempotency.once(
+      scope,
+      dto.idempotencyKey,
+      { userId, entityId: id },
+      async () => {
+        const task = await this.getTask(id);
+        this.assertCanModify(task, userId, permissions);
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.taskBlocker.create({
-        data: {
-          taskId: id,
-          category: dto.category,
-          reason: dto.reason,
-          reportedById: userId,
-        },
-      });
-      if (task.stageInstanceId) {
-        await tx.productionStageInstance.update({
-          where: { id: task.stageInstanceId },
-          data: { status: 'BLOCKED' },
+        if (['COMPLETED', 'CANCELLED'].includes(task.status)) {
+          throw new ConflictException({
+            code: 'TASK_TERMINAL',
+            message: 'Cannot report a problem on a finished or cancelled task.',
+          });
+        }
+
+        await this.prisma.$transaction(async (tx) => {
+          await tx.taskBlocker.create({
+            data: {
+              taskId: id,
+              category: dto.category,
+              reason: dto.reason,
+              reportedById: userId,
+            },
+          });
+
+          // Soft reports must never leave the floor task hard-blocked.
+          if (task.status === 'BLOCKED') {
+            await tx.productionTask.update({
+              where: { id },
+              data: { status: 'PAUSED' },
+            });
+            if (task.stageInstanceId) {
+              await tx.productionStageInstance.update({
+                where: { id: task.stageInstanceId },
+                data: { status: 'IN_PROGRESS' },
+              });
+            }
+          }
         });
-      }
-      return tx.productionTask.update({
-        where: { id },
-        data: { status: 'BLOCKED' },
-        include: { blockers: true },
-      });
-    });
+
+        return this.getById(id, userId, permissions);
+      },
+    );
+    return result;
   }
 
   async unblock(id: string, userId: string, permissions: string[]) {
@@ -456,38 +836,83 @@ export class TasksService {
     });
   }
 
-  async updateNotes(id: string, notes: string, userId: string, permissions: string[]) {
-    const task = await this.getTask(id);
-    this.assertCanModify(task, userId, permissions);
-    return this.prisma.productionTask.update({
-      where: { id },
-      data: { notes },
-    });
+  async updateNotes(
+    id: string,
+    notes: string,
+    userId: string,
+    permissions: string[],
+    idempotencyKey?: string,
+  ) {
+    const scope = `task.notes:${id}`;
+    const { result } = await this.idempotency.once(
+      scope,
+      idempotencyKey,
+      { userId, entityId: id },
+      async () => {
+        const task = await this.getTask(id);
+        this.assertCanModify(task, userId, permissions);
+        if (['COMPLETED', 'CANCELLED'].includes(task.status)) {
+          throw new ConflictException({
+            code: 'TASK_TERMINAL',
+            message: 'Cannot update notes on a finished or cancelled task.',
+          });
+        }
+        return this.prisma.productionTask.update({
+          where: { id },
+          data: { notes },
+        });
+      },
+    );
+    return result;
   }
 
   async complete(
     id: string,
     userId: string,
     permissions: string[],
-    dto?: { notes?: string; photoDocumentIds?: string[] },
+    dto?: { notes?: string; photoDocumentIds?: string[]; idempotencyKey?: string },
   ) {
+    const scope = `task.complete:${id}`;
+
+    if (dto?.idempotencyKey) {
+      const cached = await this.idempotency.get(scope, dto.idempotencyKey);
+      if (cached != null) return cached;
+    }
+
     const task = await this.getTask(id);
     this.assertCanModify(task, userId, permissions);
 
-    const unresolved = task.blockers.filter((b) => !b.resolvedAt);
-    if (unresolved.length) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'Cannot complete task with unresolved blockers.',
+    // Idempotent: already completed → return current detail (no silent re-run).
+    if (task.status === 'COMPLETED') {
+      const existing = await this.getById(id, userId, permissions);
+      if (dto?.idempotencyKey) {
+        await this.idempotency.put({
+          scope,
+          key: dto.idempotencyKey,
+          userId,
+          entityId: id,
+          response: existing,
+        });
+      }
+      return existing;
+    }
+
+    if (task.status === 'CANCELLED') {
+      throw new ConflictException({
+        code: 'TASK_CANCELLED',
+        message: 'Cannot complete a cancelled task.',
       });
     }
 
-    if (['COMPLETED', 'CANCELLED'].includes(task.status)) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'Task already completed.',
+    if (task.status === 'BLOCKED') {
+      throw new ConflictException({
+        code: 'TASK_BLOCKED',
+        message: 'Resolve the reported problem before finishing this task.',
       });
     }
+
+    // Soft floor reports (taskBlocker rows) stay visible to supervisors but do
+    // not gate completion — only a hard BLOCKED status does.
 
     await this.assertPrereqsMet(task);
 
@@ -513,7 +938,7 @@ export class TasksService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       await this.closeOpenTimeEntries(tx, id, userId);
 
       if (dto?.photoDocumentIds?.length) {
@@ -522,7 +947,6 @@ export class TasksService {
           data: {
             productionOrderId: task.productionOrderId,
             category: `TASK_PHOTO:${id}`,
-            // Dealers may view stage photos on their order tracking page.
             visibility: 'CUSTOMER_VISIBLE',
           },
         });
@@ -537,7 +961,7 @@ export class TasksService {
         });
       }
 
-      const updated = await tx.productionTask.update({
+      const row = await tx.productionTask.update({
         where: { id },
         data: {
           status: 'COMPLETED',
@@ -547,20 +971,50 @@ export class TasksService {
         },
         include: {
           stageDefinition: true,
-          productionOrder: { select: { id: true, number: true, progressPercent: true } },
+          productionOrder: {
+            select: { id: true, number: true, progressPercent: true, status: true },
+          },
         },
       });
+
+      // Completes stage when all tasks done, unlocks next READY stages, rolls up PO %.
       await this.pipeline.onTaskComplete(task.productionOrderId, task.stageInstanceId, tx);
-      return updated;
-    }).then(async (updated) => {
-      const po = await this.prisma.productionOrder.findUnique({
+
+      const po = await tx.productionOrder.findUnique({
         where: { id: task.productionOrderId },
-        select: { status: true, salesOrderId: true },
+        select: { id: true, number: true, progressPercent: true, status: true },
       });
-      if (po?.status === 'COMPLETED' && po.salesOrderId) {
-        await this.invoices.ensureFromSalesOrder(po.salesOrderId, userId).catch(() => {});
-      }
-      return updated;
+
+      return {
+        ...row,
+        productionOrder: po ?? row.productionOrder,
+        orderProgressPercent: po?.progressPercent ?? row.productionOrder.progressPercent,
+        replayed: false as const,
+      };
     });
+
+    if (dto?.idempotencyKey) {
+      await this.idempotency.put({
+        scope,
+        key: dto.idempotencyKey,
+        userId,
+        entityId: id,
+        response: updated,
+      });
+    }
+
+    const poStatus = updated.productionOrder?.status;
+    const salesOrderId = (
+      await this.prisma.productionOrder.findUnique({
+        where: { id: task.productionOrderId },
+        select: { salesOrderId: true },
+      })
+    )?.salesOrderId;
+
+    if (poStatus === 'COMPLETED' && salesOrderId) {
+      await this.invoices.ensureFromSalesOrder(salesOrderId, userId).catch(() => {});
+    }
+
+    return updated;
   }
 }

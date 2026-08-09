@@ -53,7 +53,7 @@ function ok(name, cond, detail = '') {
 }
 
 const login = await request('POST', '/api/v1/auth/login', {
-  body: { username: 'admin', password: 'Admin@12345!' },
+  body: { username: 'admin', password: '123' },
 });
 const cookie = cookieHeader(login.setCookie);
 ok('admin login', login.status === 201 || login.status === 200, String(login.status));

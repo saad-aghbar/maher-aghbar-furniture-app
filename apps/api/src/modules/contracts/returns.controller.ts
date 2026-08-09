@@ -3,6 +3,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -10,7 +11,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsEnum, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsArray,
+  IsEnum,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { Prisma, ReturnReason, ReturnResolution } from '@maher/database';
 import type { AuthUser } from '@maher/types';
@@ -22,6 +32,36 @@ import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
 import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { roundMoney } from '../../common/helpers/money.util';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
+
+/** Pack one or many storage keys into the existing String column (JSON array when >1). */
+function packPhotoKeys(keys: Array<string | null | undefined>): string | null {
+  const clean = keys
+    .map((k) => (typeof k === 'string' ? k.trim() : ''))
+    .filter(Boolean);
+  if (!clean.length) return null;
+  if (clean.length === 1) return clean[0]!;
+  return JSON.stringify(clean);
+}
+
+/** Unpack legacy single key or JSON array of keys. */
+function unpackPhotoKeys(raw: string | null | undefined): string[] {
+  if (!raw?.trim()) return [];
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((x): x is string => typeof x === 'string' && Boolean(x.trim()))
+          .map((s) => s.trim());
+      }
+    } catch {
+      /* fall through — treat as literal key */
+    }
+  }
+  return [trimmed];
+}
 
 class CreateReturnDto {
   @IsOptional()
@@ -47,13 +87,25 @@ class CreateReturnDto {
   @IsString()
   description?: string;
 
+  /** @deprecated Prefer reasonPhotoKeys — kept for older clients. */
   @IsOptional()
   @IsString()
   reasonPhotoKey?: string;
 
+  /** @deprecated Prefer issuePhotoKeys — kept for older clients. */
   @IsOptional()
   @IsString()
   issuePhotoKey?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  reasonPhotoKeys?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  issuePhotoKeys?: string[];
 }
 
 class ResolveReturnDto {
@@ -74,6 +126,7 @@ export class ReturnsController {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     private readonly storage: LocalStorageService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private photoUrl(key: string | null | undefined): string | null {
@@ -99,12 +152,22 @@ export class ReturnsController {
     const product = firstLine?.product;
     const productImageUrl = product?.imageUrl?.trim() || null;
     const { reasonPhotoKey, issuePhotoKey, ...rest } = row;
+    const reasonKeys = unpackPhotoKeys(reasonPhotoKey);
+    const issueKeys = unpackPhotoKeys(issuePhotoKey);
+    const reasonPhotoUrls = reasonKeys
+      .map((k) => this.photoUrl(k))
+      .filter((u): u is string => Boolean(u));
+    const issuePhotoUrls = issueKeys
+      .map((k) => this.photoUrl(k))
+      .filter((u): u is string => Boolean(u));
     return {
       ...rest,
       reasonPhotoKey,
       issuePhotoKey,
-      reasonPhotoUrl: this.photoUrl(reasonPhotoKey),
-      issuePhotoUrl: this.photoUrl(issuePhotoKey),
+      reasonPhotoUrl: reasonPhotoUrls[0] ?? null,
+      issuePhotoUrl: issuePhotoUrls[0] ?? null,
+      reasonPhotoUrls,
+      issuePhotoUrls,
       productImageUrl,
       productId: product?.id ?? null,
     };
@@ -223,6 +286,14 @@ export class ReturnsController {
     }
 
     const number = await this.sequences.next('RET', 'RET');
+    const reasonPacked = packPhotoKeys([
+      ...(dto.reasonPhotoKeys ?? []),
+      dto.reasonPhotoKey,
+    ]);
+    const issuePacked = packPhotoKeys([
+      ...(dto.issuePhotoKeys ?? []),
+      dto.issuePhotoKey,
+    ]);
     const created = await this.prisma.returnRequest.create({
       data: {
         number,
@@ -232,8 +303,8 @@ export class ReturnsController {
         quantity: roundMoney(dto.quantity),
         reason: dto.reason,
         description: dto.description,
-        reasonPhotoKey: dto.reasonPhotoKey?.trim() || null,
-        issuePhotoKey: dto.issuePhotoKey?.trim() || null,
+        reasonPhotoKey: reasonPacked,
+        issuePhotoKey: issuePacked,
         approvalStatus: 'PENDING',
       },
       include: {
@@ -263,19 +334,62 @@ export class ReturnsController {
     return this.enrichReturn(created);
   }
 
+  @Get(':id')
+  @RequirePermissions('sales-order.read')
+  async getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const row = await this.prisma.returnRequest.findFirst({
+      where: { id, ...customerScopeFilter(user) },
+      include: {
+        customer: true,
+        salesOrder: {
+          include: {
+            lines: {
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    sku: true,
+                    nameAr: true,
+                    nameEn: true,
+                    nameHe: true,
+                    imageUrl: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!row) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
+    }
+    return this.enrichReturn(row);
+  }
+
   @Patch(':id/resolve')
   @RequirePermissions('sales-order.update')
-  resolve(@Param('id') id: string, @Body() body: ResolveReturnDto) {
+  async resolve(@Param('id') id: string, @Body() body: ResolveReturnDto) {
     const resolution =
       body.approvalStatus === 'APPROVED'
         ? ReturnResolution.REPLACEMENT
         : ReturnResolution.REJECTED;
-    return this.prisma.returnRequest.update({
+    const updated = await this.prisma.returnRequest.update({
       where: { id },
       data: {
         resolution,
         approvalStatus: body.approvalStatus,
       },
     });
+    await this.notifications
+      .notifyCustomerUsers(updated.customerId, {
+        templateCode:
+          body.approvalStatus === 'APPROVED' ? 'RETURN_APPROVED' : 'RETURN_REJECTED',
+        vars: { number: updated.number },
+        linkUrl: `/returns/${updated.id}`,
+      })
+      .catch(() => undefined);
+    return updated;
   }
 }

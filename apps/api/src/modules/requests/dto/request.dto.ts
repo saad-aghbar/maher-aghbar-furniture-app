@@ -180,7 +180,7 @@ export class CreateRequestDto {
   @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
   @Matches(PHONE_E164_PATTERN, {
-    message: 'Fax must start with +country code then digits (e.g. +97022991234).',
+    message: 'Enter a valid fax number.',
   })
   endCustomerFax?: string;
 
@@ -258,7 +258,7 @@ export class UpdateRequestDto {
   @ValidateIf((_, v) => v != null && String(v).trim() !== '')
   @IsString()
   @Matches(PHONE_E164_PATTERN, {
-    message: 'Fax must start with +country code then digits (e.g. +97022991234).',
+    message: 'Enter a valid fax number.',
   })
   endCustomerFax?: string;
 

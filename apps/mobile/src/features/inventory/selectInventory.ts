@@ -1,0 +1,183 @@
+import type { InventoryCategoryGroup, InventoryItem, InventoryTransaction } from './api';
+
+function toNumber(value: number | string | null | undefined): number {
+  if (value == null || value === '') return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function localizedName(
+  item: { nameEn: string; nameAr: string },
+  locale: string,
+): string {
+  if (locale === 'ar') return item.nameAr || item.nameEn;
+  return item.nameEn || item.nameAr;
+}
+
+const ACCESSORY_CATEGORIES = new Set([
+  'METAL_ACCESSORY',
+  'DECORATIVE_ACCESSORY',
+  'PACKAGING',
+]);
+
+export function isAccessoryCategory(category: string): boolean {
+  return ACCESSORY_CATEGORIES.has(category);
+}
+
+export type InventoryItemCardModel = {
+  id: string;
+  name: string;
+  nameEn: string;
+  nameAr: string;
+  sku: string;
+  category: string;
+  materialType: string | null;
+  barcode: string | null;
+  color: string | null;
+  size: string | null;
+  imageUrl: string | null;
+  isAccessory: boolean;
+  minStock: number;
+  standardCost: number | null;
+  quantityLabel: string;
+  onHand: number;
+  unit: string;
+  isLowStock: boolean;
+  stockStatus: 'IN_STOCK' | 'LOW_STOCK';
+  showCost: boolean;
+  costLabel: string | null;
+  balances: Array<{
+    warehouseId: string;
+    warehouseName: string;
+    availableQty: number;
+    quantityLabel: string;
+  }>;
+};
+
+export type InventoryItemDetailModel = InventoryItemCardModel & {
+  color: string | null;
+  size: string | null;
+  description: string | null;
+  minStock: number;
+};
+
+export type InventoryTransactionRow = {
+  id: string;
+  type: string;
+  quantityLabel: string;
+  warehouseName: string;
+  notes: string | null;
+  createdAt: string;
+  showCost: boolean;
+  costLabel: string | null;
+};
+
+export function sumOnHand(item: InventoryItem): number {
+  return (item.balances ?? []).reduce((s, b) => s + toNumber(b.availableQty), 0);
+}
+
+export function selectInventoryItemCard(
+  item: InventoryItem,
+  locale: string,
+): InventoryItemCardModel {
+  const onHand = sumOnHand(item);
+  const minStock = toNumber(item.minStock);
+  const isLowStock = onHand <= minStock;
+  const hasCost =
+    item.standardCost !== undefined &&
+    item.standardCost !== null &&
+    String(item.standardCost) !== '';
+
+  return {
+    id: item.id,
+    name: localizedName(item, locale),
+    nameEn: item.nameEn,
+    nameAr: item.nameAr,
+    sku: item.sku,
+    category: item.category,
+    materialType: item.materialType ?? null,
+    barcode: item.barcode ?? null,
+    color: item.color ?? null,
+    size: item.size ?? null,
+    imageUrl: item.imageUrl?.trim() || null,
+    isAccessory: isAccessoryCategory(item.category),
+    minStock,
+    standardCost: hasCost ? toNumber(item.standardCost) : null,
+    onHand,
+    unit: item.unit || 'pcs',
+    quantityLabel: `${formatQty(onHand)} ${item.unit || 'pcs'}`,
+    isLowStock,
+    stockStatus: isLowStock ? 'LOW_STOCK' : 'IN_STOCK',
+    showCost: hasCost,
+    costLabel: hasCost ? formatMoney(toNumber(item.standardCost)) : null,
+    balances: (item.balances ?? []).map((b) => {
+      const qty = toNumber(b.availableQty);
+      const wh =
+        locale === 'ar'
+          ? b.warehouse?.nameAr || b.warehouse?.nameEn || b.warehouse?.code
+          : b.warehouse?.nameEn || b.warehouse?.nameAr || b.warehouse?.code;
+      return {
+        warehouseId: b.warehouseId,
+        warehouseName: wh || '—',
+        availableQty: qty,
+        quantityLabel: `${formatQty(qty)} ${item.unit || 'pcs'}`,
+      };
+    }),
+  };
+}
+
+export function selectInventoryItemDetail(
+  item: InventoryItem,
+  locale: string,
+): InventoryItemDetailModel {
+  const card = selectInventoryItemCard(item, locale);
+  return {
+    ...card,
+    color: item.color ?? null,
+    size: item.size ?? null,
+    description: item.description ?? null,
+    minStock: toNumber(item.minStock),
+  };
+}
+
+export function selectInventoryTransaction(
+  tx: InventoryTransaction,
+  locale: string,
+  unit: string,
+): InventoryTransactionRow {
+  const qty = toNumber(tx.quantity);
+  const hasCost =
+    tx.unitCost !== undefined && tx.unitCost !== null && String(tx.unitCost) !== '';
+  const wh =
+    locale === 'ar'
+      ? tx.warehouse?.nameAr || tx.warehouse?.nameEn || tx.warehouse?.code
+      : tx.warehouse?.nameEn || tx.warehouse?.nameAr || tx.warehouse?.code;
+
+  return {
+    id: tx.id,
+    type: tx.type,
+    quantityLabel: `${qty > 0 ? '+' : ''}${formatQty(qty)} ${unit}`,
+    warehouseName: wh || '—',
+    notes: tx.notes ?? null,
+    createdAt: tx.createdAt,
+    showCost: hasCost,
+    costLabel: hasCost ? formatMoney(toNumber(tx.unitCost)) : null,
+  };
+}
+
+export function isValidCategoryGroup(value: string): value is InventoryCategoryGroup {
+  return value === 'fabric' || value === 'foam' || value === 'wood' || value === 'accessories';
+}
+
+function formatQty(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function formatMoney(n: number): string {
+  return n.toLocaleString('en-JO', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+    numberingSystem: 'latn',
+  });
+}

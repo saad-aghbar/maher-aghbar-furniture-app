@@ -37,10 +37,10 @@ The platform replaces fragmented WhatsApp threads, handwritten notes, Excel shee
 
 ## Brand direction
 
-- Coral-red brand primary on white surfaces
-- Dark text, light neutral borders
-- Clean enterprise layouts (not ecommerce chrome)
-- Expressive professional typography suitable for Arabic/Hebrew/Latin
+- Army Camo (`#776245`) primary on Apple White / white surfaces; Liquorice dark theme
+- Clean enterprise layouts (not ecommerce chrome); dense tables and forms
+- Multilingual typography: Gendy (Latin target) / KO Sans (Arabic target) / Heebo — interim Outfit + Noto Sans Arabic until licensed files land
+- Full token, logo, and type guidance: [brand.md](./brand.md)
 
 ## Out of scope (v1)
 

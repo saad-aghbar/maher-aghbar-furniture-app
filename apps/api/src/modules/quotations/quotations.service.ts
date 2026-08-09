@@ -13,7 +13,7 @@ import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { calcLineTotals, roundMoney } from '../../common/helpers/money.util';
 import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
-import { CreateQuotationDto, ListQuotationsDto } from './dto/quotation.dto';
+import { CreateQuotationDto, ListQuotationsDto, UpdateQuotationDto } from './dto/quotation.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SalesOrdersService } from '../sales-orders/sales-orders.service';
 import {
@@ -346,6 +346,51 @@ export class QuotationsService {
       where: { id },
       data: { status: 'INTERNAL_REVIEW' },
       include: { lines: true },
+    });
+  }
+
+  /** Edit draft quotation terms / lines (prices) before submit-for-approval. */
+  async updateDraft(id: string, dto: UpdateQuotationDto, user?: AuthUser) {
+    const quotation = await this.getById(id, user);
+    this.assertStatus(quotation, ['DRAFT'], 'update');
+
+    const data: Prisma.QuotationUpdateInput = {};
+    if (dto.paymentTerms !== undefined) data.paymentTerms = dto.paymentTerms || null;
+    if (dto.deliveryTerms !== undefined) data.deliveryTerms = dto.deliveryTerms || null;
+    if (dto.customerNotes !== undefined) data.customerNotes = dto.customerNotes || null;
+    if (dto.internalNotes !== undefined) data.internalNotes = dto.internalNotes || null;
+
+    if (dto.lines?.length) {
+      const resolved = await this.resolveSellerLines(quotation.customerId, dto.lines);
+      const lineData = resolved.map((_, index) => this.buildLineData(resolved, index));
+      const totals = this.sumQuotation(lineData);
+      Object.assign(data, totals);
+
+      return this.prisma.$transaction(async (tx) => {
+        await tx.quotationLine.deleteMany({ where: { quotationId: id } });
+        await tx.quotationLine.createMany({
+          data: lineData.map((line) => ({ ...line, quotationId: id })),
+        });
+        return tx.quotation.update({
+          where: { id },
+          data,
+          include: {
+            lines: { orderBy: { sortOrder: 'asc' } },
+            customer: true,
+            request: { select: { id: true, number: true } },
+          },
+        });
+      });
+    }
+
+    return this.prisma.quotation.update({
+      where: { id },
+      data,
+      include: {
+        lines: { orderBy: { sortOrder: 'asc' } },
+        customer: true,
+        request: { select: { id: true, number: true } },
+      },
     });
   }
 

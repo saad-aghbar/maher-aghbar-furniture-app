@@ -50,7 +50,14 @@ const envSchema = z.object({
 
   OPENAI_API_KEY: z.string().optional(),
   OCR_API_KEY: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
   SMTP_URL: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  AI_LLM_MODEL: z.string().optional(),
+  TWILIO_SMS_FROM: z.string().optional(),
+  TWILIO_FROM: z.string().optional(),
+  TWILIO_WHATSAPP_FROM: z.string().optional(),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
 
   EMAIL_INBOUND_HOST: z.string().optional(),
   EMAIL_INBOUND_PORT: z.coerce.number().int().positive().optional(),

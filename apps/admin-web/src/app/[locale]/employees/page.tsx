@@ -197,9 +197,7 @@ function UsersHub() {
         if (!form.roleId) {
           throw new ApiClientError(tVal('roleRequired'), 400);
         }
-        if (form.password.trim() && form.password.trim().length < 8) {
-          throw new ApiClientError(tVal('passwordMin'), 400);
-        }
+        // Password optional on edit: blank keeps current; any non-empty value is accepted.
         return apiFetch<UserRow>(`/api/v1/users/${editing.id}`, {
           method: 'PATCH',
           body: JSON.stringify({

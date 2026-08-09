@@ -953,19 +953,10 @@ export function DealerSections({ customerId }: DealerSectionsProps) {
                         ) : (
                           <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary">
                             <Armchair className="h-7 w-7 opacity-40" />
-                            <span className="text-[10px] font-medium uppercase tracking-wide" dir="ltr">
-                              {row.product?.sku ?? '—'}
-                            </span>
                           </div>
                         )}
                       </div>
                       <div className="flex flex-1 flex-col gap-1.5 p-2.5">
-                        <p
-                          className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary"
-                          dir="ltr"
-                        >
-                          {row.product?.sku ?? '—'}
-                        </p>
                         <p className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary">
                           {productName}
                         </p>
@@ -1065,7 +1056,7 @@ export function DealerSections({ customerId }: DealerSectionsProps) {
                 .filter((p) => editingId || !pricedProductIds.has(p.id) || p.id === productId)
                 .map((p) => ({
                   value: p.id,
-                  label: `${localizedName(locale, p)} (${p.sku})`,
+                  label: localizedName(locale, p),
                 })),
             ]}
           />

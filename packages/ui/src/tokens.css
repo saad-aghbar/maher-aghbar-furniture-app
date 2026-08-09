@@ -1,35 +1,35 @@
 :root {
-  /* Brand — Maher red */
-  --maher-brand: #d93a2b;
-  --maher-brand-hover: #bb2f22;
-  --maher-brand-active: #9e281d;
-  --maher-brand-soft: #fdf1ef;
-  --maher-brand-border: #f6d3ce;
+  /* Brand — Army Camo (Maher Al-Aghbar Furniture guidelines, July 2026) */
+  --maher-brand: #776245;
+  --maher-brand-hover: #635239;
+  --maher-brand-active: #372612;
+  --maher-brand-soft: #f0ebe3;
+  --maher-brand-border: #cfc4b0;
 
-  /* Accent — warm walnut, evokes furniture craft */
-  --maher-accent: #8a5a2b;
-  --maher-accent-soft: #f6efe6;
+  /* Accent — Tumbleweed */
+  --maher-accent: #372612;
+  --maher-accent-soft: #ebe6dc;
 
-  /* Neutrals */
-  --maher-background: #f6f5f3;
-  --maher-surface: #ffffff;
-  --maher-surface-muted: #faf9f7;
-  --maher-sidebar: #ffffff;
-  --maher-text-primary: #1c1917;
-  --maher-text-secondary: #6b6560;
-  --maher-text-tertiary: #9a938c;
-  --maher-border: #e7e3de;
-  --maher-border-strong: #d6d1ca;
+  /* Neutrals — linen canvas + warm parchment (never pure white) */
+  --maher-background: #e1dfd3;
+  --maher-surface: #f5f1ea;
+  --maher-surface-muted: #ebe6dc;
+  --maher-sidebar: #f5f1ea;
+  --maher-text-primary: #1e1a1b;
+  --maher-text-secondary: #5c574f;
+  --maher-text-tertiary: #8a857c;
+  --maher-border: #d4cfc4;
+  --maher-border-strong: #c4bdb0;
 
-  /* Semantic */
-  --maher-success: #17705a;
-  --maher-success-soft: #eaf6f1;
-  --maher-warning: #9a6a06;
-  --maher-warning-soft: #fdf4e3;
-  --maher-error: #c02f22;
-  --maher-error-soft: #fdeeec;
-  --maher-info: #1c5490;
-  --maher-info-soft: #ecf3fb;
+  /* Semantic — coffee / camo family (aligned with mobile theme) */
+  --maher-success: #5a6348;
+  --maher-success-soft: #e9ebe3;
+  --maher-warning: #8b7049;
+  --maher-warning-soft: #f3ede3;
+  --maher-error: #7a4538;
+  --maher-error-soft: #f2e8e4;
+  --maher-info: #6e6254;
+  --maher-info-soft: #eeeae4;
 
   /* Radii */
   --maher-radius-sm: 0.375rem;
@@ -37,11 +37,11 @@
   --maher-radius-lg: 0.75rem;
   --maher-radius-xl: 1rem;
 
-  /* Elevation */
-  --maher-shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.05), 0 1px 3px rgba(28, 25, 23, 0.04);
-  --maher-shadow-md: 0 4px 12px rgba(28, 25, 23, 0.07), 0 2px 4px rgba(28, 25, 23, 0.04);
-  --maher-shadow-lg: 0 12px 32px rgba(28, 25, 23, 0.1), 0 4px 8px rgba(28, 25, 23, 0.05);
-  --maher-ring: 0 0 0 3px rgba(217, 58, 43, 0.18);
+  /* Elevation — Liquorice-tinted */
+  --maher-shadow-sm: 0 1px 2px rgba(30, 26, 27, 0.05), 0 1px 3px rgba(30, 26, 27, 0.04);
+  --maher-shadow-md: 0 4px 12px rgba(30, 26, 27, 0.07), 0 2px 4px rgba(30, 26, 27, 0.04);
+  --maher-shadow-lg: 0 12px 32px rgba(30, 26, 27, 0.1), 0 4px 8px rgba(30, 26, 27, 0.05);
+  --maher-ring: 0 0 0 3px rgba(119, 98, 69, 0.22);
 
   /* Motion */
   --maher-transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -53,41 +53,41 @@
   --maher-duration-slow: 360ms;
 }
 
-/* Dark theme — warm charcoal furniture palette */
+/* Dark theme — Liquorice base, lifted Army Camo brand */
 :root[data-theme='dark'] {
-  --maher-brand: #e85a4c;
-  --maher-brand-hover: #f07064;
-  --maher-brand-active: #d93a2b;
-  --maher-brand-soft: rgba(232, 90, 76, 0.14);
-  --maher-brand-border: rgba(232, 90, 76, 0.32);
+  --maher-brand: #a8906c;
+  --maher-brand-hover: #bba57e;
+  --maher-brand-active: #776245;
+  --maher-brand-soft: rgba(168, 144, 108, 0.16);
+  --maher-brand-border: rgba(168, 144, 108, 0.34);
 
-  --maher-accent: #c4a07a;
-  --maher-accent-soft: rgba(196, 160, 122, 0.14);
+  --maher-accent: #c4b49a;
+  --maher-accent-soft: rgba(196, 180, 154, 0.14);
 
-  --maher-background: #141210;
-  --maher-surface: #1c1917;
-  --maher-surface-muted: #221f1c;
-  --maher-sidebar: #181614;
-  --maher-text-primary: #f5f2ee;
-  --maher-text-secondary: #a8a29a;
-  --maher-text-tertiary: #78716c;
-  /* Soft hairlines — low-opacity light edges, not solid chalk white */
-  --maher-border: rgba(245, 242, 238, 0.1);
-  --maher-border-strong: rgba(245, 242, 238, 0.18);
+  --maher-background: #1e1a1b;
+  --maher-surface: #2a2425;
+  --maher-surface-muted: #322c2d;
+  --maher-sidebar: #241f20;
+  --maher-text-primary: #e1dfd3;
+  --maher-text-secondary: #cacbcc;
+  --maher-text-tertiary: #8f8e8c;
+  /* Soft hairlines — Apple White edges, not chalk white */
+  --maher-border: rgba(225, 223, 211, 0.12);
+  --maher-border-strong: rgba(225, 223, 211, 0.2);
 
-  --maher-success: #34b895;
-  --maher-success-soft: rgba(52, 184, 149, 0.14);
-  --maher-warning: #e0a82e;
-  --maher-warning-soft: rgba(224, 168, 46, 0.14);
-  --maher-error: #f07167;
-  --maher-error-soft: rgba(240, 113, 103, 0.14);
-  --maher-info: #6ba3d9;
-  --maher-info-soft: rgba(107, 163, 217, 0.14);
+  --maher-success: #9aaa7a;
+  --maher-success-soft: rgba(154, 170, 122, 0.16);
+  --maher-warning: #c4a06a;
+  --maher-warning-soft: rgba(196, 160, 106, 0.16);
+  --maher-error: #c4897a;
+  --maher-error-soft: rgba(196, 137, 122, 0.16);
+  --maher-info: #b5a48c;
+  --maher-info-soft: rgba(181, 164, 140, 0.16);
 
   --maher-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.2);
   --maher-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.36), 0 2px 4px rgba(0, 0, 0, 0.22);
   --maher-shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.45), 0 4px 10px rgba(0, 0, 0, 0.28);
-  --maher-ring: 0 0 0 3px rgba(232, 90, 76, 0.28);
+  --maher-ring: 0 0 0 3px rgba(168, 144, 108, 0.32);
 }
 
 /* Smooth color shifts when switching themes */
@@ -248,13 +248,13 @@ html.maher-theme-fade body {
 
 @keyframes maher-ring-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(217, 58, 43, 0.35);
+    box-shadow: 0 0 0 0 rgba(119, 98, 69, 0.35);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(217, 58, 43, 0);
+    box-shadow: 0 0 0 10px rgba(119, 98, 69, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(217, 58, 43, 0);
+    box-shadow: 0 0 0 0 rgba(119, 98, 69, 0);
   }
 }
 
@@ -550,7 +550,7 @@ html.maher-theme-fade body {
   background: linear-gradient(
     120deg,
     transparent 20%,
-    rgba(217, 58, 43, 0.45),
+    rgba(119, 98, 69, 0.45),
     rgba(138, 90, 43, 0.35),
     transparent 80%
   );
@@ -602,7 +602,7 @@ html.maher-theme-fade body {
 
 .maher-dash-card:hover .maher-dash-rail {
   width: 0.35rem;
-  filter: drop-shadow(0 0 8px rgba(217, 58, 43, 0.4));
+  filter: drop-shadow(0 0 8px rgba(119, 98, 69, 0.4));
 }
 
 .maher-dash-card .maher-dash-arrow {
@@ -668,7 +668,7 @@ html.maher-theme-fade body {
   opacity: 0;
   background: radial-gradient(
     280px circle at var(--mx) var(--my),
-    rgba(217, 58, 43, 0.14),
+    rgba(119, 98, 69, 0.14),
     transparent 55%
   );
   transition: opacity 260ms var(--maher-ease-out);
@@ -686,7 +686,7 @@ html.maher-theme-fade body {
 
 .maher-dash-action:hover .maher-dash-icon {
   animation: maher-icon-spring 480ms var(--maher-ease-spring) both;
-  box-shadow: 0 6px 14px rgba(217, 58, 43, 0.22);
+  box-shadow: 0 6px 14px rgba(119, 98, 69, 0.22);
 }
 
 .maher-dash-action .maher-dash-arrow {
@@ -721,7 +721,7 @@ html.maher-theme-fade body {
   --my: 30%;
   --pipe-accent: var(--maher-brand);
   --pipe-soft: var(--maher-brand-soft);
-  --pipe-glow: rgba(217, 58, 43, 0.28);
+  --pipe-glow: rgba(119, 98, 69, 0.28);
   overflow: visible;
   isolation: isolate;
   transform: perspective(1000px) rotateX(var(--rx)) rotateY(var(--ry)) translate3d(0, 0, 0);
@@ -1128,6 +1128,19 @@ textarea,
 
 .maher-brand-mark {
   animation: maher-pop-bounce 600ms var(--maher-ease-spring) both;
+}
+
+/* Theme-aware brand artwork (FOUC-safe via html[data-theme]) */
+.maher-brand-mark-root .maher-brand-mark__on-dark {
+  display: none;
+}
+
+html[data-theme='dark'] .maher-brand-mark-root .maher-brand-mark__on-light {
+  visibility: hidden;
+}
+
+html[data-theme='dark'] .maher-brand-mark-root .maher-brand-mark__on-dark {
+  display: block;
 }
 
 .maher-auth-panel {

@@ -25,6 +25,12 @@ export class TasksController {
   }
 
   @RequirePermissions('production-task.read')
+  @Get('completed-dealers')
+  listCompletedDealers(@CurrentUser() user: AuthUser) {
+    return this.tasks.listCompletedDealers(user.id, user.permissions);
+  }
+
+  @RequirePermissions('production-task.read')
   @Get(':id')
   get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.tasks.getById(id, user.id, user.permissions);
@@ -87,7 +93,7 @@ export class TasksController {
     @Body() dto: UpdateTaskNotesDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.tasks.updateNotes(id, dto.notes, user.id, user.permissions);
+    return this.tasks.updateNotes(id, dto.notes, user.id, user.permissions, dto.idempotencyKey);
   }
 
   @RequirePermissions('production-task.complete')

@@ -312,6 +312,86 @@ async function main() {
       bodyEn: '{{count}} item(s) at or below minimum: {{items}}. Purchase request: {{prNumber}}.',
       bodyHe: '{{count}} פריטים ברמת מינימום או מתחת: {{items}}. בקשת רכש: {{prNumber}}.',
     },
+    {
+      code: 'NEW_ORDER',
+      channel: 'IN_APP',
+      subjectAr: 'طلب جديد',
+      subjectEn: 'New order',
+      subjectHe: 'הזמנה חדשה',
+      bodyAr: 'تم تقديم الطلب {{number}} من {{customerName}}.',
+      bodyEn: 'Order request {{number}} submitted by {{customerName}}.',
+      bodyHe: 'בקשת הזמנה {{number}} הוגשה על ידי {{customerName}}.',
+    },
+    {
+      code: 'AI_DRAFT_READY',
+      channel: 'IN_APP',
+      subjectAr: 'مسودة ذكاء اصطناعي جاهزة',
+      subjectEn: 'AI draft ready',
+      subjectHe: 'טיוטת AI מוכנה',
+      bodyAr: 'مسودة الاستخراج {{jobNumber}} جاهزة للمراجعة.',
+      bodyEn: 'AI extraction draft {{jobNumber}} is ready for review.',
+      bodyHe: 'טיוטת חילוץ {{jobNumber}} מוכנה לבדיקה.',
+    },
+    {
+      code: 'WORKER_ASSIGNED',
+      channel: 'IN_APP',
+      subjectAr: 'مهمة جديدة',
+      subjectEn: 'Task assigned',
+      subjectHe: 'משימה הוקצתה',
+      bodyAr: 'تم تعيينك للمهمة {{taskName}} على أمر الإنتاج {{orderNumber}}.',
+      bodyEn: 'You were assigned {{taskName}} on production order {{orderNumber}}.',
+      bodyHe: 'הוקצית למשימה {{taskName}} בהזמנת ייצור {{orderNumber}}.',
+    },
+    {
+      code: 'URGENT_TASK',
+      channel: 'IN_APP',
+      subjectAr: 'مهمة عاجلة',
+      subjectEn: 'Urgent task',
+      subjectHe: 'משימה דחופה',
+      bodyAr: 'مهمة عاجلة: {{taskName}} ({{orderNumber}}).',
+      bodyEn: 'Urgent task: {{taskName}} ({{orderNumber}}).',
+      bodyHe: 'משימה דחופה: {{taskName}} ({{orderNumber}}).',
+    },
+    {
+      code: 'DELIVERY_APPROACHING',
+      channel: 'IN_APP',
+      subjectAr: 'التسليم قريب',
+      subjectEn: 'Delivery approaching',
+      subjectHe: 'משלוח מתקרב',
+      bodyAr: 'التسليم {{number}} أصبح جاهزاً / في الطريق.',
+      bodyEn: 'Delivery {{number}} is ready / out for delivery.',
+      bodyHe: 'משלוח {{number}} מוכן / בדרך.',
+    },
+    {
+      code: 'RETURN_APPROVED',
+      channel: 'IN_APP',
+      subjectAr: 'قبول المرتجع',
+      subjectEn: 'Return approved',
+      subjectHe: 'החזרה אושרה',
+      bodyAr: 'تم قبول طلب المرتجع {{number}}.',
+      bodyEn: 'Return request {{number}} was approved.',
+      bodyHe: 'בקשת החזרה {{number}} אושרה.',
+    },
+    {
+      code: 'RETURN_REJECTED',
+      channel: 'IN_APP',
+      subjectAr: 'رفض المرتجع',
+      subjectEn: 'Return rejected',
+      subjectHe: 'החזרה נדחתה',
+      bodyAr: 'تم رفض طلب المرتجع {{number}}.',
+      bodyEn: 'Return request {{number}} was rejected.',
+      bodyHe: 'בקשת החזרה {{number}} נדחתה.',
+    },
+    {
+      code: 'INVOICE_CREATED',
+      channel: 'IN_APP',
+      subjectAr: 'فاتورة جديدة',
+      subjectEn: 'Invoice created',
+      subjectHe: 'חשבונית נוצרה',
+      bodyAr: 'تم إنشاء الفاتورة {{number}} بمبلغ {{total}} دينار.',
+      bodyEn: 'Invoice {{number}} for {{total}} JOD was created.',
+      bodyHe: 'נוצרה חשבונית {{number}} בסך {{total}}.',
+    },
   ];
   for (const tpl of templates) {
     await prisma.notificationTemplate.upsert({
@@ -333,17 +413,19 @@ async function main() {
     where: { code: { notIn: [...ROLES] } },
   });
 
-  const passwordHash = hashSync('Admin@12345!', 12);
+  const passwordHash = hashSync('123', 12);
   await seedDemoWorld(prisma, passwordHash);
 
   console.log('Seed complete.');
   console.log('Account types: admin | customer | worker');
-  console.log('Demo logins (password: Admin@12345!):');
+  console.log('Demo logins (password: 123):');
   console.log('  admin');
   console.log(
-    '  worker | carpenter | carpenter2 | painter | upholsterer | assembler | packer | inspector | driver',
+    '  cutter | cutter2 | carpenter | carpenter2 | carpenter3 | painter | painter2 | upholsterer | upholsterer2 | assembler | assembler2 | packer | inspector | driver | driver2',
   );
-  console.log('  cedar | olive | petra | villa');
+  console.log(
+    '  nile | oasis | balqis | jerash | aqaba | zarqa | irbid | madaba | salt | karak | mafraq | ajloun | rum | deadsea',
+  );
 }
 
 main()

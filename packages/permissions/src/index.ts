@@ -6,6 +6,7 @@ export {
   type Role,
 } from './catalog';
 export { hasPermission } from './check';
+export { can, canAny, canAll } from './access';
 export {
   resolveAppSurface,
   resolveWebHomePath,

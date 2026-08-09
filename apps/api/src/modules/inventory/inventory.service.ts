@@ -9,9 +9,14 @@ import { InventoryTxType, Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
-import { categoriesForGroup } from '../../common/helpers/inventory-category.util';
+import {
+  INVENTORY_CATEGORY_GROUPS,
+  categoriesForGroup,
+  type InventoryCategoryGroup,
+} from '../../common/helpers/inventory-category.util';
 import { roundMoney } from '../../common/helpers/money.util';
 import { PurchasingService } from '../purchasing/purchasing.service';
+import { stripInventoryCostFields, stripInventoryCostList } from './inventory-cost.util';
 
 @Injectable()
 export class InventoryService {
@@ -22,7 +27,46 @@ export class InventoryService {
     private readonly purchasing: PurchasingService,
   ) {}
 
-  async listItems(query: PaginationDto & { category?: string; categoryGroup?: string }) {
+  async listGroups(permissions?: string[]) {
+    void permissions; // groups have no cost fields; signature kept for controller consistency
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { archivedAt: null, isActive: true },
+      select: {
+        id: true,
+        category: true,
+        unit: true,
+        minStock: true,
+        balances: { select: { availableQty: true } },
+      },
+    });
+
+    const groupKeys = Object.keys(INVENTORY_CATEGORY_GROUPS) as InventoryCategoryGroup[];
+    return groupKeys.map((categoryGroup) => {
+      const categories = INVENTORY_CATEGORY_GROUPS[categoryGroup];
+      const groupItems = items.filter((item) => categories.includes(item.category));
+      let lowStockCount = 0;
+      let totalOnHand = 0;
+      const units = new Set<string>();
+      for (const item of groupItems) {
+        const onHand = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
+        totalOnHand += onHand;
+        if (onHand <= Number(item.minStock)) lowStockCount += 1;
+        if (item.unit) units.add(item.unit);
+      }
+      return {
+        categoryGroup,
+        materialCount: groupItems.length,
+        lowStockCount,
+        totalOnHand: roundMoney(totalOnHand),
+        primaryUnit: units.size === 1 ? [...units][0] : null,
+      };
+    });
+  }
+
+  async listItems(
+    query: PaginationDto & { category?: string; categoryGroup?: string },
+    permissions?: string[],
+  ) {
     const groupCategories = categoriesForGroup(query.categoryGroup);
     const where: Prisma.InventoryItemWhereInput = {
       archivedAt: null,
@@ -35,6 +79,7 @@ export class InventoryService {
               { barcode: { contains: query.q, mode: 'insensitive' } },
               { nameEn: { contains: query.q, mode: 'insensitive' } },
               { nameAr: { contains: query.q, mode: 'insensitive' } },
+              { materialType: { contains: query.q, mode: 'insensitive' } },
             ],
           }
         : {}),
@@ -49,10 +94,13 @@ export class InventoryService {
         take: query.pageSize,
       }),
     ]);
-    return { data, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    return {
+      data: stripInventoryCostList(data, permissions),
+      meta: paginatedMeta(query.page, query.pageSize, totalItems),
+    };
   }
 
-  async findByCode(code: string) {
+  async findByCode(code: string, permissions?: string[]) {
     const item = await this.prisma.inventoryItem.findFirst({
       where: {
         archivedAt: null,
@@ -61,16 +109,54 @@ export class InventoryService {
       include: { balances: { include: { warehouse: true } } },
     });
     if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
-    return item;
+    return stripInventoryCostFields(item, permissions);
   }
 
-  async getItem(id: string) {
+  async getItem(id: string, permissions?: string[]) {
     const item = await this.prisma.inventoryItem.findFirst({
       where: { id, archivedAt: null },
       include: { balances: { include: { warehouse: true } } },
     });
     if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
-    return item;
+    return stripInventoryCostFields(item, permissions);
+  }
+
+  async listItemTransactions(id: string, query: PaginationDto, permissions?: string[]) {
+    const item = await this.prisma.inventoryItem.findFirst({
+      where: { id, archivedAt: null },
+      select: { id: true },
+    });
+    if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
+
+    const where = { inventoryItemId: id };
+    const [totalItems, rows] = await this.prisma.$transaction([
+      this.prisma.inventoryTransaction.count({ where }),
+      this.prisma.inventoryTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+    ]);
+
+    const warehouseIds = [...new Set(rows.map((r) => r.warehouseId))];
+    const warehouses = warehouseIds.length
+      ? await this.prisma.warehouse.findMany({
+          where: { id: { in: warehouseIds } },
+          select: { id: true, code: true, nameEn: true, nameAr: true },
+        })
+      : [];
+    const warehouseById = new Map(warehouses.map((w) => [w.id, w]));
+
+    const data = stripInventoryCostList(
+      rows.map((row) => ({
+        ...row,
+        warehouse: warehouseById.get(row.warehouseId) ?? null,
+      })),
+      permissions,
+    );
+
+    return { data, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
   }
 
   async createItem(
@@ -90,6 +176,7 @@ export class InventoryService {
       size?: string;
       preferredSupplierId?: string;
       description?: string;
+      imageUrl?: string | null;
     },
     userId: string,
   ) {
@@ -110,6 +197,7 @@ export class InventoryService {
         size: dto.size?.trim() || undefined,
         preferredSupplierId: dto.preferredSupplierId || undefined,
         description: dto.description,
+        imageUrl: dto.imageUrl?.trim() || undefined,
       },
     });
     await this.prisma.auditEvent.create({
@@ -141,6 +229,7 @@ export class InventoryService {
       size: string;
       preferredSupplierId: string | null;
       description: string;
+      imageUrl: string | null;
     }>,
     userId: string,
   ) {
@@ -168,6 +257,9 @@ export class InventoryService {
           ? { preferredSupplierId: dto.preferredSupplierId || null }
           : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.imageUrl !== undefined
+          ? { imageUrl: dto.imageUrl?.trim() || null }
+          : {}),
       },
     });
     await this.prisma.auditEvent.create({
@@ -500,7 +592,7 @@ export class InventoryService {
     },
     userId: string,
   ) {
-    const item = await this.findByCode(dto.code.trim());
+    const item = await this.findByCode(dto.code.trim(), ['inventory.cost.read']);
     const count = await this.createCount(
       {
         warehouseId: dto.warehouseId,
@@ -574,16 +666,19 @@ export class InventoryService {
     });
   }
 
-  async lowStock() {
+  async lowStock(permissions?: string[]) {
     const items = await this.prisma.inventoryItem.findMany({
       where: { archivedAt: null },
       include: { balances: true },
     });
-    return items
-      .map((item) => {
-        const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
-        return { ...item, availableQty: available };
-      })
-      .filter((item) => item.availableQty <= Number(item.minStock));
+    return stripInventoryCostList(
+      items
+        .map((item) => {
+          const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
+          return { ...item, availableQty: available };
+        })
+        .filter((item) => item.availableQty <= Number(item.minStock)),
+      permissions,
+    );
   }
 }

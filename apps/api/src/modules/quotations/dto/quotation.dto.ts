@@ -173,3 +173,32 @@ export class RequestRevisionDto {
   @IsString()
   comment?: string;
 }
+
+export class UpdateQuotationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  paymentTerms?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  deliveryTerms?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  customerNotes?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  internalNotes?: string;
+
+  @ApiPropertyOptional({ type: [QuotationLineDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuotationLineDto)
+  lines?: QuotationLineDto[];
+}

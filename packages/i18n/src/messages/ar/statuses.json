@@ -65,5 +65,6 @@
   "PASS": "ناجح",
   "FAIL": "راسب",
   "NOT_APPLICABLE": "غير منطبق",
-  "IN_TRANSIT": "قيد النقل"
+  "IN_TRANSIT": "قيد النقل",
+  "POSTED": "مرحّل"
 }

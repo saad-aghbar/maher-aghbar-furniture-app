@@ -63,12 +63,11 @@ export default function ProductsPage() {
   const [sectionNameAr, setSectionNameAr] = useState('');
 
   const [productOpen, setProductOpen] = useState(false);
-  const [sku, setSku] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [nameAr, setNameAr] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [basePrice, setBasePrice] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
 
   const categoriesQuery = useQuery({
     queryKey: ['product-categories'],
@@ -118,18 +117,18 @@ export default function ProductsPage() {
 
   const createProductMutation = useMutation({
     mutationFn: async () => {
-      if (!sku.trim() || !nameEn.trim() || !nameAr.trim()) {
+      if (!nameEn.trim() || !nameAr.trim()) {
         throw new ApiClientError(t('namesRequired'), 400);
       }
       return apiFetch<Product>('/api/v1/products', {
         method: 'POST',
         body: JSON.stringify({
-          sku: sku.trim(),
           nameEn: nameEn.trim(),
           nameAr: nameAr.trim(),
           categoryId: categoryId || null,
           basePrice: basePrice ? Number(basePrice) : undefined,
-          imageUrl: imageUrl.trim() || undefined,
+          imageUrl: photos[0] || undefined,
+          galleryUrls: photos.slice(1),
           unit: 'pcs',
           isActive: true,
         }),
@@ -137,12 +136,11 @@ export default function ProductsPage() {
     },
     onSuccess: async () => {
       setProductOpen(false);
-      setSku('');
       setNameEn('');
       setNameAr('');
       setCategoryId('');
       setBasePrice('');
-      setImageUrl('');
+      setPhotos([]);
       setBanner(t('productCreated'));
       setFormError(null);
       await qc.invalidateQueries({ queryKey: ['products'] });
@@ -262,9 +260,6 @@ export default function ProductsPage() {
                   ) : (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-text-tertiary">
                       <Armchair className="h-7 w-7 opacity-40" />
-                      <span className="text-[10px] font-medium uppercase tracking-wide" dir="ltr">
-                        {product.sku}
-                      </span>
                     </div>
                   )}
                   <div className="absolute start-1.5 top-1.5 origin-top-start scale-90">
@@ -275,9 +270,6 @@ export default function ProductsPage() {
                   </div>
                 </Link>
                 <div className="flex flex-1 flex-col gap-1.5 p-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary" dir="ltr">
-                    {product.sku}
-                  </p>
                   <Link
                     href={`/products/${product.id}`}
                     className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary hover:text-brand"
@@ -364,7 +356,6 @@ export default function ProductsPage() {
       >
         <div className="maher-form-section space-y-3">
           {formError ? <Alert variant="error">{formError}</Alert> : null}
-          <Input label={t('sku')} value={sku} onChange={(e) => setSku(e.target.value)} dir="ltr" />
           <Input label={t('nameEn')} value={nameEn} onChange={(e) => setNameEn(e.target.value)} />
           <Input label={t('nameAr')} value={nameAr} onChange={(e) => setNameAr(e.target.value)} />
           <Select
@@ -387,24 +378,53 @@ export default function ProductsPage() {
             dir="ltr"
           />
           <ImageSourceField
-            label={t('imageUrl')}
-            value={imageUrl}
-            onChange={setImageUrl}
+            label={t('changeProductPhoto')}
+            value={photos[0] ?? ''}
+            onChange={(url) => setPhotos(url ? [url] : [])}
             hint={t('imageUrlHint')}
             uploadLabel={tCommon('uploadFromDevice')}
             uploadingLabel={tCommon('uploading')}
-            urlPlaceholder="https://…"
-            showPreview={Boolean(imageUrl.trim())}
-            onUploadFile={async (file) => {
-              const form = new FormData();
-              form.append('file', file);
-              const res = await apiUpload<{ downloadPath: string }>(
-                '/api/v1/uploads?category=PRODUCT_IMAGE',
-                form,
-              );
-              return `${API_URL}${res.downloadPath}`;
+            allowUrl={false}
+            multiple
+            showPreview={Boolean(photos[0])}
+            onUploadFiles={async (files) => {
+              const uploaded: string[] = [];
+              for (const file of files) {
+                const form = new FormData();
+                form.append('file', file);
+                const res = await apiUpload<{ downloadPath: string }>(
+                  '/api/v1/uploads?category=PRODUCT_IMAGE',
+                  form,
+                );
+                uploaded.push(`${API_URL}${res.downloadPath}`);
+              }
+              setPhotos((prev) => {
+                const next = [...prev];
+                for (const u of uploaded) {
+                  if (!next.includes(u)) next.push(u);
+                }
+                return next;
+              });
             }}
           />
+          {photos.length > 1 ? (
+            <div className="flex flex-wrap gap-2">
+              {photos.map((url, i) => (
+                <button
+                  key={`${url}-${i}`}
+                  type="button"
+                  className="relative h-16 w-16 overflow-hidden rounded-lg border border-border"
+                  onClick={() =>
+                    setPhotos((prev) => prev.filter((_, idx) => idx !== i))
+                  }
+                  title={t('removeProductPhoto')}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="" className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </Modal>
     </div>

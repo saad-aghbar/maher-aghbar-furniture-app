@@ -1,4 +1,5 @@
-import type { ElementType, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import type { AppLinkComponent } from '../AppLinkComponent';
 import { cn } from '../cn';
 import { Ltr } from '../Ltr';
 
@@ -9,7 +10,7 @@ export interface AttentionChipProps {
   tone: 'error' | 'warning' | 'info';
   icon?: ReactNode;
   /** Pass next-intl / next Link to keep client navigation */
-  LinkComponent?: ElementType;
+  LinkComponent?: AppLinkComponent;
 }
 
 export function AttentionChip({

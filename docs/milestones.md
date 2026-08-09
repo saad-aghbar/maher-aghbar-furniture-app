@@ -2,7 +2,7 @@
 
 Phased delivery plan for **Maher Al-Aghbar & Sons Furniture ERP** (Technzone proposal `JO/LF/112/07072026`). Each phase ends with demoable deliverables and Definition of Done criteria.
 
-Brand: coral-red (`#E03C31`) enterprise ERP for Jordan furniture factory.
+Brand: Army Camo (`#776245`) enterprise ERP for Jordan furniture factory (see `docs/brand.md`).
 
 ---
 

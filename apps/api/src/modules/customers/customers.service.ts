@@ -1,12 +1,22 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, SalesOrderStatus } from '@maher/database';
 import type { TranslateProvider } from '@maher/integrations';
 import * as bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
-import { CreateCustomerDto, ListCustomersDto, UpdateCustomerDto } from './dto/customer.dto';
+import {
+  CreateCustomerDto,
+  DeleteCustomerDto,
+  ListCustomersDto,
+  UpdateCustomerDto,
+} from './dto/customer.dto';
 import { TRANSLATE_PROVIDER } from '../../integrations/integrations.module';
 
 const CLOSED_ORDER_STATUSES: SalesOrderStatus[] = [
@@ -261,15 +271,29 @@ export class CustomersService {
     }
 
     const code = await this.sequences.next('CUST', 'CUST');
-    const baseUsername = code.toLowerCase().replace(/[^a-z0-9]/g, '');
-    let username = baseUsername;
-    let suffix = 1;
-    while (await this.prisma.user.findUnique({ where: { username } })) {
-      username = `${baseUsername}${suffix++}`;
+    const username = dto.portalUsername.trim().toLowerCase();
+    if (!username || username.length < 2) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Portal username is required.',
+      });
+    }
+    const portalPassword = dto.portalPassword;
+    if (!portalPassword) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Portal password is required.',
+      });
+    }
+    const existingUser = await this.prisma.user.findUnique({ where: { username } });
+    if (existingUser) {
+      throw new ConflictException({
+        code: 'USERNAME_TAKEN',
+        message: 'A user with this username already exists.',
+      });
     }
 
-    const tempPassword = `Tmp-${randomBytes(6).toString('base64url')}!A1`;
-    const passwordHash = await bcrypt.hash(tempPassword, 12);
+    const passwordHash = await bcrypt.hash(portalPassword, 12);
     const customerRole = await this.prisma.role.findUnique({ where: { code: 'CUSTOMER' } });
     if (!customerRole) {
       throw new BadRequestException({
@@ -341,7 +365,7 @@ export class CustomersService {
     return {
       ...customer,
       activeOrdersCount: 0,
-      portalCredentials: { username, temporaryPassword: tempPassword },
+      portalCredentials: { username, temporaryPassword: portalPassword },
     };
   }
 
@@ -392,6 +416,94 @@ export class CustomersService {
     });
 
     return customer;
+  }
+
+  /**
+   * Soft-delete a dealer after verifying their portal username + password.
+   * Archives the customer, deactivates linked portal users, and revokes sessions.
+   */
+  async remove(id: string, dto: DeleteCustomerDto, actorId: string) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id, archivedAt: null },
+    });
+    if (!customer) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Customer not found.' });
+    }
+
+    const portalUsers = await this.prisma.user.findMany({
+      where: { customerId: id, archivedAt: null },
+    });
+    if (!portalUsers.length) {
+      throw new BadRequestException({
+        code: 'NO_PORTAL_USER',
+        message: 'This dealer has no portal login to confirm deletion.',
+      });
+    }
+
+    const username = dto.portalUsername.trim().toLowerCase();
+    const matched = portalUsers.find(
+      (u) => (u.username ?? '').trim().toLowerCase() === username,
+    );
+    if (!matched) {
+      throw new BadRequestException({
+        code: 'INVALID_PORTAL_CREDENTIALS',
+        message: 'Dealer username or password is incorrect.',
+      });
+    }
+
+    const passwordOk = await bcrypt.compare(dto.portalPassword, matched.passwordHash);
+    if (!passwordOk) {
+      throw new BadRequestException({
+        code: 'INVALID_PORTAL_CREDENTIALS',
+        message: 'Dealer username or password is incorrect.',
+      });
+    }
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.customer.update({
+        where: { id },
+        data: {
+          archivedAt: now,
+          status: 'INACTIVE',
+          updatedById: actorId,
+        },
+      });
+
+      for (const portalUser of portalUsers) {
+        await tx.session.updateMany({
+          where: { userId: portalUser.id, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        await tx.user.update({
+          where: { id: portalUser.id },
+          data: {
+            isActive: false,
+            archivedAt: now,
+            // Free unique login fields so the dealer can be re-onboarded later.
+            username: null,
+            email: null,
+            phone: null,
+          },
+        });
+      }
+    });
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: actorId,
+        action: 'customer.delete',
+        entityType: 'Customer',
+        entityId: id,
+        oldValues: {
+          code: customer.code,
+          name: customer.name,
+          portalUsername: matched.username,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return { id, archived: true as const };
   }
 
   /**

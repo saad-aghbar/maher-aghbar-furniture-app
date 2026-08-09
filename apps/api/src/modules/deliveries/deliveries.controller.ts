@@ -18,6 +18,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import type { AuthUser } from '@maher/types';
 import { InvoicesService } from '../invoices/invoices.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const DELIVERY_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   PLANNED: [DeliveryStatus.READY, DeliveryStatus.CANCELLED, DeliveryStatus.FAILED],
@@ -106,6 +107,7 @@ export class DeliveriesController {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     private readonly invoices: InvoicesService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   @Get()
@@ -351,6 +353,19 @@ export class DeliveriesController {
       await this.invoices.ensureFromSalesOrder(existing.salesOrderId, user.id).catch(() => {
         /* JoFotara/network failures must not block delivery confirmation */
       });
+    }
+
+    if (
+      dto.status === DeliveryStatus.READY ||
+      dto.status === DeliveryStatus.OUT_FOR_DELIVERY
+    ) {
+      await this.notifications
+        .notifyCustomerUsers(existing.customerId, {
+          templateCode: 'DELIVERY_APPROACHING',
+          vars: { number: delivery.number },
+          linkUrl: `/sales-orders/${existing.salesOrderId ?? ''}`,
+        })
+        .catch(() => undefined);
     }
 
     return delivery;

@@ -1,0 +1,127 @@
+import type { Theme, ThemeColors } from '@/theme';
+import type { TextStyle, ViewStyle } from 'react-native';
+
+export type BadgeVariant = 'default' | 'brand' | 'success' | 'warning' | 'error' | 'info';
+
+export type PriorityLevel = 'low' | 'medium' | 'high' | 'urgent';
+
+/** Domain status → badge variant (coffee/brand family — no traffic blue/green/red). */
+export const statusVariantMap: Record<string, BadgeVariant> = {
+  DRAFT: 'default',
+  PENDING: 'warning',
+  PENDING_APPROVAL: 'warning',
+  INTERNAL_REVIEW: 'warning',
+  APPROVED: 'success',
+  SENT: 'brand',
+  VIEWED: 'brand',
+  ACCEPTED: 'success',
+  CONVERTED: 'success',
+  REJECTED: 'error',
+  REVISION_REQUESTED: 'warning',
+  EXPIRED: 'default',
+  OPEN: 'brand',
+  SUBMITTED: 'brand',
+  QUOTED: 'brand',
+  CLOSED: 'default',
+  CANCELLED: 'error',
+  CONFIRMED: 'brand',
+  IN_PRODUCTION: 'brand',
+  READY_FOR_PRODUCTION: 'brand',
+  READY_FOR_DELIVERY: 'success',
+  DELIVERED: 'success',
+  INVOICED: 'brand',
+  PLANNED: 'default',
+  READY: 'success',
+  IN_PROGRESS: 'brand',
+  ON_HOLD: 'warning',
+  BLOCKED: 'error',
+  COMPLETED: 'success',
+  WAITING_FOR_MATERIALS: 'warning',
+  QUALITY_CHECK: 'brand',
+  NOT_STARTED: 'default',
+  PAUSED: 'warning',
+  READY_FOR_INSPECTION: 'brand',
+  ISSUED: 'brand',
+  PAID: 'success',
+  PARTIALLY_PAID: 'warning',
+  OVERDUE: 'error',
+  VOID: 'default',
+  ACTIVE: 'success',
+  INACTIVE: 'default',
+  QUEUED: 'default',
+  PROCESSING: 'brand',
+  PENDING_REVIEW: 'warning',
+  FAILED: 'error',
+  OUT_FOR_DELIVERY: 'brand',
+  PASSED: 'success',
+  PASSED_WITH_NOTES: 'success',
+  FAILED_REWORK_REQUIRED: 'error',
+};
+
+export const priorityVariantMap: Record<PriorityLevel, BadgeVariant> = {
+  low: 'default',
+  medium: 'brand',
+  high: 'warning',
+  urgent: 'error',
+};
+
+export function resolveStatusVariant(status: string): BadgeVariant {
+  return statusVariantMap[status] ?? 'default';
+}
+
+export function resolvePriorityVariant(priority: PriorityLevel): BadgeVariant {
+  return priorityVariantMap[priority];
+}
+
+export function englishStatusFallback(status: string): string {
+  return status
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function softFill(colors: ThemeColors, variant: BadgeVariant): { bg: string; fg: string } {
+  switch (variant) {
+    case 'brand':
+      return { bg: colors.brandSoft, fg: colors.brand };
+    case 'success':
+      return { bg: colors.successSoft, fg: colors.success };
+    case 'warning':
+      return { bg: colors.warningSoft, fg: colors.warning };
+    case 'error':
+      return { bg: colors.errorSoft, fg: colors.error };
+    case 'info':
+      return { bg: colors.infoSoft, fg: colors.info };
+    default:
+      return { bg: colors.surfaceSecondary, fg: colors.textSecondary };
+  }
+}
+
+export function getBadgeContainerStyle(theme: Theme, variant: BadgeVariant): ViewStyle {
+  const { bg } = softFill(theme.colors, variant);
+  return {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing['2xs'],
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing['2xs'],
+    borderRadius: theme.radius.full,
+    backgroundColor: bg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  };
+}
+
+export function getBadgeLabelStyle(theme: Theme, variant: BadgeVariant): TextStyle {
+  const { fg } = softFill(theme.colors, variant);
+  return {
+    color: fg,
+    fontSize: theme.typography.variants.caption.fontSize,
+    lineHeight: theme.typography.variants.caption.lineHeight,
+  };
+}
+
+export function getBadgeDotColor(theme: Theme, variant: BadgeVariant): string {
+  return softFill(theme.colors, variant).fg;
+}

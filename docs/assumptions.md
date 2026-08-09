@@ -48,8 +48,8 @@ Non-critical decisions made so implementation can proceed. Blocking items are li
 
 ## Non-blocking open questions (defaults applied)
 
-1. Exact brand font pairing → **IBM Plex Sans Arabic** + **IBM Plex Sans** + **Heebo** for Hebrew.
-2. Exact coral hex → `#E03C31` brand, `#C43228` hover.
+1. Exact brand font pairing → **Gendy** (Latin) + **KO Sans** (Arabic) + **Heebo** for Hebrew; interim Outfit + Noto Sans Arabic until licensed WOFF2 files land in `packages/ui/fonts/` (see `docs/brand.md`).
+2. Exact brand hex → `#776245` Army Camo brand, `#635239` hover, `#372612` Tumbleweed active/accent; dark theme lifts brand to `#a8906c` on Liquorice `#1e1a1b`.
 3. WhatsApp Business number → configured via settings later.
 4. Multi-branch rollout date → schema ready, UI single-branch first.
 
