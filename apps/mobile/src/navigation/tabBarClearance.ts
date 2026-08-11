@@ -7,6 +7,9 @@ export const SURFACE_TAB_BAR_CLEARANCE = 88;
  */
 export const SURFACE_TAB_BAR_HEIGHT = 58;
 
+/** Dealer FAB sits above the pill — extra clearance for home/catalog scroll. */
+export const DEALER_TAB_BAR_CLEARANCE = 108;
+
 /** Slim floating chat composer height (single-line). */
 export const CHAT_COMPOSER_HEIGHT = 44;
 

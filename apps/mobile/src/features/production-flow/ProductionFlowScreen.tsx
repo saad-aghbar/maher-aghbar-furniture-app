@@ -22,6 +22,8 @@ import {
   type ProductionFlowRole,
   type ProductionFlowStage,
 } from './selectProductionFlow';
+import { toDealerProgressStages } from './toDealerProgressStages';
+import { DealerEmptyState, DealerProgressMap } from '@/features/dealer-ui';
 
 type Props = {
   role: ProductionFlowRole;
@@ -222,10 +224,34 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
         </View>
 
         {flow.stages.length === 0 ? (
-          <EmptyState
-            title={t('mobile.productionFlow.emptyTitle')}
-            description={t('mobile.productionFlow.emptyBody')}
-          />
+          role === 'dealer' ? (
+            <DealerEmptyState
+              title={t('mobile.productionFlow.emptyTitle')}
+              body={t('mobile.productionFlow.emptyBody')}
+            />
+          ) : (
+            <EmptyState
+              title={t('mobile.productionFlow.emptyTitle')}
+              description={t('mobile.productionFlow.emptyBody')}
+            />
+          )
+        ) : role === 'dealer' ? (
+          <View
+            style={{
+              borderRadius: theme.radius.xl,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
+              backgroundColor: colors.surface,
+              overflow: 'hidden',
+              padding: theme.spacing.md,
+              ...boardShadow,
+            }}
+          >
+            <DealerProgressMap
+              title={t('mobile.productionFlow.overallProgress')}
+              stages={toDealerProgressStages(flow.stages)}
+            />
+          </View>
         ) : (
           <View
             style={{

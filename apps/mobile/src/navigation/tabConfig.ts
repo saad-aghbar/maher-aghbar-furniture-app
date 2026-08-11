@@ -67,12 +67,6 @@ export const customerTabs: TabDef[] = [
     require: { permissions: ['catalog.read'], mode: 'all' },
   },
   {
-    name: 'new-order',
-    labelKey: 'newOrder',
-    visible: (u) => can(u, 'request.create'),
-    require: { permissions: ['request.create'], mode: 'all' },
-  },
-  {
     name: 'orders',
     labelKey: 'orders',
     visible: (u) => can(u, 'sales-order.read'),
@@ -80,6 +74,14 @@ export const customerTabs: TabDef[] = [
   },
   { name: 'account', labelKey: 'account' },
 ];
+
+/** Kept for deep links / FAB destination — not a bottom-tab chip. */
+export const customerNewOrderTab: TabDef = {
+  name: 'new-order',
+  labelKey: 'newOrder',
+  visible: (u) => can(u, 'request.create'),
+  require: { permissions: ['request.create'], mode: 'all' },
+};
 
 export const employeeTabs: TabDef[] = [
   { name: 'index', labelKey: 'home' },

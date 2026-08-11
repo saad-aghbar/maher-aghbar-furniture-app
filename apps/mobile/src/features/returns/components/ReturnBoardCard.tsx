@@ -13,13 +13,15 @@ import type { ReturnCardModel } from '../selectReturn';
 type Props = {
   item: ReturnCardModel;
   onPress: () => void;
+  /** Dealer surface: “Your order #” instead of admin “Dealer order #”. */
+  dealerFacing?: boolean;
 };
 
 /**
  * Returns list floor card — product media only; reason/damage live on detail.
  * Matches purchasing / invoice board language.
  */
-export function ReturnBoardCard({ item, onPress }: Props) {
+export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -40,10 +42,12 @@ export function ReturnBoardCard({ item, onPress }: Props) {
     const v = t('catalog.qty');
     return v === 'catalog.qty' ? 'Qty' : v;
   })();
-  const dealerOrderLabel = (() => {
-    const v = t('sales.dealerOrderNumber');
-    return v === 'sales.dealerOrderNumber' ? 'Dealer order #' : v;
-  })();
+  const dealerOrderLabel = dealerFacing
+    ? t('mobile.dealerAccount.yourOrderNumber')
+    : (() => {
+        const v = t('sales.dealerOrderNumber');
+        return v === 'sales.dealerOrderNumber' ? 'Dealer order #' : v;
+      })();
   const orderLabel = (() => {
     const v = t('mobile.returns.order');
     return v === 'mobile.returns.order' ? 'Order' : v;

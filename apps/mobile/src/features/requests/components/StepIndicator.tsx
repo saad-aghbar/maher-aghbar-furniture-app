@@ -8,22 +8,23 @@ import Animated, {
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
+import type { NewOrderStep } from '../newOrderSteps';
+import { stageProgress } from '../newOrderStageMath';
 
-export type NewOrderStep = 1 | 2 | 3 | 4 | 5 | 6;
+export type { NewOrderStep };
 
 type StepIndicatorProps = {
   step: NewOrderStep;
 };
 
-const TOTAL = 6;
-
+/** @deprecated Prefer NewOrderStageRail — kept for any external imports. */
 export function StepIndicator({ step }: StepIndicatorProps) {
   const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
-  const progress = useSharedValue(step / TOTAL);
+  const progress = useSharedValue(stageProgress(step));
 
   useEffect(() => {
-    progress.value = withTiming(step / TOTAL, { duration: 280 });
+    progress.value = withTiming(stageProgress(step), { duration: 280 });
   }, [step, progress]);
 
   const barStyle = useAnimatedStyle(() => ({
@@ -31,12 +32,10 @@ export function StepIndicator({ step }: StepIndicatorProps) {
   }));
 
   const labels = [
-    t('mobile.newOrder.steps.model'),
+    t('mobile.newOrder.steps.product'),
     t('mobile.newOrder.steps.details'),
     t('mobile.newOrder.steps.customer'),
-    t('mobile.newOrder.steps.fabric'),
-    t('mobile.newOrder.steps.uploads'),
-    t('mobile.newOrder.steps.review'),
+    t('mobile.newOrder.steps.attachments'),
   ];
 
   return (

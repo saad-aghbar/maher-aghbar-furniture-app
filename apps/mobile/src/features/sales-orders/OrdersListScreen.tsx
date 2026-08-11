@@ -26,7 +26,7 @@ import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { SalesOrderListItem } from './api';
 import { AdminOrderCard } from './components/AdminOrderCard';
-import { DealerOrderCard } from './components/DealerOrderCard';
+import { DealerOrdersHome } from './components/DealerOrdersHome';
 import {
   OrdersFilterChips,
   type StatusChipKey,
@@ -58,7 +58,8 @@ import {
   type DealerOrderCardModel,
   type OrdersListVariant,
 } from './selectOrderCard';
-import type { OrdersStageFocus } from './stageCounts';
+import { matchesStatusChip, type OrdersStageFocus } from './stageCounts';
+import { DealerSkeleton } from '@/features/dealer-ui';
 if (
   Platform.OS === 'android' &&
   UIManager.setLayoutAnimationEnabledExperimental
@@ -153,21 +154,26 @@ export function OrdersListScreen({
           : liveItems
     ).map((item) => ({ ...toDealerOrderCard(item), kind: 'order' as const }));
 
-    const merged = [...rfqs, ...orders];
-    if (!q) return merged;
-    return merged.filter((item) =>
-      matchOrdersSearch(
-        {
-          number: item.number,
-          title: item.title,
-          externalOrderNumber: item.externalOrderNumber,
-          deliveryDate: item.deliveryDate,
-          dealerName: undefined,
-        },
-        q,
-      ),
-    );
-  }, [variant, requestsQuery.data, forceState, fixture, liveItems, q]);
+    let merged = [...rfqs, ...orders];
+    if (q) {
+      merged = merged.filter((item) =>
+        matchOrdersSearch(
+          {
+            number: item.number,
+            title: item.title,
+            externalOrderNumber: item.externalOrderNumber,
+            deliveryDate: item.deliveryDate,
+            dealerName: undefined,
+          },
+          q,
+        ),
+      );
+    }
+    if (statusChip !== 'all') {
+      merged = merged.filter((item) => matchesStatusChip(item, statusChip));
+    }
+    return merged;
+  }, [variant, requestsQuery.data, forceState, fixture, liveItems, q, statusChip]);
 
   const items: SalesOrderListItem[] =
     forceState === 'success' || forceState === 'offline'
@@ -467,8 +473,20 @@ export function OrdersListScreen({
   if (forceState === 'loading' || (allowed && query.isLoading && !query.data && !forceState)) {
     return (
       <AppScreen>
-        {classicHeader}
-        <OrdersListSkeleton />
+        {variant === 'dealer' ? (
+          <View style={{ paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md }}>
+            <DealerSkeleton height={28} width="40%" />
+            <DealerSkeleton height={44} radius={theme.radius.xl} />
+            <DealerSkeleton height={88} radius={theme.radius.lg} />
+            <DealerSkeleton height={88} radius={theme.radius.lg} />
+            <DealerSkeleton height={88} radius={theme.radius.lg} />
+          </View>
+        ) : (
+          <>
+            {classicHeader}
+            <OrdersListSkeleton />
+          </>
+        )}
       </AppScreen>
     );
   }
@@ -513,6 +531,46 @@ export function OrdersListScreen({
     onPressItem,
     banner,
   };
+
+  /** Dealer surface — premium commerce list (not admin signature/pipeline boards). */
+  if (variant === 'dealer') {
+    const chipOptions: StatusChipKey[] = [
+      'all',
+      'pending',
+      'production',
+      'ready',
+      'delivered',
+    ];
+    return (
+      <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
+        <DealerOrdersHome
+          items={dealerHubItems}
+          searchInput={searchInput}
+          setSearchInput={setSearchInput}
+          statusChip={statusChip}
+          onChipChange={onChipChange}
+          filterOpen={sheetOpen}
+          onOpenFilters={openFilters}
+          onCloseFilters={() => setSheetOpen(false)}
+          filterOptions={chipOptions.map((id) => ({
+            id,
+            label: t(`mobile.orders.chips.${id}`),
+          }))}
+          selectedFilterId={statusChip === 'all' ? null : statusChip}
+          onSelectFilter={(id) => {
+            onChipChange((id as StatusChipKey) || 'all');
+            setSheetOpen(false);
+          }}
+          refreshing={forceState ? false : refreshing}
+          onRefresh={onRefresh}
+          onEndReached={onEndReached}
+          isFetchingNextPage={Boolean(query.isFetchingNextPage)}
+          onPressItem={onPressItem}
+          banner={banner}
+        />
+      </AppScreen>
+    );
+  }
 
   if (composition === 'signature') {
     return (
@@ -564,89 +622,46 @@ export function OrdersListScreen({
         {banner}
         {classicHeader}
       </View>
-      {variant === 'dealer' ? (
-        <FlatList
-          data={dealerHubItems}
-          keyExtractor={(item) => (item.kind === 'rfq' ? `rfq-${item.id}` : item.id)}
-          contentContainerStyle={{
-            paddingHorizontal: theme.spacing.lg,
-            paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
-            flexGrow: 1,
-          }}
-          refreshControl={
-            forceState ? undefined : (
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.brand}
-              />
-            )
-          }
-          onEndReached={onEndReached}
-          onEndReachedThreshold={0.4}
-          ListEmptyComponent={
-            <EmptyState
-              title={t('mobile.orders.emptyTitle')}
-              description={t('mobile.orders.emptyBody')}
+      <FlatList
+        data={adminCards}
+        keyExtractor={(item) => (item.kind === 'rfq' ? `rfq-${item.id}` : item.id)}
+        contentContainerStyle={{
+          paddingHorizontal: theme.spacing.lg,
+          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          flexGrow: 1,
+        }}
+        refreshControl={
+          forceState ? undefined : (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.brand}
             />
-          }
-          ListFooterComponent={
-            query.isFetchingNextPage ? (
-              <View style={{ paddingVertical: theme.spacing.lg }}>
-                <OrdersListSkeleton />
-              </View>
-            ) : null
-          }
-          renderItem={({ item, index }) => (
-            <DealerOrderCard
-              order={item}
-              index={index}
-              onPress={() => onPressItem(item.id, item.kind)}
-            />
-          )}
-        />
-      ) : (
-        <FlatList
-          data={adminCards}
-          keyExtractor={(item) => (item.kind === 'rfq' ? `rfq-${item.id}` : item.id)}
-          contentContainerStyle={{
-            paddingHorizontal: theme.spacing.lg,
-            paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
-            flexGrow: 1,
-          }}
-          refreshControl={
-            forceState ? undefined : (
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.brand}
-              />
-            )
-          }
-          onEndReached={onEndReached}
-          onEndReachedThreshold={0.4}
-          ListEmptyComponent={
-            <EmptyState
-              title={t('mobile.orders.emptyTitle')}
-              description={t('mobile.orders.emptyBody')}
-            />
-          }
-          ListFooterComponent={
-            query.isFetchingNextPage ? (
-              <View style={{ paddingVertical: theme.spacing.lg }}>
-                <OrdersListSkeleton />
-              </View>
-            ) : null
-          }
-          renderItem={({ item, index }) => (
-            <AdminOrderCard
-              order={item}
-              index={index}
-              onPress={() => onPressItem(item.id, item.kind)}
-            />
-          )}
-        />
-      )}
+          )
+        }
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.4}
+        ListEmptyComponent={
+          <EmptyState
+            title={t('mobile.orders.emptyTitle')}
+            description={t('mobile.orders.emptyBody')}
+          />
+        }
+        ListFooterComponent={
+          query.isFetchingNextPage ? (
+            <View style={{ paddingVertical: theme.spacing.lg }}>
+              <OrdersListSkeleton />
+            </View>
+          ) : null
+        }
+        renderItem={({ item, index }) => (
+          <AdminOrderCard
+            order={item}
+            index={index}
+            onPress={() => onPressItem(item.id, item.kind)}
+          />
+        )}
+      />
       {filterSheet}
     </AppScreen>
   );

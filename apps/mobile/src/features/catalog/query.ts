@@ -1,4 +1,4 @@
-import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
 import {
   flattenPaginatedPages,
@@ -7,6 +7,7 @@ import {
 import {
   listBrowseCategories,
   listBrowseProducts,
+  listPreviouslyOrderedProducts,
   getBrowseProduct,
   type BrowseProductsFilters,
 } from './api';
@@ -56,4 +57,38 @@ export function useBrowseProductQuery(id: string | undefined, enabled: boolean) 
     enabled: Boolean(id) && enabled,
     staleTime: 30_000,
   });
+}
+
+export function usePreviouslyOrderedQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.catalog.previouslyOrdered(),
+    queryFn: async () => {
+      const res = await listPreviouslyOrderedProducts();
+      return res.data;
+    },
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/** Hydrate favorite product ids into browse products (device favorites). */
+export function useFavoriteProductsQuery(ids: readonly string[], enabled: boolean) {
+  const queries = useQueries({
+    queries: ids.map((id) => ({
+      queryKey: queryKeys.catalog.detail(id),
+      queryFn: () => getBrowseProduct(id),
+      enabled: enabled && Boolean(id),
+      staleTime: 60_000,
+    })),
+  });
+
+  const products = queries
+    .map((q) => q.data)
+    .filter((p): p is NonNullable<typeof p> => Boolean(p));
+
+  const isPending = enabled && ids.length > 0 && queries.some((q) => q.isPending);
+  const isError = enabled && ids.length > 0 && queries.every((q) => q.isError);
+  const refetch = () => Promise.all(queries.map((q) => q.refetch()));
+
+  return { products, isPending, isError, refetch, queries };
 }

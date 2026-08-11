@@ -10,6 +10,12 @@ export type NotificationCardModel = {
   linkUrl: string | null;
 };
 
+export type NotificationDaySection = {
+  key: string;
+  label: string;
+  data: NotificationCardModel[];
+};
+
 /** Ionicons glyph keys used by notification boards. */
 export type NotificationIconName =
   | 'notifications-outline'
@@ -49,6 +55,31 @@ export function normalizeNotificationList(
 
 export function unreadCount(rows: AppNotification[]): number {
   return rows.filter((r) => !r.readAt).length;
+}
+
+function dayKey(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/** Group cards by calendar day (newest first). */
+export function groupNotificationsByDay(
+  items: NotificationCardModel[],
+  formatDayLabel: (isoDate: string) => string,
+): NotificationDaySection[] {
+  const map = new Map<string, NotificationCardModel[]>();
+  for (const item of items) {
+    const key = dayKey(item.createdAt) || 'unknown';
+    const bucket = map.get(key) ?? [];
+    bucket.push(item);
+    map.set(key, bucket);
+  }
+  return [...map.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(([key, data]) => ({
+      key,
+      label: key === 'unknown' ? key : formatDayLabel(key),
+      data,
+    }));
 }
 
 /**

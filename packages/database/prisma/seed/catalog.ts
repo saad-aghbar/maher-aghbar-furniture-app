@@ -1,5 +1,10 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { money } from './util';
+import { assignRandomProductPhotos } from './productPhotoPool';
+import {
+  measurementsToPrisma,
+  standardMeasurementsForProduct,
+} from './productMeasurements';
 import type { DealerRef } from './people';
 
 export type ProductRef = {
@@ -102,6 +107,12 @@ export async function seedCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
 
   const products: ProductRef[] = [];
   for (const p of PRODUCTS) {
+    const photos = assignRandomProductPhotos({ min: 1, max: 6 });
+    const measures = standardMeasurementsForProduct({
+      categoryCode: p.categoryCode,
+      sku: p.sku,
+      nameEn: p.nameEn,
+    });
     const row = await prisma.product.create({
       data: {
         sku: p.sku,
@@ -111,6 +122,9 @@ export async function seedCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
         basePrice: money(p.basePrice),
         manufacturingCost: money(p.mfg),
         isActive: true,
+        imageUrl: photos.imageUrl,
+        galleryUrls: photos.galleryUrls,
+        ...measurementsToPrisma(measures),
         bomDefaults: {
           fabricMeters: p.categoryCode === 'SOFA' || p.categoryCode === 'CHAIR' ? 8 : 2,
           woodUnits: 1,

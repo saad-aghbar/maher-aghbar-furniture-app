@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { RefreshControl, SectionList, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { can } from '@maher/permissions';
+import { can, resolveAppSurface } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
@@ -31,22 +31,33 @@ import {
   useNotificationsQuery,
 } from './query';
 import {
+  groupNotificationsByDay,
   normalizeNotificationList,
   selectNotificationCard,
 } from './selectNotification';
 
-const BACK_FALLBACK = '/(app)/(admin)/(tabs)' as Href;
+const BACK_FALLBACK_ADMIN = '/(app)/(admin)/(tabs)' as Href;
+const BACK_FALLBACK_CUSTOMER = '/(app)/(customer)/(tabs)' as Href;
+const BACK_FALLBACK_EMPLOYEE = '/(app)/(employee)/(tabs)' as Href;
+
+function backFallbackForSurface(surface: ReturnType<typeof resolveAppSurface>): Href {
+  if (surface === 'customer') return BACK_FALLBACK_CUSTOMER;
+  if (surface === 'employee') return BACK_FALLBACK_EMPLOYEE;
+  return BACK_FALLBACK_ADMIN;
+}
 
 function NotificationsScreenTitle({
   titleWeight,
   showBack,
+  backFallback,
 }: {
   titleWeight: 'medium' | 'semibold';
   showBack: boolean;
+  backFallback: Href;
 }) {
   const { t, isRTL } = useLocale();
   const { theme } = useTheme();
-  const onBack = useSmartBack(BACK_FALLBACK);
+  const onBack = useSmartBack(backFallback);
   const leadSize = theme.sizes.touch.min;
 
   return (
@@ -81,15 +92,21 @@ function NotificationsScreenTitle({
 function NotificationsShell({
   titleWeight,
   showBack,
+  backFallback,
   children,
 }: {
   titleWeight: 'medium' | 'semibold';
   showBack: boolean;
+  backFallback: Href;
   children: ReactNode;
 }) {
   return (
     <AppScreen>
-      <NotificationsScreenTitle titleWeight={titleWeight} showBack={showBack} />
+      <NotificationsScreenTitle
+        titleWeight={titleWeight}
+        showBack={showBack}
+        backFallback={backFallback}
+      />
       {children}
     </AppScreen>
   );
@@ -104,12 +121,14 @@ export function NotificationsInboxScreen({
   embeddedInTabs = false,
 }: NotificationsInboxScreenProps = {}) {
   const { user } = useAuth();
-  const { t, locale, isRTL } = useLocale();
+  const { t, locale, isRTL, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const allowed = can(user, 'notification.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const surface = user ? resolveAppSurface(user) : 'admin';
+  const backFallback = backFallbackForSurface(surface);
 
   const [segment, setSegment] = useState<NotificationsSegment>('all');
   const animateEnterRef = useRef(true);
@@ -134,6 +153,14 @@ export function NotificationsInboxScreen({
     [rows, segment],
   );
 
+  const sections = useMemo(
+    () =>
+      groupNotificationsByDay(visibleRows, (iso) =>
+        formatDate(`${iso}T12:00:00.000Z`),
+      ),
+    [formatDate, visibleRows],
+  );
+
   useEffect(() => {
     if (!animateEnterRef.current) return;
     if (rows.length === 0) return;
@@ -146,7 +173,7 @@ export function NotificationsInboxScreen({
 
   if (!allowed) {
     return (
-      <NotificationsShell titleWeight={titleWeight} showBack={showBack}>
+      <NotificationsShell titleWeight={titleWeight} showBack={showBack} backFallback={backFallback}>
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </NotificationsShell>
     );
@@ -154,7 +181,7 @@ export function NotificationsInboxScreen({
 
   if (query.isLoading && !query.data) {
     return (
-      <NotificationsShell titleWeight={titleWeight} showBack={showBack}>
+      <NotificationsShell titleWeight={titleWeight} showBack={showBack} backFallback={backFallback}>
         <NotificationsListSkeleton />
       </NotificationsShell>
     );
@@ -162,7 +189,7 @@ export function NotificationsInboxScreen({
 
   if (query.isError && !query.data) {
     return (
-      <NotificationsShell titleWeight={titleWeight} showBack={showBack}>
+      <NotificationsShell titleWeight={titleWeight} showBack={showBack} backFallback={backFallback}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.notifications.errorTitle')}
@@ -180,10 +207,10 @@ export function NotificationsInboxScreen({
       : t('mobile.notifications.subtitle');
 
   return (
-    <NotificationsShell titleWeight={titleWeight} showBack={showBack}>
+    <NotificationsShell titleWeight={titleWeight} showBack={showBack} backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
-      <FlatList
-        data={visibleRows}
+      <SectionList
+        sections={sections}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           gap: theme.spacing.md,
@@ -279,6 +306,21 @@ export function NotificationsInboxScreen({
             }
           />
         }
+        renderSectionHeader={({ section }) => (
+          <AppText
+            variant="caption"
+            weight={titleWeight}
+            color="muted"
+            style={{
+              textAlign: isRTL ? 'right' : 'left',
+              marginBottom: theme.spacing.xs,
+              letterSpacing: locale === 'ar' ? 0 : 0.6,
+              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            }}
+          >
+            {section.label}
+          </AppText>
+        )}
         renderItem={({ item, index }) => (
           <ListItemEnter index={index} enabled={animateEnter}>
             <NotificationBoardCard
@@ -287,7 +329,7 @@ export function NotificationsInboxScreen({
                 if (item.unread) {
                   markOne.mutate(item.id);
                 }
-                const href = mapNotificationLinkToHref(item.linkUrl);
+                const href = mapNotificationLinkToHref(item.linkUrl, surface);
                 if (href) router.push(href);
               }}
             />

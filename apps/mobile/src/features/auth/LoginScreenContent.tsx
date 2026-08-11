@@ -13,6 +13,9 @@ type Props = {
   form: FormProps;
 };
 
+/**
+ * Shared login form — username/password only (no email, no admin chrome).
+ */
 export function LoginScreenContent({ intro, colors, form }: Props) {
   const { shared } = intro;
 

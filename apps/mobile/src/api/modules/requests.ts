@@ -19,6 +19,7 @@ export type CreateRequestItemInput = {
   fabric?: string;
   description?: string;
   color?: string;
+  customMeasurements?: { label: string; value: string }[];
 };
 
 export type CreateRequestInput = {

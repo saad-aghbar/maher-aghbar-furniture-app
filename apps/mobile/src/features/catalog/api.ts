@@ -1,6 +1,7 @@
 export {
   listBrowseCategories,
   listBrowseProducts,
+  listPreviouslyOrderedProducts,
   getBrowseProduct,
   type BrowseCategory,
   type BrowseProduct,

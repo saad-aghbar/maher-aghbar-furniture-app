@@ -1,156 +1,242 @@
-import type { Href } from 'expo-router';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { useRouter, type Href } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { StatusBadge } from '@/components/badges/StatusBadge';
-import { EmptyState } from '@/components/feedback/EmptyState';
-import { ErrorState } from '@/components/feedback/ErrorState';
+import { DestructiveButton } from '@/components/buttons/DestructiveButton';
+import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { AppScreen } from '@/components/layout/AppScreen';
+import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
-import { LastUpdatedLabel } from '@/components/feedback/LastUpdatedLabel';
-import { getStatement } from '@/api/modules/payments';
+import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { useLocale } from '@/i18n';
+import { haptics } from '@/motion';
+import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import { useQuery } from '@tanstack/react-query';
-import { queryKeys } from '@/api/queryKeys';
 
+type LinkRowProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+};
+
+function LinkRow({ icon, label, onPress }: LinkRowProps) {
+  const { isRTL } = useLocale();
+  const { colors, theme } = useTheme();
+  return (
+    <Pressable
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        gap: theme.spacing.md,
+        minHeight: 48,
+        paddingVertical: theme.spacing.sm,
+      }}
+    >
+      <View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.brandSoft,
+        }}
+      >
+        <Ionicons name={icon} size={18} color={colors.brand} />
+      </View>
+      <AppText variant="body" weight="medium" style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
+        {label}
+      </AppText>
+      <Ionicons
+        name={isRTL ? 'chevron-back' : 'chevron-forward'}
+        size={18}
+        color={colors.textMuted}
+      />
+    </Pressable>
+  );
+}
+
+/**
+ * Premium Dealer Account hub — company identity, prefs, finance links, security, logout.
+ */
 export function DealerAccountScreen() {
-  const { user } = useAuth();
-  const { t, formatDate } = useLocale();
+  const { user, logout } = useAuth();
+  const router = useRouter();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
-  const customerId = user?.customerId;
-  const allowed = can(user, 'statement.read') && Boolean(customerId);
-
-  const query = useQuery({
-    queryKey: queryKeys.statements.detail(customerId ?? ''),
-    queryFn: () => getStatement(customerId!),
-    enabled: allowed,
-  });
-
-  if (!allowed) {
-    return (
-      <AppScreen backFallback={'/(app)/(customer)/(tabs)' as Href}>
-        <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
-      </AppScreen>
-    );
-  }
-
-  if (query.isError && !query.data) {
-    return (
-      <AppScreen backFallback={'/(app)/(customer)/(tabs)' as Href}>
-        {showOfflineBanner ? <OfflineBanner /> : null}
-        <ErrorState
-          title={t('mobile.account.errorTitle')}
-          description={t('mobile.account.errorBody')}
-          retryLabel={t('mobile.account.retry')}
-          onRetry={() => void query.refetch()}
-        />
-      </AppScreen>
-    );
-  }
-
-  const stmt = query.data;
-  const payments = stmt?.payments ?? [];
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const company = user?.name?.trim() || t('mobile.dealerAccount.companyFallback');
 
   return (
-    <AppScreen backFallback={'/(app)/(customer)/(tabs)' as Href}>
+    <ScrollableScreen
+      contentContainerStyle={{
+        gap: theme.spacing.lg,
+        paddingBottom: theme.spacing['3xl'] + DEALER_TAB_BAR_CLEARANCE,
+      }}
+    >
       {showOfflineBanner ? <OfflineBanner /> : null}
-      <FlatList
-        data={payments}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{
-          gap: theme.spacing.md,
-          flexGrow: 1,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+
+      <View style={{ gap: theme.spacing.xs }}>
+        <AppText
+          variant="caption"
+          weight={locale === 'ar' ? 'regular' : 'medium'}
+          style={{
+            letterSpacing: locale === 'ar' ? 0 : 1.4,
+            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            color: colors.brand,
+            textAlign: isRTL ? 'right' : 'left',
+          }}
+        >
+          {t('mobile.dealerAccount.eyebrow')}
+        </AppText>
+        <AppText
+          variant="title"
+          weight={titleWeight}
+          style={{ textAlign: isRTL ? 'right' : 'left' }}
+        >
+          {t('mobile.tabs.account')}
+        </AppText>
+      </View>
+
+      <MoreBoard
+        style={{
+          padding: theme.spacing.lg,
+          paddingStart: theme.spacing.lg + 4,
+          gap: theme.spacing.sm,
+          alignItems: isRTL ? 'flex-end' : 'flex-start',
         }}
-        refreshControl={
-          <RefreshControl
-            refreshing={Boolean(query.isRefetching)}
-            onRefresh={() => void query.refetch()}
+      >
+        <AppText variant="caption" color="muted">
+          {t('mobile.dealerAccount.company')}
+        </AppText>
+        <AppText variant="heading" weight={titleWeight}>
+          {company}
+        </AppText>
+        <AppText variant="caption" color="secondary" dir="ltr">
+          @{user?.username}
+        </AppText>
+        {user?.email ? (
+          <AppText variant="caption" color="muted" dir="ltr">
+            {user.email}
+          </AppText>
+        ) : null}
+        {user?.phone ? (
+          <AppText variant="caption" color="muted" dir="ltr">
+            {user.phone}
+          </AppText>
+        ) : null}
+      </MoreBoard>
+
+      <MoreBoard
+        style={{
+          padding: theme.spacing.lg,
+          paddingStart: theme.spacing.lg + 4,
+          gap: theme.spacing.md,
+        }}
+      >
+        <AppText
+          variant="caption"
+          weight={locale === 'ar' ? 'regular' : 'medium'}
+          style={{
+            letterSpacing: locale === 'ar' ? 0 : 1.2,
+            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            color: colors.brand,
+            textAlign: isRTL ? 'right' : 'left',
+          }}
+        >
+          {t('mobile.dealerAccount.ordersFinance')}
+        </AppText>
+        {can(user, 'invoice.read') ? (
+          <LinkRow
+            icon="receipt-outline"
+            label={t('mobile.invoices.title')}
+            onPress={() => router.push('/(app)/(customer)/invoices' as Href)}
           />
-        }
-        ListHeaderComponent={
-          <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
-            <AppText variant="title" weight="semibold">
-              {t('mobile.account.statementTitle')}
-            </AppText>
-            {stmt ? (
-              <>
-                <AppText variant="caption" color="secondary">
-                  {stmt.customer.name} ({stmt.customer.code})
-                </AppText>
-                <LastUpdatedLabel updatedAt={query.dataUpdatedAt} />
-                <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-                  <SurfaceCard style={{ flex: 1 }}>
-                    <AppText variant="caption" color="secondary">
-                      {t('mobile.account.totalInvoiced')}
-                    </AppText>
-                    <AppText weight="semibold">{stmt.totalInvoiced}</AppText>
-                  </SurfaceCard>
-                  <SurfaceCard style={{ flex: 1 }}>
-                    <AppText variant="caption" color="secondary">
-                      {t('mobile.account.totalPaid')}
-                    </AppText>
-                    <AppText weight="semibold">{stmt.totalPaid}</AppText>
-                  </SurfaceCard>
-                </View>
-                <SurfaceCard style={{ backgroundColor: colors.errorSoft }}>
-                  <AppText variant="caption" color="secondary">
-                    {t('mobile.account.outstanding')}
-                  </AppText>
-                  <AppText variant="heading" weight="semibold" style={{ color: colors.error }}>
-                    {stmt.outstandingBalance} {stmt.currency}
-                  </AppText>
-                </SurfaceCard>
-                <AppText variant="heading" weight="semibold">
-                  {t('mobile.account.payments')}
-                </AppText>
-              </>
-            ) : (
-              <AppText>{t('mobile.account.loading')}</AppText>
-            )}
-          </View>
-        }
-        ListEmptyComponent={
-          stmt ? (
-            <EmptyState
-              title={t('mobile.account.emptyPayments')}
-              description={t('mobile.account.emptyPaymentsBody')}
-            />
-          ) : null
-        }
-        renderItem={({ item }) => (
-          <SurfaceCard>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <AppText weight="semibold">{item.number}</AppText>
-              <StatusBadge
-                status="PAID"
-                label={(() => {
-                  const key = `mobile.account.method.${item.method}`;
-                  const label = t(key);
-                  return label === key ? String(item.method) : label;
-                })()}
-              />
-            </View>
-            <AppText variant="caption" color="secondary" dir="ltr">
-              {formatDate(item.paymentDate)}
-            </AppText>
-            <AppText weight="medium" dir="ltr">
-              {String(item.amount)}
-            </AppText>
-            {item.referenceNumber ? (
-              <AppText variant="caption" color="secondary">
-                {item.referenceNumber}
-              </AppText>
-            ) : null}
-          </SurfaceCard>
-        )}
+        ) : null}
+        {can(user, 'statement.read') ? (
+          <LinkRow
+            icon="wallet-outline"
+            label={t('mobile.account.statementTitle')}
+            onPress={() => router.push('/(app)/(customer)/account/statement' as Href)}
+          />
+        ) : null}
+        {can(user, 'sales-order.read') ? (
+          <LinkRow
+            icon="return-down-back-outline"
+            label={t('mobile.returns.title')}
+            onPress={() => router.push('/(app)/(customer)/returns' as Href)}
+          />
+        ) : null}
+        {can(user, 'notification.read') ? (
+          <LinkRow
+            icon="notifications-outline"
+            label={t('mobile.dealerAccount.notificationSettings')}
+            onPress={() => router.push('/(app)/notifications' as Href)}
+          />
+        ) : null}
+        {can(user, 'ai-chat.read') ? (
+          <LinkRow
+            icon="chatbubble-ellipses-outline"
+            label={t('mobile.dealerAccount.assistant')}
+            onPress={() => router.push('/(app)/(customer)/ai-chat' as Href)}
+          />
+        ) : null}
+      </MoreBoard>
+
+      <MoreBoard
+        style={{
+          padding: theme.spacing.lg,
+          paddingStart: theme.spacing.lg + 4,
+          gap: theme.spacing.md,
+        }}
+      >
+        <AppText
+          variant="caption"
+          weight={locale === 'ar' ? 'regular' : 'medium'}
+          style={{
+            letterSpacing: locale === 'ar' ? 0 : 1.2,
+            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            color: colors.brand,
+            textAlign: isRTL ? 'right' : 'left',
+          }}
+        >
+          {t('mobile.dealerAccount.preferences')}
+        </AppText>
+        <View style={{ gap: theme.spacing.sm }}>
+          <AppText variant="caption" color="secondary" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+            {t('mobile.dealerAccount.language')}
+          </AppText>
+          <ExpandableLocaleSwitcher />
+        </View>
+        <View style={{ gap: theme.spacing.sm }}>
+          <AppText variant="caption" color="secondary" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+            {t('mobile.dealerAccount.theme')}
+          </AppText>
+          <ThemeSwitcher />
+        </View>
+        <LinkRow
+          icon="shield-checkmark-outline"
+          label={t('mobile.dealerAccount.security')}
+          onPress={() => router.push('/(app)/(customer)/account/security' as Href)}
+        />
+      </MoreBoard>
+
+      <DestructiveButton
+        label={t('auth.logout')}
+        onPress={() => {
+          void logout().then(() => router.replace('/(auth)/login' as Href));
+        }}
       />
-    </AppScreen>
+    </ScrollableScreen>
   );
 }

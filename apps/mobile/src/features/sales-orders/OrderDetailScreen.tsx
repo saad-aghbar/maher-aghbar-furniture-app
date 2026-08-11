@@ -449,7 +449,11 @@ export function OrderDetailScreen({
                 <OrderBoardCard style={{ flex: 1 }}>
                   {vm.canEdit ? (
                     <LockedTextField
-                      label={t('mobile.orderDetail.dealerOrderNumber')}
+                      label={
+                        variant === 'dealer'
+                          ? t('mobile.dealerAccount.yourOrderNumber')
+                          : t('mobile.orderDetail.dealerOrderNumber')
+                      }
                       value={editDealerPo}
                       onChangeText={setEditDealerPo}
                       locked={false}
@@ -457,7 +461,9 @@ export function OrderDetailScreen({
                   ) : (
                     <>
                       <AppText variant="caption" color="muted">
-                        {t('mobile.orderDetail.dealerOrderNumber')}
+                        {variant === 'dealer'
+                          ? t('mobile.dealerAccount.yourOrderNumber')
+                          : t('mobile.orderDetail.dealerOrderNumber')}
                       </AppText>
                       <AppText variant="label" weight="semibold">
                         {vm.customerRef ?? '—'}
@@ -891,7 +897,7 @@ export function OrderDetailScreen({
             </ListItemEnter>
           ) : null}
 
-          {vm.returns.length || vm.showCosts ? (
+          {vm.returns.length || variant === 'dealer' || vm.showCosts ? (
             <ListItemEnter index={nextIndex()}>
               <LinkedTablePanel
                 title={t('mobile.orderDetail.returns')}
@@ -911,6 +917,15 @@ export function OrderDetailScreen({
                   },
                 }))}
               />
+              {variant === 'dealer' ? (
+                <SecondaryButton
+                  label={t('mobile.returns.newReturn')}
+                  onPress={() =>
+                    router.push('/(app)/(customer)/returns/create' as Href)
+                  }
+                  style={{ marginTop: theme.spacing.sm, borderRadius: theme.radius.xl }}
+                />
+              ) : null}
             </ListItemEnter>
           ) : null}
 

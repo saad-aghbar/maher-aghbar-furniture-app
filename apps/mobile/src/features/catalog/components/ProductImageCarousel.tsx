@@ -31,12 +31,17 @@ type ProductImageCarouselProps = {
   aspectRatio?: number;
   /** Overlay back control on the hero (PDP). */
   onBack?: () => void;
+  /** Optional favorite toggle opposite the back control. */
+  favorited?: boolean;
+  onToggleFavorite?: () => void;
 };
 
 export function ProductImageCarousel({
   uris,
   aspectRatio = 1,
   onBack,
+  favorited = false,
+  onToggleFavorite,
 }: ProductImageCarouselProps) {
   const { colors, theme } = useTheme();
   const { t, isRTL } = useLocale();
@@ -143,6 +148,40 @@ export function ProductImageCarousel({
           </Pressable>
         ) : null}
 
+        {onToggleFavorite ? (
+          <Pressable
+            onPress={() => {
+              void haptics.selection();
+              onToggleFavorite();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              favorited
+                ? t('mobile.catalog.favoriteRemove')
+                : t('mobile.catalog.favoriteAdd')
+            }
+            style={{
+              position: 'absolute',
+              top: Math.max(insets.top, theme.spacing.sm),
+              ...(isRTL ? { left: theme.spacing.lg } : { right: theme.spacing.lg }),
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons
+              name={favorited ? 'heart' : 'heart-outline'}
+              size={20}
+              color={favorited ? colors.error : colors.brand}
+            />
+          </Pressable>
+        ) : null}
+
         {uris.length > 1 ? (
           <View
             style={{
@@ -184,7 +223,8 @@ export function ProductImageCarousel({
             gap: theme.spacing.sm,
             paddingHorizontal: theme.spacing.lg,
             paddingTop: theme.spacing.md,
-            paddingBottom: theme.spacing.xs,
+            // Room for ProductDetailScreen sheet overlap (negative marginTop).
+            paddingBottom: theme.spacing.lg + theme.spacing.sm,
             flexDirection: isRTL ? 'row-reverse' : 'row',
           }}
         >

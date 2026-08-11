@@ -16,7 +16,7 @@ export default function AdminProductDetailRoute() {
       {canManage ? (
         <AdminProductDetailScreen productId={productId} />
       ) : (
-        <ProductDetailScreen productId={productId} />
+        <ProductDetailScreen productId={productId} variant="admin" />
       )}
     </PermissionGate>
   );

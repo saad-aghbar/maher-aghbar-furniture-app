@@ -19,6 +19,8 @@ export type BrowseProduct = {
   nameHe?: string | null;
   description?: string | null;
   imageUrl?: string | null;
+  /** Optional smaller URI for grid cards when the API provides one. */
+  thumbnailUrl?: string | null;
   galleryUrls?: string[];
   isActive: boolean;
   unit?: string;
@@ -69,4 +71,9 @@ export async function listBrowseProducts(
 
 export async function getBrowseProduct(id: string): Promise<BrowseProduct> {
   return apiGet<BrowseProduct>(`/catalog/browse/products/${encodeURIComponent(id)}`);
+}
+
+/** Products this dealer has ordered before (newest first). */
+export async function listPreviouslyOrderedProducts(): Promise<{ data: BrowseProduct[] }> {
+  return apiGet<{ data: BrowseProduct[] }>('/catalog/browse/previously-ordered');
 }

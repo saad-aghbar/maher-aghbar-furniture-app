@@ -5,12 +5,15 @@ import {
 } from '@/features/auth/hooks/useLoginForm';
 
 describe('canSubmitLogin', () => {
-  it('requires username and a non-empty password', () => {
+  it('requires username and a non-empty password (no email field)', () => {
     expect(canSubmitLogin('', 'password1')).toBe(false);
     expect(canSubmitLogin('admin', '')).toBe(false);
     expect(canSubmitLogin('admin', '1')).toBe(true);
     expect(canSubmitLogin('admin', '123')).toBe(true);
     expect(canSubmitLogin('  admin  ', 'password')).toBe(true);
+    // Shared login is username-based — email-shaped strings are allowed as usernames
+    // but the form never requires or labels an email field.
+    expect(canSubmitLogin('dealer.showroom', 'secret')).toBe(true);
   });
 });
 

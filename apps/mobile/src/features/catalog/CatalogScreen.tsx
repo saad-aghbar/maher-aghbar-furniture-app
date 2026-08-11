@@ -1,24 +1,31 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
   FlatList,
+  Pressable,
   RefreshControl,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
+import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import { DealerEmptyState, DealerProductCard } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import {
+  DEALER_TAB_BAR_CLEARANCE,
+  SURFACE_TAB_BAR_CLEARANCE,
+} from '@/navigation/tabBarClearance';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import type { BrowseCategory, BrowseProduct } from './api';
 import { CatalogFilterChips } from './components/CatalogFilterChips';
@@ -31,6 +38,8 @@ import {
 import { CatalogGridSkeleton } from './components/CatalogGridSkeleton';
 import { CatalogStoreChrome } from './components/CatalogStoreChrome';
 import { CreateProductSheet } from './components/CreateProductSheet';
+import { DealerCatalogChrome } from './components/DealerCatalogChrome';
+import { DealerCatalogGridSkeleton } from './components/DealerCatalogGridSkeleton';
 import { ProductCard } from './components/ProductCard';
 import {
   catalogCategoriesFixture,
@@ -40,9 +49,15 @@ import {
   flattenCatalogPages,
   useBrowseCategoriesQuery,
   useCatalogInfiniteQuery,
+  useFavoriteProductsQuery,
+  usePreviouslyOrderedQuery,
 } from './query';
 import { toProductCard } from './selectProductCard';
-
+import { CATALOG_SEARCH_DEBOUNCE_MS } from './catalogSearchDebounce';
+import { type CatalogBrowseMode } from './catalogBrowseMode';
+import { isCatalogPickForOrder } from './catalogPickForOrder';
+import { navigateToNewOrderWithProduct } from './newOrderDeepLink';
+import { useDealerFavorites } from './useDealerFavorites';
 type CatalogScreenProps = {
   forceState?: 'loading' | 'error' | 'empty' | 'offline' | 'success';
   fixtureProducts?: BrowseProduct[];
@@ -55,6 +70,11 @@ type CatalogScreenProps = {
   backFallback?: Href;
   /** Admin: show Add product when user has catalog.manage. */
   showCreateProduct?: boolean;
+  /**
+   * `dealer` — premium customer catalog (DealerProductCard, FAB clearance).
+   * `admin` — shared products hub chrome (unchanged admin UX).
+   */
+  variant?: 'dealer' | 'admin';
 };
 
 export function CatalogScreen({
@@ -66,32 +86,35 @@ export function CatalogScreen({
   showBack = false,
   backFallback = '/(app)/(admin)/(tabs)' as Href,
   showCreateProduct = false,
+  variant = 'dealer',
 }: CatalogScreenProps = {}) {
   const { user } = useAuth();
-  const { t, locale } = useLocale();
+  const { t, formatCurrency, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
+  const searchParams = useLocalSearchParams();
+  const pickForOrder = isDealer && isCatalogPickForOrder(searchParams);
   const allowed = can(user, 'catalog.read');
   const canCreate = showCreateProduct && can(user, 'catalog.manage');
+  const isDealer = variant === 'dealer';
   const addProductLabel = (() => {
     const v = t('catalog.addProduct');
     return v === 'catalog.addProduct' ? 'Add product' : v;
   })();
   const fabSize = 56;
+  const tabClearance = isDealer ? DEALER_TAB_BAR_CLEARANCE : SURFACE_TAB_BAR_CLEARANCE;
 
   const [searchInput, setSearchInput] = useState('');
-  const [q, setQ] = useState('');
+  const q = useDebouncedValue(searchInput.trim(), CATALOG_SEARCH_DEBOUNCE_MS);
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [browseMode, setBrowseMode] = useState<CatalogBrowseMode>('all');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState<CatalogFilterDraft>(defaultCatalogFilterDraft);
   const [applied, setApplied] = useState<CatalogFilterDraft>(defaultCatalogFilterDraft);
 
-  useEffect(() => {
-    const id = setTimeout(() => setQ(searchInput.trim()), 300);
-    return () => clearTimeout(id);
-  }, [searchInput]);
+  const favorites = useDealerFavorites(isDealer ? user?.id : undefined);
 
   const filters = {
     q: q || undefined,
@@ -101,13 +124,25 @@ export function CatalogScreen({
   };
 
   const categoriesQuery = useBrowseCategoriesQuery(allowed && !forceState);
-  const productsQuery = useCatalogInfiniteQuery(filters, allowed && !forceState);
+  const productsQuery = useCatalogInfiniteQuery(
+    filters,
+    allowed && !forceState && (!isDealer || browseMode === 'all'),
+  );
+  const orderedQuery = usePreviouslyOrderedQuery(isDealer && allowed && !forceState);
+  const favoriteProductsQuery = useFavoriteProductsQuery(
+    favorites.favoriteIds,
+    isDealer && allowed && !forceState && browseMode === 'favorites' && favorites.ready,
+  );
 
   /** Pull-to-refresh only — not filter / search transitions. */
   const pullRefreshing =
-    productsQuery.isRefetching &&
-    !productsQuery.isFetchingNextPage &&
-    !productsQuery.isPlaceholderData;
+    browseMode === 'ordered'
+      ? orderedQuery.isRefetching && !orderedQuery.isPending
+      : browseMode === 'favorites'
+        ? false
+        : productsQuery.isRefetching &&
+          !productsQuery.isFetchingNextPage &&
+          !productsQuery.isPlaceholderData;
 
   /**
    * Filter/search/sort in flight while previous results still show
@@ -115,23 +150,51 @@ export function CatalogScreen({
    */
   const isFilterUpdating =
     !forceState &&
+    browseMode === 'all' &&
     productsQuery.isFetching &&
     !productsQuery.isFetchingNextPage &&
     Boolean(productsQuery.data);
 
   const liveProducts = flattenCatalogPages(productsQuery.data);
+  const orderedProducts = orderedQuery.data ?? [];
+  const orderedBadgeSet = useMemo(
+    () => new Set(orderedProducts.map((p) => p.id)),
+    [orderedProducts],
+  );
 
   const cards = useMemo(() => {
-    const products: BrowseProduct[] =
+    let products: BrowseProduct[] =
       forceState === 'success' || forceState === 'offline'
         ? (fixtureProducts ?? catalogProductsFixture)
         : forceState === 'empty'
           ? []
-          : liveProducts;
-    return products.map((p) => toProductCard(p, locale));
-  }, [forceState, fixtureProducts, liveProducts, locale]);
+          : browseMode === 'ordered' && isDealer
+            ? orderedProducts
+            : browseMode === 'favorites' && isDealer
+              ? favoriteProductsQuery.products
+              : liveProducts;
 
-  const categories: BrowseCategory[] =
+    // Client search on ordered / favorites lists
+    if (isDealer && browseMode !== 'all' && q) {
+      const needle = q.toLowerCase();
+      products = products.filter((p) => {
+        const blob = `${p.nameEn} ${p.nameAr} ${p.nameHe ?? ''} ${p.sku}`.toLowerCase();
+        return blob.includes(needle);
+      });
+    }
+
+    return products.map((p) => toProductCard(p, locale));
+  }, [
+    forceState,
+    fixtureProducts,
+    liveProducts,
+    orderedProducts,
+    favoriteProductsQuery.products,
+    locale,
+    browseMode,
+    isDealer,
+    q,
+  ]);  const categories: BrowseCategory[] =
     forceState === 'success' || forceState === 'offline' || forceState === 'empty'
       ? (fixtureCategories ?? catalogCategoriesFixture)
       : (categoriesQuery.data ?? []);
@@ -147,15 +210,103 @@ export function CatalogScreen({
     forceState === 'loading' ||
     (allowed &&
       !forceState &&
-      productsQuery.isPending &&
-      !productsQuery.data &&
-      !productsQuery.isPlaceholderData);
+      (browseMode === 'ordered'
+        ? orderedQuery.isPending && !orderedQuery.data
+        : browseMode === 'favorites'
+          ? !favorites.ready ||
+            (favorites.favoriteIds.length > 0 && favoriteProductsQuery.isPending)
+          : productsQuery.isPending &&
+            !productsQuery.data &&
+            !productsQuery.isPlaceholderData));
 
   const onChipChange = (next: string | null) => {
     setCategoryId(next);
   };
 
-  const chrome = (
+  const GridSkeleton = isDealer ? DealerCatalogGridSkeleton : CatalogGridSkeleton;
+
+  const openProduct = (id: string) => {
+    if (pickForOrder) {
+      void haptics.confirmMedium();
+      navigateToNewOrderWithProduct(router, id, 1);
+      return;
+    }
+    router.push(
+      productDetailHref
+        ? productDetailHref(id)
+        : (`/(app)/(customer)/catalog/${id}` as Href),
+    );
+  };
+
+  const emptyTitle =
+    browseMode === 'favorites'
+      ? t('mobile.catalog.favoritesEmptyTitle')
+      : browseMode === 'ordered'
+        ? t('mobile.catalog.orderedEmptyTitle')
+        : t('mobile.catalog.emptyTitle');
+  const emptyBody =
+    browseMode === 'favorites'
+      ? t('mobile.catalog.favoritesEmptyBody')
+      : browseMode === 'ordered'
+        ? t('mobile.catalog.orderedEmptyBody')
+        : t('mobile.catalog.emptyBody');
+
+  const pickBanner = pickForOrder ? (
+    <View
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        gap: theme.spacing.sm,
+        padding: theme.spacing.md,
+        borderRadius: theme.radius.xl,
+        backgroundColor: colors.brandSoft,
+        borderWidth: 1,
+        borderColor: colors.brand,
+      }}
+    >
+      <Ionicons name="bag-handle-outline" size={20} color={colors.brand} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <AppText variant="label" weight="semibold" color="brand">
+          {t('mobile.newOrder.pickFromCatalogTitle')}
+        </AppText>
+        <AppText variant="caption" color="secondary">
+          {t('mobile.newOrder.pickFromCatalogBody')}
+        </AppText>
+      </View>
+      <Pressable
+        onPress={() => {
+          void haptics.selection();
+          router.navigate('/(app)/(customer)/(tabs)/new-order' as Href);
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={t('mobile.newOrder.back')}
+        hitSlop={8}
+      >
+        <AppText variant="caption" weight="semibold" color="brand">
+          {t('mobile.newOrder.back')}
+        </AppText>
+      </Pressable>
+    </View>
+  ) : null;
+
+  const chrome = isDealer ? (
+    <DealerCatalogChrome
+      titleKey={titleKey}
+      searchInput={searchInput}
+      onSearchChange={setSearchInput}
+      filterActiveCount={filterActiveCount}
+      onOpenFilters={() => {
+        setDraft({ ...applied });
+        setSheetOpen(true);
+      }}
+      categories={categories}
+      categoryId={categoryId}
+      onCategoryChange={onChipChange}
+      browseMode={browseMode}
+      onBrowseModeChange={setBrowseMode}
+      showCategories={browseMode === 'all'}
+    />
+  ) : (
     <CatalogStoreChrome
       titleKey={titleKey}
       searchInput={searchInput}
@@ -180,7 +331,9 @@ export function CatalogScreen({
     return (
       <AppScreen>
         {chrome}
-        <CatalogGridSkeleton />
+        <View style={{ paddingHorizontal: isDealer ? pad : 0, paddingTop: theme.spacing.sm }}>
+          <GridSkeleton />
+        </View>
       </AppScreen>
     );
   }
@@ -193,7 +346,12 @@ export function CatalogScreen({
     );
   }
 
-  if (forceState === 'error' || (productsQuery.isError && !productsQuery.data && !forceState)) {
+  const listError =
+    browseMode === 'ordered'
+      ? orderedQuery.isError && !orderedQuery.data
+      : productsQuery.isError && !productsQuery.data;
+
+  if (forceState === 'error' || (listError && !forceState)) {
     return (
       <AppScreen>
         {showOfflineBanner ? <OfflineBanner /> : null}
@@ -202,7 +360,10 @@ export function CatalogScreen({
           title={t('mobile.catalog.errorTitle')}
           description={t('mobile.catalog.errorBody')}
           retryLabel={t('mobile.catalog.retry')}
-          onRetry={() => void productsQuery.refetch()}
+          onRetry={() => {
+            if (browseMode === 'ordered') void orderedQuery.refetch();
+            else void productsQuery.refetch();
+          }}
         />
       </AppScreen>
     );
@@ -219,6 +380,7 @@ export function CatalogScreen({
           <View style={{ paddingHorizontal: pad, paddingBottom: theme.spacing.sm, gap: theme.spacing.sm }}>
             {showOfflineBanner || forceState === 'offline' ? <OfflineBanner /> : null}
             {chrome}
+            {pickBanner}
             {isFilterUpdating ? (
               <View
                 style={{
@@ -240,7 +402,7 @@ export function CatalogScreen({
           alignItems: 'flex-start',
         }}
         contentContainerStyle={{
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing['3xl'] + tabClearance,
           flexGrow: 1,
         }}
         style={{ opacity: isFilterUpdating ? 0.72 : 1 }}
@@ -253,15 +415,27 @@ export function CatalogScreen({
             <RefreshControl
               refreshing={pullRefreshing}
               onRefresh={() => {
-                void productsQuery.refetch();
+                if (browseMode === 'ordered') {
+                  void orderedQuery.refetch();
+                } else if (browseMode === 'favorites') {
+                  void favoriteProductsQuery.refetch();
+                } else {
+                  void productsQuery.refetch();
+                }
                 void categoriesQuery.refetch();
+                void orderedQuery.refetch();
               }}
               tintColor={colors.brand}
             />
           )
         }
         onEndReached={() => {
-          if (!forceState && productsQuery.hasNextPage && !productsQuery.isFetchingNextPage) {
+          if (
+            !forceState &&
+            browseMode === 'all' &&
+            productsQuery.hasNextPage &&
+            !productsQuery.isFetchingNextPage
+          ) {
             void productsQuery.fetchNextPage();
           }
         }}
@@ -269,36 +443,44 @@ export function CatalogScreen({
         ListEmptyComponent={
           isFilterUpdating ? (
             <View style={{ paddingHorizontal: pad, paddingTop: theme.spacing.md }}>
-              <CatalogGridSkeleton />
+              <GridSkeleton />
             </View>
+          ) : isDealer ? (
+            <DealerEmptyState title={emptyTitle} body={emptyBody} />
           ) : (
-            <EmptyState
-              title={t('mobile.catalog.emptyTitle')}
-              description={t('mobile.catalog.emptyBody')}
-            />
+            <EmptyState title={emptyTitle} description={emptyBody} />
           )
         }
         ListFooterComponent={
-          productsQuery.isFetchingNextPage ? (
+          browseMode === 'all' && productsQuery.isFetchingNextPage ? (
             <View style={{ paddingVertical: theme.spacing.lg, paddingHorizontal: pad }}>
-              <CatalogGridSkeleton />
+              <GridSkeleton />
             </View>
           ) : null
         }
-        renderItem={({ item, index }) => (
-          <ProductCard
-            product={item}
-            index={index}
-            width={cardWidth}
-            onPress={() => {
-              router.push(
-                productDetailHref
-                  ? productDetailHref(item.id)
-                  : (`/(app)/(customer)/catalog/${item.id}` as Href),
-              );
-            }}
-          />
-        )}
+        renderItem={({ item, index }) =>
+          isDealer ? (
+            <DealerProductCard
+              title={item.name}
+              priceLabel={item.price != null ? formatCurrency(item.price) : undefined}
+              categoryLabel={item.categoryName}
+              imageUri={item.imageUrl}
+              width={cardWidth}
+              index={index}
+              favorited={favorites.isFavorite(item.id)}
+              orderedBefore={orderedBadgeSet.has(item.id)}
+              onToggleFavorite={() => favorites.toggleFavorite(item.id)}
+              onPress={() => openProduct(item.id)}
+            />
+          ) : (
+            <ProductCard
+              product={item}
+              index={index}
+              width={cardWidth}
+              onPress={() => openProduct(item.id)}
+            />
+          )
+        }
       />
       <CatalogFilterSheet
         open={sheetOpen}

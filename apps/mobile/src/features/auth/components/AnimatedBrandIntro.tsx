@@ -4,8 +4,6 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { BrandMark } from '@/components/BrandMark';
-import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
 import type { LoginColors } from '../theme/loginColors';
 import type { LoginMotion } from '../hooks/useLoginMotion';
 import { AnimatedLogoStroke } from './AnimatedLogoStroke';
@@ -21,7 +19,6 @@ type Props = {
  * Multi-stroke write → authentic lockup + idle sheen / breath / micro-tilt.
  */
 export function AnimatedBrandIntro({ motion, colors, darkArtwork, keyboardOpen }: Props) {
-  const { t } = useLocale();
   const compact = keyboardOpen === true;
 
   const lockupStyle = useAnimatedStyle(() => {
@@ -51,11 +48,6 @@ export function AnimatedBrandIntro({ motion, colors, darkArtwork, keyboardOpen }
     ],
   }));
 
-  const copyStyle = useAnimatedStyle(() => ({
-    opacity: motion.copyOpacity.value,
-    transform: [{ translateY: motion.copyY.value }],
-  }));
-
   return (
     <View style={[styles.root, compact && styles.rootCompact]}>
       <View style={[styles.stage, compact && styles.stageCompact]}>
@@ -83,19 +75,6 @@ export function AnimatedBrandIntro({ motion, colors, darkArtwork, keyboardOpen }
           </View>
         </Animated.View>
       </View>
-
-      <Animated.View style={[styles.copy, copyStyle]}>
-        <AppText variant="body" align="center" style={{ color: colors.textSecondary }}>
-          {t('auth.loginSubtitle')}
-        </AppText>
-        <AppText
-          variant="caption"
-          align="center"
-          style={{ color: colors.textMuted, marginTop: 6 }}
-        >
-          {t('mobile.signInSubtitle')}
-        </AppText>
-      </Animated.View>
     </View>
   );
 }
@@ -129,11 +108,5 @@ const styles = StyleSheet.create({
     top: -20,
     bottom: -20,
     width: 36,
-  },
-  copy: {
-    paddingHorizontal: 24,
-    maxWidth: 380,
-    direction: 'inherit',
-    width: '100%',
   },
 });

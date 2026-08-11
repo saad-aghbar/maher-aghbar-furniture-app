@@ -1,12 +1,12 @@
 import { useAuth } from '@/auth/AuthProvider';
-import { DealerAccountScreen } from '@/features/account/DealerAccountScreen';
+import { DealerStatementScreen } from '@/features/account/DealerStatementScreen';
 import { PermissionGate } from '@/navigation/PermissionGate';
 
-export default function DealerStatementRoute() {
+export default function CustomerStatementRoute() {
   const { user } = useAuth();
   return (
     <PermissionGate user={user} require="statement.read" mode="all">
-      <DealerAccountScreen />
+      <DealerStatementScreen />
     </PermissionGate>
   );
 }

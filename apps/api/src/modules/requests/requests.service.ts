@@ -412,7 +412,8 @@ export class RequestsService {
         priority: dto.priority ?? 'NORMAL',
         projectName: dto.projectName,
         deliveryAddress: dto.deliveryAddress,
-        externalOrderNumber: dto.externalOrderNumber,
+        // Blank dealer PO → same as factory RFQ number.
+        externalOrderNumber: dto.externalOrderNumber?.trim() || number,
         endCustomerName: dto.endCustomerName,
         endCustomerPhone: dto.endCustomerPhone,
         endCustomerFax: dto.endCustomerFax,

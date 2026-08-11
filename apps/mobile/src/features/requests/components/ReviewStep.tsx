@@ -32,6 +32,10 @@ type ReviewStepProps = {
   busy: boolean;
   submittedNumber?: string | null;
   successKey?: string | number;
+  /** When false, omit section title (parent provides combined step title). */
+  showTitle?: boolean;
+  /** When true, primary actions live in the floating dock. */
+  hideActions?: boolean;
   onBack: () => void;
   onSaveDraft: () => void;
   onSubmit: () => void;
@@ -72,6 +76,8 @@ export function ReviewStep({
   busy,
   submittedNumber,
   successKey,
+  showTitle = true,
+  hideActions = false,
   onBack,
   onSaveDraft,
   onSubmit,
@@ -131,12 +137,20 @@ export function ReviewStep({
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
-      <AppText variant="title" weight="semibold">
-        {t('mobile.newOrder.step6Title')}
-      </AppText>
-      <AppText variant="body" color="secondary">
-        {t('mobile.newOrder.step6Body')}
-      </AppText>
+      {showTitle ? (
+        <>
+          <AppText variant="title" weight="semibold">
+            {t('mobile.newOrder.step4ReviewTitle')}
+          </AppText>
+          <AppText variant="body" color="secondary">
+            {t('mobile.newOrder.step4ReviewBody')}
+          </AppText>
+        </>
+      ) : (
+        <AppText variant="label" weight="semibold">
+          {t('mobile.newOrder.step4ReviewTitle')}
+        </AppText>
+      )}
 
       <View
         style={{
@@ -144,8 +158,7 @@ export function ReviewStep({
           borderColor: colors.border,
           borderRadius: theme.radius.lg,
           paddingHorizontal: theme.spacing.lg,
-          backgroundColor: colors.surface,
-          ...theme.elevation.card,
+          backgroundColor: colors.surfaceSecondary,
         }}
       >
         <Row label={t('mobile.newOrder.review.model')} value={summary.modelName} />
@@ -224,27 +237,31 @@ export function ReviewStep({
         </AppText>
       ) : null}
 
-      <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-        <SecondaryButton
-          label={t('mobile.newOrder.back')}
-          onPress={onBack}
-          disabled={busy}
-          style={{ flex: 1 }}
-        />
-        <SecondaryButton
-          label={t('mobile.newOrder.saveDraft')}
-          onPress={onSaveDraft}
-          loading={busy}
-          disabled={busy}
-          style={{ flex: 1 }}
-        />
-      </View>
-      <SuccessButton
-        label={t('mobile.newOrder.submit')}
-        onPress={onSubmit}
-        loading={busy}
-        disabled={busy}
-      />
+      {!hideActions ? (
+        <>
+          <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
+            <SecondaryButton
+              label={t('mobile.newOrder.back')}
+              onPress={onBack}
+              disabled={busy}
+              style={{ flex: 1 }}
+            />
+            <SecondaryButton
+              label={t('mobile.newOrder.saveDraft')}
+              onPress={onSaveDraft}
+              loading={busy}
+              disabled={busy}
+              style={{ flex: 1 }}
+            />
+          </View>
+          <SuccessButton
+            label={t('mobile.newOrder.submit')}
+            onPress={onSubmit}
+            loading={busy}
+            disabled={busy}
+          />
+        </>
+      ) : null}
     </View>
   );
 }

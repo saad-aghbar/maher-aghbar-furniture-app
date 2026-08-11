@@ -30,16 +30,62 @@ export function clampNotes(raw: string, max: number): string {
 }
 
 export function formatAddressLine(addr: {
-  line1: string;
+  line1?: string | null;
   line2?: string | null;
+  street?: string | null;
   city?: string | null;
   region?: string | null;
   country?: string | null;
 }): string {
-  return [addr.line1, addr.line2, addr.city, addr.region, addr.country]
+  const street = (addr.street ?? '').trim();
+  // Freeform map/new-order saves store the full line in street — don't re-append city/country.
+  if (street.includes(',')) return street;
+  const line1 = (addr.line1 ?? street).trim();
+  if (line1.includes(',')) return line1;
+  return [line1 || null, addr.line2, addr.city, addr.region, addr.country]
     .map((p) => (p ?? '').trim())
     .filter(Boolean)
     .join(', ');
+}
+
+/** Best-effort city token from a freeform delivery line (API requires `city`). */
+export function guessCityFromAddress(address: string): string {
+  const parts = address
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p && !/^\d{4,}$/.test(p) && !/^[A-Z]{2}$/i.test(p));
+  const candidate =
+    parts.find((p) =>
+      /amman|ramallah|nablus|irbid|aqaba|tel aviv|ramla|jaffa|jerusalem|hebron/i.test(p),
+    ) ||
+    parts[parts.length - 2] ||
+    parts[0] ||
+    'Amman';
+  return candidate.slice(0, 80);
+}
+
+export function suggestAddressLabel(address: string): string {
+  const first = address
+    .split(',')
+    .map((p) => p.trim())
+    .find(Boolean);
+  return (first || address.trim()).slice(0, 40);
+}
+
+export function isAddressAlreadySaved(
+  address: string,
+  addresses: Array<{
+    line1?: string | null;
+    street?: string | null;
+    city?: string | null;
+    region?: string | null;
+    country?: string | null;
+    label?: string | null;
+  }>,
+): boolean {
+  const needle = address.trim().toLowerCase();
+  if (!needle) return false;
+  return addresses.some((a) => formatAddressLine(a).trim().toLowerCase() === needle);
 }
 
 export function composeRequestNotes(input: {

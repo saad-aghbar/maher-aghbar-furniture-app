@@ -15,6 +15,7 @@ import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import { DealerEmptyState, DealerSearchBar } from '@/features/dealer-ui';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
@@ -51,12 +52,8 @@ function ReturnsScreenTitle({
   const { t, isRTL } = useLocale();
   const { theme } = useTheme();
   const leadSize = theme.sizes.touch.min;
-  const title = t('navigation.returns');
-  const subtitleKey = t('catalog.returnsDescription');
-  const subtitle =
-    subtitleKey === 'catalog.returnsDescription'
-      ? 'Returns linked to manufacturing or delivery issues'
-      : subtitleKey;
+  const title = t('mobile.returns.title');
+  const subtitle = t('mobile.returns.subtitle');
 
   return (
     <View style={{ gap: theme.spacing.xs }}>
@@ -80,7 +77,7 @@ function ReturnsScreenTitle({
           numberOfLines={1}
           style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
         >
-          {title === 'navigation.returns' ? 'Returns' : title}
+          {title}
         </AppText>
       </View>
       <AppText
@@ -109,6 +106,7 @@ export function ReturnsListScreen({
   const router = useRouter();
   const allowed = can(user, 'sales-order.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const dealerSurface = !adminControls;
 
   const [chip, setChip] = useState<ReturnStatusFilter>('ALL');
   const [search, setSearch] = useState('');
@@ -166,16 +164,11 @@ export function ReturnsListScreen({
     });
   }, [customersQuery.data?.data, locale]);
 
-  const searchPlaceholder = (() => {
-    const key = t('catalog.returnsSearchPlaceholder');
-    return key === 'catalog.returnsSearchPlaceholder'
-      ? 'Search by product, dealer, or order number…'
-      : key;
-  })();
+  const searchPlaceholder = t('mobile.returns.search');
 
   const statusLabel = isReturnStatusFilterActive(chip)
     ? t(`mobile.returns.chips.${chip}`)
-    : t('accounting.filter');
+    : t('common.filter');
 
   if (!allowed) {
     return (
@@ -237,70 +230,102 @@ export function ReturnsListScreen({
               />
             ) : null}
 
-            <View
-              style={{
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surface,
-                padding: theme.spacing.md,
-                gap: theme.spacing.md,
-                ...orderBoardShadow(colorScheme),
-              }}
-            >
-              <SearchBarShell>
-                <TextInput
+            {dealerSurface ? (
+              <View style={{ gap: theme.spacing.md }}>
+                <DealerSearchBar
                   value={search}
                   onChangeText={setSearch}
                   placeholder={searchPlaceholder}
-                  placeholderTextColor={colors.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="search"
-                  clearButtonMode="while-editing"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    paddingVertical: theme.spacing.sm,
-                    fontSize: 16,
-                    color: colors.textPrimary,
-                    textAlign: isRTL ? 'right' : 'left',
-                    ...resolveAppFontStyle(locale, { variant: 'body' }),
-                  }}
                 />
-              </SearchBarShell>
-
-              <ReturnsFilterTriggers
-                showDealers={adminControls}
-                dealerLabel={dealerLabel}
-                onOpenDealers={() => setDealerSheetOpen(true)}
-                onClearDealer={() => {
-                  setCustomerId(null);
-                  setDealerLabel(null);
+                <ReturnsFilterTriggers
+                  showDealers={false}
+                  dealerLabel={null}
+                  onOpenDealers={() => undefined}
+                  statusActive={isReturnStatusFilterActive(chip)}
+                  statusLabel={
+                    statusLabel === 'accounting.filter' ? 'Filter' : statusLabel
+                  }
+                  onOpenStatus={() => setStatusSheetOpen(true)}
+                />
+              </View>
+            ) : (
+              <View
+                style={{
+                  borderRadius: theme.radius.xl,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                  backgroundColor: colors.surface,
+                  padding: theme.spacing.md,
+                  gap: theme.spacing.md,
+                  ...orderBoardShadow(colorScheme),
                 }}
-                statusActive={isReturnStatusFilterActive(chip)}
-                statusLabel={
-                  statusLabel === 'accounting.filter' ? 'Filter' : statusLabel
-                }
-                onOpenStatus={() => setStatusSheetOpen(true)}
-              />
-            </View>
+              >
+                <SearchBarShell>
+                  <TextInput
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder={searchPlaceholder}
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    clearButtonMode="while-editing"
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      paddingVertical: theme.spacing.sm,
+                      fontSize: 16,
+                      color: colors.textPrimary,
+                      textAlign: isRTL ? 'right' : 'left',
+                      ...resolveAppFontStyle(locale, { variant: 'body' }),
+                    }}
+                  />
+                </SearchBarShell>
+
+                <ReturnsFilterTriggers
+                  showDealers={adminControls}
+                  dealerLabel={dealerLabel}
+                  onOpenDealers={() => setDealerSheetOpen(true)}
+                  onClearDealer={() => {
+                    setCustomerId(null);
+                    setDealerLabel(null);
+                  }}
+                  statusActive={isReturnStatusFilterActive(chip)}
+                  statusLabel={statusLabel}
+                  onOpenStatus={() => setStatusSheetOpen(true)}
+                />
+              </View>
+            )}
           </View>
         }
         ListEmptyComponent={
-          <EmptyState
-            title={t('catalog.noReturns')}
-            description={
-              customerId
-                ? t('catalog.emptyReturnsForDealer')
-                : t('catalog.returnsEmptyHint')
-            }
-          />
+          dealerSurface ? (
+            <DealerEmptyState
+              title={t('mobile.returns.emptyTitle')}
+              body={t('mobile.returns.emptyBody')}
+              actionLabel={canCreate && createHref ? t('mobile.returns.newReturn') : undefined}
+              onAction={
+                canCreate && createHref
+                  ? () => router.push(createHref)
+                  : undefined
+              }
+            />
+          ) : (
+            <EmptyState
+              title={t('mobile.returns.emptyTitle')}
+              description={
+                customerId
+                  ? t('mobile.returns.emptyBody')
+                  : t('mobile.returns.emptyBody')
+              }
+            />
+          )
         }
         renderItem={({ item, index }) => (
           <ListItemEnter index={index}>
             <ReturnBoardCard
               item={item}
+              dealerFacing={dealerSurface}
               onPress={() => router.push(detailHref(item.id))}
             />
           </ListItemEnter>

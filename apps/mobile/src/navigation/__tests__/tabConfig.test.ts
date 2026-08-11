@@ -33,7 +33,7 @@ describe('tabConfig', () => {
     expect(visibleTabsForUser('admin', limited).map((t) => t.name)).toEqual(['index', 'more']);
   });
 
-  it('customer/dealer tabs respect catalog, request.create, sales-order.read', () => {
+  it('customer/dealer tabs are Home Catalog Orders Account (New Order is FAB)', () => {
     const dealer: AuthUser = {
       ...base,
       customerId: 'c1',
@@ -42,10 +42,12 @@ describe('tabConfig', () => {
     expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).toEqual([
       'index',
       'catalog',
-      'new-order',
       'orders',
       'account',
     ]);
+    expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).not.toContain(
+      'new-order',
+    );
 
     const browseOnly: AuthUser = {
       ...base,

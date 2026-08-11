@@ -200,7 +200,11 @@ export async function createCustomerAddress(
     longitude?: number;
   },
 ): Promise<CustomerAddress> {
-  return apiPost(`/customers/${encodeURIComponent(customerId)}/addresses`, body);
+  const row = await apiPost<CustomerAddress>(
+    `/customers/${encodeURIComponent(customerId)}/addresses`,
+    body,
+  );
+  return normalizeAddress(row);
 }
 
 export async function updateCustomerAddress(

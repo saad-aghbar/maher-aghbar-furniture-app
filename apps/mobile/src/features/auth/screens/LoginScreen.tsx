@@ -21,7 +21,8 @@ import { mapLoginErrorMessage, useLoginForm } from '../hooks/useLoginForm';
 import { getLoginColors } from '../theme/loginColors';
 
 /**
- * Login — Netflix-style logo sting, then reveal form.
+ * Shared login — Netflix-style logo sting, then furniture commerce form.
+ * Username/password only (no email). Language + theme chrome. Offline banner.
  * Auth stays on AuthProvider.login; SplashGate still gates session restore.
  */
 export function LoginScreen() {

@@ -18,6 +18,7 @@ export const queryKeys = {
     adminDetail: (id: string) => [...queryKeys.catalog.adminDetails(), id] as const,
     dealerPrices: (productId: string) =>
       [...queryKeys.catalog.all, 'dealer-prices', productId] as const,
+    previouslyOrdered: () => [...queryKeys.catalog.all, 'previously-ordered'] as const,
     productCategories: () => [...queryKeys.catalog.all, 'product-categories'] as const,
     materials: (filters: { q?: string; categoryGroup?: string } = {}) =>
       [...queryKeys.catalog.all, 'materials', filters] as const,

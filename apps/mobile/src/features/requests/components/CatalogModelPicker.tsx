@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { FlatList, Pressable, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { listBrowseProducts, type BrowseProduct } from '@/features/catalog/api';
 import { useLocale } from '@/i18n';
+import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
 type CatalogModelPickerProps = {
@@ -14,7 +15,7 @@ type CatalogModelPickerProps = {
 };
 
 export function CatalogModelPicker({ open, onClose, onSelect }: CatalogModelPickerProps) {
-  const { t, locale } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
@@ -75,6 +76,7 @@ export function CatalogModelPicker({ open, onClose, onSelect }: CatalogModelPick
           keyExtractor={(item) => item.id}
           style={{ maxHeight: 320 }}
           keyboardShouldPersistTaps="handled"
+          ItemSeparatorComponent={() => <View style={{ height: theme.spacing.sm }} />}
           ListEmptyComponent={
             !loading ? (
               <AppText variant="caption" color="muted">
@@ -98,22 +100,35 @@ export function CatalogModelPicker({ open, onClose, onSelect }: CatalogModelPick
             return (
               <Pressable
                 onPress={() => {
+                  void haptics.selection();
                   onSelect(item);
                   onClose();
                 }}
                 style={{
                   paddingVertical: theme.spacing.md,
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.border,
+                  paddingHorizontal: theme.spacing.md,
                   minHeight: theme.sizes.touch.min,
                   justifyContent: 'center',
+                  borderRadius: theme.radius.lg,
+                  borderWidth: StyleSheet.hairlineWidth * 2,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface,
+                  alignItems: isRTL ? 'flex-end' : 'flex-start',
                 }}
               >
-                <AppText variant="label" weight="semibold">
+                <AppText
+                  variant="label"
+                  weight="semibold"
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
                   {name}
                 </AppText>
                 {category ? (
-                  <AppText variant="caption" color="muted">
+                  <AppText
+                    variant="caption"
+                    color="muted"
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
                     {category}
                   </AppText>
                 ) : null}

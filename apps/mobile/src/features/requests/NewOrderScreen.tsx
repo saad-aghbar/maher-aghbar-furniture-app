@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { can } from '@maher/permissions';
 import { extractPreview, linkAiJobToRequest } from '@/api/modules/ai-intake';
 import {
+  createCustomerAddress,
   listCustomerAddresses,
   type CustomerAddress,
 } from '@/api/modules/customers';
@@ -19,7 +21,7 @@ import { uploadFile } from '@/api/modules/uploads';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { BackButton } from '@/components/BackButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { TextField } from '@/components/forms/TextField';
@@ -27,12 +29,37 @@ import { PhoneField } from '@/components/forms/PhoneField';
 import { KeyboardAwareScreen } from '@/components/layout/KeyboardAwareScreen';
 import { useLocale } from '@/i18n';
 import { FadeIn, FormShake, SlideIn, haptics } from '@/motion';
-import { useTheme } from '@/theme';
-import { useBrowseProductQuery } from '@/features/catalog/query';
-import { CatalogModelPicker } from './components/CatalogModelPicker';
+import { dealerTokens, useTheme } from '@/theme';
+import { useBrowseProductQuery, useFavoriteProductsQuery, usePreviouslyOrderedQuery } from '@/features/catalog/query';
+import { catalogPickForOrderHref } from '@/features/catalog/catalogPickForOrder';
+import {
+  isCatalogOrderDeepLink,
+  parseDeepLinkProductId,
+  parseDeepLinkQty,
+} from '@/features/catalog/newOrderDeepLink';
+import { useDealerFavorites } from '@/features/catalog/useDealerFavorites';
+import {
+  DealerGlassCard,
+  DealerSectionHeader,
+} from '@/features/dealer-ui';
+import {
+  type DealerAiIntakeState,
+  previewNeedsInfo,
+} from './aiIntakeHumanState';
 import { LocationMapPicker } from './components/LocationMapPicker';
+import { NewOrderDeliveryAddressBlock } from './components/NewOrderDeliveryAddressBlock';
+import { NewOrderDimensionsEditor } from './components/NewOrderDimensionsEditor';
+import {
+  NewOrderFloatingDock,
+  newOrderDockScrollPad,
+} from './components/NewOrderFloatingDock';
+import { NewOrderQtyStepper } from './components/NewOrderQtyStepper';
+import { NewOrderPriorityBar } from './components/NewOrderPriorityBar';
+import { NewOrderStageRail } from './components/NewOrderStageRail';
+import { ProductQuickPickSheet } from './components/ProductQuickPickSheet';
 import { ReviewStep } from './components/ReviewStep';
-import { StepIndicator, type NewOrderStep } from './components/StepIndicator';
+import { SavedAddressPickerSheet } from './components/SavedAddressPickerSheet';
+import { SaveAddressSheet } from './components/SaveAddressSheet';
 import { UploadsStep } from './components/UploadsStep';
 import {
   clearLocalDraft,
@@ -40,81 +67,71 @@ import {
   saveLocalDraft,
   type NewOrderLocalDraft,
 } from './newOrderDraft';
+import { newOrderDockMode } from './newOrderDockMode';
+import {
+  emptyDimensionFields,
+  formatDimensionsNotes,
+  parseDimNumber,
+  seedDimensionsFromProduct,
+  toRequestCustomMeasurements,
+  type NewOrderDimensionFields,
+} from './newOrderMeasurements';
+import {
+  clampOrderQuantity,
+  isCustomCatalogProduct,
+} from './newOrderProductKind';
+import { resolveExternalOrderNumber } from './resolveExternalOrderNumber';
+import { clampWizardStep, type NewOrderStep } from './newOrderSteps';
 import type { PendingAttachment } from './pendingAttachment';
 import {
   clampNotes,
   composeRequestNotes,
   formatAddressLine,
+  guessCityFromAddress,
+  isAddressAlreadySaved,
   isValidDeliveryAddress,
   isValidOptionalPhone,
   isValidQuantity,
   resolveModelName,
 } from './newOrderValidation';
 
-const PRIORITIES: RequestPriority[] = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
 const NOTES_MAX = 200;
 const FABRIC_DESC_MAX = 300;
 
-function StepNav({
-  onBack,
-  onNext,
-  nextLabel,
-  nextLoading,
-  nextDisabled,
-}: {
-  onBack: () => void;
-  onNext: () => void;
-  nextLabel: string;
-  nextLoading?: boolean;
-  nextDisabled?: boolean;
-}) {
-  const { t, isRTL } = useLocale();
-  const { theme } = useTheme();
-  return (
-    <View
-      style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        gap: theme.spacing.sm,
-      }}
-    >
-      <SecondaryButton label={t('mobile.newOrder.back')} onPress={onBack} style={{ flex: 1 }} />
-      <PrimaryButton
-        label={nextLabel}
-        onPress={onNext}
-        loading={nextLoading}
-        disabled={nextDisabled}
-        style={{ flex: 1 }}
-      />
-    </View>
-  );
-}
-
 export function NewOrderScreen() {
   const { user } = useAuth();
-  const { t, locale, isRTL } = useLocale();
+  const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const params = useLocalSearchParams<{ productId?: string; qty?: string }>();
-
+  const params = useLocalSearchParams<{
+    productId?: string;
+    qty?: string;
+    fromCatalog?: string;
+  }>();
+  const fromCatalog = isCatalogOrderDeepLink(params);
+  const catalogProductId = parseDeepLinkProductId(params.productId);
+  const catalogQty = parseDeepLinkQty(params.qty);
+  const catalogDeepLinkKey = fromCatalog ? `${catalogProductId}:${catalogQty}` : '';
   const allowed = can(user, 'request.create');
   const canUpload = can(user, 'document.manage');
   const canAi = can(user, 'request.create') || can(user, 'ai-intake.manage');
   const canReadAddresses = Boolean(user?.customerId && can(user, 'customer.read'));
+  const canSaveAddresses = Boolean(user?.customerId && can(user, 'address.manage'));
 
   const [step, setStep] = useState<NewOrderStep>(1);
   const [shake, setShake] = useState(0);
   const [hydrated, setHydrated] = useState(false);
 
-  const [productId, setProductId] = useState(params.productId ?? '');
+  const [productId, setProductId] = useState(catalogProductId);
   const [customProductName, setCustomProductName] = useState('');
-  const [quantity, setQuantity] = useState(params.qty ?? '1');
+  const [quantity, setQuantity] = useState(fromCatalog ? catalogQty : '1');
   const [externalOrderNumber, setExternalOrderNumber] = useState('');
   const [priority, setPriority] = useState<RequestPriority>('NORMAL');
 
   const [fabric, setFabric] = useState('');
   const [fabricDescription, setFabricDescription] = useState('');
-  const [dimensionsNotes, setDimensionsNotes] = useState('');
+  const [dimensions, setDimensions] = useState<NewOrderDimensionFields>(emptyDimensionFields);
   const [orderNotes, setOrderNotes] = useState('');
 
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -128,10 +145,13 @@ export function NewOrderScreen() {
 
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [aiJobId, setAiJobId] = useState<string | null>(null);
-  const [aiBanner, setAiBanner] = useState<string | null>(null);
-  const [aiBusy, setAiBusy] = useState(false);
+  const [aiState, setAiState] = useState<DealerAiIntakeState>('idle');
 
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickSheet, setPickSheet] = useState<'favorites' | 'ordered' | null>(null);
+  const [addressSheetOpen, setAddressSheetOpen] = useState(false);
+  const [saveAddressSheetOpen, setSaveAddressSheetOpen] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [saveAddressError, setSaveAddressError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,27 +160,47 @@ export function NewOrderScreen() {
   const [successKey, setSuccessKey] = useState(0);
 
   const productQuery = useBrowseProductQuery(productId || undefined, Boolean(productId));
+  const favorites = useDealerFavorites(user?.id);
+  const orderedQuery = usePreviouslyOrderedQuery(Boolean(user?.customerId));
+  const favoriteProductsQuery = useFavoriteProductsQuery(
+    favorites.favoriteIds,
+    Boolean(user?.id) && favorites.ready,
+  );
   const skipLocalSave = useRef(true);
   const submitLock = useRef(false);
   const uploadAbort = useRef<AbortController | null>(null);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
+  const resolvedNameRef = useRef('');
+  const appliedCatalogKey = useRef('');
+
+  const dimensionsNotes = formatDimensionsNotes(dimensions);
+  const appliedDimsProduct = useRef<string>('');
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const local = await loadLocalDraft();
       if (cancelled) return;
-      if (local) {
-        setStep(Math.min(6, Math.max(1, local.step)) as NewOrderStep);
-        setProductId(local.productId || params.productId || '');
+
+      // Catalog deep-link product/qty is applied in a separate effect so it
+      // also runs when New Order was already mounted (tabs keep screens alive).
+      if (local && !fromCatalog) {
+        setStep(clampWizardStep(local.step));
+        setProductId(local.productId || '');
         setCustomProductName(local.customProductName);
-        setQuantity(local.quantity || params.qty || '1');
+        setQuantity(local.quantity || '1');
         setExternalOrderNumber(local.externalOrderNumber);
         setPriority(local.priority);
         setFabric(local.fabric);
         setFabricDescription(local.fabricDescription);
-        setDimensionsNotes(local.dimensionsNotes);
+        setDimensions({
+          width: local.dimWidth || '',
+          height: local.dimHeight || '',
+          depth: local.dimDepth || '',
+          seat: local.dimSeat || '',
+          custom: local.customMeasurements ?? [],
+        });
         setOrderNotes(local.orderNotes);
         setDeliveryAddress(local.deliveryAddress);
         setEndCustomerName(local.endCustomerName);
@@ -171,10 +211,31 @@ export function NewOrderScreen() {
         if (local.serverDraftId && local.serverDraftNumber) {
           setDraftSaved({ id: local.serverDraftId, number: local.serverDraftNumber });
         }
-      } else {
-        if (params.productId) setProductId(String(params.productId));
-        if (params.qty) setQuantity(String(params.qty));
+      } else if (local && fromCatalog) {
+        // Keep non-product draft fields so returning dealers don't retype delivery/etc.
+        setExternalOrderNumber(local.externalOrderNumber);
+        setPriority(local.priority);
+        setFabric(local.fabric);
+        setFabricDescription(local.fabricDescription);
+        setDimensions({
+          width: local.dimWidth || '',
+          height: local.dimHeight || '',
+          depth: local.dimDepth || '',
+          seat: local.dimSeat || '',
+          custom: local.customMeasurements ?? [],
+        });
+        setOrderNotes(local.orderNotes);
+        setDeliveryAddress(local.deliveryAddress);
+        setEndCustomerName(local.endCustomerName);
+        setEndCustomerPhone(local.endCustomerPhone);
+        setDeliveryNotes(local.deliveryNotes);
+        setDeliveryLat(local.deliveryLat);
+        setDeliveryLng(local.deliveryLng);
+        if (local.serverDraftId && local.serverDraftNumber) {
+          setDraftSaved({ id: local.serverDraftId, number: local.serverDraftNumber });
+        }
       }
+
       setHydrated(true);
       skipLocalSave.current = false;
     })();
@@ -184,10 +245,48 @@ export function NewOrderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Catalog PDP → New Order: apply product + qty whenever deep-link params arrive
+  // (including when this tab screen was already mounted).
+  useEffect(() => {
+    if (!hydrated || !fromCatalog || !catalogProductId) return;
+    if (appliedCatalogKey.current === catalogDeepLinkKey) return;
+    appliedCatalogKey.current = catalogDeepLinkKey;
+    setProductId(catalogProductId);
+    setQuantity(catalogQty);
+    setCustomProductName('');
+    setStep(2);
+    setSubmittedNumber(null);
+  }, [hydrated, fromCatalog, catalogProductId, catalogQty, catalogDeepLinkKey]);
+
+  useEffect(() => {
+    if (!productQuery.data || customProductName.trim()) return;
+    const p = productQuery.data;
+    const name =
+      locale === 'ar' ? p.nameAr || p.nameEn : locale === 'he' ? p.nameHe || p.nameEn : p.nameEn;
+    setCustomProductName(name || p.nameEn || p.nameAr || '');
+  }, [productQuery.data, locale, customProductName]);
+
+  // Seed structured measurements from catalog product (once per product, if empty).
+  useEffect(() => {
+    if (!productQuery.data || !hydrated) return;
+    const id = productQuery.data.id;
+    if (appliedDimsProduct.current === id) return;
+    const hasAny =
+      dimensions.width.trim() ||
+      dimensions.height.trim() ||
+      dimensions.depth.trim() ||
+      dimensions.seat.trim() ||
+      dimensions.custom.length > 0;
+    if (hasAny) return;
+    appliedDimsProduct.current = id;
+    setDimensions(seedDimensionsFromProduct(productQuery.data, locale));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per product id
+  }, [productQuery.data, hydrated, locale]);
+
   useEffect(() => {
     if (!hydrated || skipLocalSave.current || submittedNumber) return;
     const payload: NewOrderLocalDraft = {
-      version: 1,
+      version: 3,
       step,
       productId,
       customProductName,
@@ -197,6 +296,11 @@ export function NewOrderScreen() {
       fabric,
       fabricDescription,
       dimensionsNotes,
+      dimWidth: dimensions.width,
+      dimHeight: dimensions.height,
+      dimDepth: dimensions.depth,
+      dimSeat: dimensions.seat,
+      customMeasurements: dimensions.custom,
       orderNotes,
       deliveryAddress,
       endCustomerName,
@@ -223,6 +327,7 @@ export function NewOrderScreen() {
     fabric,
     fabricDescription,
     dimensionsNotes,
+    dimensions,
     orderNotes,
     deliveryAddress,
     endCustomerName,
@@ -233,14 +338,6 @@ export function NewOrderScreen() {
     draftSaved,
     submittedNumber,
   ]);
-
-  useEffect(() => {
-    if (!productQuery.data || customProductName.trim()) return;
-    const p = productQuery.data;
-    const name =
-      locale === 'ar' ? p.nameAr || p.nameEn : locale === 'he' ? p.nameHe || p.nameEn : p.nameEn;
-    setCustomProductName(name || p.nameEn || p.nameAr || '');
-  }, [productQuery.data, locale, customProductName]);
 
   useEffect(() => {
     if (!canReadAddresses || !user?.customerId || !hydrated) return;
@@ -263,6 +360,55 @@ export function NewOrderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canReadAddresses, user?.customerId, hydrated]);
 
+  const openSaveAddressSheet = () => {
+    if (!canSaveAddresses) return;
+    if (!deliveryAddress.trim()) {
+      setError(t('mobile.newOrder.saveAddressNeedAddress'));
+      setShake((n) => n + 1);
+      return;
+    }
+    setSaveAddressError(null);
+    setSaveAddressSheetOpen(true);
+  };
+
+  const saveCurrentAddress = async (input: {
+    label: string;
+    isDefaultDelivery: boolean;
+  }) => {
+    if (!user?.customerId || !canSaveAddresses) return;
+    const address = deliveryAddress.trim();
+    if (!address) {
+      setSaveAddressError(t('mobile.newOrder.saveAddressNeedAddress'));
+      return;
+    }
+    setSavingAddress(true);
+    setSaveAddressError(null);
+    try {
+      const created = await createCustomerAddress(user.customerId, {
+        label: input.label,
+        city: guessCityFromAddress(address),
+        street: address,
+        country: 'JO',
+        latitude: deliveryLat,
+        longitude: deliveryLng,
+        isDefaultDelivery: input.isDefaultDelivery || savedAddresses.length === 0,
+      });
+      setSavedAddresses((prev) => {
+        const cleared = input.isDefaultDelivery
+          ? prev.map((a) => ({ ...a, isDefaultDelivery: false }))
+          : prev;
+        return [created, ...cleared.filter((a) => a.id !== created.id)];
+      });
+      void haptics.confirmMedium();
+      setSaveAddressSheetOpen(false);
+    } catch {
+      setSaveAddressError(t('mobile.newOrder.saveAddressFailed'));
+      void haptics.error();
+    } finally {
+      setSavingAddress(false);
+    }
+  };
+
   const resolvedName = resolveModelName({
     customProductName,
     catalogName: productQuery.data
@@ -273,6 +419,7 @@ export function NewOrderScreen() {
           : productQuery.data.nameEn
       : null,
   });
+  resolvedNameRef.current = resolvedName;
 
   const unitPrice =
     productQuery.data?.price != null && Number.isFinite(Number(productQuery.data.price))
@@ -300,11 +447,6 @@ export function NewOrderScreen() {
       fail(t('mobile.newOrder.errors.modelRequired'));
       return false;
     }
-    setError(null);
-    return true;
-  };
-
-  const validateStep2 = () => {
     if (!isValidQuantity(quantity)) {
       fail(t('mobile.newOrder.errors.quantityPositive'));
       return false;
@@ -326,22 +468,20 @@ export function NewOrderScreen() {
     return true;
   };
 
-  const validateForSubmit = () =>
-    validateStep1() && validateStep2() && validateStep3();
+  const validateForSubmit = () => validateStep1() && validateStep3();
 
   const goNext = () => {
     if (step === 1 && !validateStep1()) return;
-    if (step === 2 && !validateStep2()) return;
     if (step === 3 && !validateStep3()) return;
     void haptics.selection();
-    setStep((s) => Math.min(6, s + 1) as NewOrderStep);
+    setStep((s) => clampWizardStep(s + 1));
   };
 
   const goBack = () => {
     if (busy || uploading) return;
     void haptics.selection();
     if (step > 1) {
-      setStep((s) => (s - 1) as NewOrderStep);
+      setStep((s) => clampWizardStep(s - 1));
       return;
     }
     if (router.canGoBack()) router.back();
@@ -354,17 +494,20 @@ export function NewOrderScreen() {
   const runAiFor = async (file: PendingAttachment) => {
     if (!canAi || !canUpload || file.category !== 'HANDWRITTEN_ORDER') return;
     if (!file.storageKey) return;
-    setAiBusy(true);
-    setAiBanner(t('mobile.newOrder.aiReviewing'));
+    setAiState('reading');
     try {
+      await new Promise((r) => setTimeout(r, 280));
+      setAiState('understanding');
       const res = await extractPreview({
         storageKey: file.storageKey,
         mimeHint: file.mimeType,
         sourceType: 'IMAGE',
       });
+      setAiState('preparing');
       setAiJobId(res.jobId);
       const preview = res.preview ?? {};
-      if (preview.productName?.trim() && !resolvedName) {
+      const currentName = resolvedNameRef.current;
+      if (preview.productName?.trim() && !currentName) {
         setCustomProductName(preview.productName.trim());
         setProductId('');
       }
@@ -386,12 +529,10 @@ export function NewOrderScreen() {
       if (preview.endCustomerName?.trim()) {
         setEndCustomerName((v) => v.trim() || preview.endCustomerName!.trim());
       }
-      setAiBanner(t('mobile.newOrder.aiFilled'));
+      setAiState(previewNeedsInfo(preview) ? 'needsInfo' : 'ready');
     } catch {
-      // Preserve the upload even when AI fails.
-      setAiBanner(t('mobile.newOrder.aiFailedKeepUpload'));
-    } finally {
-      setAiBusy(false);
+      // Preserve the upload even when intake fails.
+      setAiState('failed');
     }
   };
 
@@ -401,6 +542,7 @@ export function NewOrderScreen() {
     signal: AbortSignal,
   ) => {
     patchAttachment(file.id, { status: 'uploading', progress: 0.05, errorMessage: undefined });
+    if (file.category === 'HANDWRITTEN_ORDER') setAiState('uploading');
     try {
       const uploaded = await uploadFile(
         {
@@ -438,6 +580,7 @@ export function NewOrderScreen() {
         (err instanceof Error && err.name === 'AbortError')
       ) {
         patchAttachment(file.id, { status: 'cancelled', progress: 0 });
+        if (file.category === 'HANDWRITTEN_ORDER') setAiState('idle');
         return false;
       }
       patchAttachment(file.id, {
@@ -445,6 +588,7 @@ export function NewOrderScreen() {
         progress: 0,
         errorMessage: err instanceof Error ? err.message : 'Upload failed',
       });
+      if (file.category === 'HANDWRITTEN_ORDER') setAiState('failed');
       return false;
     }
   };
@@ -481,6 +625,7 @@ export function NewOrderScreen() {
         a.status === 'uploading' ? { ...a, status: 'cancelled', progress: 0 } : a,
       ),
     );
+    if (aiState === 'uploading') setAiState('idle');
   };
 
   const retryOne = (id: string) => {
@@ -502,11 +647,21 @@ export function NewOrderScreen() {
   };
 
   const buildBody = (): CreateRequestInput => {
-    const qty = Number(quantity);
-    const notes = composeRequestNotes({ deliveryNotes, dimensionsNotes, orderNotes });
+    const qty = clampOrderQuantity(quantity);
+    const custom = isCustomCatalogProduct(productId, resolvedName);
+    const baseNotes = composeRequestNotes({ deliveryNotes, dimensionsNotes, orderNotes });
+    const notes = custom
+      ? [t('mobile.newOrder.customOrderFactoryNote'), baseNotes].filter(Boolean).join('\n\n')
+      : baseNotes;
+    const external =
+      resolveExternalOrderNumber(externalOrderNumber, draftSaved?.number) ?? undefined;
+    const customMeasurements = toRequestCustomMeasurements(
+      dimensions,
+      t('mobile.newOrder.dimSeat'),
+    );
     return {
       source: 'PORTAL',
-      externalOrderNumber: externalOrderNumber.trim() || undefined,
+      externalOrderNumber: external,
       priority,
       notes,
       deliveryAddress: deliveryAddress.trim() || undefined,
@@ -516,12 +671,16 @@ export function NewOrderScreen() {
       deliveryLng,
       items: [
         {
-          productId: productId || undefined,
+          productId: productId.trim() ? productId : undefined,
           productName: resolvedName || t('mobile.newOrder.untitledModel'),
           quantity: qty,
           notes,
           fabric: fabric.trim() || undefined,
           description: fabricDescription.trim() || undefined,
+          width: parseDimNumber(dimensions.width),
+          height: parseDimNumber(dimensions.height),
+          depth: parseDimNumber(dimensions.depth),
+          customMeasurements: customMeasurements.length ? customMeasurements : undefined,
         },
       ],
     };
@@ -537,7 +696,7 @@ export function NewOrderScreen() {
   };
 
   const persistDraft = async () => {
-    if (!validateStep1() || !validateStep2()) return;
+    if (!validateStep1()) return;
     if (endCustomerPhone.trim() && !isValidOptionalPhone(endCustomerPhone)) {
       fail(t('mobile.newOrder.errors.phoneInvalid'));
       return;
@@ -553,6 +712,9 @@ export function NewOrderScreen() {
         created = await createRequest(body, { submit: false });
       }
       setDraftSaved({ id: created.id, number: created.number });
+      if (!externalOrderNumber.trim()) {
+        setExternalOrderNumber(created.number);
+      }
       await uploadAll(created.id);
       await linkAi(created.id);
       void haptics.confirmMedium();
@@ -574,8 +736,7 @@ export function NewOrderScreen() {
   const submitOrder = async () => {
     if (submitLock.current || busy) return;
     if (!validateForSubmit()) {
-      if (!resolvedName) setStep(1);
-      else if (!isValidQuantity(quantity)) setStep(2);
+      if (!resolvedName || !isValidQuantity(quantity)) setStep(1);
       else setStep(3);
       return;
     }
@@ -594,8 +755,10 @@ export function NewOrderScreen() {
         created = await createRequest(body, { submit: true });
       }
 
-      // Backend-confirmed success only after create/submit returns.
       setDraftSaved({ id: created.id, number: created.number });
+      if (!externalOrderNumber.trim()) {
+        setExternalOrderNumber(created.number);
+      }
       await uploadAll(created.id);
       await linkAi(created.id);
 
@@ -633,7 +796,8 @@ export function NewOrderScreen() {
     setPriority('NORMAL');
     setFabric('');
     setFabricDescription('');
-    setDimensionsNotes('');
+    setDimensions(emptyDimensionFields());
+    appliedDimsProduct.current = '';
     setOrderNotes('');
     setDeliveryAddress('');
     setEndCustomerName('');
@@ -643,7 +807,7 @@ export function NewOrderScreen() {
     setDeliveryLng(undefined);
     setAttachments([]);
     setAiJobId(null);
-    setAiBanner(null);
+    setAiState('idle');
     setError(null);
     void clearLocalDraft();
   };
@@ -667,452 +831,641 @@ export function NewOrderScreen() {
   }
 
   const slideDir = isRTL ? 'left' : 'right';
+  const dealer = dealerTokens(colors);
+  const dockMode = newOrderDockMode({ step, submitted: Boolean(submittedNumber) });
+  const scrollPad = newOrderDockScrollPad(theme.spacing.md);
+  const dockDisabled = busy || uploading;
+
+  const onDockPrimary = () => {
+    if (dockMode === 'submit') {
+      void submitOrder();
+      return;
+    }
+    goNext();
+  };
+
+  const stepTitles: Record<NewOrderStep, string> = {
+    1: t('mobile.newOrder.step1Title'),
+    2: t('mobile.newOrder.step2Title'),
+    3: t('mobile.newOrder.step3Title'),
+    4: t('mobile.newOrder.step4Title'),
+  };
+  const stepBodies: Record<NewOrderStep, string> = {
+    1: t('mobile.newOrder.step1Body'),
+    2: t('mobile.newOrder.step2Body'),
+    3: t('mobile.newOrder.step3Body'),
+    4: t('mobile.newOrder.step4Body'),
+  };
 
   return (
-    <KeyboardAwareScreen
-      header={
-        <View style={{ gap: theme.spacing.md }}>
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              gap: theme.spacing.md,
-            }}
-          >
-            {!submittedNumber ? (
-              <Pressable
-                onPress={goBack}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.newOrder.back')}
-                style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}
-              >
-                <AppText variant="label" weight="semibold" color="brand">
-                  {t('mobile.newOrder.back')}
-                </AppText>
-              </Pressable>
-            ) : null}
-            <AppText
-              variant="largeTitle"
-              style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
-              numberOfLines={1}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <KeyboardAwareScreen
+        contentContainerStyle={{
+          paddingBottom: submittedNumber ? theme.spacing['3xl'] : scrollPad,
+        }}
+        header={
+          <View style={{ gap: theme.spacing.md }}>
+            <View
+              style={{
+                marginHorizontal: -theme.spacing.lg,
+                marginTop: -theme.spacing.sm,
+                paddingHorizontal: theme.spacing.lg,
+                paddingTop: theme.spacing.sm,
+                paddingBottom: theme.spacing.md,
+                backgroundColor: dealer.heroWash,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+                gap: theme.spacing.md,
+              }}
             >
-              {t('mobile.newOrder.title')}
-            </AppText>
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  alignItems: 'center',
+                  gap: theme.spacing.md,
+                }}
+              >
+                {!submittedNumber ? (
+                  <BackButton
+                    onPress={goBack}
+                    label={t('mobile.newOrder.back')}
+                  />
+                ) : null}
+                <AppText
+                  variant="largeTitle"
+                  style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+                  numberOfLines={1}
+                >
+                  {t('mobile.newOrder.title')}
+                </AppText>
+              </View>
+              {!submittedNumber ? <NewOrderStageRail step={step} /> : null}
+            </View>
           </View>
-          {!submittedNumber ? <StepIndicator step={step} /> : null}
-        </View>
-      }
-    >
-      <FormShake shakeKey={shake} haptic={false}>
-        <FadeIn key={`fade-${step}-${submittedNumber ?? 'form'}`}>
-          <SlideIn key={`slide-${step}-${submittedNumber ?? 'form'}`} direction={slideDir}>
-            {step === 1 && !submittedNumber ? (
-              <View style={{ gap: theme.spacing.lg }}>
-                <AppText variant="title" weight="semibold">
-                  {t('mobile.newOrder.step1Title')}
-                </AppText>
-                <AppText variant="body" color="secondary">
-                  {t('mobile.newOrder.step1Body')}
-                </AppText>
-                <SecondaryButton
-                  label={t('mobile.newOrder.browseCatalog')}
-                  onPress={() => setPickerOpen(true)}
-                />
-                <TextField
-                  label={t('mobile.newOrder.modelName')}
-                  value={customProductName}
-                  onChangeText={(v) => {
-                    setCustomProductName(v);
-                    if (!v.trim()) setProductId('');
-                  }}
-                  placeholder={t('mobile.newOrder.modelNamePlaceholder')}
-                  error={error && !resolvedName ? error : undefined}
-                />
-                <AppText variant="caption" color="muted">
-                  {t('mobile.newOrder.uploadsLaterHint')}
-                </AppText>
-                {error && step === 1 ? (
-                  <AppText variant="caption" color="error">
-                    {error}
-                  </AppText>
-                ) : null}
-                <PrimaryButton label={t('mobile.newOrder.continue')} onPress={goNext} />
-              </View>
-            ) : null}
-
-            {step === 2 && !submittedNumber ? (
-              <View style={{ gap: theme.spacing.lg }}>
-                <AppText variant="title" weight="semibold">
-                  {t('mobile.newOrder.step2Title')}
-                </AppText>
-                <AppText variant="body" color="secondary">
-                  {resolvedName}
-                </AppText>
-                <TextField
-                  label={t('mobile.newOrder.dealerPo')}
-                  value={externalOrderNumber}
-                  onChangeText={setExternalOrderNumber}
-                  placeholder={t('mobile.newOrder.dealerPoPlaceholder')}
-                  autoCapitalize="characters"
-                />
-                <TextField
-                  label={t('mobile.newOrder.quantity')}
-                  value={quantity}
-                  onChangeText={setQuantity}
-                  keyboardType="decimal-pad"
-                  error={error && !(Number(quantity) > 0) ? error : undefined}
-                />
-                <View style={{ gap: theme.spacing.sm }}>
-                  <AppText variant="label" color="secondary">
-                    {t('mobile.newOrder.priority')}
-                  </AppText>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
-                    {PRIORITIES.map((p) => {
-                      const active = priority === p;
-                      return (
-                        <Pressable
-                          key={p}
-                          onPress={() => {
-                            void haptics.selection();
-                            setPriority(p);
-                          }}
-                          style={{
-                            paddingHorizontal: theme.spacing.md,
-                            paddingVertical: theme.spacing.sm,
-                            borderRadius: theme.radius.md,
-                            borderWidth: 1,
-                            borderColor: active ? colors.brand : colors.border,
-                            backgroundColor: active ? colors.brandSoft : colors.surface,
-                          }}
-                        >
-                          <AppText
-                            variant="caption"
-                            weight={active ? 'semibold' : 'medium'}
-                            style={{ color: active ? colors.brand : colors.textPrimary }}
-                          >
-                            {t(`mobile.newOrder.priorities.${p}`)}
-                          </AppText>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-                {error && step === 2 ? (
-                  <AppText variant="caption" color="error">
-                    {error}
-                  </AppText>
-                ) : null}
-                <StepNav onBack={goBack} onNext={goNext} nextLabel={t('mobile.newOrder.continue')} />
-              </View>
-            ) : null}
-
-            {step === 3 && !submittedNumber ? (
-              <View style={{ gap: theme.spacing.lg }}>
-                <AppText variant="title" weight="semibold">
-                  {t('mobile.newOrder.step3Title')}
-                </AppText>
-                <AppText variant="body" color="secondary">
-                  {t('mobile.newOrder.step3Body')}
-                </AppText>
-                <TextField
-                  label={t('mobile.newOrder.endCustomerName')}
-                  value={endCustomerName}
-                  onChangeText={setEndCustomerName}
-                  placeholder={t('mobile.newOrder.endCustomerNamePlaceholder')}
-                />
-                <PhoneField
-                  label={t('mobile.newOrder.endCustomerPhone')}
-                  value={endCustomerPhone}
-                  onChangeText={setEndCustomerPhone}
-                  placeholder={t('mobile.newOrder.endCustomerPhonePlaceholder')}
-                  error={
-                    error && !isValidOptionalPhone(endCustomerPhone) ? error : undefined
-                  }
-                />
-                {savedAddresses.length > 0 ? (
-                  <View style={{ gap: theme.spacing.sm }}>
-                    <AppText variant="label" color="secondary">
-                      {t('mobile.newOrder.savedAddresses')}
-                    </AppText>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
-                      {savedAddresses.map((addr) => {
-                        const line = formatAddressLine(addr);
-                        const active = deliveryAddress.trim() === line;
-                        return (
-                          <Pressable
-                            key={addr.id}
-                            onPress={() => {
-                              void haptics.selection();
-                              setDeliveryAddress(line);
-                              setDeliveryLat(addr.latitude ?? undefined);
-                              setDeliveryLng(addr.longitude ?? undefined);
-                            }}
-                            style={{
-                              paddingHorizontal: theme.spacing.md,
-                              paddingVertical: theme.spacing.sm,
-                              borderRadius: theme.radius.md,
-                              borderWidth: 1,
-                              borderColor: active ? colors.brand : colors.border,
-                              backgroundColor: active ? colors.brandSoft : colors.surface,
-                              maxWidth: '100%',
-                            }}
-                          >
-                            <AppText
-                              variant="caption"
-                              weight={active ? 'semibold' : 'medium'}
-                              style={{ color: active ? colors.brand : colors.textPrimary }}
-                            >
-                              {addr.label?.trim() || line}
-                            </AppText>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  </View>
-                ) : null}
-                <View style={{ gap: theme.spacing.xs }}>
-                  <AppText variant="label" color="secondary">
-                    {t('mobile.newOrder.deliveryAddress')}
-                  </AppText>
-                  <View
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      gap: theme.spacing.sm,
-                      alignItems: 'flex-start',
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <TextField
-                        value={deliveryAddress}
-                        onChangeText={(v) => {
-                          setDeliveryAddress(v);
-                          if (!v.trim()) {
-                            setDeliveryLat(undefined);
-                            setDeliveryLng(undefined);
-                          }
-                        }}
-                        placeholder={t('mobile.newOrder.deliveryAddressPlaceholder')}
-                        multiline
-                        error={
-                          error && !isValidDeliveryAddress(deliveryAddress) ? error : undefined
-                        }
-                        accessibilityLabel={t('mobile.newOrder.deliveryAddress')}
-                      />
-                    </View>
-                    <Pressable
+        }
+      >
+        <FormShake shakeKey={shake} haptic={false}>
+          <FadeIn key={`fade-${step}-${submittedNumber ?? 'form'}`}>
+            <SlideIn key={`slide-${step}-${submittedNumber ?? 'form'}`} direction={slideDir}>
+              {step === 1 && !submittedNumber ? (
+                <DealerGlassCard>
+                  <DealerSectionHeader
+                    title={stepTitles[1]}
+                    subtitle={stepBodies[1]}
+                  />
+                  <View style={{ gap: theme.spacing.lg }}>
+                    <SecondaryButton
+                      label={t('mobile.newOrder.browseCatalog')}
                       onPress={() => {
                         void haptics.selection();
-                        setMapOpen(true);
+                        router.navigate(catalogPickForOrderHref());
                       }}
-                      accessibilityLabel={t('mobile.newOrder.openMap')}
+                    />
+
+                    <View
                       style={{
-                        minHeight: theme.sizes.touch.min,
-                        paddingHorizontal: theme.spacing.md,
-                        borderRadius: theme.radius.md,
-                        borderWidth: 1,
-                        borderColor:
-                          deliveryLat != null ? colors.brand : colors.border,
-                        backgroundColor:
-                          deliveryLat != null ? colors.brandSoft : colors.surface,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginTop: 4,
+                        flexDirection: isRTL ? 'row-reverse' : 'row',
+                        gap: theme.spacing.sm,
                       }}
                     >
-                      <AppText
-                        variant="caption"
-                        weight="semibold"
+                      <Pressable
+                        onPress={() => {
+                          void haptics.selection();
+                          setPickSheet('favorites');
+                        }}
                         style={{
-                          color: deliveryLat != null ? colors.brand : colors.textMuted,
+                          flex: 1,
+                          minHeight: theme.sizes.touch.min,
+                          borderRadius: theme.radius.lg,
+                          borderWidth: StyleSheet.hairlineWidth * 2,
+                          borderColor: colors.border,
+                          backgroundColor: colors.brandSoft,
+                          paddingHorizontal: theme.spacing.md,
+                          flexDirection: isRTL ? 'row-reverse' : 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: theme.spacing.xs,
                         }}
                       >
-                        {t('mobile.newOrder.mapPinShort')}
+                        <Ionicons name="heart" size={16} color={colors.brand} />
+                        <AppText variant="caption" weight="semibold" color="brand">
+                          {t('mobile.newOrder.pickFavorites')}
+                        </AppText>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          void haptics.selection();
+                          setPickSheet('ordered');
+                        }}
+                        style={{
+                          flex: 1,
+                          minHeight: theme.sizes.touch.min,
+                          borderRadius: theme.radius.lg,
+                          borderWidth: StyleSheet.hairlineWidth * 2,
+                          borderColor: colors.border,
+                          backgroundColor: colors.surface,
+                          paddingHorizontal: theme.spacing.md,
+                          flexDirection: isRTL ? 'row-reverse' : 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: theme.spacing.xs,
+                        }}
+                      >
+                        <Ionicons name="time-outline" size={16} color={colors.brand} />
+                        <AppText variant="caption" weight="semibold" color="brand">
+                          {t('mobile.newOrder.pickOrdered')}
+                        </AppText>
+                      </Pressable>
+                    </View>
+
+                    <TextField
+                      label={t('mobile.newOrder.modelName')}
+                      value={customProductName}
+                      onChangeText={(v) => {
+                        setCustomProductName(v);
+                        // Manual typing → custom factory product (no catalog id).
+                        setProductId('');
+                      }}
+                      placeholder={t('mobile.newOrder.modelNamePlaceholder')}
+                      error={error && !resolvedName ? error : undefined}
+                    />
+
+                    {isCustomCatalogProduct(productId, customProductName) ? (
+                      <View
+                        style={{
+                          flexDirection: isRTL ? 'row-reverse' : 'row',
+                          alignItems: 'flex-start',
+                          gap: theme.spacing.sm,
+                          padding: theme.spacing.md,
+                          borderRadius: theme.radius.lg,
+                          backgroundColor: colors.warningSoft,
+                          borderWidth: 1,
+                          borderColor: colors.warning,
+                        }}
+                      >
+                        <Ionicons name="construct-outline" size={18} color={colors.warning} />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <AppText variant="caption" weight="semibold" style={{ color: colors.warning }}>
+                            {t('mobile.newOrder.customProductBadge')}
+                          </AppText>
+                          <AppText variant="caption" color="secondary">
+                            {t('mobile.newOrder.customProductHint')}
+                          </AppText>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {productId && resolvedName ? (
+                      <View
+                        style={{
+                          borderRadius: theme.radius.lg,
+                          borderWidth: 1,
+                          borderColor: colors.brand,
+                          backgroundColor: colors.brandSoft,
+                          padding: theme.spacing.md,
+                          gap: 4,
+                        }}
+                      >
+                        <AppText variant="caption" color="muted">
+                          {t('mobile.newOrder.selectedFromCatalog')}
+                        </AppText>
+                        <AppText variant="body" weight="semibold">
+                          {resolvedName}
+                        </AppText>
+                      </View>
+                    ) : null}
+
+                    <NewOrderQtyStepper
+                      value={quantity}
+                      onChange={setQuantity}
+                      error={
+                        error && !isValidQuantity(quantity) ? error : undefined
+                      }
+                    />
+
+                    <AppText variant="caption" color="muted">
+                      {t('mobile.newOrder.uploadsLaterHint')}
+                    </AppText>
+                    {error && step === 1 ? (
+                      <AppText variant="caption" color="error">
+                        {error}
                       </AppText>
-                    </Pressable>
+                    ) : null}
                   </View>
-                </View>
-                <View style={{ gap: theme.spacing.xs }}>
-                  <TextField
-                    label={t('mobile.newOrder.deliveryNotes')}
-                    value={deliveryNotes}
-                    onChangeText={(v) => setDeliveryNotes(clampNotes(v, NOTES_MAX))}
-                    placeholder={t('mobile.newOrder.deliveryNotesPlaceholder')}
-                    multiline
-                    style={{ minHeight: 88, textAlignVertical: 'top' }}
-                  />
-                  <AppText
-                    variant="caption"
-                    color="muted"
-                    style={{ textAlign: isRTL ? 'left' : 'right' }}
-                  >
-                    {deliveryNotes.length}/{NOTES_MAX}
-                  </AppText>
-                </View>
-                {error && step === 3 ? (
-                  <AppText variant="caption" color="error">
-                    {error}
-                  </AppText>
-                ) : null}
-                <StepNav onBack={goBack} onNext={goNext} nextLabel={t('mobile.newOrder.continue')} />
-              </View>
-            ) : null}
+                </DealerGlassCard>
+              ) : null}
 
-            {step === 4 && !submittedNumber ? (
-              <View style={{ gap: theme.spacing.lg }}>
-                <AppText variant="title" weight="semibold">
-                  {t('mobile.newOrder.step4Title')}
-                </AppText>
-                <AppText variant="body" color="secondary">
-                  {t('mobile.newOrder.step4Body')}
-                </AppText>
-                <TextField
-                  label={t('mobile.newOrder.fabricName')}
-                  value={fabric}
-                  onChangeText={setFabric}
-                  placeholder={t('mobile.newOrder.fabricNamePlaceholder')}
-                />
-                <View style={{ gap: theme.spacing.xs }}>
-                  <TextField
-                    label={t('mobile.newOrder.fabricDescription')}
-                    value={fabricDescription}
-                    onChangeText={(v) => setFabricDescription(clampNotes(v, FABRIC_DESC_MAX))}
-                    placeholder={t('mobile.newOrder.fabricDescriptionPlaceholder')}
-                    multiline
-                    style={{ minHeight: 88, textAlignVertical: 'top' }}
-                  />
-                  <AppText
-                    variant="caption"
-                    color="muted"
-                    style={{ textAlign: isRTL ? 'left' : 'right' }}
-                  >
-                    {fabricDescription.length}/{FABRIC_DESC_MAX}
-                  </AppText>
-                </View>
-                <View style={{ gap: theme.spacing.xs }}>
-                  <TextField
-                    label={t('mobile.newOrder.dimensionsNotes')}
-                    value={dimensionsNotes}
-                    onChangeText={(v) => setDimensionsNotes(clampNotes(v, NOTES_MAX))}
-                    placeholder={t('mobile.newOrder.dimensionsNotesPlaceholder')}
-                    multiline
-                    style={{ minHeight: 88, textAlignVertical: 'top' }}
-                  />
-                  <AppText
-                    variant="caption"
-                    color="muted"
-                    style={{ textAlign: isRTL ? 'left' : 'right' }}
-                  >
-                    {dimensionsNotes.length}/{NOTES_MAX}
-                  </AppText>
-                </View>
-                <View style={{ gap: theme.spacing.xs }}>
-                  <TextField
-                    label={t('mobile.newOrder.orderNotes')}
-                    value={orderNotes}
-                    onChangeText={(v) => setOrderNotes(clampNotes(v, NOTES_MAX))}
-                    placeholder={t('mobile.newOrder.orderNotesPlaceholder')}
-                    multiline
-                    style={{ minHeight: 88, textAlignVertical: 'top' }}
-                  />
-                  <AppText
-                    variant="caption"
-                    color="muted"
-                    style={{ textAlign: isRTL ? 'left' : 'right' }}
-                  >
-                    {orderNotes.length}/{NOTES_MAX}
-                  </AppText>
-                </View>
-                <StepNav onBack={goBack} onNext={goNext} nextLabel={t('mobile.newOrder.continue')} />
-              </View>
-            ) : null}
+              {step === 2 && !submittedNumber ? (
+                <View style={{ gap: theme.spacing.md }}>
+                  {resolvedName || productId ? (
+                    <DealerGlassCard
+                      intensity="solid"
+                      contentStyle={{ padding: theme.spacing.md, gap: theme.spacing.xs }}
+                    >
+                      <AppText variant="caption" color="muted">
+                        {isCustomCatalogProduct(productId, resolvedName)
+                          ? t('mobile.newOrder.customProductBadge')
+                          : t('mobile.newOrder.selectedFromCatalog')}
+                      </AppText>
+                      <AppText variant="body" weight="semibold">
+                        {resolvedName || t('mobile.newOrder.loading')}
+                      </AppText>
+                      <View
+                        style={{
+                          flexDirection: isRTL ? 'row-reverse' : 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: theme.spacing.md,
+                          marginTop: theme.spacing.xs,
+                        }}
+                      >
+                        <AppText variant="caption" color="secondary">
+                          {t('mobile.newOrder.quantity')}: {quantity}
+                        </AppText>
+                        {estimatedTotal != null ? (
+                          <AppText variant="caption" weight="semibold" dir="ltr">
+                            {formatCurrency(estimatedTotal)}
+                          </AppText>
+                        ) : null}
+                      </View>
+                    </DealerGlassCard>
+                  ) : null}
 
-            {step === 5 && !submittedNumber ? (
-              <UploadsStep
-                attachments={attachments}
-                onChange={setAttachments}
-                canUpload={canUpload}
-                aiBanner={aiBanner}
-                aiBusy={aiBusy}
-                error={error}
-                overallProgress={overallProgress}
-                uploading={uploading}
-                onUploadAll={() => void uploadAll(draftSaved?.id)}
-                onCancelUploads={cancelUploads}
-                onRetry={retryOne}
-                onBack={goBack}
-                onNext={goNext}
-              />
-            ) : null}
+                  <DealerGlassCard
+                    contentStyle={{ padding: theme.spacing.lg, gap: theme.spacing.lg }}
+                  >
+                    <DealerSectionHeader
+                      title={stepTitles[2]}
+                      subtitle={stepBodies[2]}
+                      compact
+                    />
 
-            {step === 6 || submittedNumber ? (
-              <ReviewStep
-                summary={{
-                  modelName: resolvedName,
-                  customerName: endCustomerName.trim() || user?.name || '—',
-                  customerPhone: endCustomerPhone.trim() || user?.phone || '—',
-                  address: deliveryAddress,
-                  deliveryNotes,
-                  fabric,
-                  fabricDescription,
-                  dimensionsNotes,
-                  orderNotes,
-                  dealerPo: externalOrderNumber,
-                  quantity,
-                  priority: t(`mobile.newOrder.priorities.${priority}`),
-                  unitPrice,
-                  currency,
-                  estimatedTotal,
-                }}
-                attachments={attachments}
-                error={error}
-                busy={busy || uploading}
-                submittedNumber={submittedNumber}
-                successKey={successKey}
-                onBack={goBack}
-                onSaveDraft={() => void persistDraft()}
-                onSubmit={() => void submitOrder()}
-                onViewOrders={() => router.replace('/(app)/(customer)/(tabs)/orders')}
-                onCreateAnother={resetForm}
-              />
-            ) : null}
-          </SlideIn>
-        </FadeIn>
-      </FormShake>
+                    <View style={{ gap: theme.spacing.md }}>
+                      <View style={{ gap: theme.spacing.xs }}>
+                        <TextField
+                          label={t('mobile.newOrder.dealerPo')}
+                          value={externalOrderNumber}
+                          onChangeText={setExternalOrderNumber}
+                          placeholder={t('mobile.newOrder.dealerPoPlaceholder')}
+                          autoCapitalize="characters"
+                        />
+                        <AppText
+                          variant="caption"
+                          color="muted"
+                          style={{ textAlign: isRTL ? 'right' : 'left' }}
+                        >
+                          {t('mobile.newOrder.dealerPoHint')}
+                        </AppText>
+                      </View>
+                      <NewOrderPriorityBar value={priority} onChange={setPriority} />
+                    </View>
 
-      <CatalogModelPicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(product) => {
-          setProductId(product.id);
-          const name =
-            locale === 'ar'
-              ? product.nameAr || product.nameEn
-              : locale === 'he'
-                ? product.nameHe || product.nameEn
-                : product.nameEn || product.nameAr;
-          setCustomProductName(name || product.nameEn || product.nameAr || '');
-          void haptics.selection();
-        }}
+                    <View
+                      style={{
+                        height: StyleSheet.hairlineWidth * 2,
+                        backgroundColor: colors.border,
+                      }}
+                    />
+
+                    <View style={{ gap: theme.spacing.md }}>
+                      <AppText variant="label" weight="semibold">
+                        {t('mobile.newOrder.fabricSection')}
+                      </AppText>
+                      <TextField
+                        label={t('mobile.newOrder.fabricName')}
+                        value={fabric}
+                        onChangeText={setFabric}
+                        placeholder={t('mobile.newOrder.fabricNamePlaceholder')}
+                      />
+                      <View style={{ gap: theme.spacing.xs }}>
+                        <TextField
+                          label={t('mobile.newOrder.fabricDescription')}
+                          value={fabricDescription}
+                          onChangeText={(v) =>
+                            setFabricDescription(clampNotes(v, FABRIC_DESC_MAX))
+                          }
+                          placeholder={t('mobile.newOrder.fabricDescriptionPlaceholder')}
+                          multiline
+                          style={{ minHeight: 140, textAlignVertical: 'top' }}
+                        />
+                        <AppText
+                          variant="caption"
+                          color="muted"
+                          style={{ textAlign: isRTL ? 'left' : 'right' }}
+                        >
+                          {fabricDescription.length}/{FABRIC_DESC_MAX}
+                        </AppText>
+                      </View>
+                    </View>
+
+                    <View
+                      style={{
+                        height: StyleSheet.hairlineWidth * 2,
+                        backgroundColor: colors.border,
+                      }}
+                    />
+
+                    <NewOrderDimensionsEditor value={dimensions} onChange={setDimensions} />
+
+                    <View
+                      style={{
+                        height: StyleSheet.hairlineWidth * 2,
+                        backgroundColor: colors.border,
+                      }}
+                    />
+
+                    <View style={{ gap: theme.spacing.md }}>
+                      <AppText variant="label" weight="semibold">
+                        {t('mobile.newOrder.notesSection')}
+                      </AppText>
+                      <View style={{ gap: theme.spacing.xs }}>
+                        <TextField
+                          label={t('mobile.newOrder.orderNotes')}
+                          value={orderNotes}
+                          onChangeText={(v) => setOrderNotes(clampNotes(v, NOTES_MAX))}
+                          placeholder={t('mobile.newOrder.orderNotesPlaceholder')}
+                          multiline
+                          style={{ minHeight: 140, textAlignVertical: 'top' }}
+                        />
+                        <AppText
+                          variant="caption"
+                          color="muted"
+                          style={{ textAlign: isRTL ? 'left' : 'right' }}
+                        >
+                          {orderNotes.length}/{NOTES_MAX}
+                        </AppText>
+                      </View>
+                    </View>
+                  </DealerGlassCard>
+                </View>
+              ) : null}
+
+              {step === 3 && !submittedNumber ? (
+                <DealerGlassCard contentStyle={{ gap: theme.spacing.lg }}>
+                  <DealerSectionHeader
+                    title={stepTitles[3]}
+                    subtitle={stepBodies[3]}
+                    compact
+                  />
+                  <View style={{ gap: theme.spacing.md }}>
+                    <TextField
+                      label={t('mobile.newOrder.endCustomerName')}
+                      value={endCustomerName}
+                      onChangeText={setEndCustomerName}
+                      placeholder={t('mobile.newOrder.endCustomerNamePlaceholder')}
+                    />
+                    <PhoneField
+                      label={t('mobile.newOrder.endCustomerPhone')}
+                      value={endCustomerPhone}
+                      onChangeText={setEndCustomerPhone}
+                      placeholder={t('mobile.newOrder.endCustomerPhonePlaceholder')}
+                      error={
+                        error && !isValidOptionalPhone(endCustomerPhone) ? error : undefined
+                      }
+                    />
+
+                    <NewOrderDeliveryAddressBlock
+                      savedAddresses={savedAddresses}
+                      deliveryAddress={deliveryAddress}
+                      deliveryNotes={deliveryNotes}
+                      deliveryLat={deliveryLat}
+                      notesMax={NOTES_MAX}
+                      addressError={
+                        error && !isValidDeliveryAddress(deliveryAddress) ? error : undefined
+                      }
+                      canSaveAddress={canSaveAddresses}
+                      onOpenSavedAddresses={() => setAddressSheetOpen(true)}
+                      onSaveAddress={openSaveAddressSheet}
+                      onChangeAddress={setDeliveryAddress}
+                      onClearCoords={() => {
+                        setDeliveryLat(undefined);
+                        setDeliveryLng(undefined);
+                      }}
+                      onOpenMap={() => setMapOpen(true)}
+                      onChangeNotes={(v) => setDeliveryNotes(clampNotes(v, NOTES_MAX))}
+                    />
+                    {error && step === 3 ? (
+                      <AppText variant="caption" color="error">
+                        {error}
+                      </AppText>
+                    ) : null}
+                  </View>
+                </DealerGlassCard>
+              ) : null}
+
+              {step === 4 && !submittedNumber ? (
+                <View style={{ gap: theme.spacing.lg }}>
+                  <DealerGlassCard>
+                    <DealerSectionHeader
+                      title={stepTitles[4]}
+                      subtitle={stepBodies[4]}
+                    />
+                    <UploadsStep
+                      attachments={attachments}
+                      onChange={setAttachments}
+                      canUpload={canUpload}
+                      aiState={aiState}
+                      error={null}
+                      overallProgress={overallProgress}
+                      uploading={uploading}
+                      onUploadAll={() => void uploadAll(draftSaved?.id)}
+                      onCancelUploads={cancelUploads}
+                      onRetry={retryOne}
+                      showTitle={false}
+                    />
+                  </DealerGlassCard>
+                  <DealerGlassCard contentStyle={{ paddingTop: theme.spacing.md }}>
+                    <ReviewStep
+                      summary={{
+                        modelName: resolvedName,
+                        customerName: endCustomerName.trim() || user?.name || '—',
+                        customerPhone: endCustomerPhone.trim() || user?.phone || '—',
+                        address: deliveryAddress,
+                        deliveryNotes,
+                        fabric,
+                        fabricDescription,
+                        dimensionsNotes,
+                        orderNotes,
+                        dealerPo:
+                          resolveExternalOrderNumber(
+                            externalOrderNumber,
+                            draftSaved?.number ?? submittedNumber,
+                          ) ?? '—',
+                        quantity,
+                        priority: t(`mobile.newOrder.priorities.${priority}`),
+                        unitPrice,
+                        currency,
+                        estimatedTotal,
+                      }}
+                      attachments={attachments}
+                      error={error}
+                      busy={busy || uploading}
+                      showTitle={false}
+                      hideActions
+                      onBack={goBack}
+                      onSaveDraft={() => void persistDraft()}
+                      onSubmit={() => void submitOrder()}
+                      onViewOrders={() =>
+                        router.replace('/(app)/(customer)/(tabs)/orders')
+                      }
+                      onCreateAnother={resetForm}
+                    />
+                  </DealerGlassCard>
+                </View>
+              ) : null}
+
+              {submittedNumber ? (
+                <DealerGlassCard>
+                  <ReviewStep
+                    summary={{
+                      modelName: resolvedName,
+                      customerName: endCustomerName.trim() || user?.name || '—',
+                      customerPhone: endCustomerPhone.trim() || user?.phone || '—',
+                      address: deliveryAddress,
+                      deliveryNotes,
+                      fabric,
+                      fabricDescription,
+                      dimensionsNotes,
+                      orderNotes,
+                      dealerPo:
+                        resolveExternalOrderNumber(
+                          externalOrderNumber,
+                          draftSaved?.number ?? submittedNumber,
+                        ) ?? '—',
+                      quantity,
+                      priority: t(`mobile.newOrder.priorities.${priority}`),
+                      unitPrice,
+                      currency,
+                      estimatedTotal,
+                    }}
+                    attachments={attachments}
+                    error={error}
+                    busy={false}
+                    submittedNumber={submittedNumber}
+                    successKey={successKey}
+                    onBack={goBack}
+                    onSaveDraft={() => undefined}
+                    onSubmit={() => undefined}
+                    onViewOrders={() =>
+                      router.replace('/(app)/(customer)/(tabs)/orders')
+                    }
+                    onCreateAnother={resetForm}
+                  />
+                </DealerGlassCard>
+              ) : null}
+            </SlideIn>
+          </FadeIn>
+        </FormShake>
+
+        <ProductQuickPickSheet
+          open={pickSheet === 'favorites'}
+          onClose={() => setPickSheet(null)}
+          title={t('mobile.newOrder.pickFavoritesTitle')}
+          subtitle={t('mobile.newOrder.pickFavoritesBody')}
+          products={favoriteProductsQuery.products}
+          loading={!favorites.ready || favoriteProductsQuery.isPending}
+          emptyTitle={t('mobile.catalog.favoritesEmptyTitle')}
+          emptyBody={t('mobile.catalog.favoritesEmptyBody')}
+          onSelect={(product) => {
+            setProductId(product.id);
+            const name =
+              locale === 'ar'
+                ? product.nameAr || product.nameEn
+                : locale === 'he'
+                  ? product.nameHe || product.nameEn
+                  : product.nameEn || product.nameAr;
+            setCustomProductName(name || product.nameEn || product.nameAr || '');
+          }}
+        />
+
+        <ProductQuickPickSheet
+          open={pickSheet === 'ordered'}
+          onClose={() => setPickSheet(null)}
+          title={t('mobile.newOrder.pickOrderedTitle')}
+          subtitle={t('mobile.newOrder.pickOrderedBody')}
+          products={orderedQuery.data ?? []}
+          loading={orderedQuery.isPending}
+          emptyTitle={t('mobile.catalog.orderedEmptyTitle')}
+          emptyBody={t('mobile.catalog.orderedEmptyBody')}
+          onSelect={(product) => {
+            setProductId(product.id);
+            const name =
+              locale === 'ar'
+                ? product.nameAr || product.nameEn
+                : locale === 'he'
+                  ? product.nameHe || product.nameEn
+                  : product.nameEn || product.nameAr;
+            setCustomProductName(name || product.nameEn || product.nameAr || '');
+          }}
+        />
+
+        <SavedAddressPickerSheet
+          open={addressSheetOpen}
+          onClose={() => setAddressSheetOpen(false)}
+          addresses={savedAddresses}
+          selectedLine={deliveryAddress}
+          canSaveCurrent={
+            canSaveAddresses &&
+            deliveryAddress.trim().length > 0 &&
+            !isAddressAlreadySaved(deliveryAddress, savedAddresses)
+          }
+          onSaveCurrent={() => {
+            setAddressSheetOpen(false);
+            setTimeout(() => openSaveAddressSheet(), 280);
+          }}
+          onSelect={(addr) => {
+            setDeliveryAddress(formatAddressLine(addr));
+            setDeliveryLat(addr.latitude ?? undefined);
+            setDeliveryLng(addr.longitude ?? undefined);
+          }}
+        />
+
+        <SaveAddressSheet
+          open={saveAddressSheetOpen}
+          onClose={() => {
+            if (savingAddress) return;
+            setSaveAddressSheetOpen(false);
+            setSaveAddressError(null);
+          }}
+          addressLine={deliveryAddress}
+          pinned={deliveryLat != null}
+          defaultAsFirst={savedAddresses.length === 0}
+          saving={savingAddress}
+          error={saveAddressError}
+          onSave={(input) => {
+            void saveCurrentAddress(input);
+          }}
+        />
+
+        <LocationMapPicker
+          open={mapOpen}
+          initial={
+            deliveryLat != null && deliveryLng != null
+              ? { latitude: deliveryLat, longitude: deliveryLng }
+              : null
+          }
+          onClose={() => setMapOpen(false)}
+          onConfirm={(coords) => {
+            setDeliveryLat(coords.latitude);
+            setDeliveryLng(coords.longitude);
+            setMapOpen(false);
+          }}
+          onClear={() => {
+            setDeliveryLat(undefined);
+            setDeliveryLng(undefined);
+          }}
+        />
+      </KeyboardAwareScreen>
+
+      <NewOrderFloatingDock
+        mode={dockMode}
+        disabled={dockDisabled}
+        primaryLoading={busy && dockMode === 'submit'}
+        draftLoading={busy && dockMode === 'submit'}
+        onBack={goBack}
+        onPrimary={onDockPrimary}
+        onSaveDraft={() => void persistDraft()}
       />
-
-      <LocationMapPicker
-        open={mapOpen}
-        initial={
-          deliveryLat != null && deliveryLng != null
-            ? { latitude: deliveryLat, longitude: deliveryLng }
-            : null
-        }
-        onClose={() => setMapOpen(false)}
-        onConfirm={(coords) => {
-          setDeliveryLat(coords.latitude);
-          setDeliveryLng(coords.longitude);
-          setMapOpen(false);
-        }}
-        onClear={() => {
-          setDeliveryLat(undefined);
-          setDeliveryLng(undefined);
-        }}
-      />
-    </KeyboardAwareScreen>
+    </View>
   );
 }

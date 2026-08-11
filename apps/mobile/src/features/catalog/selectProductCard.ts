@@ -49,6 +49,11 @@ function collectImageUrls(product: BrowseProduct): string[] {
   return uris;
 }
 
+/** Dealer list/detail price — prefer scoped dealerPrice; never manufacturing cost. */
+export function resolveDealerBrowsePrice(item: BrowseProduct): number | null {
+  return toNumber(item.dealerPrice ?? item.price);
+}
+
 export function toProductCard(
   item: BrowseProduct,
   locale: string,
@@ -61,13 +66,15 @@ export function toProductCard(
         : item.nameEn || item.nameAr;
 
   const imageUrls = collectImageUrls(item);
+  const thumb = item.thumbnailUrl?.trim() || null;
 
   return {
     id: item.id,
     name: name || item.nameEn || item.nameAr || '—',
-    imageUrl: imageUrls[0] ?? null,
-    imageUrls,
-    price: toNumber(item.price),
+    /** Prefer thumbnail when API ships one; otherwise first full image. */
+    imageUrl: thumb ?? imageUrls[0] ?? null,
+    imageUrls: thumb ? [thumb, ...imageUrls.filter((u) => u !== thumb)] : imageUrls,
+    price: resolveDealerBrowsePrice(item),
     currency: item.priceCurrency || 'JOD',
     isAvailable: item.isActive !== false,
     categoryName: localizedCategoryName(item, locale),

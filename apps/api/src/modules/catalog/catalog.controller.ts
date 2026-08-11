@@ -360,6 +360,83 @@ export class CatalogController {
     return { data, meta: paginatedMeta(page, pageSize, totalItems) };
   }
 
+  /**
+   * Distinct active products this dealer (customer) has ordered before,
+   * newest order first. Empty when the user has no customerId.
+   */
+  @Get('catalog/browse/previously-ordered')
+  @RequirePermissions('catalog.read')
+  async browsePreviouslyOrdered(@CurrentUser() user: AuthUser) {
+    if (!user.customerId) {
+      return { data: [] as unknown[] };
+    }
+
+    const lines = await this.prisma.salesOrderLine.findMany({
+      where: {
+        productId: { not: null },
+        salesOrder: {
+          customerId: user.customerId,
+          archivedAt: null,
+        },
+        product: {
+          archivedAt: null,
+          isActive: true,
+        },
+      },
+      orderBy: { salesOrder: { orderDate: 'desc' } },
+      select: {
+        productId: true,
+      },
+      take: 200,
+    });
+
+    const orderedIds: string[] = [];
+    const seen = new Set<string>();
+    for (const line of lines) {
+      const id = line.productId;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      orderedIds.push(id);
+      if (orderedIds.length >= 48) break;
+    }
+
+    if (!orderedIds.length) {
+      return { data: [] as unknown[] };
+    }
+
+    const rows = await this.prisma.product.findMany({
+      where: { id: { in: orderedIds }, archivedAt: null, isActive: true },
+      include: { category: true },
+    });
+    const byId = new Map(rows.map((p) => [p.id, p]));
+
+    const dealerPrices = await this.prisma.dealerPrice.findMany({
+      where: { customerId: user.customerId, productId: { in: orderedIds } },
+    });
+    const dealerPriceMap = new Map(
+      dealerPrices.map((dp) => [dp.productId, { price: dp.price, currency: dp.currency }]),
+    );
+
+    const data = orderedIds
+      .map((id) => byId.get(id))
+      .filter((p): p is NonNullable<typeof p> => Boolean(p))
+      .map((product) => {
+        const stripped = stripProductCosts(
+          product as unknown as Record<string, unknown>,
+          user,
+        );
+        const dealerPrice = dealerPriceMap.get(product.id);
+        return {
+          ...stripped,
+          dealerPrice: dealerPrice?.price ?? null,
+          price: dealerPrice?.price ?? product.basePrice ?? null,
+          priceCurrency: dealerPrice?.currency ?? 'JOD',
+        };
+      });
+
+    return { data };
+  }
+
   @Get('catalog/browse/products/:id')
   @RequirePermissions('catalog.read')
   async browseProductById(@Param('id') id: string, @CurrentUser() user: AuthUser) {

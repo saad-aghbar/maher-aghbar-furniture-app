@@ -39,6 +39,8 @@ export {
   isEmployeeIndustrialBackground,
 } from './employeeIndustrial';
 export { useTheme } from './useTheme';
+export { dealerTokens, dealerTokens as dealerSurface } from './dealerTokens';
+export type { DealerTokens } from './dealerTokens';
 export type {
   ColorScheme,
   ThemeMode,

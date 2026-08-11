@@ -8,6 +8,7 @@ export default function AdminProductsRoute() {
   return (
     <PermissionGate user={user} require="catalog.read" mode="all">
       <CatalogScreen
+        variant="admin"
         titleKey="mobile.adminHome.navProducts"
         productDetailHref={(id) => `/(app)/(admin)/products/${id}` as Href}
         showBack

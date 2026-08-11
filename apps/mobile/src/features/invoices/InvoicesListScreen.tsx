@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, TextInput, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
-import { localizedName } from '@maher/i18n';
+import { localizedName, statusLabel as localizeStatus } from '@maher/i18n';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
@@ -14,6 +14,12 @@ import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import {
+  DealerEmptyState,
+  DealerInvoiceCard,
+  DealerSearchBar,
+  statusToDealerTone,
+} from '@/features/dealer-ui';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { openInvoicePdf } from './api';
 import { CreateInvoiceFromSalesOrderSheet } from './components/CreateInvoiceFromSalesOrderSheet';
@@ -76,7 +82,7 @@ function InvoicesScreenTitle({
         numberOfLines={1}
         style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
       >
-        {t('navigation.invoices')}
+        {t('mobile.invoices.title')}
       </AppText>
     </View>
   );
@@ -96,6 +102,7 @@ export function InvoicesListScreen({
   const allowed = can(user, 'invoice.read');
   const canCreate = adminControls && can(user, 'invoice.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const dealerSurface = !adminControls;
 
   const [chip, setChip] = useState<InvoiceStatusFilter>('ALL');
   const [search, setSearch] = useState('');
@@ -147,7 +154,7 @@ export function InvoicesListScreen({
 
   const statusLabel = isInvoiceStatusFilterActive(chip)
     ? t(`mobile.invoices.chips.${chip}`)
-    : t('accounting.filter');
+    : t('common.filter');
 
   if (!allowed) {
     return (
@@ -209,71 +216,107 @@ export function InvoicesListScreen({
               />
             ) : null}
 
-            <View
-              style={{
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surface,
-                padding: theme.spacing.md,
-                gap: theme.spacing.md,
-                ...orderBoardShadow(colorScheme),
-              }}
-            >
-              <SearchBarShell>
-                <TextInput
+            {dealerSurface ? (
+              <View style={{ gap: theme.spacing.md }}>
+                <DealerSearchBar
                   value={search}
                   onChangeText={setSearch}
-                  placeholder={t('accounting.searchPlaceholder')}
-                  placeholderTextColor={colors.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="search"
-                  clearButtonMode="while-editing"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    paddingVertical: theme.spacing.sm,
-                    fontSize: 16,
-                    color: colors.textPrimary,
-                    textAlign: isRTL ? 'right' : 'left',
-                    ...resolveAppFontStyle(locale, { variant: 'body' }),
-                  }}
+                  placeholder={t('mobile.invoices.search')}
                 />
-              </SearchBarShell>
-
-              <InvoiceFilterTriggers
-                showDealers={adminControls}
-                dealerLabel={dealerLabel}
-                onOpenDealers={() => setDealerSheetOpen(true)}
-                onClearDealer={() => {
-                  setCustomerId(null);
-                  setDealerLabel(null);
+                <InvoiceFilterTriggers
+                  showDealers={false}
+                  dealerLabel={null}
+                  onOpenDealers={() => undefined}
+                  statusActive={isInvoiceStatusFilterActive(chip)}
+                  statusLabel={statusLabel}
+                  onOpenStatus={() => setStatusSheetOpen(true)}
+                />
+              </View>
+            ) : (
+              <View
+                style={{
+                  borderRadius: theme.radius.xl,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                  backgroundColor: colors.surface,
+                  padding: theme.spacing.md,
+                  gap: theme.spacing.md,
+                  ...orderBoardShadow(colorScheme),
                 }}
-                statusActive={isInvoiceStatusFilterActive(chip)}
-                statusLabel={statusLabel}
-                onOpenStatus={() => setStatusSheetOpen(true)}
-              />
-            </View>
+              >
+                <SearchBarShell>
+                  <TextInput
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder={t('accounting.searchPlaceholder')}
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    clearButtonMode="while-editing"
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      paddingVertical: theme.spacing.sm,
+                      fontSize: 16,
+                      color: colors.textPrimary,
+                      textAlign: isRTL ? 'right' : 'left',
+                      ...resolveAppFontStyle(locale, { variant: 'body' }),
+                    }}
+                  />
+                </SearchBarShell>
+
+                <InvoiceFilterTriggers
+                  showDealers={adminControls}
+                  dealerLabel={dealerLabel}
+                  onOpenDealers={() => setDealerSheetOpen(true)}
+                  onClearDealer={() => {
+                    setCustomerId(null);
+                    setDealerLabel(null);
+                  }}
+                  statusActive={isInvoiceStatusFilterActive(chip)}
+                  statusLabel={statusLabel}
+                  onOpenStatus={() => setStatusSheetOpen(true)}
+                />
+              </View>
+            )}
           </View>
         }
         ListEmptyComponent={
-          <EmptyState
-            title={t('accounting.empty')}
-            description={t('accounting.emptyHint')}
-          />
+          dealerSurface ? (
+            <DealerEmptyState
+              title={t('mobile.invoices.emptyTitle')}
+              body={t('mobile.invoices.emptyBody')}
+            />
+          ) : (
+            <EmptyState
+              title={t('mobile.invoices.emptyTitle')}
+              description={t('mobile.invoices.emptyBody')}
+            />
+          )
         }
         renderItem={({ item, index }) => (
           <ListItemEnter index={index}>
-            <InvoiceBoardCard
-              invoice={item}
-              onPress={() => router.push(detailHref(item.id))}
-              onPdf={() => {
-                void openInvoicePdf(item.id).catch(() => {
-                  showToast({ variant: 'error', message: t('mobile.invoices.pdfFailed') });
-                });
-              }}
-            />
+            {dealerSurface ? (
+              <DealerInvoiceCard
+                title={item.number}
+                amountLabel={item.outstandingLabel}
+                dueLabel={item.dueDateLabel ?? undefined}
+                statusLabel={localizeStatus(locale, item.status)}
+                statusTone={statusToDealerTone(item.status)}
+                onPress={() => router.push(detailHref(item.id))}
+              />
+            ) : (
+              <InvoiceBoardCard
+                invoice={item}
+                onPress={() => router.push(detailHref(item.id))}
+                onPdf={() => {
+                  void openInvoicePdf(item.id).catch(() => {
+                    showToast({ variant: 'error', message: t('mobile.invoices.pdfFailed') });
+                  });
+                }}
+              />
+            )}
           </ListItemEnter>
         )}
       />

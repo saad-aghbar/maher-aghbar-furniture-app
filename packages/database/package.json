@@ -9,6 +9,8 @@
     "migrate:dev": "prisma migrate dev",
     "push": "dotenv -e ../../.env -- prisma db push",
     "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
+    "seed:product-photos": "dotenv -e ../../.env -- tsx prisma/seed-product-photos.ts",
+    "seed:product-measurements": "dotenv -e ../../.env -- tsx prisma/seed-product-measurements.ts",
     "set-passwords-123": "dotenv -e ../../.env -- tsx prisma/set-all-passwords-to-123.ts",
     "studio": "dotenv -e ../../.env -- prisma studio",
     "build": "tsc -p tsconfig.json",

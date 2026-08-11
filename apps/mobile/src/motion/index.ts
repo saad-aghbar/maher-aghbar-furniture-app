@@ -30,4 +30,12 @@ export { FormShake } from './FormShake';
 export { TabIndicator } from './TabIndicator';
 export { CountUp } from './CountUp';
 export { useDraggablePillBar } from './useDraggablePillBar';
+export {
+  DEALER_FAB_PRESS_SCALE,
+  DEALER_WIZARD_DOCK_PRESS_SCALE,
+  dealerHeroParallaxAmplitude,
+  dealerStageRailDuration,
+  dealerSettle,
+  dealerFadeTo,
+} from './dealerMotion';
 export type { PressVariant, SlideDirection } from './types';

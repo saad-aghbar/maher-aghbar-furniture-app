@@ -47,13 +47,28 @@ function splitName(name: string): { first: string; last: string } {
 }
 
 /** Manage account — editable profile, appearance, security (password + MFA). */
-export function MoreAccountScreen() {
+export function MoreAccountScreen({
+  backFallback = '/(app)/(admin)/(tabs)/more' as Href,
+  backLabelKey,
+  titleMode = 'admin',
+}: {
+  backFallback?: Href;
+  /** Override back button label i18n key (e.g. mobile.dealerAccount.backToAccount). */
+  backLabelKey?: string;
+  /** Dealer security hub uses dealer-facing titles instead of More chrome. */
+  titleMode?: 'admin' | 'dealer';
+} = {}) {
   const { user, logout, applyUser, refreshUser } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
+  const dealerTitles = titleMode === 'dealer';
+  const backLabel = t(backLabelKey ?? (dealerTitles ? 'mobile.dealerAccount.backToAccount' : 'mobile.more.backToMore'));
+  const eyebrow = dealerTitles ? t('mobile.dealerAccount.securityEyebrow') : t('mobile.more.accountEyebrow');
+  const title = dealerTitles ? t('mobile.dealerAccount.securityTitle') : t('mobile.more.accountTitle');
+  const subtitle = dealerTitles ? t('mobile.dealerAccount.securitySubtitle') : t('mobile.more.accountSubtitle');
   const reduce = useReducedMotion();
   const queryClient = useQueryClient();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -271,9 +286,9 @@ export function MoreAccountScreen() {
         <BackButton
           onPress={() => {
             if (router.canGoBack()) router.back();
-            else router.replace('/(app)/(admin)/(tabs)/more' as Href);
+            else router.replace(backFallback);
           }}
-          label={t('mobile.more.backToMore')}
+          label={backLabel}
         />
         <View style={{ gap: theme.spacing.xs }}>
           <AppText
@@ -285,13 +300,13 @@ export function MoreAccountScreen() {
               color: colors.brand,
             }}
           >
-            {t('mobile.more.accountEyebrow')}
+            {eyebrow}
           </AppText>
           <AppText variant="title" weight={titleWeight}>
-            {t('mobile.more.accountTitle')}
+            {title}
           </AppText>
           <AppText variant="caption" color="muted" weight="regular">
-            {t('mobile.more.accountSubtitle')}
+            {subtitle}
           </AppText>
         </View>
       </View>
