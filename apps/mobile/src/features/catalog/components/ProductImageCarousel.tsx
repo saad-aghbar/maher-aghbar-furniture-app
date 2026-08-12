@@ -3,28 +3,21 @@ import {
   Dimensions,
   FlatList,
   Image,
-  Modal,
   Pressable,
   ScrollView,
   View,
   type ViewToken,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  FadeIn,
-  FadeOut,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
+import { ImageViewer } from '@/components/media/ImageViewer';
 import { SkeletonShimmer, haptics } from '@/motion';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const { width: SCREEN_W } = Dimensions.get('window');
 
 type ProductImageCarouselProps = {
   uris: string[];
@@ -253,177 +246,16 @@ export function ProductImageCarousel({
         </ScrollView>
       ) : null}
 
-      <ZoomViewer
+      <ImageViewer
         open={viewerOpen}
         uris={uris}
         index={index}
-        onIndexChange={setIndex}
+        onIndexChange={(i) => {
+          setIndex(i);
+          listRef.current?.scrollToIndex({ index: i, animated: false });
+        }}
         onClose={() => setViewerOpen(false)}
       />
     </View>
-  );
-}
-
-function ZoomViewer({
-  open,
-  uris,
-  index,
-  onIndexChange,
-  onClose,
-}: {
-  open: boolean;
-  uris: string[];
-  index: number;
-  onIndexChange: (i: number) => void;
-  onClose: () => void;
-}) {
-  const { colors, theme } = useTheme();
-  const { t, isRTL } = useLocale();
-  const insets = useSafeAreaInsets();
-  const scale = useSharedValue(1);
-  const saved = useSharedValue(1);
-  const uri = uris[index] ?? null;
-
-  const pinch = Gesture.Pinch()
-    .onUpdate((e) => {
-      scale.value = Math.min(4, Math.max(1, saved.value * e.scale));
-    })
-    .onEnd(() => {
-      saved.value = scale.value;
-      if (scale.value < 1.05) {
-        scale.value = withTiming(1);
-        saved.value = 1;
-      }
-    });
-
-  const style = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Modal visible={open} animationType="fade" onRequestClose={onClose} transparent>
-      <View style={{ flex: 1, backgroundColor: 'rgba(30,26,27,0.96)' }}>
-        <View
-          style={{
-            position: 'absolute',
-            top: Math.max(insets.top, theme.spacing.lg),
-            left: theme.spacing.lg,
-            right: theme.spacing.lg,
-            zIndex: 2,
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          {uris.length > 1 ? (
-            <View
-              style={{
-                paddingHorizontal: 10,
-                paddingVertical: 4,
-                borderRadius: theme.radius.full,
-                backgroundColor: 'rgba(255,255,255,0.12)',
-              }}
-            >
-              <AppText
-                variant="caption"
-                weight="semibold"
-                dir="ltr"
-                style={{ color: '#fff', fontSize: 11 }}
-              >
-                {index + 1}/{uris.length}
-              </AppText>
-            </View>
-          ) : (
-            <View />
-          )}
-          <Pressable
-            onPress={() => {
-              void haptics.selection();
-              onClose();
-            }}
-            style={{
-              minHeight: 40,
-              paddingHorizontal: theme.spacing.md,
-              borderRadius: theme.radius.xl,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.productDetail.closeImage')}
-          >
-            <AppText variant="label" weight="semibold">
-              {t('mobile.productDetail.closeImage')}
-            </AppText>
-          </Pressable>
-        </View>
-
-        {uri ? (
-          <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)} style={{ flex: 1 }}>
-            <ScrollView
-              contentContainerStyle={{
-                flexGrow: 1,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              maximumZoomScale={4}
-              minimumZoomScale={1}
-              centerContent
-              bouncesZoom
-            >
-              <GestureDetector gesture={pinch}>
-                <Animated.View style={style}>
-                  <Image
-                    source={{ uri }}
-                    style={{ width: SCREEN_W, height: SCREEN_H * 0.62 }}
-                    resizeMode="contain"
-                  />
-                </Animated.View>
-              </GestureDetector>
-            </ScrollView>
-          </Animated.View>
-        ) : null}
-
-        {uris.length > 1 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              gap: theme.spacing.sm,
-              paddingHorizontal: theme.spacing.lg,
-              paddingBottom: Math.max(insets.bottom, theme.spacing.lg),
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-            }}
-          >
-            {uris.map((thumb, i) => {
-              const active = i === index;
-              return (
-                <Pressable
-                  key={`${thumb}-z-${i}`}
-                  onPress={() => {
-                    void haptics.selection();
-                    scale.value = 1;
-                    saved.value = 1;
-                    onIndexChange(i);
-                  }}
-                  style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: theme.radius.lg,
-                    overflow: 'hidden',
-                    borderWidth: 2,
-                    borderColor: active ? colors.brand : 'rgba(255,255,255,0.25)',
-                  }}
-                >
-                  <Image source={{ uri: thumb }} style={{ width: 56, height: 56 }} resizeMode="cover" />
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        ) : null}
-      </View>
-    </Modal>
   );
 }

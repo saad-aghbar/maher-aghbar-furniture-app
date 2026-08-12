@@ -12,6 +12,8 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32),
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('30d'),
+  /** Optional AES key for dealer portal-password reveal. Falls back to JWT_ACCESS_SECRET. */
+  PORTAL_PASSWORD_KEY: z.string().min(16).optional(),
   COOKIE_DOMAIN: z.string().default('localhost'),
   COOKIE_SECURE: z
     .enum(['true', 'false'])
@@ -35,7 +37,7 @@ const envSchema = z.object({
     .transform((value) => value === 'true'),
   FILE_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
 
-  DEFAULT_CURRENCY: z.literal('JOD').default('JOD'),
+  DEFAULT_CURRENCY: z.literal('ILS').default('ILS'),
   DEFAULT_LOCALE: z.enum(['ar', 'en', 'he']).default('ar'),
   DEFAULT_VAT_RATE: z.coerce.number().min(0).max(1).default(0.16),
   COMPANY_NAME_AR: z.string().optional(),

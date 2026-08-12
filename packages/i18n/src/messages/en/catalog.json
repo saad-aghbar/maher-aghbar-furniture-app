@@ -345,7 +345,7 @@
   "selectSalesOrder": "Select a sales order.",
   "amountCustomerRequired": "Amount and customer are required.",
   "customerItemsRequired": "Customer and items required",
-  "amountJod": "Amount (JOD)",
+  "amountJod": "Amount (ILS)",
   "invoiceLabel": "Invoice: {number}",
   "pdf": "PDF",
   "quotations": "Quotations",

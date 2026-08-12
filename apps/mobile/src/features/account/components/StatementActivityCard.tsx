@@ -21,7 +21,7 @@ type Props = {
  */
 export function StatementActivityCard({
   row,
-  currency = 'JOD',
+  currency = 'ILS',
   onPress,
   onDownloadPdf,
 }: Props) {

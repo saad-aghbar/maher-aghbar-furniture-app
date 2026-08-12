@@ -131,7 +131,7 @@ export function selectProductDetail(
     unit,
     description: product.description?.trim() || null,
     price: resolveDealerBrowsePrice(product),
-    currency: product.priceCurrency || 'JOD',
+    currency: product.priceCurrency || 'ILS',
     isAvailable: product.isActive !== false,
     categoryId: product.categoryId ?? product.category?.id ?? null,
     categoryName: localizedCategoryName(product, locale),

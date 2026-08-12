@@ -24,7 +24,7 @@ export function StatementBalanceBoard({
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const accent = colors.brand;
-  const currency = summary.currency || 'JOD';
+  const currency = summary.currency || 'ILS';
 
   return (
     <View

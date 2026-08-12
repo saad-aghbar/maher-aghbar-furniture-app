@@ -39,7 +39,7 @@ export function KeyboardAwareScreen({
   const { colors, theme } = useTheme();
   const pad = theme.spacing[padding];
   const useInsets = keyboardMode === 'insets';
-  const avoidEnabled = !useInsets || Platform.OS !== 'ios';
+  const avoidEnabled = keyboardMode === 'padding';
 
   return (
     <KeyboardAvoidingView

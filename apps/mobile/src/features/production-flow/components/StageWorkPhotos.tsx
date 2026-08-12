@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import { resolveDocumentUrl } from '@/api/modules/uploads';
 import { AppText } from '@/components/AppText';
+import { ImageViewer } from '@/components/media/ImageViewer';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -21,6 +22,7 @@ export function StageWorkPhotos({ photos, stageCompleted, hideTitle }: Props) {
   const { colors, theme } = useTheme();
   const [uris, setUris] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState<Record<string, boolean>>({});
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +73,10 @@ export function StageWorkPhotos({ photos, stageCompleted, hideTitle }: Props) {
 
   if (photos.length === 0) return null;
 
+  const galleryUris = photos
+    .map((photo) => (failed[photo.id] ? undefined : uris[photo.id]))
+    .filter((uri): uri is string => Boolean(uri));
+
   return (
     <View style={{ gap: theme.spacing.sm }}>
       {title}
@@ -91,6 +97,9 @@ export function StageWorkPhotos({ photos, stageCompleted, hideTitle }: Props) {
               accessibilityLabel={photo.fileName}
               onPress={() => {
                 void haptics.selection();
+                if (!uri || broken) return;
+                const next = galleryUris.indexOf(uri);
+                setViewerIndex(next >= 0 ? next : 0);
               }}
               style={{
                 width: '100%',
@@ -122,6 +131,13 @@ export function StageWorkPhotos({ photos, stageCompleted, hideTitle }: Props) {
           );
         })}
       </View>
+      <ImageViewer
+        open={viewerIndex != null}
+        uris={galleryUris}
+        index={viewerIndex ?? 0}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </View>
   );
 }

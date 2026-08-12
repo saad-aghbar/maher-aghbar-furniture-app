@@ -1805,7 +1805,7 @@ export class ReportsService {
     const laborRate =
       typeof company.defaultLaborRateJod === 'number'
         ? company.defaultLaborRateJod
-        : Number(process.env.DEFAULT_LABOR_RATE_JOD ?? 5);
+        : Number(process.env.DEFAULT_LABOR_RATE_ILS ?? process.env.DEFAULT_LABOR_RATE_JOD ?? 5);
 
     const laborCost = (laborMinutes / 60) * laborRate;
     const grossProfit = revenueOrders - materialCogs;

@@ -41,7 +41,7 @@ describe('format', () => {
     expect(money).not.toMatch(/1\s+112\s+93/);
   });
 
-  it('formats JOD currency with Latin digits', () => {
+  it('formats ILS currency with Latin digits', () => {
     const en = formatCurrency('en', 1250.75);
     expect(en).toMatch(/1/);
     expect(hasNonLatinDigits(formatCurrency('ar', 100))).toBe(false);

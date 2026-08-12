@@ -34,7 +34,7 @@ import { MoreBoard } from './components/MoreBoard';
 const COMPANY_DEFAULTS: CompanySettings = {
   nameAr: '',
   nameEn: '',
-  currency: 'JOD',
+  currency: 'ILS',
   defaultVatPercent: 16,
   timezone: 'Asia/Amman',
   defaultLanguage: 'ar',

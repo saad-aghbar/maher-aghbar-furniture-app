@@ -592,7 +592,7 @@ function InvoicesPageInner() {
                       </p>
                       {Number.isFinite(amount) ? (
                         <p className="text-xs font-medium text-text-primary" dir="ltr">
-                          {amount.toFixed(2)} JOD
+                          {amount.toFixed(2)} {currency}
                         </p>
                       ) : null}
                     </div>

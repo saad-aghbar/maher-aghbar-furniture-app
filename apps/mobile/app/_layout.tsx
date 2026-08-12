@@ -6,18 +6,13 @@ import { AppProviders } from '@/providers/AppProviders';
 import { useTheme } from '@/theme';
 
 function RootNavigator() {
-  const { colors, colorScheme } = useTheme();
+  const { colorScheme } = useTheme();
   const stackMotion = useStackMotionOptions();
 
   return (
     <>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-      <Stack
-        screenOptions={{
-          ...stackMotion,
-          contentStyle: { backgroundColor: colors.background },
-        }}
-      >
+      <Stack screenOptions={stackMotion}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(app)" />

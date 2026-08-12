@@ -35,9 +35,9 @@ export const LOCALE_DIRECTION: Record<Locale, Direction> = {
   he: 'rtl',
 };
 
-export type Currency = 'JOD';
+export type Currency = 'ILS';
 
-export const DEFAULT_CURRENCY: Currency = 'JOD';
+export const DEFAULT_CURRENCY: Currency = 'ILS';
 
 export interface AuthUser {
   id: string;

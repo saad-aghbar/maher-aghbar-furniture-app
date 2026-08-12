@@ -17,6 +17,7 @@ import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import {
   buildSimplePdf,
   parsePdfQuery,
+  printableScanCode,
   sendPdf,
 } from '../../common/helpers/pdf.util';
 import { localizedName, pdfMessages } from '../../common/helpers/pdf-i18n';
@@ -332,10 +333,10 @@ export class PdfController {
       theme: pdfTheme,
       title: m.supplierStatement,
       subtitle: `${localizedName(locale, supplier)} (${supplier.code})`,
-      meta: [`${m.closingAp}: ${roundMoney(balance)} JOD`],
+      meta: [`${m.closingAp}: ${roundMoney(balance)} ILS`],
       columns: [m.date, m.ref, m.description, m.debit, m.credit, m.balance],
       rows,
-      footerLines: [`${m.closing}: ${roundMoney(balance)} JOD`],
+      footerLines: [`${m.closing}: ${roundMoney(balance)} ILS`],
     });
     sendPdf(res, `SOA-SUP-${supplier.code}.pdf`, buffer);
   }
@@ -364,6 +365,8 @@ export class PdfController {
         : locale === 'ar' && item.nameEn
           ? item.nameEn
           : undefined;
+    const barcode = printableScanCode(item.barcode);
+    const qrPayload = printableScanCode(item.qrCode, '') || item.sku;
     const buffer = await buildSimplePdf({
       locale,
       theme: pdfTheme,
@@ -371,17 +374,17 @@ export class PdfController {
       subtitle: secondary,
       meta: [
         `${m.sku}: ${item.sku}`,
-        `${m.barcode}: ${item.barcode ?? '—'}`,
-        `${m.qr}: ${item.qrCode ?? item.sku}`,
+        `${m.barcode}: ${barcode}`,
         `${m.unit}: ${item.unit}`,
       ],
       columns: [m.field, m.value],
       rows: [
         [m.sku, item.sku],
-        [m.barcode, item.barcode ?? '—'],
+        [m.barcode, barcode],
         [m.minStock, String(item.minStock)],
       ],
       footerLines: [m.labelScanHint],
+      qr: qrPayload ? { payload: qrPayload } : undefined,
     });
     sendPdf(res, `label-${item.sku}.pdf`, buffer);
   }

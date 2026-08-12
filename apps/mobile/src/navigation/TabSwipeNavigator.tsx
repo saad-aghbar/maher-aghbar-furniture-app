@@ -7,6 +7,7 @@ import type { AppSurface } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
+import { useTheme } from '@/theme';
 import { activeTabFromPath } from './activeTabFromPath';
 import { isTabRootPath } from './isTabRootPath';
 import { navigateToTab } from './navigateToTab';
@@ -24,6 +25,7 @@ type Props = {
 export function TabSwipeNavigator({ surface, children }: Props) {
   const { user } = useAuth();
   const { isRTL } = useLocale();
+  const { colors } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -69,12 +71,12 @@ export function TabSwipeNavigator({ surface, children }: Props) {
   }, [goAdjacent, isRTL]);
 
   if (!enabled) {
-    return <View style={{ flex: 1 }}>{children}</View>;
+    return <View style={{ flex: 1, backgroundColor: colors.background }}>{children}</View>;
   }
 
   return (
     <GestureDetector gesture={gesture}>
-      <View style={{ flex: 1 }} collapsable={false}>
+      <View style={{ flex: 1, backgroundColor: colors.background }} collapsable={false}>
         {children}
       </View>
     </GestureDetector>

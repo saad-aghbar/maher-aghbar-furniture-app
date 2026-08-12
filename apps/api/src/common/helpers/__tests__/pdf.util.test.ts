@@ -1,8 +1,10 @@
 import { inflateSync } from 'node:zlib';
 import {
   buildSimplePdf,
+  printableScanCode,
   shapePdfText,
   splitScriptRuns,
+  visualRuns,
 } from '../pdf.util';
 
 function pageCount(buf: Buffer): number {
@@ -58,6 +60,10 @@ function pdfRaw(buf: Buffer): string {
   return buf.toString('latin1');
 }
 
+function imageXObjectCount(buf: Buffer): number {
+  return (pdfRaw(buf).match(/\/Subtype\s*\/Image/g) ?? []).length;
+}
+
 describe('shapePdfText', () => {
   it('leaves English unchanged', () => {
     expect(shapePdfText('Payment receipt', 'en')).toBe('Payment receipt');
@@ -93,6 +99,40 @@ describe('splitScriptRuns', () => {
     expect(runs.every((r) => r.script === 'hebrew')).toBe(true);
     expect(runs.map((r) => r.text).join('')).toContain('\u05F4');
   });
+
+  it('isolates colon and slash so RTL paint can keep them between label and value', () => {
+    const sku = splitScriptRuns('رمز الصنف: MAT-FAB-ROLL');
+    expect(sku.some((r) => r.text === ':')).toBe(true);
+    expect(sku.some((r) => r.script === 'arabic' && r.text.includes('رمز'))).toBe(true);
+    expect(sku.some((r) => r.script === 'latin' && r.text.includes('MAT-FAB-ROLL'))).toBe(
+      true,
+    );
+
+    const hint = splitScriptRuns('فاتورة INV-2026-00003 / PAY-2026');
+    expect(hint.some((r) => r.text === '/')).toBe(true);
+  });
+});
+
+describe('visualRuns', () => {
+  it('reverses run order for RTL without reversing characters inside a run', () => {
+    const runs = splitScriptRuns('رمز الصنف: MAT-FAB-ROLL');
+    const visual = visualRuns(runs, true);
+    expect(visual[0]?.text).toContain('MAT-FAB-ROLL');
+    expect(visual.some((r) => r.text === ':')).toBe(true);
+    expect(visual[visual.length - 1]?.script).toBe('arabic');
+    expect(visual[visual.length - 1]?.text).toBe('رمز الصنف');
+    expect(visualRuns(runs, false)).toEqual(runs);
+  });
+});
+
+describe('printableScanCode', () => {
+  it('drops Expo and http(s) mock URLs', () => {
+    expect(printableScanCode('exp://192.168.1.16:8082')).toBe('—');
+    expect(printableScanCode('https://example.com', 'MAT-FAB-ROLL')).toBe(
+      'MAT-FAB-ROLL',
+    );
+    expect(printableScanCode('MAT-FAB-ROLL')).toBe('MAT-FAB-ROLL');
+  });
 });
 
 describe('buildSimplePdf', () => {
@@ -121,7 +161,7 @@ describe('buildSimplePdf', () => {
       meta: ['Customer: Nile Decor', 'Status: ISSUED'],
       columns: ['Description', 'Qty', 'Unit price', 'Line total'],
       rows: invoiceRows,
-      footerLines: ['Total: 3290.000 JOD', 'Outstanding: 0.000 JOD'],
+      footerLines: ['Total: 3290.000 ILS', 'Outstanding: 0.000 ILS'],
     });
     expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pageCount(buf)).toBe(1);
@@ -138,15 +178,15 @@ describe('buildSimplePdf', () => {
       theme: 'white',
       title: 'كشف حساب',
       subtitle: 'ديكور النيل',
-      meta: ['حتى تاريخ: 2026-08-12', 'الرصيد الختامي: 53116.778 JOD'],
+      meta: ['حتى تاريخ: 2026-08-12', 'الرصيد الختامي: 53116.778 ILS'],
       columns: ['التاريخ', 'المرجع', 'الوصف', 'مدين', 'دائن', 'الرصيد'],
       rows: statementRows,
-      footerLines: ['الرصيد الختامي: 53116.778 JOD'],
+      footerLines: ['الرصيد الختامي: 53116.778 ILS'],
     });
     expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pageCount(buf)).toBeLessThanOrEqual(2);
     expect(pdfHasOutlines(buf)).toBe(true);
-    expect(pdfHasLatin(buf, 'JOD')).toBe(true);
+    expect(pdfHasLatin(buf, 'ILS')).toBe(true);
     expect(pdfHasLatin(buf, 'INV-2026-00003')).toBe(true);
     expect(pdfHasLatin(buf, 'INV-2026-00016')).toBe(true);
     expect(pdfHasLatin(buf, 'INV-2026-00...')).toBe(false);
@@ -167,7 +207,7 @@ describe('buildSimplePdf', () => {
       columns: ['שדה', 'ערך'],
       rows: [
         ['מספר תשלום', 'PAY-2026-00002'],
-        ['סכום', '5738.133 JOD'],
+        ['סכום', '5738.133 ILS'],
         ['חשבונית', 'INV-2026-00003'],
       ],
       footerLines: ['הוחל על חשבונית INV-2026-00003'],
@@ -196,7 +236,7 @@ describe('buildSimplePdf', () => {
             he: ['תיאור', 'כמות', 'מחיר יחידה', 'סה״כ שורה'],
           },
           rows: invoiceRows,
-          footerLines: ['Total: 3290.000 JOD'],
+          footerLines: ['Total: 3290.000 ILS'],
         },
         {
           title: { en: 'Payment receipt', ar: 'إيصال دفع', he: 'קבלת תשלום' },
@@ -208,7 +248,7 @@ describe('buildSimplePdf', () => {
           },
           rows: [
             ['Payment number', 'PAY-2026-00002'],
-            ['Amount', '5738.133 JOD'],
+            ['Amount', '5738.133 ILS'],
           ],
           footerLines: ['Applied to invoice INV-2026-00003'],
         },
@@ -225,7 +265,7 @@ describe('buildSimplePdf', () => {
             he: ['תאריך', 'אסמכתא', 'תיאור', 'חובה', 'זכות', 'יתרה'],
           },
           rows: statementRows,
-          footerLines: ['Closing: 53116.778 JOD'],
+          footerLines: ['Closing: 53116.778 ILS'],
         },
       ];
 
@@ -261,4 +301,36 @@ describe('buildSimplePdf', () => {
     },
     30000,
   );
+
+  it('embeds a scannable QR image and ignores exp:// payloads', async () => {
+    const label = {
+      locale: 'ar' as const,
+      theme: 'white' as const,
+      title: 'رول قماش تنجيد',
+      subtitle: 'Upholstery fabric roll',
+      meta: ['رمز الصنف: MAT-FAB-ROLL', 'الباركود: —', 'الوحدة: m'],
+      columns: ['الحقل', 'القيمة'],
+      rows: [
+        ['رمز الصنف', 'MAT-FAB-ROLL'],
+        ['الباركود', '—'],
+        ['الحد الأدنى', '80'],
+      ],
+      footerLines: ['امسح الرمز في المستودع'],
+    };
+    const without = await buildSimplePdf(label);
+    const withQr = await buildSimplePdf({
+      ...label,
+      qr: { payload: 'MAT-FAB-ROLL' },
+    });
+    const mockQr = await buildSimplePdf({
+      ...label,
+      qr: { payload: 'exp://192.168.1.16:8082' },
+    });
+
+    expect(imageXObjectCount(withQr)).toBeGreaterThan(imageXObjectCount(without));
+    expect(imageXObjectCount(mockQr)).toBe(imageXObjectCount(without));
+    expect(pdfRaw(withQr)).not.toContain('exp://');
+    expect(pdfHasLatin(withQr, 'MAT-FAB-ROLL')).toBe(true);
+    expect(pdfHasOutlines(withQr)).toBe(true);
+  });
 });

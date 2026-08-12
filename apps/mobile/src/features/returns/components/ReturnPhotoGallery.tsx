@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   Image,
-  Modal,
   Pressable,
   ScrollView,
   useWindowDimensions,
@@ -9,6 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { ImageViewer } from '@/components/media/ImageViewer';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { useLocale } from '@/i18n';
@@ -31,10 +31,10 @@ export function ReturnPhotoGallery({
   emptyLabel,
   icon = 'images-outline',
 }: Props) {
-  const { t, isRTL, locale } = useLocale();
+  const { isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { width } = useWindowDimensions();
-  const [viewer, setViewer] = useState<string | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const thumb = Math.min(112, Math.round((width - theme.spacing.lg * 2 - theme.spacing.sm * 2) / 2.6));
   const resolved = uris
     .map((u) => resolveOrderMediaUri(u))
@@ -162,7 +162,7 @@ export function ReturnPhotoGallery({
               accessibilityLabel={`${title} ${index + 1}`}
               onPress={() => {
                 void haptics.selection();
-                setViewer(uri);
+                setViewerIndex(index);
               }}
               style={{
                 width: thumb,
@@ -195,34 +195,13 @@ export function ReturnPhotoGallery({
         </ScrollView>
       )}
 
-      <Modal
-        visible={Boolean(viewer)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setViewer(null)}
-      >
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.88)',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: theme.spacing.lg,
-          }}
-          onPress={() => setViewer(null)}
-        >
-          {viewer ? (
-            <Image
-              source={{ uri: viewer }}
-              style={{ width: '100%', height: '70%' }}
-              resizeMode="contain"
-            />
-          ) : null}
-          <AppText variant="caption" style={{ color: '#fff', marginTop: theme.spacing.md }}>
-            {t('common.close')}
-          </AppText>
-        </Pressable>
-      </Modal>
+      <ImageViewer
+        open={viewerIndex != null}
+        uris={resolved}
+        index={viewerIndex ?? 0}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </View>
   );
 }

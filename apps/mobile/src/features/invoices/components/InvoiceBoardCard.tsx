@@ -25,7 +25,7 @@ export function InvoiceBoardCard({
   invoice,
   onPress,
   onPdf,
-  currencySuffix = 'JOD',
+  currencySuffix = 'ILS',
   dealerFacing = false,
 }: Props) {
   const { t, isRTL, locale } = useLocale();

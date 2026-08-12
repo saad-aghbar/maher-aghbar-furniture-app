@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Keyboard, StatusBar, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StatusBar, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
@@ -40,32 +40,24 @@ export function LoginScreen() {
   const { t } = useLocale();
   const { theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [bioVisible, setBioVisible] = useState(false);
   const [bioKind, setBioKind] = useState<BiometricKind>('generic');
   const [bioBusy, setBioBusy] = useState(false);
 
   const { height: winH } = useWindowDimensions();
+  const layoutH = useRef(winH);
+  if (winH > layoutH.current) layoutH.current = winH;
   const colors = useMemo(() => getLoginColors(colorScheme), [colorScheme]);
   const darkArtwork = colorScheme === 'dark';
-  const logoWidth = keyboardOpen ? 160 : 260;
-  /** Sit form just under the settled lockup slot */
-  const formTopPad = Math.round(winH * 0.2 + logoWidth / 2.45 + 120);
+  const logoWidth = 260;
+  /** Sit form just under the settled lockup slot — keep this stable when the keyboard opens. */
+  const formTopPad = Math.round(layoutH.current * 0.2 + logoWidth / 2.45 + 120);
 
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
     resetBrandIntroSessionFlags();
   }
 
   const intro = useBrandIntroState({ autoPlay: true });
-
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', () => setKeyboardOpen(true));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOpen(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;

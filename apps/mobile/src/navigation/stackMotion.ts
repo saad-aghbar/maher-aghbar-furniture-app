@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 import { useLocale } from '@/i18n/useLocale';
+import { useTheme } from '@/theme';
 
 /** Leading-edge share of screen width that can start swipe-back. */
 export const SWIPE_BACK_EDGE_RATIO = 0.2;
@@ -17,7 +18,11 @@ export const SWIPE_BACK_EDGE_RATIO = 0.2;
  * right in RTL via native start/end mirroring) so a swipe from the far edge
  * does not dismiss by accident.
  */
-export function stackMotionOptionsFor(isRTL: boolean, screenWidth = 390) {
+export function stackMotionOptionsFor(
+  isRTL: boolean,
+  screenWidth = 390,
+  backgroundColor?: string,
+) {
   const edgeZone = Math.max(1, Math.round(screenWidth * SWIPE_BACK_EDGE_RATIO));
   return {
     headerShown: false,
@@ -30,6 +35,9 @@ export function stackMotionOptionsFor(isRTL: boolean, screenWidth = 390) {
     gestureResponseDistance: {
       end: edgeZone,
     },
+    ...(backgroundColor
+      ? { contentStyle: { backgroundColor } }
+      : {}),
   };
 }
 
@@ -40,5 +48,9 @@ export const stackMotionOptions = stackMotionOptionsFor(false);
 export function useStackMotionOptions() {
   const { isRTL } = useLocale();
   const { width } = useWindowDimensions();
-  return useMemo(() => stackMotionOptionsFor(isRTL, width), [isRTL, width]);
+  const { colors } = useTheme();
+  return useMemo(
+    () => stackMotionOptionsFor(isRTL, width, colors.background),
+    [isRTL, width, colors.background],
+  );
 }

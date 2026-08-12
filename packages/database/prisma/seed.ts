@@ -203,9 +203,22 @@ async function main() {
   });
   await prisma.systemSetting.upsert({
     where: { key: 'default_currency' },
-    update: { value: 'JOD' },
-    create: { key: 'default_currency', value: 'JOD' },
+    update: { value: 'ILS' },
+    create: { key: 'default_currency', value: 'ILS' },
   });
+  await Promise.all([
+    prisma.dealerPrice.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.supplierQuoteOffer.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.purchaseOrder.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.requestForQuotation.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.quotation.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.salesOrder.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.contract.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.invoice.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.payment.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.supplierInvoice.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+    prisma.supplierPayment.updateMany({ where: { currency: 'JOD' }, data: { currency: 'ILS' } }),
+  ]);
   await prisma.systemSetting.upsert({
     where: { key: 'company_name' },
     update: {
@@ -260,8 +273,8 @@ async function main() {
       subjectAr: 'عرض سعر جديد',
       subjectEn: 'New quotation',
       subjectHe: 'הצעת מחיר חדשה',
-      bodyAr: 'تم إرسال عرض السعر {{number}} بمبلغ {{total}} دينار.',
-      bodyEn: 'Quotation {{number}} for {{total}} JOD has been sent.',
+      bodyAr: 'تم إرسال عرض السعر {{number}} بمبلغ {{total}} شيكل.',
+      bodyEn: 'Quotation {{number}} for {{total}} ILS has been sent.',
       bodyHe: 'הצעת מחיר {{number}} בסך {{total}} נשלחה.',
     },
     {
@@ -280,8 +293,8 @@ async function main() {
       subjectAr: 'استلام دفعة',
       subjectEn: 'Payment received',
       subjectHe: 'תשלום התקבל',
-      bodyAr: 'تم استلام دفعة بمبلغ {{amount}} دينار.',
-      bodyEn: 'Payment of {{amount}} JOD received.',
+      bodyAr: 'تم استلام دفعة بمبلغ {{amount}} شيكل.',
+      bodyEn: 'Payment of {{amount}} ILS received.',
       bodyHe: 'התקבל תשלום של {{amount}}.',
     },
     {
@@ -396,8 +409,8 @@ async function main() {
       subjectAr: 'فاتورة جديدة',
       subjectEn: 'Invoice created',
       subjectHe: 'חשבונית נוצרה',
-      bodyAr: 'تم إنشاء الفاتورة {{number}} بمبلغ {{total}} دينار.',
-      bodyEn: 'Invoice {{number}} for {{total}} JOD was created.',
+      bodyAr: 'تم إنشاء الفاتورة {{number}} بمبلغ {{total}} شيكل.',
+      bodyEn: 'Invoice {{number}} for {{total}} ILS was created.',
       bodyHe: 'נוצרה חשבונית {{number}} בסך {{total}}.',
     },
     {

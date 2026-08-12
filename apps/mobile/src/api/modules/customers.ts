@@ -273,7 +273,7 @@ export async function upsertCustomerDealerPrice(
   return apiPost(`/customers/${encodeURIComponent(customerId)}/dealer-prices`, {
     productId: body.productId,
     price: body.price,
-    currency: body.currency ?? 'JOD',
+    currency: body.currency ?? 'ILS',
   });
 }
 

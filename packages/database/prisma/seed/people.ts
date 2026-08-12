@@ -5,6 +5,9 @@ import {
   CustomerType,
 } from '@prisma/client';
 import { COMPANY_DOMAIN, daysAgo, money } from './util';
+import { encryptPortalPassword } from './secret-box';
+
+const DEMO_PORTAL_PASSWORD = '123';
 
 export type StaffUser = {
   id: string;
@@ -46,6 +49,9 @@ async function ensureUser(
       email: opts.email,
       phone: opts.phone,
       passwordHash,
+      portalPasswordEnc: opts.customerId
+        ? encryptPortalPassword(DEMO_PORTAL_PASSWORD)
+        : undefined,
       firstName: opts.firstName,
       lastName: opts.lastName,
       preferredLanguage: Locale.ar,

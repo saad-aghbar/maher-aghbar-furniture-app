@@ -20,6 +20,12 @@ describe('stackMotionOptionsFor', () => {
     });
   });
 
+  it('paints the native stack card with the canvas color', () => {
+    expect(stackMotionOptionsFor(false, 400, '#1E1A1B').contentStyle).toEqual({
+      backgroundColor: '#1E1A1B',
+    });
+  });
+
   it('uses left slide on Android RTL without changing iOS animation', () => {
     const options = stackMotionOptionsFor(true);
     if (Platform.OS === 'android') {

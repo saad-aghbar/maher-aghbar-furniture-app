@@ -131,7 +131,7 @@ function BoardShell({
 function MetricRow({ items }: { items: ChatMetric[] }) {
   const { isRTL } = useLocale();
   const { colors, theme } = useTheme();
-  // 3+ tiles in a chat column are too narrow for "2,840 JOD" — stack as rows.
+  // 3+ tiles in a chat column are too narrow for "2,840 ILS" — stack as rows.
   const stacked = items.length >= 3;
 
   if (stacked) {

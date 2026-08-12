@@ -16,7 +16,7 @@ const emptyStmt: AccountStatement = {
   outstandingBalance: '250.50',
   totalInvoiced: '1000',
   totalPaid: '749.50',
-  currency: 'JOD',
+  currency: 'ILS',
   entries: [],
   payments: [],
 };
@@ -24,7 +24,7 @@ const emptyStmt: AccountStatement = {
 describe('selectStatementSummary', () => {
   it('formats outstanding and empty state', () => {
     const summary = selectStatementSummary(emptyStmt);
-    expect(summary.outstandingLabel).toBe('250.50 JOD');
+    expect(summary.outstandingLabel).toBe('250.50 ILS');
     expect(summary.isEmpty).toBe(true);
     expect(summary.customerLabel).toBe('Acme');
     expect(summary.paidRatio).toBeCloseTo(0.7495, 3);

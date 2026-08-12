@@ -16,10 +16,12 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { DestructiveButton } from '@/components/buttons/DestructiveButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { TextField } from '@/components/forms/TextField';
+import { PasswordField } from '@/components/forms/PasswordField';
 import { PhoneField } from '@/components/forms/PhoneField';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
+import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { Divider } from '@/components/layout/Divider';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
@@ -283,32 +285,76 @@ export function MoreAccountScreen({
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
-        <BackButton
-          onPress={() => {
-            if (router.canGoBack()) router.back();
-            else router.replace(backFallback);
-          }}
-          label={backLabel}
-        />
-        <View style={{ gap: theme.spacing.xs }}>
-          <AppText
-            variant="caption"
-            weight={locale === 'ar' ? 'regular' : 'medium'}
-            style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              color: colors.brand,
-            }}
-          >
-            {eyebrow}
-          </AppText>
-          <AppText variant="title" weight={titleWeight}>
-            {title}
-          </AppText>
-          <AppText variant="caption" color="muted" weight="regular">
-            {subtitle}
-          </AppText>
-        </View>
+        {dealerTitles ? (
+          <View style={{ gap: theme.spacing.xs }}>
+            <View
+              style={{
+                minHeight: theme.sizes.touch.min,
+                justifyContent: 'center',
+              }}
+            >
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  ...(isRTL ? { right: 0 } : { left: 0 }),
+                  zIndex: 1,
+                  justifyContent: 'center',
+                }}
+              >
+                <ScreenBackLead fallback={backFallback} />
+              </View>
+              <AppText
+                variant="title"
+                weight={titleWeight}
+                align="center"
+                numberOfLines={1}
+                style={{ paddingHorizontal: theme.sizes.touch.min + theme.spacing.sm }}
+              >
+                {title}
+              </AppText>
+            </View>
+            <AppText
+              variant="caption"
+              color="muted"
+              weight="regular"
+              align="center"
+              style={{ paddingHorizontal: theme.spacing.lg }}
+            >
+              {subtitle}
+            </AppText>
+          </View>
+        ) : (
+          <>
+            <BackButton
+              onPress={() => {
+                if (router.canGoBack()) router.back();
+                else router.replace(backFallback);
+              }}
+              label={backLabel}
+            />
+            <View style={{ gap: theme.spacing.xs }}>
+              <AppText
+                variant="caption"
+                weight={locale === 'ar' ? 'regular' : 'medium'}
+                style={{
+                  letterSpacing: locale === 'ar' ? 0 : 1.4,
+                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  color: colors.brand,
+                }}
+              >
+                {eyebrow}
+              </AppText>
+              <AppText variant="title" weight={titleWeight}>
+                {title}
+              </AppText>
+              <AppText variant="caption" color="muted" weight="regular">
+                {subtitle}
+              </AppText>
+            </View>
+          </>
+        )}
       </View>
 
       <View style={{ gap: theme.spacing.lg }}>
@@ -466,7 +512,23 @@ export function MoreAccountScreen({
 
                 <Divider compact />
               </>
-            ) : null}
+            ) : (
+              <>
+                <PasswordField
+                  label={t('auth.password')}
+                  value={user?.portalPassword ?? ''}
+                  editable={false}
+                  showLabel={t('auth.showPassword')}
+                  hideLabel={t('auth.hidePassword')}
+                  hint={
+                    user?.portalPassword
+                      ? t('mobile.more.portalPasswordHint')
+                      : t('mobile.more.portalPasswordUnavailable')
+                  }
+                />
+                <Divider compact />
+              </>
+            )}
 
             <AppText variant="label" weight={titleWeight}>
               {t('auth.mfaSetup')}

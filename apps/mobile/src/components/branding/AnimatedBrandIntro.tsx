@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Extrapolation,
@@ -32,6 +32,12 @@ export function AnimatedBrandIntro({
   testID = 'brand-intro',
 }: Props) {
   const { width: winW, height: winH } = useWindowDimensions();
+  const frameW = useRef(0);
+  const frameH = useRef(0);
+  if (winW > 0 && frameW.current === 0) frameW.current = winW;
+  if (winH > 0 && frameH.current === 0) frameH.current = winH;
+  const layoutW = frameW.current || winW;
+  const layoutH = frameH.current || winH;
   const [skipArmed, setSkipArmed] = useState(false);
   const { shared, skip, skipUnlockAt, mode, phase } = intro;
 
@@ -54,12 +60,12 @@ export function AnimatedBrandIntro({
   /** Lockup body (no M) sits in header slot */
   const bodyStyle = useAnimatedStyle(() => {
     const slot = shared.logoSlot.value;
-    const top = interpolate(slot, [0, 1], [winH * 0.36, winH * 0.2]);
-    return {
-      opacity: shared.bodyOpacity.value,
-      top,
-      left: (winW - logoWidth) / 2,
-    };
+      const top = interpolate(slot, [0, 1], [layoutH * 0.36, layoutH * 0.2]);
+      return {
+        opacity: shared.bodyOpacity.value,
+        top,
+        left: (layoutW - logoWidth) / 2,
+      };
   });
 
   /**
@@ -72,15 +78,15 @@ export function AnimatedBrandIntro({
     const bodyTop = interpolate(
       slot,
       [0, 1],
-      [winH * 0.36, winH * 0.2],
+      [layoutH * 0.36, layoutH * 0.2],
       Extrapolation.CLAMP,
     );
-    const lockupLeft = (winW - logoWidth) / 2;
+    const lockupLeft = (layoutW - logoWidth) / 2;
     const seatLeft = lockupLeft + logoWidth * T.mSlotX;
     const seatTop = bodyTop + lockupH * T.mSlotY;
 
-    const startLeft = (winW - seatW) / 2;
-    const startTop = winH * 0.38 - seatH / 2;
+    const startLeft = (layoutW - seatW) / 2;
+    const startTop = layoutH * 0.38 - seatH / 2;
 
     // Soft ease-in path: linger mid-screen, then settle into the seat
     const left = interpolate(

@@ -361,6 +361,8 @@ model User {
   email               String?   @unique
   phone               String?   @unique
   passwordHash        String
+  /** AES-GCM blob of the dealer portal password (null for staff). Never expose in list/detail selects. */
+  portalPasswordEnc   String?
   firstName           String
   lastName            String
   preferredLanguage   Locale    @default(ar)
@@ -690,7 +692,7 @@ model DealerPrice {
   productId  String
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   price      Decimal  @db.Decimal(18, 3)
-  currency   String   @default("JOD")
+  currency   String   @default("ILS")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -831,7 +833,7 @@ model SupplierQuoteOffer {
   supplierId        String
   supplier          Supplier        @relation(fields: [supplierId], references: [id])
   unitPrice         Decimal         @db.Decimal(18, 3)
-  currency          String          @default("JOD")
+  currency          String          @default("ILS")
   leadTimeDays      Int?
   qualityScore      Decimal?        @db.Decimal(3, 2)
   notes             String?
@@ -865,7 +867,7 @@ model PurchaseOrder {
   warehouse            Warehouse?          @relation(fields: [warehouseId], references: [id])
   orderDate            DateTime            @default(now())
   expectedDeliveryDate DateTime?
-  currency             String              @default("JOD")
+  currency             String              @default("ILS")
   paymentTermsDays     Int                 @default(30)
   status               PurchaseOrderStatus @default(DRAFT)
   subtotal             Decimal             @default(0) @db.Decimal(18, 3)
@@ -1144,7 +1146,7 @@ model RequestForQuotation {
   endCustomerFax       String?
   deliveryLat          Decimal?      @db.Decimal(10, 7)
   deliveryLng          Decimal?      @db.Decimal(10, 7)
-  currency             String        @default("JOD")
+  currency             String        @default("ILS")
   notes                String?
   internalNotes        String?
   aiProcessingStatus   AIJobStatus?
@@ -1208,7 +1210,7 @@ model Quotation {
   request              RequestForQuotation? @relation(fields: [requestId], references: [id])
   issueDate            DateTime        @default(now())
   expirationDate       DateTime?
-  currency             String          @default("JOD")
+  currency             String          @default("ILS")
   salesRepId           String?
   salesRep             User?           @relation("QuotationSalesRep", fields: [salesRepId], references: [id])
   status               QuotationStatus @default(DRAFT)
@@ -1301,7 +1303,7 @@ model SalesOrder {
   deliveryAddress      String?
   /// Dealer's own / end-customer PO reference (copied from RFQ at accept)
   externalOrderNumber  String?
-  currency             String           @default("JOD")
+  currency             String           @default("ILS")
   paymentTerms         String?
   status               SalesOrderStatus @default(DRAFT)
   priority             Priority         @default(NORMAL)
@@ -1369,7 +1371,7 @@ model Contract {
   startDate     DateTime?
   endDate       DateTime?
   contractValue Decimal        @db.Decimal(18, 3)
-  currency      String         @default("JOD")
+  currency      String         @default("ILS")
   paymentSchedule String?
   deliveryMilestones String?
   warranty      String?
@@ -1705,7 +1707,7 @@ model Invoice {
   salesOrder        SalesOrder?   @relation(fields: [salesOrderId], references: [id])
   invoiceDate       DateTime      @default(now())
   dueDate           DateTime?
-  currency          String        @default("JOD")
+  currency          String        @default("ILS")
   status            InvoiceStatus @default(DRAFT)
   subtotal          Decimal       @default(0) @db.Decimal(18, 3)
   discountTotal     Decimal       @default(0) @db.Decimal(18, 3)
@@ -1755,7 +1757,7 @@ model Payment {
   invoice         Invoice?      @relation(fields: [invoiceId], references: [id])
   paymentDate     DateTime      @default(now())
   amount          Decimal       @db.Decimal(18, 3)
-  currency        String        @default("JOD")
+  currency        String        @default("ILS")
   method          PaymentMethod @default(BANK_TRANSFER)
   referenceNumber String?
   bank            String?
@@ -1799,7 +1801,7 @@ model SupplierInvoice {
   goodsReceipt      GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id])
   invoiceDate       DateTime      @default(now())
   dueDate           DateTime?
-  currency          String        @default("JOD")
+  currency          String        @default("ILS")
   status            InvoiceStatus @default(ISSUED)
   subtotal          Decimal       @default(0) @db.Decimal(18, 3)
   taxTotal          Decimal       @default(0) @db.Decimal(18, 3)
@@ -1845,7 +1847,7 @@ model SupplierPayment {
   supplierInvoice   SupplierInvoice? @relation(fields: [supplierInvoiceId], references: [id])
   paymentDate       DateTime         @default(now())
   amount            Decimal          @db.Decimal(18, 3)
-  currency          String           @default("JOD")
+  currency          String           @default("ILS")
   method            PaymentMethod    @default(BANK_TRANSFER)
   referenceNumber   String?
   notes             String?

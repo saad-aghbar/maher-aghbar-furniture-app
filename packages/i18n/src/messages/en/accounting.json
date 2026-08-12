@@ -32,7 +32,7 @@
   "paymentRecorded": "Payment recorded.",
   "createInvoice": "Create invoice",
   "recordPayment": "Record payment",
-  "amountJod": "Amount (JOD)",
+  "amountJod": "Amount (ILS)",
   "invoiceLabel": "Invoice: {number}",
   "outstanding": "Outstanding",
   "overdueHint": "Overdue",

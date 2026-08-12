@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   Keyboard,
@@ -10,7 +10,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { runOnJS, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { KeyboardDismissAccessory } from '@/components/forms/KeyboardDismissAccessory';
@@ -18,7 +19,8 @@ import { useCodeScannerState } from '@/components/scan/CodeScannerProvider';
 import { useLocationMapVisibility } from '@/components/maps/LocationMapVisibility';
 import { useSheetOverlayYield } from '@/components/sheets/SheetOverlayYield';
 import { useAccessoryCameraState } from '@/features/inventory/components/AccessoryCameraProvider';
-import { BottomSheetTransition } from '@/motion';
+import { BottomSheetTransition, shouldDismissSheet } from '@/motion/BottomSheetTransition';
+import { springs, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
 type BottomSheetProps = {
@@ -79,6 +81,14 @@ export function BottomSheet({
   const wasOpenRef = useRef(false);
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  const reduceMotion = useReducedMotion();
+  const dragY = useSharedValue(0);
+  const dragging = useSharedValue(0);
+  const heightSV = useSharedValue(360);
+  const reduceSV = useSharedValue(0);
 
   const hostBlocked =
     isScanning || isAccessoryCamera || isLocationMap || (!overlay && isOverlayYield);
@@ -193,6 +203,64 @@ export function BottomSheet({
     setAnimHeight((prev) => (Math.abs(prev - next) > 2 ? next : prev));
   };
 
+  useEffect(() => {
+    heightSV.value = resolvedAnimHeight;
+  }, [heightSV, resolvedAnimHeight]);
+
+  useEffect(() => {
+    reduceSV.value = reduceMotion ? 1 : 0;
+  }, [reduceMotion, reduceSV]);
+
+  useEffect(() => {
+    if (!open) return;
+    dragY.value = 0;
+    dragging.value = 0;
+  }, [dragY, dragging, open]);
+
+  const closeFromHandle = useCallback(() => {
+    closeRef.current();
+  }, []);
+
+  const dismissPan = useMemo(
+    () =>
+      Gesture.Pan()
+        .maxPointers(1)
+        .activeOffsetY(10)
+        .failOffsetX([-24, 24])
+        .onStart(() => {
+          dragging.value = 1;
+        })
+        .onUpdate((e) => {
+          if (reduceSV.value) return;
+          dragY.value = Math.max(0, e.translationY);
+        })
+        .onEnd((e) => {
+          const y = Math.max(0, e.translationY);
+          const v = e.velocityY;
+          const h = heightSV.value;
+          dragging.value = 0;
+          if (shouldDismissSheet(y, v, h)) {
+            runOnJS(closeFromHandle)();
+            return;
+          }
+          if (reduceSV.value) {
+            dragY.value = 0;
+            return;
+          }
+          dragY.value = withSpring(0, springs.snappy);
+        })
+        .onFinalize((_e, success) => {
+          dragging.value = 0;
+          if (success) return;
+          if (reduceSV.value) {
+            dragY.value = 0;
+            return;
+          }
+          dragY.value = withSpring(0, springs.snappy);
+        }),
+    [closeFromHandle, dragY, dragging, heightSV, reduceSV],
+  );
+
   if (!mounted) return null;
 
   return (
@@ -210,6 +278,8 @@ export function BottomSheet({
             progress={progress}
             sheetHeight={resolvedAnimHeight}
             onBackdropPress={onClose}
+            dragY={dragY}
+            dragging={dragging}
           >
             <View
               accessibilityViewIsModal
@@ -221,7 +291,6 @@ export function BottomSheet({
                   borderTopRightRadius: theme.radius.xl,
                   borderTopWidth: 1,
                   borderColor: colors.border,
-                  paddingTop: theme.spacing.md,
                   paddingHorizontal: theme.spacing.lg,
                   paddingBottom: bottomPad,
                   marginBottom: keyboardHeight,
@@ -234,24 +303,37 @@ export function BottomSheet({
                 style,
               ]}
             >
-              <View
-                style={{
-                  alignSelf: 'center',
-                  width: 36,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: colors.borderStrong,
-                  marginBottom: theme.spacing.md,
-                }}
-              />
-              {title ? (
-                <AppText
-                  variant="heading"
-                  style={{ marginBottom: theme.spacing.md, alignSelf: 'stretch' }}
+              <GestureDetector gesture={dismissPan}>
+                <View
+                  collapsable={false}
+                  style={{
+                    marginHorizontal: -theme.spacing.lg,
+                    paddingHorizontal: theme.spacing.lg,
+                    paddingTop: theme.spacing.md,
+                    minHeight: theme.sizes.touch.min,
+                    alignItems: 'stretch',
+                  }}
                 >
-                  {title}
-                </AppText>
-              ) : null}
+                  <View
+                    style={{
+                      alignSelf: 'center',
+                      width: 36,
+                      height: 4,
+                      borderRadius: 2,
+                      backgroundColor: colors.borderStrong,
+                      marginBottom: theme.spacing.md,
+                    }}
+                  />
+                  {title ? (
+                    <AppText
+                      variant="heading"
+                      style={{ marginBottom: theme.spacing.md, alignSelf: 'stretch' }}
+                    >
+                      {title}
+                    </AppText>
+                  ) : null}
+                </View>
+              </GestureDetector>
               <View style={fitContent ? styles.fitBody : styles.fillBody}>{children}</View>
             </View>
           </BottomSheetTransition>

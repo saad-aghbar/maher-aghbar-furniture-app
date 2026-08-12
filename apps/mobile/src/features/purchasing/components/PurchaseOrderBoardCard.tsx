@@ -155,7 +155,7 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
             dir="ltr"
             style={{ fontSize: 16, textAlign: isRTL ? 'left' : 'right' }}
           >
-            {`${order.totalLabel} JOD`}
+            {`${order.totalLabel} ${t('common.currency')}`}
           </AppText>
         </View>
       </View>

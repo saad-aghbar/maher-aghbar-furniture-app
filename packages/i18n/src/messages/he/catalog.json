@@ -345,7 +345,7 @@
   "selectSalesOrder": "בחר הזמנת מכירה.",
   "amountCustomerRequired": "סכום ולקוח נדרשים.",
   "customerItemsRequired": "לקוח ופריטים נדרשים",
-  "amountJod": "סכום (JOD)",
+  "amountJod": "סכום (₪)",
   "invoiceLabel": "חשבונית: {number}",
   "pdf": "PDF",
   "quotations": "הצעות מחיר",

@@ -10,11 +10,13 @@ import { AppTextInput } from './AppTextInput';
 type PasswordFieldProps = {
   label: string;
   value: string;
-  onChangeText: (text: string) => void;
+  onChangeText?: (text: string) => void;
   error?: string;
+  hint?: string;
   containerStyle?: StyleProp<ViewStyle>;
   showLabel: string;
   hideLabel: string;
+  editable?: boolean;
 };
 
 export function PasswordField({
@@ -22,9 +24,11 @@ export function PasswordField({
   value,
   onChangeText,
   error,
+  hint,
   containerStyle,
   showLabel,
   hideLabel,
+  editable = true,
 }: PasswordFieldProps) {
   const { colors, theme, colorScheme } = useTheme();
   const { isRTL, locale } = useLocale();
@@ -52,11 +56,12 @@ export function PasswordField({
         <AppTextInput
           accessibilityLabel={label}
           value={value}
-          onChangeText={onChangeText}
+          onChangeText={editable ? onChangeText : undefined}
+          editable={editable}
           secureTextEntry={!visible}
           autoCapitalize="none"
           autoCorrect={false}
-          textContentType="password"
+          textContentType={editable ? 'password' : 'none'}
           placeholderTextColor={colors.textMuted}
           style={{
             flex: 1,
@@ -88,6 +93,10 @@ export function PasswordField({
       {error ? (
         <AppText variant="caption" color="error">
           {error}
+        </AppText>
+      ) : hint ? (
+        <AppText variant="caption" color="muted">
+          {hint}
         </AppText>
       ) : null}
     </View>

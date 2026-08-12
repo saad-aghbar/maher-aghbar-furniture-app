@@ -75,7 +75,7 @@ export function toProductCard(
     imageUrl: thumb ?? imageUrls[0] ?? null,
     imageUrls: thumb ? [thumb, ...imageUrls.filter((u) => u !== thumb)] : imageUrls,
     price: resolveDealerBrowsePrice(item),
-    currency: item.priceCurrency || 'JOD',
+    currency: item.priceCurrency || 'ILS',
     isAvailable: item.isActive !== false,
     categoryName: localizedCategoryName(item, locale),
     dimensionHint: dimensionHint(item),

@@ -18,6 +18,7 @@ import {
   generateTotpSecret,
   verifyTotp,
 } from '../../common/helpers/totp.util';
+import { decryptPortalPassword } from '../../common/helpers/secret-box';
 
 @Injectable()
 export class AuthService {
@@ -358,12 +359,15 @@ export class AuthService {
     const authUser = await this.loadAuthUser(userId);
     const row = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { mfaEnabled: true, mfaSecret: true },
+      select: { mfaEnabled: true, mfaSecret: true, portalPasswordEnc: true },
     });
     return {
       ...authUser,
       mfaEnabled: row.mfaEnabled,
       mfaPending: Boolean(row.mfaSecret && !row.mfaEnabled),
+      ...(authUser.customerId
+        ? { portalPassword: decryptPortalPassword(row.portalPasswordEnc) }
+        : {}),
     };
   }
 

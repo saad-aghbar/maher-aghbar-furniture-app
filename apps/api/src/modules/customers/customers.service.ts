@@ -18,6 +18,7 @@ import {
   UpdateCustomerDto,
 } from './dto/customer.dto';
 import { TRANSLATE_PROVIDER } from '../../integrations/integrations.module';
+import { encryptPortalPassword } from '../../common/helpers/secret-box';
 
 const CLOSED_ORDER_STATUSES: SalesOrderStatus[] = [
   SalesOrderStatus.DELIVERED,
@@ -339,6 +340,7 @@ export class CustomersService {
           username,
           email: trimOrUndef(dto.email)?.toLowerCase(),
           passwordHash,
+          portalPasswordEnc: encryptPortalPassword(portalPassword),
           firstName: nameEn ?? nameAr ?? name,
           lastName: '',
           phone: trimOrUndef(dto.phone),

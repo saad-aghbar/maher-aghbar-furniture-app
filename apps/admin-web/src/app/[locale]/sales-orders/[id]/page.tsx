@@ -316,21 +316,21 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         <Card className="maher-list-card p-4">
           <p className="text-xs text-text-secondary">{tSales('sellerPrice')}</p>
           <p className="mt-1 font-semibold" dir="ltr">
-            {seller.toFixed(2)} JOD
+            {seller.toFixed(2)} {tCommon('currency')}
           </p>
           <p className="mt-0.5 text-[11px] text-text-tertiary">{tSales('autoCalculated')}</p>
         </Card>
         <Card className="maher-list-card p-4">
           <p className="text-xs text-text-secondary">{tSales('productionPrice')}</p>
           <p className="mt-1 font-semibold" dir="ltr">
-            {production.toFixed(2)} JOD
+            {production.toFixed(2)} {tCommon('currency')}
           </p>
           <p className="mt-0.5 text-[11px] text-text-tertiary">{tSales('fromInventoryCosts')}</p>
         </Card>
         <Card className="maher-list-card p-4">
           <p className="text-xs text-text-secondary">{tSales('profit')}</p>
           <p className="mt-1 font-semibold" dir="ltr">
-            {profit.toFixed(2)} JOD
+            {profit.toFixed(2)} {tCommon('currency')}
           </p>
         </Card>
       </div>
@@ -477,7 +477,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
           <p className="text-xs text-text-tertiary">{tSales('fromInventoryCosts')}</p>
         </div>
         <p className="text-2xl font-bold tracking-tight" dir="ltr">
-          {production.toFixed(2)} <span className="text-base font-medium text-text-secondary">JOD</span>
+          {production.toFixed(2)} <span className="text-base font-medium text-text-secondary">{tCommon('currency')}</span>
         </p>
         <div className="maher-stagger grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {(
@@ -491,7 +491,7 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
             <div key={key} className="maher-list-card rounded-xl border border-border p-3">
               <p className="text-xs text-text-tertiary">{label}</p>
               <p className="mt-1 font-semibold" dir="ltr">
-                {cost != null ? Number(cost).toFixed(2) : '0.00'} JOD
+                {cost != null ? Number(cost).toFixed(2) : '0.00'} {tCommon('currency')}
               </p>
               {qty != null && Number(qty) > 0 ? (
                 <p className="text-[11px] text-text-tertiary" dir="ltr">

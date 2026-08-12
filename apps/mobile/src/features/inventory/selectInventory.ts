@@ -76,6 +76,46 @@ export function sumOnHand(item: InventoryItem): number {
   return (item.balances ?? []).reduce((s, b) => s + toNumber(b.availableQty), 0);
 }
 
+function warehouseLabel(
+  b: NonNullable<InventoryItem['balances']>[number],
+  locale: string,
+): string {
+  const wh =
+    locale === 'ar'
+      ? b.warehouse?.nameAr || b.warehouse?.nameEn || b.warehouse?.code
+      : b.warehouse?.nameEn || b.warehouse?.nameAr || b.warehouse?.code;
+  return wh || '—';
+}
+
+/** One row per warehouse — balances are unique on item + warehouse + location. */
+function collapseBalancesByWarehouse(
+  balances: NonNullable<InventoryItem['balances']>,
+  locale: string,
+  unit: string,
+): InventoryItemCardModel['balances'] {
+  const byWh = new Map<
+    string,
+    { warehouseId: string; warehouseName: string; availableQty: number }
+  >();
+  for (const b of balances) {
+    const qty = toNumber(b.availableQty);
+    const existing = byWh.get(b.warehouseId);
+    if (existing) {
+      existing.availableQty += qty;
+      continue;
+    }
+    byWh.set(b.warehouseId, {
+      warehouseId: b.warehouseId,
+      warehouseName: warehouseLabel(b, locale),
+      availableQty: qty,
+    });
+  }
+  return [...byWh.values()].map((row) => ({
+    ...row,
+    quantityLabel: `${formatQty(row.availableQty)} ${unit}`,
+  }));
+}
+
 export function selectInventoryItemCard(
   item: InventoryItem,
   locale: string,
@@ -110,19 +150,11 @@ export function selectInventoryItemCard(
     stockStatus: isLowStock ? 'LOW_STOCK' : 'IN_STOCK',
     showCost: hasCost,
     costLabel: hasCost ? formatMoney(toNumber(item.standardCost)) : null,
-    balances: (item.balances ?? []).map((b) => {
-      const qty = toNumber(b.availableQty);
-      const wh =
-        locale === 'ar'
-          ? b.warehouse?.nameAr || b.warehouse?.nameEn || b.warehouse?.code
-          : b.warehouse?.nameEn || b.warehouse?.nameAr || b.warehouse?.code;
-      return {
-        warehouseId: b.warehouseId,
-        warehouseName: wh || '—',
-        availableQty: qty,
-        quantityLabel: `${formatQty(qty)} ${item.unit || 'pcs'}`,
-      };
-    }),
+    balances: collapseBalancesByWarehouse(
+      item.balances ?? [],
+      locale,
+      item.unit || 'pcs',
+    ),
   };
 }
 

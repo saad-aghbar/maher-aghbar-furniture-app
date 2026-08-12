@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import PDFDocument from 'pdfkit';
 import fontkit from 'fontkit';
+import QRCode from 'qrcode';
 
 export type PdfLocale = 'en' | 'ar' | 'he';
 export type PdfTheme = 'white' | 'brown';
@@ -17,6 +18,8 @@ export interface SimplePdfDoc {
   footerLines?: string[];
   locale?: PdfLocale;
   theme?: PdfTheme;
+  /** Scannable QR image drawn under footerLines (start-aligned). */
+  qr?: { payload: string };
 }
 
 export type PdfRenderOptions = {
@@ -31,6 +34,9 @@ type FkFont = {
   layout: (
     text: string,
     features?: string[],
+    script?: string,
+    language?: string,
+    direction?: string,
   ) => {
     glyphs: { path: { commands: GlyphCommand[] } }[];
     positions: {
@@ -65,6 +71,9 @@ const LOCKUP_WIDTH = 158;
 const LOCKUP_Y = 18;
 const TILE = 78;
 const TILE_GAP = 36;
+const QR_SIZE = 110;
+const MOCK_SCAN_CODE = /^(exp:|https?:|file:)/i;
+const ISOLATE_PUNCT = new Set([':', '/']);
 /** Helvetica em-ascent — shared baseline so mixed EN/AR/HE sit on one line. */
 const LATIN_ASCENT = 0.718;
 
@@ -72,7 +81,12 @@ const ARABIC_FEATURES = [
   'ccmp',
   'locl',
   'rlig',
+  'liga',
   'calt',
+  'curs',
+  'kern',
+  'mark',
+  'mkmk',
   'init',
   'medi',
   'fina',
@@ -116,7 +130,7 @@ type Fonts = {
   hebrewBold: FkFont | null;
 };
 type ScriptKind = 'latin' | 'arabic' | 'hebrew';
-type ScriptRun = { script: ScriptKind; text: string };
+export type ScriptRun = { script: ScriptKind; text: string };
 
 function resolveLocale(raw?: string | null): PdfLocale {
   const v = String(raw ?? '')
@@ -184,16 +198,36 @@ function scriptOf(ch: string): ScriptKind {
   return 'latin';
 }
 
+function isIsolatedPunctRun(run: ScriptRun): boolean {
+  return run.script === 'latin' && [...run.text].every((ch) => ISOLATE_PUNCT.has(ch));
+}
+
 export function splitScriptRuns(text: string): ScriptRun[] {
   const runs: ScriptRun[] = [];
   for (const ch of String(text ?? '')) {
+    if (ISOLATE_PUNCT.has(ch)) {
+      runs.push({ script: 'latin', text: ch });
+      continue;
+    }
     const inherit = /\s/.test(ch);
     const script = inherit && runs.length ? runs[runs.length - 1]!.script : scriptOf(ch);
     const last = runs[runs.length - 1];
-    if (last && last.script === script) last.text += ch;
+    if (last && last.script === script && !isIsolatedPunctRun(last)) last.text += ch;
     else runs.push({ script, text: ch });
   }
   return runs.filter((r) => r.text.length > 0);
+}
+
+/** Visual LTR paint order. Does not reverse characters inside a run. */
+export function visualRuns(runs: ScriptRun[], rtl: boolean): ScriptRun[] {
+  return rtl ? [...runs].reverse() : runs;
+}
+
+/** Drop Expo/dev URLs that were stored as barcode/QR by a mock scanner. */
+export function printableScanCode(value?: string | null, fallback = '—'): string {
+  const v = String(value ?? '').trim();
+  if (!v || MOCK_SCAN_CODE.test(v)) return fallback;
+  return v;
 }
 
 function openOutlineFont(fileName: string, label: string): FkFont | null {
@@ -235,6 +269,17 @@ function featuresFor(script: ScriptKind): string[] | undefined {
   return script === 'arabic' ? ARABIC_FEATURES : undefined;
 }
 
+function layoutScript(script: ScriptKind): { script: string; direction: 'rtl' | 'ltr' } {
+  if (script === 'arabic') return { script: 'arab', direction: 'rtl' };
+  if (script === 'hebrew') return { script: 'hebr', direction: 'rtl' };
+  return { script: 'latn', direction: 'ltr' };
+}
+
+function layoutRun(font: FkFont, text: string, script: ScriptKind) {
+  const tag = layoutScript(script);
+  return font.layout(text, featuresFor(script), tag.script, undefined, tag.direction);
+}
+
 function measureLatin(
   doc: PDFKit.PDFDocument,
   text: string,
@@ -247,7 +292,7 @@ function measureLatin(
 }
 
 function measureOutline(font: FkFont, text: string, script: ScriptKind, size: number): number {
-  const run = font.layout(text, featuresFor(script));
+  const run = layoutRun(font, text, script);
   return (run.advanceWidth / font.unitsPerEm) * size;
 }
 
@@ -274,17 +319,55 @@ function measureRuns(
   return runs.reduce((sum, run) => sum + measureRun(doc, fonts, run, size, bold), 0);
 }
 
-function paintGlyphPath(doc: PDFKit.PDFDocument, commands: GlyphCommand[]) {
+/**
+ * Draw fontkit paths in PDF points (no tiny CTM scale, no negative Y scale).
+ * iOS PDFKit treats `scale(s, -s)` and `scale(0.01)` outlines as isolated Arabic.
+ */
+function paintGlyphPath(
+  doc: PDFKit.PDFDocument,
+  commands: GlyphCommand[],
+  scale: number,
+) {
   if (!commands.length) return;
+  const sx = (v: number) => v * scale;
+  const sy = (v: number) => -v * scale;
+  let lx = 0;
+  let ly = 0;
   for (const cmd of commands) {
     const a = cmd.args;
-    if (cmd.command === 'moveTo') doc.moveTo(a[0]!, a[1]!);
-    else if (cmd.command === 'lineTo') doc.lineTo(a[0]!, a[1]!);
-    else if (cmd.command === 'quadraticCurveTo') {
-      doc.quadraticCurveTo(a[0]!, a[1]!, a[2]!, a[3]!);
+    if (cmd.command === 'moveTo') {
+      lx = sx(a[0]!);
+      ly = sy(a[1]!);
+      doc.moveTo(lx, ly);
+    } else if (cmd.command === 'lineTo') {
+      lx = sx(a[0]!);
+      ly = sy(a[1]!);
+      doc.lineTo(lx, ly);
+    } else if (cmd.command === 'quadraticCurveTo') {
+      const x1 = sx(a[0]!);
+      const y1 = sy(a[1]!);
+      const x2 = sx(a[2]!);
+      const y2 = sy(a[3]!);
+      const cx1 = lx + (2 / 3) * (x1 - lx);
+      const cy1 = ly + (2 / 3) * (y1 - ly);
+      const cx2 = x2 + (2 / 3) * (x1 - x2);
+      const cy2 = y2 + (2 / 3) * (y1 - y2);
+      doc.bezierCurveTo(cx1, cy1, cx2, cy2, x2, y2);
+      lx = x2;
+      ly = y2;
     } else if (cmd.command === 'bezierCurveTo') {
-      doc.bezierCurveTo(a[0]!, a[1]!, a[2]!, a[3]!, a[4]!, a[5]!);
-    } else if (cmd.command === 'closePath') doc.closePath();
+      const x1 = sx(a[0]!);
+      const y1 = sy(a[1]!);
+      const x2 = sx(a[2]!);
+      const y2 = sy(a[3]!);
+      const x3 = sx(a[4]!);
+      const y3 = sy(a[5]!);
+      doc.bezierCurveTo(x1, y1, x2, y2, x3, y3);
+      lx = x3;
+      ly = y3;
+    } else if (cmd.command === 'closePath') {
+      doc.closePath();
+    }
   }
   doc.fill();
 }
@@ -299,20 +382,22 @@ function drawOutlined(
   size: number,
   color: string,
 ) {
-  const run = font.layout(text, featuresFor(script));
+  const run = layoutRun(font, text, script);
   const scale = size / font.unitsPerEm;
   const baseline = y + size * LATIN_ASCENT;
   doc.save();
   doc.fillColor(color);
   doc.translate(x, baseline);
-  doc.scale(scale, -scale);
   let gx = 0;
   for (let i = 0; i < run.glyphs.length; i++) {
     const glyph = run.glyphs[i]!;
     const pos = run.positions[i]!;
     doc.save();
-    doc.translate(gx + (pos.xOffset || 0), pos.yOffset || 0);
-    paintGlyphPath(doc, glyph.path.commands);
+    doc.translate(
+      (gx + (pos.xOffset || 0)) * scale,
+      -(pos.yOffset || 0) * scale,
+    );
+    paintGlyphPath(doc, glyph.path.commands, scale);
     doc.restore();
     gx += pos.xAdvance;
   }
@@ -478,6 +563,7 @@ type DrawTextOpts = {
   bold?: boolean;
   color: string;
   fonts: Fonts;
+  rtl: boolean;
   lineBreak?: boolean;
   ellipsis?: boolean;
 };
@@ -490,12 +576,13 @@ function drawMixedText(
   const text = String(raw ?? '');
   const bold = !!opts.bold;
   const linePitch = opts.size + 3;
+  const rtl = opts.rtl;
 
   if (!opts.lineBreak) {
     const runs = opts.ellipsis
       ? ellipsizeRuns(doc, opts.fonts, text, opts.width, opts.size, bold)
       : splitScriptRuns(text);
-    paintLine(doc, runs, {
+    paintLine(doc, visualRuns(runs, rtl), {
       x: opts.x,
       y: opts.y,
       width: opts.width,
@@ -529,7 +616,7 @@ function drawMixedText(
     }
   }
   lines.forEach((runs, i) => {
-    paintLine(doc, runs, {
+    paintLine(doc, visualRuns(runs, rtl), {
       x: opts.x,
       y: opts.y + i * linePitch,
       width: opts.width,
@@ -708,6 +795,7 @@ function drawTableHeader(
       bold: true,
       color: palette.muted,
       fonts,
+      rtl,
       lineBreak: false,
       ellipsis: true,
     });
@@ -722,6 +810,21 @@ function drawTableHeader(
   doc.y += 8;
 }
 
+async function qrPngBuffer(payload?: string): Promise<Buffer | null> {
+  const value = printableScanCode(payload, '');
+  if (!value) return null;
+  try {
+    return await QRCode.toBuffer(value, {
+      type: 'png',
+      margin: 1,
+      width: 256,
+      errorCorrectionLevel: 'M',
+    });
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Build a branded application/pdf Buffer (white or brown letterhead + watermark).
  */
@@ -731,6 +834,7 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
   const rtl = locale === 'ar' || locale === 'he';
   const palette = THEME[theme];
   const contact = companyContact(locale);
+  const qrPng = await qrPngBuffer(docSpec.qr?.payload);
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -765,6 +869,7 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
       bold: true,
       color: palette.accent,
       fonts,
+      rtl,
       lineBreak: false,
     });
     doc.y += 6;
@@ -780,6 +885,7 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
         bold: true,
         color: palette.text,
         fonts,
+        rtl,
         ellipsis: true,
       });
       doc.y += 4;
@@ -796,6 +902,7 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
         size: 9,
         color: palette.muted,
         fonts,
+        rtl,
         ellipsis: true,
       });
       doc.y += 2;
@@ -861,6 +968,7 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
           size: 9,
           color: palette.text,
           fonts,
+          rtl,
           ellipsis: kind === 'text',
           lineBreak: kind === 'text',
         });
@@ -868,31 +976,50 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
       doc.y = y + rowHeight + 5;
     }
 
-    if (docSpec.footerLines?.length) {
-      const need = 10 + docSpec.footerLines.length * 16;
+    const footerCount = docSpec.footerLines?.length ?? 0;
+    const qrBlock = qrPng ? QR_SIZE + 16 : 0;
+    if (footerCount || qrPng) {
+      const need = 10 + footerCount * 20 + qrBlock;
       if (doc.y + need > contentBottom(doc)) {
         doc.addPage();
       } else {
         doc.y += 8;
       }
-      for (const line of docSpec.footerLines) {
-        if (doc.y + 16 > contentBottom(doc)) {
-          doc.addPage();
-        }
-        drawMixedText(doc, String(line), {
-          x: PAGE_MARGIN,
-          y: doc.y,
-          width: usable,
-          align,
-          height: 14,
-          size: 10,
-          bold: true,
-          color: palette.text,
-          fonts,
-          ellipsis: true,
-        });
-        doc.y += 2;
+    }
+
+    for (const line of docSpec.footerLines ?? []) {
+      if (doc.y + 20 > contentBottom(doc)) {
+        doc.addPage();
       }
+      drawMixedText(doc, String(line), {
+        x: PAGE_MARGIN,
+        y: doc.y,
+        width: usable,
+        align,
+        height: 18,
+        size: 13,
+        bold: false,
+        color: palette.text,
+        fonts,
+        rtl,
+        ellipsis: true,
+      });
+      doc.y += 2;
+    }
+
+    if (qrPng) {
+      if (doc.y + QR_SIZE + 8 > contentBottom(doc)) {
+        doc.addPage();
+      } else {
+        doc.y += 8;
+      }
+      const qrX = rtl ? PAGE_MARGIN + usable - QR_SIZE : PAGE_MARGIN;
+      try {
+        doc.image(qrPng, qrX, doc.y, { width: QR_SIZE });
+      } catch {
+        /* ignore decode errors */
+      }
+      doc.y += QR_SIZE + 8;
     }
 
     doc.end();

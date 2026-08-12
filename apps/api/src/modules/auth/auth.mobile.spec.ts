@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../common/prisma.service';
+import { encryptSecret } from '../../common/helpers/secret-box';
 
 function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
@@ -278,5 +279,47 @@ describe('AuthService mobile auth', () => {
         lockedUntil: null,
       }),
     });
+  });
+
+  it('me returns portalPassword for dealer users only', async () => {
+    const key = 'dev-access-secret-change-me-min-32-chars!!';
+    process.env.JWT_ACCESS_SECRET = key;
+    const enc = encryptSecret('123', key);
+
+    prisma.user.findFirstOrThrow.mockResolvedValue(
+      baseUser({
+        id: 'dealer-1',
+        username: 'nile',
+        customerId: 'cus-1',
+        roles: [
+          {
+            role: {
+              code: 'CUSTOMER',
+              permissions: [{ permission: { code: 'catalog.read' } }],
+            },
+          },
+        ],
+      }),
+    );
+    prisma.user.findUniqueOrThrow.mockResolvedValue({
+      mfaEnabled: false,
+      mfaSecret: null,
+      portalPasswordEnc: enc,
+    });
+
+    const dealer = await service.me('dealer-1');
+    expect(dealer.portalPassword).toBe('123');
+    expect(dealer.customerId).toBe('cus-1');
+
+    prisma.user.findFirstOrThrow.mockResolvedValue(baseUser());
+    prisma.user.findUniqueOrThrow.mockResolvedValue({
+      mfaEnabled: true,
+      mfaSecret: null,
+      portalPasswordEnc: enc,
+    });
+
+    const staff = await service.me('user-1');
+    expect(staff).not.toHaveProperty('portalPassword');
+    expect(staff.mfaEnabled).toBe(true);
   });
 });

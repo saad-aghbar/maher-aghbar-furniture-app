@@ -549,11 +549,11 @@ export class CustomerRelationsController {
         customerId,
         productId: dto.productId,
         price: dto.price,
-        currency: dto.currency ?? 'JOD',
+        currency: dto.currency ?? 'ILS',
       },
       update: {
         price: dto.price,
-        currency: dto.currency ?? 'JOD',
+        currency: dto.currency ?? 'ILS',
       },
       include: {
         product: {

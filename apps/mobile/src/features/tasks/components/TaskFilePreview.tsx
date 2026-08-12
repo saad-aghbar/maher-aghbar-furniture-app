@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Image,
   Linking,
-  Modal,
-  Pressable,
   ScrollView,
   useWindowDimensions,
   View,
@@ -12,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getApiBaseUrl } from '@/api/config';
 import { resolveDocumentUrl } from '@/api/modules/uploads';
 import { AppText } from '@/components/AppText';
+import { ImageViewer } from '@/components/media/ImageViewer';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -57,7 +56,7 @@ export function TaskFilePreview({
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [uris, setUris] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState<Record<string, boolean>>({});
-  const [viewer, setViewer] = useState<{ uri: string; label: string } | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const thumb = Math.min(
     132,
@@ -92,6 +91,16 @@ export function TaskFilePreview({
   const otherFiles = files.filter((f) => !isImage(f));
   const mediaFiles = preferImages ? imageFiles : files;
   const showAsGallery = preferImages || imageFiles.length === files.length;
+  const galleryUris = imageFiles
+    .map((file) => uris[file.id])
+    .filter((uri): uri is string => Boolean(uri));
+
+  const openImage = (file: TaskFile) => {
+    const uri = uris[file.id];
+    if (!uri) return;
+    const next = galleryUris.indexOf(uri);
+    setViewerIndex(next >= 0 ? next : 0);
+  };
 
   return (
     <View
@@ -242,7 +251,7 @@ export function TaskFilePreview({
                 accessibilityLabel={file.fileName}
                 onPress={() => {
                   void haptics.selection();
-                  if (uri && !broken) setViewer({ uri, label: file.fileName });
+                  if (uri && !broken) openImage(file);
                   else if (uri) void Linking.openURL(uri);
                 }}
                 style={{
@@ -331,7 +340,7 @@ export function TaskFilePreview({
                 accessibilityLabel={file.fileName}
                 onPress={() => {
                   void haptics.selection();
-                  if (image && uri) setViewer({ uri, label: file.fileName });
+                  if (image && uri) openImage(file);
                   else if (uri) void Linking.openURL(uri);
                 }}
                 style={{
@@ -389,37 +398,13 @@ export function TaskFilePreview({
         </View>
       )}
 
-      <Modal
-        visible={Boolean(viewer)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setViewer(null)}
-      >
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.9)',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: theme.spacing.lg,
-          }}
-          onPress={() => setViewer(null)}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.close')}
-        >
-          {viewer ? (
-            <Image
-              source={{ uri: viewer.uri }}
-              style={{ width: '100%', height: '72%' }}
-              resizeMode="contain"
-              accessibilityIgnoresInvertColors
-            />
-          ) : null}
-          <AppText variant="caption" style={{ color: '#fff', marginTop: theme.spacing.md }}>
-            {t('common.close')}
-          </AppText>
-        </Pressable>
-      </Modal>
+      <ImageViewer
+        open={viewerIndex != null}
+        uris={galleryUris}
+        index={viewerIndex ?? 0}
+        onIndexChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </View>
   );
 }

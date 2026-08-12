@@ -99,11 +99,11 @@ export function mapToolResultsToMessage(params: {
       blocks.push({
         type: 'chart',
         title: copy(locale, 'Profit by order', 'الربح حسب الطلب', 'רווח לפי הזמנה'),
-        unit: 'JOD',
+        unit: 'ILS',
         points: orders.map((o) => ({
           label: o.number.replace(/^SO-?/i, ''),
           value: Number(o.profit),
-          display: money(o.profit).replace(' JOD', ''),
+          display: money(o.profit).replace(' ILS', ''),
         })),
       });
       if (typeof r.source === 'string') {

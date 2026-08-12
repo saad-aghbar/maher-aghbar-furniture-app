@@ -182,7 +182,7 @@ const AR: PdfMessages = {
   qr: 'رمز QR',
   unit: 'الوحدة',
   minStock: 'الحد الأدنى',
-  labelScanHint: 'امسح الباركود / QR في المستودع',
+  labelScanHint: 'امسح الرمز في المستودع',
   version: 'الإصدار',
 };
 
@@ -244,7 +244,7 @@ const HE: PdfMessages = {
   qr: 'QR',
   unit: 'יחידה',
   minStock: 'מלאי מינ׳',
-  labelScanHint: 'סרוק ברקוד / QR בתחנות המחסן',
+  labelScanHint: 'סרוק את הקוד במחסן',
   version: 'גרסה',
 };
 

@@ -32,7 +32,7 @@
   "paymentRecorded": "התשלום נרשם.",
   "createInvoice": "צור חשבונית",
   "recordPayment": "רשום תשלום",
-  "amountJod": "סכום (JOD)",
+  "amountJod": "סכום (₪)",
   "invoiceLabel": "חשבונית: {number}",
   "outstanding": "יתרה",
   "overdueHint": "באיחור",

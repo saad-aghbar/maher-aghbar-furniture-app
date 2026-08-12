@@ -297,7 +297,7 @@ export function DealerStatementScreen() {
           <ListItemEnter index={index}>
             <StatementActivityCard
               row={item}
-              currency={summary?.currency ?? 'JOD'}
+              currency={summary?.currency ?? 'ILS'}
               onDownloadPdf={
                 item.entityId ? () => void downloadRowPdf(item) : undefined
               }

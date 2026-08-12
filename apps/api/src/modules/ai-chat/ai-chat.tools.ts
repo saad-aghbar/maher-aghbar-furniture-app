@@ -37,7 +37,7 @@ export type ToolContext = {
 
 function money(n: number | string | null | undefined): string {
   const v = Number(n ?? 0);
-  return `${v.toLocaleString('en-US', { maximumFractionDigits: 0 })} JOD`;
+  return `${v.toLocaleString('en-US', { maximumFractionDigits: 0 })} ILS`;
 }
 
 function hrefFor(
@@ -698,7 +698,7 @@ export class AiChatToolsService {
           totalInvoiced: invoiced,
           totalPaid: paid,
           closingBalance: invoiced - paid,
-          currency: 'JOD',
+          currency: 'ILS',
           href: '/(app)/(customer)/account/statement',
         };
       },

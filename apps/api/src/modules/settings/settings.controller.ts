@@ -25,7 +25,7 @@ class PatchSettingsDto {
 const COMPANY_DEFAULTS = {
   nameAr: 'مفروشات ماهر الأغبر وأولاده',
   nameEn: 'Maher Al-Aghbar & Sons Furniture',
-  currency: 'JOD',
+  currency: 'ILS',
   defaultVatPercent: 16,
   timezone: 'Asia/Amman',
   defaultLanguage: 'ar',
@@ -111,7 +111,7 @@ export class SettingsController {
     if (!map.company || typeof map.company !== 'object') {
       map.company = COMPANY_DEFAULTS;
     } else {
-      map.company = { ...COMPANY_DEFAULTS, ...(map.company as object) };
+      map.company = { ...COMPANY_DEFAULTS, ...(map.company as object), currency: COMPANY_DEFAULTS.currency };
     }
     if (!map.integrations || typeof map.integrations !== 'object') {
       map.integrations = INTEGRATION_DEFAULTS;

@@ -4,7 +4,7 @@ import {
   employeeIndustrialElevationFor,
   employeeIndustrialRadius,
 } from './employeeIndustrial';
-import { ThemeContext, useThemeContext } from './ThemeProvider';
+import { ThemeCanvas, ThemeContext, useThemeContext } from './ThemeProvider';
 import type { ThemeContextValue } from './types';
 
 /**
@@ -36,5 +36,9 @@ export function EmployeeThemeOverride({ children }: { children: ReactNode }) {
     };
   }, [parent]);
 
-  return createElement(ThemeContext.Provider, { value }, children);
+  return createElement(
+    ThemeContext.Provider,
+    { value },
+    createElement(ThemeCanvas, null, children),
+  );
 }

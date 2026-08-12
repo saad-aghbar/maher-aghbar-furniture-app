@@ -108,13 +108,13 @@ export function formatNumber(
   return finalizeNumericText(locale, raw);
 }
 
-/** JOD — Jordanian Dinar (shared ERP currency). Always Western separators. */
+/** ILS — Israeli Shekel (shared ERP currency). Always Western separators. */
 export function formatCurrency(locale: Locale, value: number, currency = DEFAULT_CURRENCY): string {
   const raw = new Intl.NumberFormat(NUMBER_LOCALE, {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
-    maximumFractionDigits: 3,
+    maximumFractionDigits: 2,
     numberingSystem: 'latn',
   }).format(value);
   return finalizeNumericText(locale, raw);

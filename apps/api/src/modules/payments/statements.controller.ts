@@ -171,7 +171,7 @@ export class StatementsController {
       outstandingBalance: roundMoney(balance),
       totalInvoiced: roundMoney(totalInvoiced),
       totalPaid: roundMoney(totalPaid),
-      currency: 'JOD',
+      currency: 'ILS',
       entries: withBalance,
       payments: payments.map((p) => ({
         id: p.id,

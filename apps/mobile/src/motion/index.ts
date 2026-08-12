@@ -21,7 +21,10 @@ export { SlideIn } from './SlideIn';
 export { ListItemEnter } from './ListItemEnter';
 export { softFadeDown, softFadeSide } from './softEnter';
 export { ExpandCollapse } from './ExpandCollapse';
-export { BottomSheetTransition } from './BottomSheetTransition';
+export {
+  BottomSheetTransition,
+  shouldDismissSheet,
+} from './BottomSheetTransition';
 export { StatusTransition } from './StatusTransition';
 export { ProgressBar } from './ProgressBar';
 export { SkeletonShimmer } from './SkeletonShimmer';

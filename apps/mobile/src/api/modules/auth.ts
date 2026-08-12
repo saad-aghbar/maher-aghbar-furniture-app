@@ -13,6 +13,8 @@ export type LoginInput = {
 export type MeResponse = AuthUser & {
   mfaEnabled: boolean;
   mfaPending: boolean;
+  /** Dealer portal password (assigned by admin). Omitted for staff. */
+  portalPassword?: string | null;
 };
 
 export type UpdateMeInput = {

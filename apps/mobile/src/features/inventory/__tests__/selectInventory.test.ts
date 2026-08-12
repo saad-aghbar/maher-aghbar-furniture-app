@@ -62,6 +62,39 @@ describe('selectInventory cost visibility', () => {
     expect(card.onHand).toBe(8);
   });
 
+  it('collapses location balances into one row per warehouse', () => {
+    const item: InventoryItem = {
+      ...baseItem,
+      balances: [
+        {
+          id: 'b1',
+          availableQty: 8,
+          warehouseId: 'wh-1',
+          warehouse: { id: 'wh-1', code: 'MAIN', nameEn: 'Main', nameAr: 'الرئيسي' },
+        },
+        {
+          id: 'b2',
+          availableQty: 3,
+          warehouseId: 'wh-1',
+          warehouse: { id: 'wh-1', code: 'MAIN', nameEn: 'Main', nameAr: 'الرئيسي' },
+        },
+        {
+          id: 'b3',
+          availableQty: 2,
+          warehouseId: 'wh-2',
+          warehouse: { id: 'wh-2', code: 'SEC', nameEn: 'Second', nameAr: 'الثاني' },
+        },
+      ],
+    };
+    const card = selectInventoryItemCard(item, 'en');
+    expect(card.balances).toHaveLength(2);
+    expect(card.balances.map((b) => b.warehouseId)).toEqual(['wh-1', 'wh-2']);
+    expect(card.balances[0]?.availableQty).toBe(11);
+    expect(card.balances[0]?.warehouseName).toBe('Main');
+    expect(card.balances[1]?.availableQty).toBe(2);
+    expect(card.onHand).toBe(13);
+  });
+
   it('hides transaction unitCost when omitted', () => {
     const tx: InventoryTransaction = {
       id: 'tx-1',

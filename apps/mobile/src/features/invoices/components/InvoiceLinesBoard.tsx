@@ -12,7 +12,7 @@ type Props = {
 };
 
 /** Receipt-style line items board. */
-export function InvoiceLinesBoard({ model, currencySuffix = 'JOD' }: Props) {
+export function InvoiceLinesBoard({ model, currencySuffix = 'ILS' }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';

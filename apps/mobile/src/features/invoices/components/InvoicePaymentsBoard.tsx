@@ -16,7 +16,7 @@ type Props = {
 /** Timeline-ish payment history board. */
 export function InvoicePaymentsBoard({
   model,
-  currencySuffix = 'JOD',
+  currencySuffix = 'ILS',
   methodLabel,
   onPaymentPdf,
 }: Props) {

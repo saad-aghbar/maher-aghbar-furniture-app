@@ -343,7 +343,7 @@ export class CatalogController {
         ...stripped,
         dealerPrice: dealerPrice?.price ?? null,
         price: dealerPrice?.price ?? product.basePrice ?? null,
-        priceCurrency: dealerPrice?.currency ?? 'JOD',
+        priceCurrency: dealerPrice?.currency ?? 'ILS',
       };
     });
 
@@ -430,7 +430,7 @@ export class CatalogController {
           ...stripped,
           dealerPrice: dealerPrice?.price ?? null,
           price: dealerPrice?.price ?? product.basePrice ?? null,
-          priceCurrency: dealerPrice?.currency ?? 'JOD',
+          priceCurrency: dealerPrice?.currency ?? 'ILS',
         };
       });
 
@@ -471,7 +471,7 @@ export class CatalogController {
       ...stripped,
       dealerPrice: dealerPrice?.price ?? null,
       price: dealerPrice?.price ?? product.basePrice ?? null,
-      priceCurrency: dealerPrice?.currency ?? 'JOD',
+      priceCurrency: dealerPrice?.currency ?? 'ILS',
     };
   }
 

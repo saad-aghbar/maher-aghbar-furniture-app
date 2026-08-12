@@ -108,8 +108,8 @@ export function buildDemoConversation(
           type: 'metrics',
           title: d(t, 'metricsOasisTitle'),
           items: [
-            { label: d(t, 'metricTotalProfit'), value: '2,840 JOD', tone: 'brand' },
-            { label: d(t, 'metricAvgOrder'), value: '947 JOD' },
+            { label: d(t, 'metricTotalProfit'), value: '2,840 ILS', tone: 'brand' },
+            { label: d(t, 'metricAvgOrder'), value: '947 ILS' },
             { label: d(t, 'metricOrders'), value: '3', hint: d(t, 'metricCompleted') },
           ],
         },
@@ -122,16 +122,16 @@ export function buildDemoConversation(
             { key: 'profit', label: d(t, 'colProfit'), align: 'end' },
           ],
           rows: [
-            { order: 'SO-1042', product: d(t, 'productSectional'), profit: '1,120 JOD' },
-            { order: 'SO-1038', product: d(t, 'productDining'), profit: '980 JOD' },
-            { order: 'SO-1029', product: d(t, 'productArmchair'), profit: '740 JOD' },
+            { order: 'SO-1042', product: d(t, 'productSectional'), profit: '1,120 ILS' },
+            { order: 'SO-1038', product: d(t, 'productDining'), profit: '980 ILS' },
+            { order: 'SO-1029', product: d(t, 'productArmchair'), profit: '740 ILS' },
           ],
           caption: d(t, 'tableCaption'),
         },
         {
           type: 'chart',
           title: d(t, 'chartTitle'),
-          unit: 'JOD',
+          unit: 'ILS',
           points: [
             { label: '1042', value: 1120, display: '1.1k' },
             { label: '1038', value: 980, display: '980' },
@@ -169,7 +169,7 @@ export function buildDemoConversation(
               subtitle: d(t, 'productSectionalSofa'),
               meta: 'Oasis Living',
               status: 'COMPLETED',
-              amount: d(t, 'amountProfit', { amount: '1,120 JOD' }),
+              amount: d(t, 'amountProfit', { amount: '1,120 ILS' }),
             },
             {
               kind: 'order',
@@ -177,7 +177,7 @@ export function buildDemoConversation(
               subtitle: d(t, 'productDiningChairs'),
               meta: 'Oasis Living',
               status: 'COMPLETED',
-              amount: d(t, 'amountProfit', { amount: '980 JOD' }),
+              amount: d(t, 'amountProfit', { amount: '980 ILS' }),
             },
             {
               kind: 'order',
@@ -185,7 +185,7 @@ export function buildDemoConversation(
               subtitle: d(t, 'productLounge'),
               meta: 'Oasis Living',
               status: 'COMPLETED',
-              amount: d(t, 'amountProfit', { amount: '740 JOD' }),
+              amount: d(t, 'amountProfit', { amount: '740 ILS' }),
             },
           ],
         },
@@ -316,8 +316,8 @@ function replyForIntent(intent: DemoIntent, t: TranslateFn): ChatMessage {
           {
             type: 'metrics',
             items: [
-              { label: d(t, 'metricOutstanding'), value: '18,420 JOD', tone: 'warning' },
-              { label: d(t, 'metricOverdue'), value: '4,100 JOD', tone: 'warning' },
+              { label: d(t, 'metricOutstanding'), value: '18,420 ILS', tone: 'warning' },
+              { label: d(t, 'metricOverdue'), value: '4,100 ILS', tone: 'warning' },
             ],
           },
           {
@@ -329,13 +329,13 @@ function replyForIntent(intent: DemoIntent, t: TranslateFn): ChatMessage {
                 title: 'INV-2201',
                 subtitle: 'Dead Sea Spa Residences',
                 status: 'ISSUED',
-                amount: d(t, 'invoiceLeft', { amount: '6,200 JOD' }),
+                amount: d(t, 'invoiceLeft', { amount: '6,200 ILS' }),
               },
               {
                 kind: 'dealer',
                 title: 'Oasis Living',
                 subtitle: d(t, 'statementBalance'),
-                amount: '3,450 JOD',
+                amount: '3,450 ILS',
               },
             ],
           },
@@ -352,7 +352,7 @@ function replyForIntent(intent: DemoIntent, t: TranslateFn): ChatMessage {
           {
             type: 'metrics',
             items: [
-              { label: d(t, 'metricTotalProfit'), value: '2,840 JOD', tone: 'brand' },
+              { label: d(t, 'metricTotalProfit'), value: '2,840 ILS', tone: 'brand' },
               { label: d(t, 'metricOrders'), value: '3' },
             ],
           },
@@ -363,9 +363,9 @@ function replyForIntent(intent: DemoIntent, t: TranslateFn): ChatMessage {
               { key: 'profit', label: d(t, 'colProfit'), align: 'end' },
             ],
             rows: [
-              { order: 'SO-1042', profit: '1,120 JOD' },
-              { order: 'SO-1038', profit: '980 JOD' },
-              { order: 'SO-1029', profit: '740 JOD' },
+              { order: 'SO-1042', profit: '1,120 ILS' },
+              { order: 'SO-1038', profit: '980 ILS' },
+              { order: 'SO-1029', profit: '740 ILS' },
             ],
           },
         ],
@@ -387,7 +387,7 @@ function replyForIntent(intent: DemoIntent, t: TranslateFn): ChatMessage {
                 subtitle: d(t, 'productSectionalSofa'),
                 meta: 'Oasis Living',
                 status: 'COMPLETED',
-                amount: d(t, 'amountProfit', { amount: '1,120 JOD' }),
+                amount: d(t, 'amountProfit', { amount: '1,120 ILS' }),
               },
             ],
           },

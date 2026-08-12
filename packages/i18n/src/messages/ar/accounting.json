@@ -32,7 +32,7 @@
   "paymentRecorded": "تم تسجيل الدفعة.",
   "createInvoice": "إنشاء فاتورة",
   "recordPayment": "تسجيل دفعة",
-  "amountJod": "المبلغ (د.أ)",
+  "amountJod": "المبلغ (₪)",
   "invoiceLabel": "الفاتورة: {number}",
   "outstanding": "المستحق",
   "overdueHint": "متأخرة",

@@ -21,7 +21,6 @@ import { uploadFile } from '@/api/modules/uploads';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { BackButton } from '@/components/BackButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { TextField } from '@/components/forms/TextField';
@@ -438,7 +437,7 @@ export function NewOrderScreen() {
   const qtyNum = Number(quantity);
   const estimatedTotal =
     unitPrice != null && Number.isFinite(qtyNum) && qtyNum > 0 ? unitPrice * qtyNum : null;
-  const currency = productQuery.data?.priceCurrency || 'JOD';
+  const currency = productQuery.data?.priceCurrency || 'ILS';
 
   const availabilityRequest: AvailabilityRequest | null =
     productId.trim() && isValidQuantity(quantity)
@@ -922,27 +921,13 @@ export function NewOrderScreen() {
                 gap: theme.spacing.md,
               }}
             >
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'center',
-                  gap: theme.spacing.md,
-                }}
+              <AppText
+                variant="largeTitle"
+                align="center"
+                numberOfLines={1}
               >
-                {!submittedNumber ? (
-                  <BackButton
-                    onPress={goBack}
-                    label={t('mobile.newOrder.back')}
-                  />
-                ) : null}
-                <AppText
-                  variant="largeTitle"
-                  style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
-                  numberOfLines={1}
-                >
-                  {t('mobile.newOrder.title')}
-                </AppText>
-              </View>
+                {t('mobile.newOrder.title')}
+              </AppText>
               {!submittedNumber ? <NewOrderStageRail step={step} /> : null}
             </View>
           </View>

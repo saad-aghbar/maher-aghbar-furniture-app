@@ -15,6 +15,7 @@ import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { Divider } from '@/components/layout/Divider';
+import { ImageViewer } from '@/components/media/ImageViewer';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
@@ -33,7 +34,6 @@ import {
   DeliveryDateSheet,
   PrioritySheet,
 } from './components/PriorityDeliverySheets';
-import { ProductImageLightbox } from './components/ProductImageLightbox';
 import { ProductionListSkeleton } from './components/ProductionSkeleton';
 import { ProductionTaskCard } from './components/ProductionTaskCard';
 import { ProductionTaskSheet } from './components/ProductionTaskSheet';
@@ -652,9 +652,10 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
         )}
       />
 
-      <ProductImageLightbox
-        uri={detail.imageUrl}
+      <ImageViewer
         open={imageOpen}
+        uris={detail.imageUrl ? [detail.imageUrl] : []}
+        index={0}
         onClose={() => setImageOpen(false)}
         title={detail.title}
       />

@@ -201,7 +201,7 @@ export function SupplierInvoiceBoardCard({ invoice, onPress }: Props) {
                 color: due ? colors.warning : colors.textSecondary,
               }}
             >
-              {`${invoice.outstandingLabel} JOD`}
+              {`${invoice.outstandingLabel} ${t('common.currency')}`}
             </AppText>
           </View>
 
@@ -209,13 +209,13 @@ export function SupplierInvoiceBoardCard({ invoice, onPress }: Props) {
 
           <MoneyRow
             label={t('catalog.totalShort')}
-            value={`${invoice.totalLabel} JOD`}
+            value={`${invoice.totalLabel} ${t('common.currency')}`}
             isRTL={isRTL}
           />
           <Divider compact />
           <MoneyRow
             label={t('catalog.paid')}
-            value={`${invoice.paidLabel} JOD`}
+            value={`${invoice.paidLabel} ${t('common.currency')}`}
             isRTL={isRTL}
           />
         </View>

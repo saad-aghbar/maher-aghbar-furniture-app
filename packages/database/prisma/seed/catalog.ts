@@ -170,7 +170,7 @@ export async function seedCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
           customerId: dealer.id,
           productId: product.id,
           price: money(base * (1 - off)),
-          currency: 'JOD',
+          currency: 'ILS',
         },
       });
     }

@@ -345,7 +345,7 @@
   "selectSalesOrder": "اختر طلبية.",
   "amountCustomerRequired": "المبلغ والعميل مطلوبان.",
   "customerItemsRequired": "العميل والبنود مطلوبان",
-  "amountJod": "المبلغ (د.أ)",
+  "amountJod": "المبلغ (₪)",
   "invoiceLabel": "الفاتورة: {number}",
   "pdf": "PDF",
   "quotations": "عروض الأسعار",

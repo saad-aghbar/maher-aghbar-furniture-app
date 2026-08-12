@@ -79,9 +79,9 @@ describe('CatalogController.browseProducts scope', () => {
       Promise.all(ops as Promise<unknown>[]),
     );
     const dealerPriceFindMany = jest.fn().mockResolvedValue([
-      { productId: 'p1', customerId: 'customer-a', price: 850, currency: 'JOD' },
+      { productId: 'p1', customerId: 'customer-a', price: 850, currency: 'ILS' },
       // B’s price must never be queried; if mistakenly returned, assertions catch it
-      { productId: 'p1', customerId: 'customer-b', price: 9999, currency: 'JOD' },
+      { productId: 'p1', customerId: 'customer-b', price: 9999, currency: 'ILS' },
     ]);
 
     const prisma = {
@@ -122,7 +122,7 @@ describe('CatalogController.browseProducts scope', () => {
       dealerPrice: {
         findMany: jest.fn().mockImplementation(async (args: { where: { customerId: string } }) => {
           expect(args.where.customerId).toBe('customer-a');
-          return [{ productId: 'p1', customerId: 'customer-a', price: 850, currency: 'JOD' }];
+          return [{ productId: 'p1', customerId: 'customer-a', price: 850, currency: 'ILS' }];
         }),
       },
       $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
@@ -135,7 +135,7 @@ describe('CatalogController.browseProducts scope', () => {
     const row = result.data[0] as Record<string, unknown>;
     expect(row.price).toBe(850);
     expect(row.dealerPrice).toBe(850);
-    expect(row.priceCurrency).toBe('JOD');
+    expect(row.priceCurrency).toBe('ILS');
     assertNoDealerLeaks(result);
   });
 
@@ -150,7 +150,7 @@ describe('CatalogController.browseProducts scope', () => {
       },
       dealerPrice: {
         findMany: jest.fn().mockResolvedValue([
-          { productId: 'p1', customerId: 'customer-a', price: 850, currency: 'JOD' },
+          { productId: 'p1', customerId: 'customer-a', price: 850, currency: 'ILS' },
         ]),
       },
       $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
@@ -219,7 +219,7 @@ describe('CatalogController.browseProductById scope', () => {
       productId: 'p1',
       customerId: 'customer-a',
       price: 850,
-      currency: 'JOD',
+      currency: 'ILS',
     });
     const prisma = {
       product: {
@@ -252,7 +252,7 @@ describe('CatalogController.browseProductById scope', () => {
     }) => {
       expect(args.where.customerId_productId.customerId).toBe('customer-a');
       expect(JSON.stringify(args)).not.toContain('customer-b');
-      return { price: 850, currency: 'JOD' };
+      return { price: 850, currency: 'ILS' };
     });
     const prisma = {
       product: { findFirst: jest.fn().mockResolvedValue(productRow) },

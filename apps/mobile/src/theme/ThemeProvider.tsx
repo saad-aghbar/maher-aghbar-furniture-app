@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import * as SystemUI from 'expo-system-ui';
 import {
   createContext,
   createElement,
@@ -9,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { AccessibilityInfo, Appearance, type ColorSchemeName } from 'react-native';
+import { AccessibilityInfo, Appearance, View, type ColorSchemeName } from 'react-native';
 import { createTheme } from './themes';
 import { applyHighContrast, baseColorsForScheme } from './highContrast';
 import type { ColorScheme, ThemeContextValue, ThemeMode } from './types';
@@ -118,7 +119,24 @@ export function ThemeProvider({
 
   void hydrated;
 
-  return createElement(ThemeContext.Provider, { value }, children);
+  return createElement(
+    ThemeContext.Provider,
+    { value },
+    createElement(ThemeCanvas, null, children),
+  );
+}
+
+/** Fills the native window so stack/tab transitions do not flash white in dark mode. */
+export function ThemeCanvas({ children }: { children?: ReactNode }) {
+  const { colors } = useThemeContext();
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(colors.background);
+  }, [colors.background]);
+  return createElement(
+    View,
+    { style: { flex: 1, backgroundColor: colors.background } },
+    children,
+  );
 }
 
 export function useThemeContext(): ThemeContextValue {

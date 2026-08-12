@@ -34,7 +34,7 @@ export default function AppLayout() {
 
   const shell = (
     <TabSwipeNavigator surface={surface}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
         <Stack screenOptions={stackMotion}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(admin)" />

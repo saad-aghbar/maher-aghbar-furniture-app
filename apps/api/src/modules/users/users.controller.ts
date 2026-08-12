@@ -36,6 +36,7 @@ import {
   assertCannotRemoveOwnAdmin,
   assertNotLastActiveAdmin,
 } from './users.guards';
+import { encryptPortalPassword } from '../../common/helpers/secret-box';
 
 function splitCodes(value: unknown): string[] | undefined {
   if (value == null || value === '') return undefined;
@@ -374,6 +375,7 @@ export class UsersController {
         customerId: dto.customerId,
         ...(departmentId ? { departmentId } : {}),
         passwordHash,
+        ...(dto.customerId ? { portalPasswordEnc: encryptPortalPassword(tempPassword) } : {}),
         isActive: dto.isActive ?? true,
         roles: dto.roleIds?.length
           ? { create: dto.roleIds.map((roleId) => ({ roleId })) }
@@ -484,6 +486,16 @@ export class UsersController {
       existingRoleCodes,
     );
 
+    const nextCustomerId =
+      dto.customerId === undefined ? existing.customerId : dto.customerId;
+    const portalPasswordEnc = dto.password
+      ? nextCustomerId
+        ? encryptPortalPassword(dto.password)
+        : null
+      : dto.customerId === null
+        ? null
+        : undefined;
+
     const user = await this.prisma.user.update({
       where: { id },
       data: {
@@ -499,6 +511,7 @@ export class UsersController {
           : { departmentId }),
         isActive: dto.isActive,
         ...(passwordHash ? { passwordHash } : {}),
+        ...(portalPasswordEnc !== undefined ? { portalPasswordEnc } : {}),
       },
       select: userSelect,
     });
@@ -555,7 +568,15 @@ export class UsersController {
     if (!user) throw new NotFoundException({ code: 'NOT_FOUND', message: 'User not found.' });
     const temporaryPassword = `Reset-${randomBytes(6).toString('base64url')}!A1`;
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
-    await this.prisma.user.update({ where: { id }, data: { passwordHash } });
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        passwordHash,
+        ...(user.customerId
+          ? { portalPasswordEnc: encryptPortalPassword(temporaryPassword) }
+          : {}),
+      },
+    });
     await this.prisma.session.updateMany({
       where: { userId: id, revokedAt: null },
       data: { revokedAt: new Date() },
