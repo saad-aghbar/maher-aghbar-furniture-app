@@ -1,7 +1,7 @@
 import { Text, type StyleProp, type TextProps, type TextStyle } from 'react-native';
 import { useLocale } from '@/i18n/useLocale';
 import {
-  resolveAppFontStyle,
+  applyAppTypeface,
   resolveArabicTextMetrics,
   useTheme,
   type TypographyVariantName,
@@ -20,7 +20,8 @@ type AppTextProps = TextProps & {
 };
 
 /**
- * Themed text with locale-aware alignment and Arabic KO Sans typeface.
+ * Themed text with locale-aware alignment and the app typeface
+ * (KO Sans for Arabic, Rubik for English / Hebrew).
  * Prefer this over raw `Text` in feature UI.
  */
 export function AppText({
@@ -35,7 +36,6 @@ export function AppText({
   const { colors, theme } = useTheme();
   const { isRTL, locale } = useLocale();
   const v = theme.typography.variants[variant];
-  const systemWeight = weight ? theme.typography.weights[weight] : v.fontWeight;
 
   const colorMap = {
     primary: colors.textPrimary,
@@ -65,17 +65,17 @@ export function AppText({
       color: colorMap[color],
       textAlign,
       writingDirection,
-      ...resolveAppFontStyle(locale, { weight, variant, systemWeight }),
     },
     style,
     // Win over Latin optical tracking passed via `style` (e.g. letterSpacing: -1.1).
     locale === 'ar' ? { letterSpacing: 0 } : null,
   ];
+  const typed = applyAppTypeface(locale, composed, { weight, variant });
 
   return (
     <Text
       {...rest}
-      style={[composed, resolveArabicTextMetrics(locale, composed)]}
+      style={[typed, resolveArabicTextMetrics(locale, typed)]}
     />
   );
 }

@@ -12,12 +12,16 @@ export type { BrandIntroMode, BrandIntroPhase } from './brandIntroMotion';
 export { typography } from './typography';
 export {
   KO_SANS,
+  RUBIK,
   koSansFontSources,
+  rubikFontSources,
+  applyAppTypeface,
   resolveAppFontFamily,
   resolveAppFontStyle,
   resolveArabicTextMetrics,
+  weightTokenFromFontWeight,
 } from './fonts';
-export type { KoSansFamily } from './fonts';
+export type { AppFontFamily, KoSansFamily, RubikFamily } from './fonts';
 export { spacing } from './spacing';
 export { radius } from './radius';
 export { createElevation } from './elevation';

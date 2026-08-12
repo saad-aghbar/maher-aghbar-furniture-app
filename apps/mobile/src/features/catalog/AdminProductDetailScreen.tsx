@@ -1483,9 +1483,11 @@ function BomFloorRow({
                   fontSize: theme.typography.variants.label.fontSize,
                   lineHeight: theme.typography.variants.label.lineHeight,
                   color: colors.brand,
-                  fontWeight: titleWeight === 'semibold' ? '600' : '500',
                   textAlign: 'center',
-                  ...resolveAppFontStyle(locale, { variant: 'label' }),
+                  ...resolveAppFontStyle(locale, {
+                    variant: 'label',
+                    weight: titleWeight,
+                  }),
                 }}
               />
             </View>

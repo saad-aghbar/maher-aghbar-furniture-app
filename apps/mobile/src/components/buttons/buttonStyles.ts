@@ -80,7 +80,6 @@ export function getButtonLabelStyle(
     color: getButtonLabelColor(theme, variant, disabled),
     fontSize: theme.typography.variants.label.fontSize,
     lineHeight: theme.typography.variants.label.lineHeight,
-    fontWeight: theme.typography.weights.medium,
   };
 }
 

@@ -5,6 +5,9 @@ describe('resolveArabicTextMetrics', () => {
     expect(
       resolveArabicTextMetrics('en', { fontSize: 34, lineHeight: 40 }),
     ).toBeUndefined();
+    expect(
+      resolveArabicTextMetrics('he', { fontSize: 34, lineHeight: 40 }),
+    ).toBeUndefined();
   });
 
   it('raises tight hero money line boxes used on invoice boards', () => {

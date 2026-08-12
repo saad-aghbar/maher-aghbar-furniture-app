@@ -63,7 +63,7 @@ function BaseButton({
       ) : (
         <>
           {leading}
-          <AppText variant="label" style={labelStyle} align="center">
+          <AppText variant="label" weight="medium" style={labelStyle} align="center">
             {label}
           </AppText>
           {trailing}

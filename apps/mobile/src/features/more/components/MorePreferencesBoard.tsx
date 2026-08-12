@@ -73,8 +73,8 @@ export function MorePreferencesBoard() {
               gap: theme.spacing.sm,
             }}
           >
+            <ExpandableLocaleSwitcher expandToward={isRTL ? 'end' : 'start'} />
             <ThemeSwitcher />
-            <ExpandableLocaleSwitcher expandToward={isRTL ? 'start' : 'end'} />
           </View>
         </View>
 

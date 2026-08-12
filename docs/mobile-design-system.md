@@ -76,7 +76,7 @@ Readable hierarchy for older / non-technical users. **Three weights only:** regu
 
 Use `AppText` with `variant` + locale-aware alignment. Override weight only with `theme.typography.weights.*`.
 
-System UI fonts for Latin / Hebrew; **KO Sans** for Arabic (`apps/mobile/assets/fonts/`, loaded in `FontProvider`). See [brand.md](./brand.md) and [mobile-localization.md](./mobile-localization.md).
+**KO Sans** for Arabic; **Rubik** for English and Hebrew (`apps/mobile/assets/fonts/`, loaded in `FontProvider`). See [brand.md](./brand.md) and [mobile-localization.md](./mobile-localization.md).
 
 ---
 

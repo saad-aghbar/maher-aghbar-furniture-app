@@ -17,6 +17,16 @@ export const KO_SANS = {
 } as const;
 
 /**
+ * Latin + Hebrew typeface — Rubik (SIL OFL). Same files cover both scripts
+ * so mixed English/Hebrew strings stay on one face.
+ */
+export const RUBIK = {
+  regular: 'Rubik-Regular',
+  medium: 'Rubik-Medium',
+  semibold: 'Rubik-SemiBold',
+} as const;
+
+/**
  * KO Sans glyph boxes sit above Latin metric line boxes on React Native.
  * Tight `lineHeight` (common for hero money) crops Arabic ascenders and
  * Latin digits/currency when the UI is in Arabic.
@@ -24,6 +34,8 @@ export const KO_SANS = {
 const AR_MIN_LINE_RATIO = 1.5;
 
 export type KoSansFamily = (typeof KO_SANS)[keyof typeof KO_SANS];
+export type RubikFamily = (typeof RUBIK)[keyof typeof RUBIK];
+export type AppFontFamily = KoSansFamily | RubikFamily;
 
 /** expo-font map — keys become `fontFamily` values. */
 export const koSansFontSources: Record<KoSansFamily, number> = {
@@ -32,10 +44,22 @@ export const koSansFontSources: Record<KoSansFamily, number> = {
   [KO_SANS.semibold]: require('../../assets/fonts/KOSans-SemiBold.otf'),
 };
 
-const weightToFamily: Record<FontWeightToken, KoSansFamily> = {
+export const rubikFontSources: Record<RubikFamily, number> = {
+  [RUBIK.regular]: require('../../assets/fonts/Rubik-Regular.ttf'),
+  [RUBIK.medium]: require('../../assets/fonts/Rubik-Medium.ttf'),
+  [RUBIK.semibold]: require('../../assets/fonts/Rubik-SemiBold.ttf'),
+};
+
+const koSansWeightToFamily: Record<FontWeightToken, KoSansFamily> = {
   regular: KO_SANS.regular,
   medium: KO_SANS.medium,
   semibold: KO_SANS.semibold,
+};
+
+const rubikWeightToFamily: Record<FontWeightToken, RubikFamily> = {
+  regular: RUBIK.regular,
+  medium: RUBIK.medium,
+  semibold: RUBIK.semibold,
 };
 
 function weightFromVariant(variant?: TypographyVariantName): FontWeightToken {
@@ -61,20 +85,22 @@ function softenArabicWeight(weight: FontWeightToken): FontWeightToken {
 }
 
 /**
- * Resolve KO Sans family for Arabic. Returns undefined for other locales
- * (system / Latin stack).
+ * Resolve the app typeface for the active locale.
+ * Arabic → KO Sans (weights softened). English / Hebrew → Rubik (1:1 weights).
  *
- * UI uses Regular / Medium / SemiBold — Thin is print-sample only; at phone
- * sizes it reads as disconnected strokes.
+ * UI uses Regular / Medium / SemiBold — KO Sans Thin is print-sample only; at
+ * phone sizes it reads as disconnected strokes.
  */
 export function resolveAppFontFamily(
   locale: string,
   opts: { weight?: FontWeightToken; variant?: TypographyVariantName } = {},
-): KoSansFamily | undefined {
-  if (locale !== 'ar') return undefined;
+): AppFontFamily {
   const { weight, variant } = opts;
-  const resolved = softenArabicWeight(weight ?? weightFromVariant(variant));
-  return weightToFamily[resolved];
+  const token = weight ?? weightFromVariant(variant);
+  if (locale === 'ar') {
+    return koSansWeightToFamily[softenArabicWeight(token)];
+  }
+  return rubikWeightToFamily[token];
 }
 
 /**
@@ -87,16 +113,69 @@ export function resolveAppFontStyle(
   opts: {
     weight?: FontWeightToken;
     variant?: TypographyVariantName;
-    /** Fallback system weight when not Arabic. */
+    /** Unused when a custom family is set; kept so existing call sites compile. */
     systemWeight?: NonNullable<TextStyle['fontWeight']>;
   } = {},
 ): TextStyle {
   const family = resolveAppFontFamily(locale, opts);
-  if (family) {
+  if (locale === 'ar') {
     return { fontFamily: family, letterSpacing: 0 };
   }
-  if (opts.systemWeight) return { fontWeight: opts.systemWeight };
-  return {};
+  return { fontFamily: family };
+}
+
+const MONO_FAMILIES = new Set(['Courier', 'Courier New', 'monospace', 'Menlo']);
+
+function isMonoFamily(family: string | undefined): boolean {
+  return Boolean(family && MONO_FAMILIES.has(family));
+}
+
+export function weightTokenFromFontWeight(
+  fontWeight: TextStyle['fontWeight'] | undefined,
+): FontWeightToken | undefined {
+  if (fontWeight == null) return undefined;
+  const w = String(fontWeight);
+  if (w === '100' || w === '200' || w === '300' || w === '400' || w === 'normal') {
+    return 'regular';
+  }
+  if (w === '500') return 'medium';
+  return 'semibold';
+}
+
+function weightTokenFromFamily(family: string | undefined): FontWeightToken | undefined {
+  if (!family) return undefined;
+  if (family === KO_SANS.semibold || family === RUBIK.semibold) return 'semibold';
+  if (family === KO_SANS.medium || family === RUBIK.medium) return 'medium';
+  if (family === KO_SANS.regular || family === RUBIK.regular) return 'regular';
+  return undefined;
+}
+
+/**
+ * Flatten a text style onto the locale typeface and drop `fontWeight`.
+ * iOS/Android fall back to the system UI face when a custom `fontFamily`
+ * file is combined with `fontWeight` — that is why some labels still
+ * looked like San Francisco / Roboto after Rubik loaded.
+ */
+export function applyAppTypeface(
+  locale: string,
+  style?: StyleProp<TextStyle>,
+  opts: { weight?: FontWeightToken; variant?: TypographyVariantName } = {},
+): TextStyle {
+  const flat = (StyleSheet.flatten(style) ?? {}) as TextStyle;
+  if (isMonoFamily(flat.fontFamily)) return flat;
+
+  const token =
+    opts.weight ??
+    (opts.variant ? weightFromVariant(opts.variant) : undefined) ??
+    weightTokenFromFontWeight(flat.fontWeight) ??
+    weightTokenFromFamily(flat.fontFamily) ??
+    'regular';
+
+  const { fontWeight: _fontWeight, fontFamily: _fontFamily, ...rest } = flat;
+  return {
+    ...rest,
+    ...resolveAppFontStyle(locale, { weight: token }),
+  };
 }
 
 /**
