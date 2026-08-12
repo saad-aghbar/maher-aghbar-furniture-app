@@ -17,6 +17,11 @@ export type RequestEditPolicy = {
   lockReasons: RequestEditLockReason[];
 };
 
+export type RequestCustomMeasurement = {
+  label: string;
+  value: string;
+};
+
 export type RequestItem = {
   id?: string;
   productName: string;
@@ -33,6 +38,7 @@ export type RequestItem = {
   fabric?: string | null;
   color?: string | null;
   description?: string | null;
+  customMeasurements?: RequestCustomMeasurement[] | null;
 };
 
 export type RequestDocument = {
@@ -72,6 +78,8 @@ export type RequestDetail = {
   deliveryAddress?: string | null;
   endCustomerName?: string | null;
   endCustomerPhone?: string | null;
+  deliveryLat?: number | null;
+  deliveryLng?: number | null;
   /** ISO date the dealer requested delivery by. */
   requiredDeliveryDate?: string | null;
   submittedAt?: string | null;

@@ -26,7 +26,6 @@ import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { SalesOrderListItem } from './api';
 import { AdminOrderCard } from './components/AdminOrderCard';
-import { DealerOrdersHome } from './components/DealerOrdersHome';
 import {
   OrdersFilterChips,
   type StatusChipKey,
@@ -58,8 +57,8 @@ import {
   type DealerOrderCardModel,
   type OrdersListVariant,
 } from './selectOrderCard';
-import { matchesStatusChip, type OrdersStageFocus } from './stageCounts';
-import { DealerSkeleton } from '@/features/dealer-ui';
+import { type OrdersStageFocus } from './stageCounts';
+
 if (
   Platform.OS === 'android' &&
   UIManager.setLayoutAnimationEnabledExperimental
@@ -169,11 +168,9 @@ export function OrdersListScreen({
         ),
       );
     }
-    if (statusChip !== 'all') {
-      merged = merged.filter((item) => matchesStatusChip(item, statusChip));
-    }
+    // Status focus is applied in OrdersSignatureHome so focus-rail counts stay honest.
     return merged;
-  }, [variant, requestsQuery.data, forceState, fixture, liveItems, q, statusChip]);
+  }, [variant, requestsQuery.data, forceState, fixture, liveItems, q]);
 
   const items: SalesOrderListItem[] =
     forceState === 'success' || forceState === 'offline'
@@ -359,7 +356,10 @@ export function OrdersListScreen({
     });
   }, [adminRfqCards, applied.approval, locale, refinedSalesOrders]);
 
-  const filterActiveCount = countActiveOrderFilters(applied);
+  const filterActiveCount = countActiveOrderFilters(applied, {
+    includeDealers: variant === 'admin',
+    includeApproval: variant === 'admin',
+  });
 
   const onChipChange = (next: StatusChipKey) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -444,6 +444,7 @@ export function OrdersListScreen({
       draft={draft}
       onChange={setDraft}
       showDealers={variant === 'admin'}
+      showApproval={variant === 'admin'}
       dealers={dealerOptions}
       onReset={() => {
         setDraft(defaultDraft);
@@ -473,20 +474,8 @@ export function OrdersListScreen({
   if (forceState === 'loading' || (allowed && query.isLoading && !query.data && !forceState)) {
     return (
       <AppScreen>
-        {variant === 'dealer' ? (
-          <View style={{ paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md }}>
-            <DealerSkeleton height={28} width="40%" />
-            <DealerSkeleton height={44} radius={theme.radius.xl} />
-            <DealerSkeleton height={88} radius={theme.radius.lg} />
-            <DealerSkeleton height={88} radius={theme.radius.lg} />
-            <DealerSkeleton height={88} radius={theme.radius.lg} />
-          </View>
-        ) : (
-          <>
-            {classicHeader}
-            <OrdersListSkeleton />
-          </>
-        )}
+        {classicHeader}
+        <OrdersListSkeleton />
       </AppScreen>
     );
   }
@@ -532,56 +521,22 @@ export function OrdersListScreen({
     banner,
   };
 
-  /** Dealer surface — premium commerce list (not admin signature/pipeline boards). */
-  if (variant === 'dealer') {
-    const chipOptions: StatusChipKey[] = [
-      'all',
-      'pending',
-      'production',
-      'ready',
-      'delivered',
-    ];
-    return (
-      <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
-        <DealerOrdersHome
-          items={dealerHubItems}
-          searchInput={searchInput}
-          setSearchInput={setSearchInput}
-          statusChip={statusChip}
-          onChipChange={onChipChange}
-          filterOpen={sheetOpen}
-          onOpenFilters={openFilters}
-          onCloseFilters={() => setSheetOpen(false)}
-          filterOptions={chipOptions.map((id) => ({
-            id,
-            label: t(`mobile.orders.chips.${id}`),
-          }))}
-          selectedFilterId={statusChip === 'all' ? null : statusChip}
-          onSelectFilter={(id) => {
-            onChipChange((id as StatusChipKey) || 'all');
-            setSheetOpen(false);
-          }}
-          refreshing={forceState ? false : refreshing}
-          onRefresh={onRefresh}
-          onEndReached={onEndReached}
-          isFetchingNextPage={Boolean(query.isFetchingNextPage)}
-          onPressItem={onPressItem}
-          banner={banner}
-        />
-      </AppScreen>
-    );
-  }
-
-  if (composition === 'signature') {
+  if (composition === 'signature' || variant === 'dealer') {
     return (
       <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
         <OrdersSignatureHome
           {...sharedCompositionProps}
           approval={applied.approval}
           onApprovalChange={onApprovalChange}
-          dealerLabel={selectedDealerLabel}
-          onOpenDealerFilter={() => setDealerSheetOpen(true)}
-          onClearDealerFilter={() => onDealerSelect(null)}
+          statusChip={statusChip}
+          onStatusChipChange={onChipChange}
+          dealerLabel={variant === 'admin' ? selectedDealerLabel : null}
+          onOpenDealerFilter={
+            variant === 'admin' ? () => setDealerSheetOpen(true) : undefined
+          }
+          onClearDealerFilter={
+            variant === 'admin' ? () => onDealerSelect(null) : undefined
+          }
         />
         {filterSheet}
         {dealerSheet}

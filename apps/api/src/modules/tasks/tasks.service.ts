@@ -519,12 +519,26 @@ export class TasksService {
 
   private async assertPrereqsMet(task: {
     productionOrderId: string;
+    stageInstanceId?: string | null;
     stageDefinition: { dependsOnCodes: string[]; code: string } | null;
     stageInstance: { status: string } | null;
   }) {
-    const depends = task.stageDefinition?.dependsOnCodes ?? [];
-    const met = await this.pipeline.arePrereqsMet(task.productionOrderId, depends);
+    const fallback = task.stageDefinition?.dependsOnCodes ?? [];
+    const met = task.stageInstanceId
+      ? await this.pipeline.arePrereqsMetForInstance(
+          task.productionOrderId,
+          task.stageInstanceId,
+          fallback,
+        )
+      : await this.pipeline.arePrereqsMet(task.productionOrderId, fallback);
     if (!met) {
+      const depends = task.stageInstanceId
+        ? await this.pipeline.resolveDependsOnCodes(
+            task.productionOrderId,
+            task.stageInstanceId,
+            fallback,
+          )
+        : fallback;
       throw new BadRequestException({
         code: 'STAGE_LOCKED',
         message: `Stage ${task.stageDefinition?.code ?? 'unknown'} is locked until prerequisites are completed: ${depends.join(', ')}`,
@@ -934,21 +948,30 @@ export class TasksService {
       await this.start(id, userId, permissions);
     }
 
-    if (task.stageDefinition?.requiresPhotos) {
-      const linked = dto?.photoDocumentIds?.length
-        ? dto.photoDocumentIds.length
-        : await this.prisma.document.count({
-            where: {
-              productionOrderId: task.productionOrderId,
-              category: `TASK_PHOTO:${id}`,
-              archivedAt: null,
-            },
+    {
+      const snapNode = task.stageInstanceId
+        ? await this.prisma.productionOrderWorkflowSnapshotNode.findFirst({
+            where: { stageInstanceId: task.stageInstanceId },
+          })
+        : null;
+      const photosRequired =
+        snapNode?.requiresPhotos ?? task.stageDefinition?.requiresPhotos ?? false;
+      if (photosRequired) {
+        const linked = dto?.photoDocumentIds?.length
+          ? dto.photoDocumentIds.length
+          : await this.prisma.document.count({
+              where: {
+                productionOrderId: task.productionOrderId,
+                category: `TASK_PHOTO:${id}`,
+                archivedAt: null,
+              },
+            });
+        if (!linked) {
+          throw new BadRequestException({
+            code: 'PHOTOS_REQUIRED',
+            message: 'This stage requires at least one photo before completion.',
           });
-      if (!linked) {
-        throw new BadRequestException({
-          code: 'PHOTOS_REQUIRED',
-          message: 'This stage requires at least one photo before completion.',
-        });
+        }
       }
     }
 

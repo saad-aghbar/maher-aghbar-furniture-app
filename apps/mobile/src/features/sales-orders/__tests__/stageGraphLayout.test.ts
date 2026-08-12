@@ -99,7 +99,7 @@ describe('layoutStageGraph', () => {
     expect(byCode.S6?.level).toBeGreaterThan(byCode.S5!.level);
   });
 
-  it('display edges stay adjacent and fill barrel merges', () => {
+  it('display edges stay adjacent without fake fan-out spaghetti', () => {
     const layout = layoutStageGraph(stages);
     const shown = displayStageEdges(layout);
     expect(shown).toEqual(
@@ -107,11 +107,21 @@ describe('layoutStageGraph', () => {
         { from: 'MATERIAL_PREP', to: 'CARPENTRY' },
         { from: 'MATERIAL_PREP', to: 'PAINTING' },
         { from: 'CARPENTRY', to: 'UPHOLSTERY' },
-        { from: 'PAINTING', to: 'UPHOLSTERY' },
         { from: 'UPHOLSTERY', to: 'ASSEMBLY' },
       ]),
     );
+    // No direct skip over UPHOLSTERY in the drawn adjacent set
     expect(shown.find((e) => e.from === 'CARPENTRY' && e.to === 'ASSEMBLY')).toBeUndefined();
-    expect(shown.find((e) => e.from === 'PAINTING' && e.to === 'ASSEMBLY')).toBeUndefined();
+    // Fan-out fill-in removed: painting does not falsely depend-link to every next node
+    // (may still bridge via UPHOLSTERY when ASSEMBLY needs PAINTING)
+    const paintingOut = shown.filter((e) => e.from === 'PAINTING');
+    expect(paintingOut.length).toBeLessThanOrEqual(1);
+  });
+
+  it('orders parallel lanes near their parents', () => {
+    const layout = layoutStageGraph(stages);
+    const byCode = Object.fromEntries(layout.nodes.map((n) => [n.code, n]));
+    // Carpentry feeds Upholstery — they should sit on nearby lanes when possible
+    expect(Math.abs((byCode.CARPENTRY?.lane ?? 0) - (byCode.UPHOLSTERY?.lane ?? 0))).toBeLessThanOrEqual(1);
   });
 });

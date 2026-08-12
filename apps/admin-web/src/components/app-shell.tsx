@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { usePathname } from '@/i18n/navigation';
 import { cn } from '@maher/ui';
+import { NestedNav } from './nested-nav';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 
@@ -70,6 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Topbar onOpenSidebar={() => setMobileOpen(true)} menuButtonClassName={drawerOnly} />
         <main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">
           <div key={pathname} className="maher-page-enter mx-auto w-full max-w-[1440px]">
+            <NestedNav />
             {children}
           </div>
         </main>

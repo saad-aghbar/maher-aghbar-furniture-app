@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
+import { calculateWorkflowProgress } from './workflow/domain';
 
 type Tx = Prisma.TransactionClient;
+
+const SATISFIED = new Set(['COMPLETED', 'SKIPPED']);
 
 @Injectable()
 export class StagePipelineService {
@@ -10,6 +13,35 @@ export class StagePipelineService {
 
   private db(tx?: Tx) {
     return tx ?? this.prisma;
+  }
+
+  /**
+   * Resolve prerequisite stage codes for an instance.
+   * Prefer order workflow snapshot edges; fall back to live dependsOnCodes.
+   */
+  async resolveDependsOnCodes(
+    productionOrderId: string,
+    stageInstanceId: string,
+    fallbackCodes: string[],
+    tx?: Tx,
+  ): Promise<string[]> {
+    const db = this.db(tx);
+    const snapshot = await db.productionOrderWorkflowSnapshot.findUnique({
+      where: { productionOrderId },
+      include: { nodes: true, edges: true },
+    });
+    if (!snapshot) return fallbackCodes;
+
+    const node = snapshot.nodes.find((n) => n.stageInstanceId === stageInstanceId);
+    if (!node) return fallbackCodes;
+
+    const predIds = snapshot.edges
+      .filter((e) => e.toSnapshotNodeId === node.id)
+      .map((e) => e.fromSnapshotNodeId);
+
+    return snapshot.nodes
+      .filter((n) => predIds.includes(n.id) && !n.isSkipped)
+      .map((n) => n.stageCode);
   }
 
   async arePrereqsMet(
@@ -24,7 +56,34 @@ export class StagePipelineService {
       include: { stageDefinition: { select: { code: true } } },
     });
     const byCode = new Map(stages.map((s) => [s.stageDefinition.code, s.status]));
-    return dependsOnCodes.every((code) => byCode.get(code) === 'COMPLETED');
+
+    // Also treat snapshot-skipped nodes without instance as satisfied
+    const snapshot = await db.productionOrderWorkflowSnapshot.findUnique({
+      where: { productionOrderId },
+      include: { nodes: true },
+    });
+    if (snapshot) {
+      for (const n of snapshot.nodes) {
+        if (n.isSkipped) byCode.set(n.stageCode, 'SKIPPED');
+      }
+    }
+
+    return dependsOnCodes.every((code) => SATISFIED.has(byCode.get(code) ?? ''));
+  }
+
+  async arePrereqsMetForInstance(
+    productionOrderId: string,
+    stageInstanceId: string,
+    fallbackCodes: string[],
+    tx?: Tx,
+  ): Promise<boolean> {
+    const codes = await this.resolveDependsOnCodes(
+      productionOrderId,
+      stageInstanceId,
+      fallbackCodes,
+      tx,
+    );
+    return this.arePrereqsMet(productionOrderId, codes, tx);
   }
 
   /** Unlock stages whose prerequisites are met (PENDING → READY, NOT_STARTED → READY). */
@@ -40,8 +99,9 @@ export class StagePipelineService {
 
     for (const stage of stages) {
       if (stage.status !== 'PENDING') continue;
-      const met = await this.arePrereqsMet(
+      const met = await this.arePrereqsMetForInstance(
         productionOrderId,
+        stage.id,
         stage.stageDefinition.dependsOnCodes,
         tx,
       );
@@ -75,14 +135,26 @@ export class StagePipelineService {
       orderBy: { stageDefinition: { sortOrder: 'asc' } },
     });
 
+    const snapshot = await db.productionOrderWorkflowSnapshot.findUnique({
+      where: { productionOrderId },
+      include: { nodes: true },
+    });
+    const snapByInstance = new Map(
+      (snapshot?.nodes ?? [])
+        .filter((n) => n.stageInstanceId)
+        .map((n) => [n.stageInstanceId!, n]),
+    );
+
     for (const stage of stages) {
+      if (stage.status === 'SKIPPED') continue;
       if (!stage.tasks.length) continue;
       const avg = Math.round(
         stage.tasks.reduce((sum, t) => sum + t.progressPercent, 0) / stage.tasks.length,
       );
       const allTasksDone = stage.tasks.every((t) => t.status === 'COMPLETED');
-      const prereqsMet = await this.arePrereqsMet(
+      const prereqsMet = await this.arePrereqsMetForInstance(
         productionOrderId,
+        stage.id,
         stage.stageDefinition.dependsOnCodes,
         tx,
       );
@@ -117,15 +189,28 @@ export class StagePipelineService {
       orderBy: { stageDefinition: { sortOrder: 'asc' } },
     });
 
-    const total = refreshed.length || 1;
-    const completed = refreshed.filter((s) => s.status === 'COMPLETED').length;
-    const progressPercent = Math.round((completed / total) * 100);
-    const allComplete = completed === refreshed.length && refreshed.length > 0;
+    const progressNodes = refreshed
+      .filter((s) => s.status !== 'SKIPPED')
+      .map((s) => {
+        const snap = snapByInstance.get(s.id);
+        return {
+          nodeKey: s.stageDefinition.code,
+          status: s.status,
+          estimatedMinutes: snap?.estimatedMinutes ?? null,
+          progressPercent: s.progressPercent,
+          isSkipped: false,
+        };
+      });
+
+    const progressPercent = calculateWorkflowProgress(progressNodes);
+    const activeStages = refreshed.filter((s) => s.status !== 'SKIPPED');
+    const completed = activeStages.filter((s) => s.status === 'COMPLETED').length;
+    const allComplete = completed === activeStages.length && activeStages.length > 0;
 
     const active =
       refreshed.find((s) => s.status === 'IN_PROGRESS') ??
       refreshed.find((s) => s.status === 'READY') ??
-      refreshed.find((s) => s.status !== 'COMPLETED');
+      refreshed.find((s) => s.status !== 'COMPLETED' && s.status !== 'SKIPPED');
 
     const packagingDone = refreshed.some(
       (s) =>
@@ -146,7 +231,8 @@ export class StagePipelineService {
             progressPercent: 100,
             actualCompletionDate: new Date(),
             currentStageCode:
-              refreshed[refreshed.length - 1]?.stageDefinition.code ?? null,
+              refreshed.filter((s) => s.status !== 'SKIPPED').at(-1)?.stageDefinition.code ??
+              null,
           }
         : packagingDone && inspectionDone
           ? {
@@ -214,8 +300,9 @@ export class StagePipelineService {
       });
       if (stage) {
         const allDone = stage.tasks.every((t) => t.status === 'COMPLETED');
-        const prereqsMet = await this.arePrereqsMet(
+        const prereqsMet = await this.arePrereqsMetForInstance(
           productionOrderId,
+          stage.id,
           stage.stageDefinition.dependsOnCodes,
           tx,
         );
@@ -241,7 +328,7 @@ export class StagePipelineService {
       const stage = await db.productionStageInstance.findUnique({
         where: { id: stageInstanceId },
       });
-      if (stage && stage.status !== 'COMPLETED') {
+      if (stage && stage.status !== 'COMPLETED' && stage.status !== 'SKIPPED') {
         await db.productionStageInstance.update({
           where: { id: stageInstanceId },
           data: {

@@ -170,6 +170,23 @@ export const queryKeys = {
     atRisk: () => [...queryKeys.scheduling.all, 'at-risk'] as const,
     calendar: (filters: unknown = {}) =>
       [...queryKeys.scheduling.all, 'calendar', filters] as const,
+    productProfile: (productId: string) =>
+      [...queryKeys.scheduling.all, 'product-profile', productId] as const,
+    productStageEstimates: (productId: string) =>
+      [...queryKeys.scheduling.all, 'product-stage-estimates', productId] as const,
+  },
+  workflow: {
+    all: ['workflow'] as const,
+    lists: () => [...queryKeys.workflow.all, 'list'] as const,
+    details: () => [...queryKeys.workflow.all, 'detail'] as const,
+    detail: (id: string) => [...queryKeys.workflow.details(), id] as const,
+    version: (workflowId: string, versionId: string) =>
+      [...queryKeys.workflow.detail(workflowId), 'version', versionId] as const,
+    stageLibrary: () => [...queryKeys.workflow.all, 'stage-library'] as const,
+    orderGraph: (productionOrderId: string) =>
+      [...queryKeys.workflow.all, 'order', productionOrderId] as const,
+    productConfig: (productId: string) =>
+      [...queryKeys.workflow.all, 'product-config', productId] as const,
   },
 } as const;
 

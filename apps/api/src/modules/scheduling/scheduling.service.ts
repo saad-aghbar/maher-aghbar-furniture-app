@@ -319,10 +319,7 @@ export class SchedulingService {
     for (const a of allocations) {
       const key = a.schedule.productionOrderId;
       const existing = byOrder.get(key);
-      if (existing) {
-        if (a.plannedStart.getTime() < existing.minStart.getTime()) existing.minStart = a.plannedStart;
-        if (a.plannedEnd.getTime() > existing.maxEnd.getTime()) existing.maxEnd = a.plannedEnd;
-      } else {
+      if (!existing) {
         byOrder.set(key, {
           scheduleId: a.schedule.id,
           version: a.schedule.version,
@@ -332,7 +329,25 @@ export class SchedulingService {
           minStart: a.plannedStart,
           maxEnd: a.plannedEnd,
         });
+        continue;
       }
+      // Ignore older schedule versions entirely — unioning their windows made
+      // recalculate/date-change look like a no-op when APPROVED + PROPOSED both existed.
+      if (a.schedule.version < existing.version) continue;
+      if (a.schedule.version > existing.version) {
+        byOrder.set(key, {
+          scheduleId: a.schedule.id,
+          version: a.schedule.version,
+          status: a.schedule.status,
+          promiseState: a.schedule.promiseState,
+          materialRisk: a.schedule.materialRisk,
+          minStart: a.plannedStart,
+          maxEnd: a.plannedEnd,
+        });
+        continue;
+      }
+      if (a.plannedStart.getTime() < existing.minStart.getTime()) existing.minStart = a.plannedStart;
+      if (a.plannedEnd.getTime() > existing.maxEnd.getTime()) existing.maxEnd = a.plannedEnd;
     }
 
     const conflicts = await this.listConflicts();
@@ -351,7 +366,7 @@ export class SchedulingService {
         quantity: true,
         priority: true,
         customerId: true,
-        product: { select: { id: true, nameEn: true, nameAr: true, nameHe: true } },
+        product: { select: { id: true, nameEn: true, nameAr: true, nameHe: true, imageUrl: true } },
         salesOrder: {
           select: {
             customerId: true,
@@ -391,6 +406,7 @@ export class SchedulingService {
         productName: order?.product?.nameEn ?? null,
         productNameAr: order?.product?.nameAr ?? null,
         productNameHe: order?.product?.nameHe ?? null,
+        imageUrl: order?.product?.imageUrl ?? null,
         dealerName: customer?.nameEn ?? customer?.name ?? null,
         dealerNameAr: customer?.nameAr ?? customer?.name ?? null,
         dealerNameHe: customer?.nameHe ?? null,
@@ -688,7 +704,14 @@ export class SchedulingService {
   async generateForProductionOrder(
     poId: string,
     userId: string,
-    opts?: { reason?: string; mode?: 'forward' | 'backward' },
+    opts?: {
+      reason?: string;
+      mode?: 'forward' | 'backward';
+      /** Anchor forward planning at this instant (admin “move to day”). */
+      fromDate?: Date;
+      /** When true, planner failures throw instead of creating an empty NEEDS_REVIEW. */
+      failHard?: boolean;
+    },
   ) {
     const po = await this.prisma.productionOrder.findUnique({
       where: { id: poId },
@@ -711,6 +734,13 @@ export class SchedulingService {
       return await this.buildAndPersistSchedule(po, userId, opts);
     } catch (err) {
       if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
+      if (opts?.failHard) {
+        const message = err instanceof Error ? err.message : 'Scheduling failed';
+        throw new ConflictException({
+          code: 'SCHEDULE_REPLAN_FAILED',
+          message,
+        });
+      }
       await this.markNeedsReview(poId, userId, err);
       return this.getOrderSchedule(poId);
     }
@@ -730,7 +760,12 @@ export class SchedulingService {
       };
     }>,
     userId: string,
-    opts?: { reason?: string; mode?: 'forward' | 'backward' },
+    opts?: {
+      reason?: string;
+      mode?: 'forward' | 'backward';
+      fromDate?: Date;
+      failHard?: boolean;
+    },
   ) {
     const latest = await this.prisma.productionSchedule.findFirst({
       where: { productionOrderId: po.id },
@@ -752,13 +787,45 @@ export class SchedulingService {
     );
     const hasProfile = Boolean(po.product?.productionProfile);
     const hasEstimates = (po.product?.stageEstimates.length ?? 0) > 0;
-    const requiresAdminEstimateReview = !hasProfile || !hasEstimates;
+    const snapshot = await this.prisma.productionOrderWorkflowSnapshot.findUnique({
+      where: { productionOrderId: po.id },
+      include: { nodes: true, edges: true },
+    });
+    const snapshotHasAllEstimates = Boolean(
+      snapshot?.nodes.length &&
+        snapshot.nodes.every(
+          (n) => n.isSkipped || (n.estimatedMinutes != null && n.estimatedMinutes > 0),
+        ),
+    );
+    const requiresAdminEstimateReview =
+      (!hasProfile || !hasEstimates) && !snapshotHasAllEstimates;
 
     const stages: PlannerStageInput[] = [];
+    const snapByInstance = new Map(
+      (snapshot?.nodes ?? [])
+        .filter((n) => n.stageInstanceId)
+        .map((n) => [n.stageInstanceId!, n]),
+    );
+    const dependsByInstance = new Map<string, string[]>();
+    if (snapshot) {
+      const codeByNodeId = new Map(snapshot.nodes.map((n) => [n.id, n.stageCode]));
+      for (const node of snapshot.nodes) {
+        if (!node.stageInstanceId || node.isSkipped) continue;
+        const preds = snapshot.edges
+          .filter((e) => e.toSnapshotNodeId === node.id)
+          .map((e) => codeByNodeId.get(e.fromSnapshotNodeId)!)
+          .filter(Boolean);
+        dependsByInstance.set(node.stageInstanceId, preds);
+      }
+    }
+
     for (const task of po.tasks) {
       if (!task.stageDefinition || !task.stageDefinitionId) continue;
+      const snap = task.stageInstanceId ? snapByInstance.get(task.stageInstanceId) : undefined;
+      if (snap?.isSkipped) continue;
+
       const estimate = stageEstimateByDefId.get(task.stageDefinitionId);
-      if (estimate && !estimate.isRequired) continue;
+      if (!snap && estimate && !estimate.isRequired) continue;
 
       const estimatedMinutes = estimate
         ? calculateDurationMinutes({
@@ -771,23 +838,37 @@ export class SchedulingService {
             batchMinutes: estimate.batchMinutes ?? undefined,
             maxParallelUnits: estimate.maxParallelUnits ?? undefined,
           })
-        : (task.estimatedMinutes ?? Math.max(30, Math.round(Number(task.stageDefinition.estimatedHours ?? 1) * 60)));
+        : (snap?.estimatedMinutes ??
+          task.estimatedMinutes ??
+          Math.max(30, Math.round(Number(task.stageDefinition.estimatedHours ?? 1) * 60)));
 
       const departmentCode =
-        estimate?.overrideDepartment?.code ?? task.stageDefinition.responsibleDepartment ?? null;
+        estimate?.overrideDepartment?.code ??
+        snap?.responsibleDepartmentCode ??
+        task.stageDefinition.responsibleDepartment ??
+        null;
       const prior = pinnedByTask.get(task.id);
+      const lockInPlace =
+        task.status === 'COMPLETED' ||
+        task.status === 'IN_PROGRESS' ||
+        task.status === 'BLOCKED';
+      const pinStart = prior?.plannedStart ?? (lockInPlace ? task.plannedStart : null);
+      const pinEnd = prior?.plannedEnd ?? (lockInPlace ? task.plannedCompletion : null);
+      const isPinned = Boolean(prior) || Boolean(lockInPlace && pinStart && pinEnd);
 
       stages.push({
         code: task.stageDefinition.code,
         stageDefinitionId: task.stageDefinitionId,
-        dependsOnCodes: task.stageDefinition.dependsOnCodes,
+        dependsOnCodes:
+          (task.stageInstanceId ? dependsByInstance.get(task.stageInstanceId) : undefined) ??
+          task.stageDefinition.dependsOnCodes,
         estimatedMinutes,
         departmentCode,
         productionTaskId: task.id,
         stageInstanceId: task.stageInstanceId ?? null,
-        isPinned: Boolean(prior),
-        pinnedStart: prior?.plannedStart ?? null,
-        pinnedEnd: prior?.plannedEnd ?? null,
+        isPinned,
+        pinnedStart: isPinned ? pinStart : null,
+        pinnedEnd: isPinned ? pinEnd : null,
         preferredEmployeeId: task.assignedEmployeeId ?? null,
       });
     }
@@ -818,7 +899,7 @@ export class SchedulingService {
       this.loadOccupancy(po.id),
       this.getCalendarDomain(),
     ]);
-    const now = new Date();
+    const now = opts?.fromDate && !Number.isNaN(opts.fromDate.getTime()) ? opts.fromDate : new Date();
     const ctx = { calendar, workers, existingOccupancy: occupancy, now };
 
     const useBackward = opts?.mode
@@ -835,9 +916,15 @@ export class SchedulingService {
         : null;
 
     await this.prisma.$transaction(async (tx) => {
-      if (latest && latest.status === 'PROPOSED') {
-        await tx.productionSchedule.update({ where: { id: latest.id }, data: { status: 'SUPERSEDED' } });
-      }
+      // Drop prior active versions so calendar/occupancy only see the new plan.
+      // (Previously only PROPOSED was superseded, so APPROVED windows stuck on the board.)
+      await tx.productionSchedule.updateMany({
+        where: {
+          productionOrderId: po.id,
+          status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] },
+        },
+        data: { status: 'SUPERSEDED' },
+      });
 
       const createdSchedule = await tx.productionSchedule.create({
         data: {
@@ -942,7 +1029,152 @@ export class SchedulingService {
   }
 
   async recalculate(poId: string, userId: string, dto: RecalculateDto) {
-    return this.generateForProductionOrder(poId, userId, { reason: dto.reason, mode: dto.mode });
+    return this.generateForProductionOrder(poId, userId, {
+      reason: dto.reason,
+      mode: dto.mode,
+      failHard: true,
+    });
+  }
+
+  /**
+   * Admin calendar action: move the order’s planned window so it starts on `targetDate`
+   * (day-level shift of the latest schedule). Falls back to forward replan when there
+   * are no allocations to shift.
+   */
+  async shiftScheduleToDate(
+    poId: string,
+    targetDate: Date,
+    userId: string,
+    opts?: { reason?: string },
+  ) {
+    const latest = await this.prisma.productionSchedule.findFirst({
+      where: {
+        productionOrderId: poId,
+        status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] },
+      },
+      orderBy: { version: 'desc' },
+      include: { allocations: true },
+    });
+
+    const targetDay = new Date(
+      Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), targetDate.getUTCDate(), 0, 0, 0, 0),
+    );
+
+    if (!latest || latest.allocations.length === 0) {
+      await this.prisma.productionOrder.update({
+        where: { id: poId },
+        data: { requiredDeliveryDate: targetDate },
+      });
+      return this.generateForProductionOrder(poId, userId, {
+        reason: opts?.reason ?? 'Admin moved schedule date',
+        mode: 'forward',
+        fromDate: targetDay,
+        failHard: true,
+      });
+    }
+
+    const minStart = latest.allocations.reduce(
+      (min, a) => (a.plannedStart.getTime() < min.getTime() ? a.plannedStart : min),
+      latest.allocations[0]!.plannedStart,
+    );
+    const minDay = new Date(
+      Date.UTC(minStart.getUTCFullYear(), minStart.getUTCMonth(), minStart.getUTCDate(), 0, 0, 0, 0),
+    );
+    const deltaMs = targetDay.getTime() - minDay.getTime();
+
+    if (deltaMs === 0) {
+      return this.getOrderSchedule(poId);
+    }
+
+    const nextVersion = latest.version + 1;
+    let earliestStart: Date | null = null;
+    let latestEnd: Date | null = null;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productionSchedule.updateMany({
+        where: {
+          productionOrderId: poId,
+          status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] },
+        },
+        data: { status: 'SUPERSEDED' },
+      });
+
+      const created = await tx.productionSchedule.create({
+        data: {
+          productionOrderId: poId,
+          version: nextVersion,
+          status: 'PROPOSED',
+          promiseState: 'AWAITING_APPROVAL',
+          requestedDeliveryDate: latest.requestedDeliveryDate
+            ? new Date(latest.requestedDeliveryDate.getTime() + deltaMs)
+            : targetDate,
+          reason: opts?.reason ?? 'Admin moved schedule date',
+          generatedBy: userId,
+          requiresAdminEstimateReview: latest.requiresAdminEstimateReview,
+          estimateConfidence: latest.estimateConfidence,
+          estimateReviewStatus: latest.estimateReviewStatus,
+        },
+      });
+
+      for (const alloc of latest.allocations) {
+        const plannedStart = new Date(alloc.plannedStart.getTime() + deltaMs);
+        const plannedEnd = new Date(alloc.plannedEnd.getTime() + deltaMs);
+        if (!earliestStart || plannedStart.getTime() < earliestStart.getTime()) earliestStart = plannedStart;
+        if (!latestEnd || plannedEnd.getTime() > latestEnd.getTime()) latestEnd = plannedEnd;
+
+        await tx.scheduleAllocation.create({
+          data: {
+            scheduleId: created.id,
+            productionTaskId: alloc.productionTaskId ?? undefined,
+            stageInstanceId: alloc.stageInstanceId ?? undefined,
+            resourceType: alloc.resourceType,
+            employeeId: alloc.employeeId ?? undefined,
+            departmentId: alloc.departmentId ?? undefined,
+            plannedStart,
+            plannedEnd,
+            estimatedMinutes: alloc.estimatedMinutes,
+            isPinned: alloc.isPinned,
+            manuallyAdjusted: true,
+          },
+        });
+
+        if (alloc.productionTaskId) {
+          await tx.productionTask.update({
+            where: { id: alloc.productionTaskId },
+            data: {
+              plannedStart,
+              plannedCompletion: plannedEnd,
+            },
+          });
+        }
+      }
+
+      await tx.productionOrder.update({
+        where: { id: poId },
+        data: {
+          requiredDeliveryDate: latestEnd ?? targetDate,
+          ...(earliestStart ? { plannedStartDate: earliestStart } : {}),
+          ...(latestEnd ? { plannedCompletionDate: latestEnd } : {}),
+        },
+      });
+
+      await tx.productionSchedule.update({
+        where: { id: created.id },
+        data: {
+          earliestAvailableDate: latestEnd,
+          suggestedDeliveryDate: latestEnd,
+          requestedDeliveryDate: latestEnd ?? targetDate,
+        },
+      });
+    });
+
+    await this.audit(userId, 'schedule.shift-date', 'ProductionOrder', poId, {
+      targetDate: targetDay.toISOString(),
+      deltaMs,
+      reason: opts?.reason ?? null,
+    });
+
+    return this.getOrderSchedule(poId);
   }
 
   async approve(poId: string, version: number, userId: string) {
@@ -1341,6 +1573,27 @@ export class SchedulingService {
       where: { productionOrderId: poId },
       orderBy: { version: 'desc' },
     });
+
+    // Factory admins (no customerId) may force a delivery-date change + replan.
+    // Dealer portal users stay on the dealer change policy.
+    if (!user.customerId) {
+      const scope = `schedule.admin-date:${poId}`;
+      const { result } = await this.idempotency.once(
+        scope,
+        dto.idempotencyKey,
+        { userId: user.id, entityId: poId },
+        async () => {
+          // Move the planned window onto the selected calendar day (what the
+          // admin scheduling UI means by “change schedule date”).
+          await this.shiftScheduleToDate(poId, requested, user.id, {
+            reason: dto.reason ?? 'Admin updated schedule date',
+          });
+          return { ok: true as const, action: 'updated' as const };
+        },
+      );
+      return result;
+    }
+
     const promiseState = mapPromiseState({
       scheduleStatus: schedule?.status ?? 'DRAFT',
       productionOrderStatus: po.status,
@@ -1575,25 +1828,69 @@ export class SchedulingService {
       orderBy: [{ productionOrderId: 'asc' }, { version: 'desc' }],
       include: {
         productionOrder: {
-          select: { id: true, number: true, status: true, requiredDeliveryDate: true, priority: true },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            requiredDeliveryDate: true,
+            priority: true,
+            customerId: true,
+            product: {
+              select: { id: true, nameEn: true, nameAr: true, nameHe: true, imageUrl: true },
+            },
+            salesOrder: {
+              select: {
+                customer: { select: { id: true, name: true, nameEn: true, nameAr: true, nameHe: true } },
+              },
+            },
+          },
         },
       },
       take: 200,
     });
 
+    const orphanCustomerIds = [
+      ...new Set(
+        schedules
+          .map((s) => s.productionOrder)
+          .filter((o) => o.customerId && !o.salesOrder?.customer)
+          .map((o) => o.customerId as string),
+      ),
+    ];
+    const orphanCustomers = orphanCustomerIds.length
+      ? await this.prisma.customer.findMany({
+          where: { id: { in: orphanCustomerIds } },
+          select: { id: true, name: true, nameEn: true, nameAr: true, nameHe: true },
+        })
+      : [];
+    const orphanById = new Map(orphanCustomers.map((c) => [c.id, c]));
+
     return {
-      data: schedules.map((s) => ({
-        productionOrderId: s.productionOrderId,
-        number: s.productionOrder.number,
-        status: s.productionOrder.status,
-        priority: s.productionOrder.priority,
-        scheduleStatus: s.status,
-        reason: s.reason,
-        materialRisk: s.materialRisk,
-        requiresAdminEstimateReview: s.requiresAdminEstimateReview,
-        requiredDeliveryDate: s.productionOrder.requiredDeliveryDate,
-        suggestedDeliveryDate: s.suggestedDeliveryDate,
-      })),
+      data: schedules.map((s) => {
+        const order = s.productionOrder;
+        const customer =
+          order.salesOrder?.customer ??
+          (order.customerId ? orphanById.get(order.customerId) ?? null : null);
+        return {
+          productionOrderId: s.productionOrderId,
+          number: order.number,
+          status: order.status,
+          priority: order.priority,
+          scheduleStatus: s.status,
+          reason: s.reason,
+          materialRisk: s.materialRisk,
+          requiresAdminEstimateReview: s.requiresAdminEstimateReview,
+          requiredDeliveryDate: order.requiredDeliveryDate,
+          suggestedDeliveryDate: s.suggestedDeliveryDate,
+          productName: order.product?.nameEn ?? null,
+          productNameAr: order.product?.nameAr ?? null,
+          productNameHe: order.product?.nameHe ?? null,
+          imageUrl: order.product?.imageUrl ?? null,
+          dealerName: customer?.nameEn ?? customer?.name ?? null,
+          dealerNameAr: customer?.nameAr ?? customer?.name ?? null,
+          dealerNameHe: customer?.nameHe ?? null,
+        };
+      }),
     };
   }
 

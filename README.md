@@ -82,26 +82,29 @@ Still only three **types** (admin / customer / worker). Specialty floor logins a
 |----------|----------|------|-----------------|
 | `admin` | `123` | Admin | Admin web — assign stages, run the factory |
 | `cutter` | `123` | Worker | Material prep (WH) |
+| `cutter2` | `123` | Worker | Material prep (WH) |
 | `carpenter` | `123` | Worker | Carpentry |
 | `carpenter2` | `123` | Worker | Carpentry (parallel lane) |
+| `carpenter3` | `123` | Worker | Carpentry |
 | `painter` | `123` | Worker | Painting |
+| `painter2` | `123` | Worker | Painting |
 | `upholsterer` | `123` | Worker | Upholstery |
+| `upholsterer2` | `123` | Worker | Upholstery |
 | `assembler` | `123` | Worker | Assembly |
+| `assembler2` | `123` | Worker | Assembly |
 | `packer` | `123` | Worker | Packaging |
 | `inspector` | `123` | Worker | Quality inspection |
 | `driver` | `123` | Worker | Delivery |
+| `driver2` | `123` | Worker | Delivery |
 | `nile` | `123` | Customer | Customer portal — Nile Interiors |
 | `oasis` | `123` | Customer | Customer portal — Oasis Living |
 | `balqis` | `123` | Customer | Customer portal — Balqis Hospitality |
-| `jerash` | `123` | Customer | Customer portal — Jerash Furnishings |
-
-Additional dealers (`aqaba`, `zarqa`, `irbid`, `madaba`, `salt`, `karak`, `mafraq`, `ajloun`, `rum`, `deadsea`) and workers (`cutter2`, `carpenter3`, `painter2`, `upholsterer2`, `assembler2`, `driver2`) are also seeded.
 
 Quick smoke logins: **`admin`**, **`nile`**, **`carpenter`** — same password.
 
 **Workflow:** Admin opens a production order and assigns a worker per stage (filtered by department). When a worker completes their stage, the pipeline unlocks the next ready stages (e.g. carpentry done → upholstery / assembly can proceed; packaging done → delivery). Workers never see each other’s tasks.
 
-Demo data (`pnpm db:seed`) builds an **~8-month** Amman factory history: ~14 dealers, full catalog, multi-month purchasing/AP, ~180+ sales orders with RFQ→quote→production→delivery→AR chains, open fabric PR for low stock, QC/returns samples, and notifications. Each dealer has its own customer portal account.
+Demo data (`pnpm db:seed`) builds an Amman factory baseline: **1 admin**, **3 dealers** (`nile`, `oasis`, `balqis`), **15 workers**, full product catalog, inventory, multi-month purchasing/AP, and **~2 weeks of realistic dealer sales orders** (RFQ → quote → SO → production orders with workflow snapshots, stage tasks, and proposed schedules). Each dealer has its own customer portal account.
 
 Legacy email addresses (e.g. `admin@maher-aghbar.jo`) still exist on user records but login accepts **username only**.
 

@@ -71,17 +71,6 @@ const DEALERS: Array<{
   { username: 'nile', code: 'CUS-0101', nameEn: 'Nile Interiors', nameAr: 'النيل للديكور', city: 'Amman', area: 'Abdoun', industry: 'Showroom', tags: ['showroom', 'premium'] },
   { username: 'oasis', code: 'CUS-0102', nameEn: 'Oasis Living', nameAr: 'واحة المعيشة', city: 'Amman', area: 'Sweifieh', industry: 'Showroom', tags: ['showroom'] },
   { username: 'balqis', code: 'CUS-0103', nameEn: 'Balqis Hospitality', nameAr: 'بلقيس للضيافة', city: 'Amman', area: 'Airport Rd', industry: 'Hotel', tags: ['hotel', 'project'] },
-  { username: 'jerash', code: 'CUS-0104', nameEn: 'Jerash Furnishings', nameAr: 'مفروشات جرش', city: 'Jerash', area: 'Center', industry: 'Dealer', tags: ['dealer'] },
-  { username: 'aqaba', code: 'CUS-0105', nameEn: 'Aqaba Coast Suites', nameAr: 'أجنحة ساحل العقبة', city: 'Aqaba', area: 'South Beach', industry: 'Hotel', tags: ['hotel'] },
-  { username: 'zarqa', code: 'CUS-0106', nameEn: 'Zarqa Home Trade', nameAr: 'تجارة منزل الزرقاء', city: 'Zarqa', area: 'New Zarqa', industry: 'Dealer', tags: ['dealer'] },
-  { username: 'irbid', code: 'CUS-0107', nameEn: 'Irbid Modern Home', nameAr: 'المنزل الحديث إربد', city: 'Irbid', area: 'University St', industry: 'Showroom', tags: ['showroom'] },
-  { username: 'madaba', code: 'CUS-0108', nameEn: 'Madaba Heritage Inn', nameAr: 'نزل مادبا التراثي', city: 'Madaba', area: 'Old Town', industry: 'Boutique hotel', tags: ['hotel', 'boutique'] },
-  { username: 'salt', code: 'CUS-0109', nameEn: 'Salt Gallery Seating', nameAr: 'معرض جلوس السلط', city: 'As-Salt', area: 'Hammam St', industry: 'Showroom', tags: ['showroom'] },
-  { username: 'karak', code: 'CUS-0110', nameEn: 'Karak Project Desk', nameAr: 'مكتب مشاريع الكرك', city: 'Karak', area: 'Castle Rd', industry: 'Contractor', tags: ['project'] },
-  { username: 'mafraq', code: 'CUS-0111', nameEn: 'Mafraq Trade House', nameAr: 'بيت تجارة المفرق', city: 'Mafraq', area: 'Center', industry: 'Dealer', tags: ['dealer'] },
-  { username: 'ajloun', code: 'CUS-0112', nameEn: 'Ajloun Lodge Fit-Out', nameAr: 'تجهيز نزل عجلون', city: 'Ajloun', area: 'Forest Rd', industry: 'Hospitality', tags: ['hotel', 'project'] },
-  { username: 'rum', code: 'CUS-0113', nameEn: 'Wadi Rum Camp Co', nameAr: 'شركة مخيم وادي رم', city: 'Wadi Rum', area: 'Disi', industry: 'Camp', tags: ['project', 'outdoor'] },
-  { username: 'deadsea', code: 'CUS-0114', nameEn: 'Dead Sea Spa Residences', nameAr: 'مساكن سبا البحر الميت', city: 'Dead Sea', area: 'Sweimeh', industry: 'Resort', tags: ['hotel', 'premium'] },
 ];
 
 const WORKERS: Array<{
@@ -214,6 +203,7 @@ export async function seedPeople(prisma: PrismaClient, passwordHash: string) {
     MATERIAL_PREP: byDept.WH ?? [],
     CARPENTRY: byDept.CARP ?? [],
     PAINTING: byDept.PAINT ?? [],
+    FOAM: byDept.UPHOL ?? [],
     UPHOLSTERY: byDept.UPHOL ?? [],
     ASSEMBLY: byDept.ASM ?? [],
     INSPECTION: byDept.QC ?? [],

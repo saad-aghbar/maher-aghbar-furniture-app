@@ -2,6 +2,7 @@
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
 import { PageHeader } from '@/components/admin/page-header';
+import { OrderWorkflowSection } from '@/components/workflow/order-workflow-section';
 import { Link } from '@/i18n/navigation';
 import { API_URL, apiFetch, apiUpload, apiUploadFromUrl, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
@@ -1030,6 +1031,10 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
           })}
         </TableBody>
       </Table>
+      </MotionSection>
+
+      <MotionSection className="maher-form-section" as="div">
+        <OrderWorkflowSection productionOrderId={params.id} />
       </MotionSection>
 
       <MotionSection className="maher-form-section" as="div">

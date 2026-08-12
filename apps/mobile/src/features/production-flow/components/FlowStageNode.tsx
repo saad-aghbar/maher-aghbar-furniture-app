@@ -25,6 +25,8 @@ type Props = {
   top: number;
   onPress?: () => void;
   reduceMotion: boolean;
+  /** Template / editor chart — show step numbers, not estimate warnings. */
+  preview?: boolean;
 };
 
 function normalizeStatus(status: string): string {
@@ -40,6 +42,7 @@ export function FlowStageNode({
   top,
   onPress,
   reduceMotion,
+  preview = false,
 }: Props) {
   const { colors } = useTheme();
   const status = normalizeStatus(stage.status);
@@ -237,11 +240,26 @@ export function FlowStageNode({
               variant="caption"
               weight="semibold"
               style={{
-                color: inProgress || ready ? colors.brand : colors.textSecondary,
-                fontSize: 12,
+                color:
+                  !preview && stage.estimateReviewRequired
+                    ? colors.error
+                    : inProgress || ready
+                      ? colors.brand
+                      : colors.textSecondary,
+                fontSize: 11,
               }}
             >
-              {Math.round(stage.progressPercent)}%
+              {preview
+                ? String(index + 1)
+                : stage.estimateReviewRequired
+                  ? '!'
+                  : inProgress || stage.progressPercent > 0
+                    ? `${Math.round(stage.progressPercent)}%`
+                    : stage.estimatedMinutes != null && stage.estimatedMinutes > 0
+                      ? stage.estimatedMinutes >= 60
+                        ? `${Math.round(stage.estimatedMinutes / 60)}h`
+                        : `${stage.estimatedMinutes}m`
+                      : `${Math.round(stage.progressPercent)}%`}
             </AppText>
           ) : null}
         </View>
@@ -251,9 +269,9 @@ export function FlowStageNode({
           numberOfLines={2}
           style={{
             textAlign: 'center',
-            maxWidth: FLOW_NODE + 56,
+            maxWidth: FLOW_NODE + 72,
             lineHeight: 16,
-            letterSpacing: 0.2,
+            letterSpacing: 0.15,
             color: blocked && !completed ? colors.error : colors.textPrimary,
           }}
         >

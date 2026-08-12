@@ -1,15 +1,19 @@
-import { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { NewOrderCustomMeasurement, NewOrderDimensionFields } from '../newOrderMeasurements';
+
+const FLOOR_LIST_VISIBLE_ROWS = 3;
+const MEASUREMENT_ROW_ESTIMATE = 72;
 
 type Props = {
   value: NewOrderDimensionFields;
@@ -17,8 +21,9 @@ type Props = {
 };
 
 export function NewOrderDimensionsEditor({ value, onChange }: Props) {
-  const { t, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { t, isRTL, locale } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [sheetOpen, setSheetOpen] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newValue, setNewValue] = useState('');
@@ -135,65 +140,97 @@ export function NewOrderDimensionsEditor({ value, onChange }: Props) {
         </View>
       </View>
 
-      <View style={{ gap: theme.spacing.sm }}>
-        <AppText variant="caption" color="muted">
-          {t('mobile.newOrder.customMeasurements')}
-        </AppText>
-        {value.custom.length === 0 ? (
+      <View
+        style={{
+          borderRadius: theme.radius.xl,
+          borderWidth: 1,
+          borderColor: colors.borderStrong,
+          backgroundColor: colors.surface,
+          overflow: 'hidden',
+          ...orderBoardShadow(colorScheme),
+        }}
+      >
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.sm,
+            paddingHorizontal: theme.spacing.md,
+            paddingVertical: theme.spacing.sm + 2,
+            backgroundColor: colors.surfaceSecondary,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: colors.border,
+          }}
+        >
           <AppText
             variant="caption"
-            color="muted"
-            style={{ textAlign: isRTL ? 'right' : 'left' }}
+            weight={titleWeight}
+            style={{
+              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' ? 0 : 0.7,
+              fontSize: 11,
+              color: colors.brand,
+              textAlign: isRTL ? 'right' : 'left',
+            }}
           >
-            {t('mobile.newOrder.noCustomMeasurements')}
+            {t('mobile.newOrder.customMeasurements')}
           </AppText>
-        ) : (
-          value.custom.map((m, i) => (
+          <AppText variant="caption" color="muted" dir="ltr">
+            {String(value.custom.length)}
+          </AppText>
+        </View>
+
+        <View style={{ padding: theme.spacing.sm, gap: theme.spacing.sm }}>
+          {value.custom.length === 0 ? (
             <View
-              key={m.id}
               style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
+                borderRadius: theme.radius.xl,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceSecondary,
+                paddingVertical: theme.spacing.xl,
+                paddingHorizontal: theme.spacing.lg,
                 alignItems: 'center',
                 gap: theme.spacing.sm,
-                paddingVertical: theme.spacing.sm,
-                borderTopWidth: i === 0 ? 0 : 1,
-                borderTopColor: colors.border,
               }}
             >
-              <View style={{ flex: 1, gap: 2 }}>
-                <AppText
-                  variant="body"
-                  weight="medium"
-                  style={{ textAlign: isRTL ? 'right' : 'left' }}
-                >
-                  {m.label}
-                </AppText>
-                <AppText
-                  variant="caption"
-                  color="muted"
-                  dir="ltr"
-                  style={{ textAlign: isRTL ? 'right' : 'left' }}
-                >
-                  {m.value} cm
-                </AppText>
-              </View>
-              <Pressable
-                onPress={() => removeCustom(m.id)}
-                accessibilityRole="button"
-                accessibilityLabel={t('common.delete')}
-                hitSlop={8}
+              <View
                 style={{
-                  minWidth: theme.sizes.touch.min,
-                  minHeight: theme.sizes.touch.min,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
                   alignItems: 'center',
                   justifyContent: 'center',
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
                 }}
               >
-                <Ionicons name="trash-outline" size={18} color={colors.error} />
-              </Pressable>
+                <Ionicons name="resize-outline" size={20} color={colors.textMuted} />
+              </View>
+              <AppText variant="caption" color="muted" style={{ textAlign: 'center' }}>
+                {t('mobile.newOrder.noCustomMeasurements')}
+              </AppText>
             </View>
-          ))
-        )}
+          ) : (
+            <CappedNestedScroll
+              itemCount={value.custom.length}
+              rowEstimate={MEASUREMENT_ROW_ESTIMATE}
+              gap={theme.spacing.sm}
+            >
+              {value.custom.map((m) => (
+                <CustomMeasurementFloorRow
+                  key={m.id}
+                  name={m.label}
+                  valueLabel={`${m.value} cm`}
+                  titleWeight={titleWeight}
+                  onRemove={() => removeCustom(m.id)}
+                />
+              ))}
+            </CappedNestedScroll>
+          )}
+        </View>
       </View>
 
       <BottomSheet
@@ -237,6 +274,163 @@ export function NewOrderDimensionsEditor({ value, onChange }: Props) {
           </View>
         </View>
       </BottomSheet>
+    </View>
+  );
+}
+
+function CustomMeasurementFloorRow({
+  name,
+  valueLabel,
+  titleWeight,
+  onRemove,
+}: {
+  name: string;
+  valueLabel: string;
+  titleWeight: 'medium' | 'semibold';
+  onRemove: () => void;
+}) {
+  const { colors, theme, colorScheme } = useTheme();
+  const { isRTL, t } = useLocale();
+
+  return (
+    <View
+      style={{
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: colors.borderStrong,
+        backgroundColor: colors.surfaceSecondary,
+        overflow: 'hidden',
+        ...orderBoardShadow(colorScheme),
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          width: 3,
+          backgroundColor: colors.brand,
+          opacity: 0.75,
+        }}
+      />
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          gap: theme.spacing.md,
+          paddingVertical: theme.spacing.md,
+          paddingHorizontal: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.md + 4 }
+            : { paddingLeft: theme.spacing.md + 4 }),
+        }}
+      >
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.brandSoft,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Ionicons name="resize-outline" size={18} color={colors.brand} />
+        </View>
+
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <AppText
+            variant="label"
+            weight={titleWeight}
+            numberOfLines={1}
+            style={{ textAlign: isRTL ? 'right' : 'left' }}
+          >
+            {name}
+          </AppText>
+        </View>
+
+        <View
+          style={{
+            paddingHorizontal: theme.spacing.md,
+            paddingVertical: theme.spacing.sm,
+            borderRadius: theme.radius.lg,
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.borderStrong,
+          }}
+        >
+          <AppText
+            variant="label"
+            weight={titleWeight}
+            dir="ltr"
+            style={{ color: colors.brand }}
+          >
+            {valueLabel}
+          </AppText>
+        </View>
+
+        <AnimatedPressable
+          variant="button"
+          accessibilityRole="button"
+          accessibilityLabel={t('common.delete')}
+          onPress={onRemove}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.errorSoft,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Ionicons name="trash-outline" size={16} color={colors.error} />
+        </AnimatedPressable>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Nested ScrollViews ignore maxHeight inside a parent ScrollView on iOS.
+ * Few items stay natural height; longer lists pin a fixed box and scroll in-place.
+ */
+function CappedNestedScroll({
+  itemCount,
+  rowEstimate,
+  gap,
+  visibleRows = FLOOR_LIST_VISIBLE_ROWS,
+  children,
+}: {
+  itemCount: number;
+  rowEstimate: number;
+  gap: number;
+  visibleRows?: number;
+  children: ReactNode;
+}) {
+  const scrollable = itemCount > visibleRows;
+  const capHeight = visibleRows * rowEstimate + Math.max(0, visibleRows - 1) * gap;
+
+  if (!scrollable) {
+    return <View style={{ gap }}>{children}</View>;
+  }
+
+  return (
+    <View style={{ height: capHeight, overflow: 'hidden' }}>
+      <ScrollView
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="handled"
+        style={{ flex: 1 }}
+        contentContainerStyle={{ gap, paddingBottom: 2 }}
+      >
+        {children}
+      </ScrollView>
     </View>
   );
 }

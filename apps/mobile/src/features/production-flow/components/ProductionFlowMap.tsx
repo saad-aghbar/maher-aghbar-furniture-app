@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { View, useWindowDimensions, StyleSheet } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import Animated, {
   Easing,
   useAnimatedProps,
@@ -21,18 +21,11 @@ import { FlowMapAtmosphere } from './FlowMapAtmosphere';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-/** Horizontal gap between parallel (barrel) nodes. */
-const COL_GAP = 56;
-/** Vertical gap between node bottoms and next row tops (room for labels). */
-const ROW_GAP = 52;
-/** Symmetric inset above first node and below last label. */
-const PAD_Y = 28;
-const LABEL_BAND = 44;
-const STROKE = 2.75;
-
 type Props = {
   stages: ProductionFlowStage[];
   onStagePress?: (stage: ProductionFlowStage) => void;
+  /** Template editor preview — quieter nodes, no progress clutter. */
+  preview?: boolean;
 };
 
 function toOrderStages(stages: ProductionFlowStage[]): OrderStageView[] {
@@ -64,14 +57,14 @@ function barrelPath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} C ${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}`;
 }
 
-/** Cubic length ≈ chord × factor (good enough for dash fill). */
 function approxPathLength(x1: number, y1: number, x2: number, y2: number): number {
-  const chord = Math.hypot(x2 - x1, y2 - y1);
-  return Math.max(24, chord * 1.18);
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return Math.max(32, Math.hypot(dx, dy) * 1.18);
 }
 
-function stageFillRatio(stage: ProductionFlowStage | undefined): number {
-  if (!stage) return 0;
+function stageFillRatio(stage: ProductionFlowStage | undefined, preview: boolean): number {
+  if (preview || !stage) return 0;
   if (isDone(stage.status)) return 1;
   return Math.max(0, Math.min(1, Number(stage.progressPercent ?? 0) / 100));
 }
@@ -103,17 +96,17 @@ function EdgePath({
       return;
     }
     appear.value = withDelay(
-      90 + index * 45,
-      withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) }),
+      60 + index * 28,
+      withTiming(1, { duration: 380, easing: Easing.out(Easing.cubic) }),
     );
     fill.value = withDelay(
-      140 + index * 45,
-      withTiming(fillRatio, { duration: 640, easing: Easing.out(Easing.cubic) }),
+      100 + index * 28,
+      withTiming(fillRatio, { duration: 560, easing: Easing.out(Easing.cubic) }),
     );
   }, [appear, fill, fillRatio, index, reduceMotion]);
 
   const trackProps = useAnimatedProps(() => ({
-    strokeOpacity: 0.55 + appear.value * 0.45,
+    strokeOpacity: 0.4 + appear.value * 0.55,
   }));
 
   const fillProps = useAnimatedProps(() => ({
@@ -126,18 +119,20 @@ function EdgePath({
       <AnimatedPath
         d={d}
         stroke={trackColor}
-        strokeWidth={STROKE}
+        strokeWidth={2.25}
         fill="none"
         strokeLinecap="round"
+        strokeLinejoin="round"
         animatedProps={trackProps}
       />
       {fillRatio > 0.001 || !reduceMotion ? (
         <AnimatedPath
           d={d}
           stroke={fillColor}
-          strokeWidth={STROKE}
+          strokeWidth={2.25}
           fill="none"
           strokeLinecap="round"
+          strokeLinejoin="round"
           strokeDasharray={`${pathLength} ${pathLength}`}
           animatedProps={fillProps}
         />
@@ -146,7 +141,7 @@ function EdgePath({
   );
 }
 
-export function ProductionFlowMap({ stages, onStagePress }: Props) {
+export function ProductionFlowMap({ stages, onStagePress, preview = false }: Props) {
   const { width: winW } = useWindowDimensions();
   const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -163,21 +158,25 @@ export function ProductionFlowMap({ stages, onStagePress }: Props) {
   }, [layout.nodes]);
 
   const maxLanes = Math.max(1, layout.maxLanes);
-  const colW = FLOW_NODE + COL_GAP;
-  const rowH = FLOW_NODE + LABEL_BAND + ROW_GAP;
-  const contentW = Math.max(winW - 24, maxLanes * colW + 64);
-  // Symmetric pad: top inset = bottom inset under last label.
+  // Breathe more when the graph is wide / deep.
+  const colGap = maxLanes >= 4 ? 72 : maxLanes >= 3 ? 64 : 56;
+  const rowGap = layout.levelCount >= 5 ? 64 : 56;
+  const labelBand = 48;
+  const padY = 32;
+  const padX = 40;
+  const colW = FLOW_NODE + colGap;
+  const rowH = FLOW_NODE + labelBand + rowGap;
+  const contentW = Math.max(winW - 16, maxLanes * colW + padX * 2);
   const height = Math.max(
-    140,
-    PAD_Y +
+    160,
+    padY +
       Math.max(0, layout.levelCount - 1) * rowH +
       FLOW_NODE +
-      LABEL_BAND +
-      PAD_Y,
+      labelBand +
+      padY,
   );
   const centerX = contentW / 2;
 
-  /** Center each level’s nodes as a group — singles sit on the spine; pairs form a barrel. */
   const laneX = (lane: number, level: number) => {
     const lanesInLevel = Math.max(1, lanesByLevel.get(level) ?? 1);
     const span = (lanesInLevel - 1) * colW;
@@ -189,11 +188,16 @@ export function ProductionFlowMap({ stages, onStagePress }: Props) {
     if (!node) return null;
     return {
       x: laneX(node.lane, node.level),
-      top: PAD_Y + node.level * rowH,
-      bottom: PAD_Y + node.level * rowH + FLOW_NODE,
+      top: padY + node.level * rowH,
+      bottom: padY + node.level * rowH + FLOW_NODE,
+      level: node.level,
+      lane: node.lane,
       stage: stageByCode.get(code),
     };
   };
+
+  const trackColor = colors.textMuted;
+  const fillColor = colors.brand;
 
   return (
     <View
@@ -202,10 +206,25 @@ export function ProductionFlowMap({ stages, onStagePress }: Props) {
         height,
         alignSelf: 'center',
         overflow: 'hidden',
-        borderRadius: 12,
+        borderRadius: 16,
       }}
     >
       <FlowMapAtmosphere />
+
+      {/* Soft center rail for visual spine */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: centerX - 1,
+          top: padY,
+          bottom: padY,
+          width: 2,
+          borderRadius: 1,
+          backgroundColor: colors.border,
+          opacity: 0.35,
+        }}
+      />
 
       <Svg
         width={contentW}
@@ -213,14 +232,19 @@ export function ProductionFlowMap({ stages, onStagePress }: Props) {
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       >
+        <Defs>
+          <LinearGradient id="flowEdgeFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={trackColor} stopOpacity="0.35" />
+            <Stop offset="1" stopColor={trackColor} stopOpacity="0.85" />
+          </LinearGradient>
+        </Defs>
         {edges.map((e, i) => {
           const a = nodeCenter(e.from);
           const b = nodeCenter(e.to);
           if (!a || !b) return null;
           const d = barrelPath(a.x, a.bottom, b.x, b.top);
           const pathLength = approxPathLength(a.x, a.bottom, b.x, b.top);
-          // Line after a stage fills green to that stage’s progress (source, not destination).
-          const fillRatio = stageFillRatio(a.stage);
+          const fillRatio = stageFillRatio(a.stage, preview);
           return (
             <EdgePath
               key={`${e.from}-${e.to}`}
@@ -228,9 +252,25 @@ export function ProductionFlowMap({ stages, onStagePress }: Props) {
               index={i}
               pathLength={pathLength}
               fillRatio={fillRatio}
-              trackColor={colors.borderStrong}
-              fillColor={colors.success}
+              trackColor={trackColor}
+              fillColor={fillColor}
               reduceMotion={reduceMotion}
+            />
+          );
+        })}
+        {edges.map((e) => {
+          const b = nodeCenter(e.to);
+          if (!b) return null;
+          return (
+            <Circle
+              key={`dot-${e.from}-${e.to}`}
+              cx={b.x}
+              cy={b.top}
+              r={3}
+              fill={colors.brandSoft}
+              stroke={colors.brand}
+              strokeWidth={1.25}
+              opacity={0.9}
             />
           );
         })}
@@ -241,15 +281,24 @@ export function ProductionFlowMap({ stages, onStagePress }: Props) {
         if (!stage) return null;
         const cx = laneX(node.lane, node.level);
         const left = cx - FLOW_NODE / 2;
-        const top = PAD_Y + node.level * rowH;
+        const top = padY + node.level * rowH;
+        const previewStage = preview
+          ? {
+              ...stage,
+              progressPercent: 0,
+              status: 'PENDING',
+              estimateReviewRequired: false,
+            }
+          : stage;
         return (
           <FlowStageNode
             key={node.code}
-            stage={stage}
-            index={index}
+            stage={previewStage}
+            index={typeof stage.sortOrder === 'number' ? stage.sortOrder : index}
             left={left}
             top={top}
             reduceMotion={reduceMotion}
+            preview={preview}
             onPress={onStagePress ? () => onStagePress(stage) : undefined}
           />
         );

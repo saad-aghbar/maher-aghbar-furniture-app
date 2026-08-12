@@ -8,6 +8,10 @@ import { OrdersFilterButton } from './OrdersFilterButton';
 
 type Props = {
   title?: string;
+  /** Defaults to `mobile.orders.pulseEyebrow`. */
+  eyebrow?: string;
+  /** Defaults to `mobile.orders.subtitle`. */
+  subtitle?: string;
   searchInput: string;
   setSearchInput: (v: string) => void;
   onOpenFilters: () => void;
@@ -21,6 +25,8 @@ type Props = {
  */
 export function OrdersCompositionChrome({
   title,
+  eyebrow,
+  subtitle,
   searchInput,
   setSearchInput,
   onOpenFilters,
@@ -31,6 +37,8 @@ export function OrdersCompositionChrome({
   const { theme, colors } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const heading = title ?? t('mobile.orders.title');
+  const eyebrowLabel = eyebrow ?? t('mobile.orders.pulseEyebrow');
+  const subtitleLabel = subtitle ?? t('mobile.orders.subtitle');
 
   return (
     <View style={{ gap: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
@@ -52,7 +60,7 @@ export function OrdersCompositionChrome({
               color: colors.brand,
             }}
           >
-            {t('mobile.orders.pulseEyebrow')}
+            {eyebrowLabel}
           </AppText>
           <AppText variant="title" weight={titleWeight}>
             {heading}
@@ -60,10 +68,10 @@ export function OrdersCompositionChrome({
           <AppText
             variant="caption"
             color="muted"
-            numberOfLines={1}
+            numberOfLines={2}
             style={{ fontSize: 12, lineHeight: 16 }}
           >
-            {t('mobile.orders.subtitle')}
+            {subtitleLabel}
           </AppText>
         </View>
         <OrdersFilterButton onPress={onOpenFilters} activeCount={filterActiveCount} />

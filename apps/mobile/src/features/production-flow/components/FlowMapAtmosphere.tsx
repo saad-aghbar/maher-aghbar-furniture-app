@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Easing,
@@ -19,19 +19,22 @@ const FIELD_H = 1248;
 
 /**
  * Slow drifting M-field watermark (same artwork as login), scoped to a panel.
+ * Tiles vertically so long flow charts stay covered end-to-end.
  */
 export function FlowMapAtmosphere() {
   const reduce = useReducedMotion();
   const { colors, colorScheme } = useTheme();
   const { width: winW } = useWindowDimensions();
   const drift = useSharedValue(0);
+  const [panelSize, setPanelSize] = useState({ w: winW, h: 720 });
 
   const marksAcross = 6;
   const cellX = 61;
-  const panelH = 720;
-  const coverScale = Math.max((winW / marksAcross) / cellX, panelH / FIELD_H);
-  const stripW = FIELD_W * coverScale;
-  const stripH = FIELD_H * coverScale;
+  const baseScale = Math.max((panelSize.w / marksAcross) / cellX, 0.5);
+  const stripW = FIELD_W * baseScale;
+  const stripH = FIELD_H * baseScale;
+  const rows = Math.max(1, Math.ceil((panelSize.h + stripH * 0.25) / stripH) + 1);
+  const cols = 2; // two strips for horizontal drift loop
 
   useEffect(() => {
     if (reduce) {
@@ -58,7 +61,18 @@ export function FlowMapAtmosphere() {
   const sheetOpacity = colorScheme === 'dark' ? 0.28 : 0.22;
 
   return (
-    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
+    <View
+      style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}
+      pointerEvents="none"
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        if (width > 0 && height > 0) {
+          setPanelSize((prev) =>
+            prev.w === width && prev.h === height ? prev : { w: width, h: height },
+          );
+        }
+      }}
+    >
       <View
         style={[StyleSheet.absoluteFill, { backgroundColor: colors.surfaceSecondary }]}
       />
@@ -66,27 +80,27 @@ export function FlowMapAtmosphere() {
         style={[
           {
             position: 'absolute',
-            top: -stripH * 0.12,
+            top: -stripH * 0.08,
             left: 0,
-            flexDirection: 'row',
-            width: stripW * 2,
-            height: stripH,
+            width: stripW * cols,
+            height: stripH * rows,
           },
           rowStyle,
         ]}
       >
-        <Image
-          source={source}
-          resizeMode="stretch"
-          style={{ width: stripW, height: stripH, opacity: sheetOpacity }}
-        />
-        <Image
-          source={source}
-          resizeMode="stretch"
-          style={{ width: stripW, height: stripH, opacity: sheetOpacity }}
-        />
+        {Array.from({ length: rows }, (_, row) => (
+          <View key={`row-${row}`} style={{ flexDirection: 'row', height: stripH }}>
+            {Array.from({ length: cols }, (_, col) => (
+              <Image
+                key={`tile-${row}-${col}`}
+                source={source}
+                resizeMode="stretch"
+                style={{ width: stripW, height: stripH, opacity: sheetOpacity }}
+              />
+            ))}
+          </View>
+        ))}
       </Animated.View>
-      {/* Soft vertical fade so nodes stay readable */}
       <View
         pointerEvents="none"
         style={[

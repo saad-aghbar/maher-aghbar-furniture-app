@@ -1,9 +1,13 @@
+import { useRef, useState } from 'react';
 import { Alert, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { useToast } from '@/components/feedback/Toast';
+import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { DealerUploadGrid, type DealerUploadItem } from '@/features/dealer-ui/DealerUploadGrid';
+import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCameraProvider';
 import { useLocale } from '@/i18n';
 import { ProgressBar, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -35,18 +39,6 @@ async function ensureLibraryPermission(t: (k: string) => string) {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
     Alert.alert(t('mobile.newOrder.permissionTitle'), t('mobile.newOrder.permissionBody'));
-    return false;
-  }
-  return true;
-}
-
-async function ensureCameraPermission(t: (k: string) => string) {
-  const perm = await ImagePicker.requestCameraPermissionsAsync();
-  if (!perm.granted) {
-    Alert.alert(
-      t('mobile.newOrder.cameraPermissionTitle'),
-      t('mobile.newOrder.cameraPermissionBody'),
-    );
     return false;
   }
   return true;
@@ -115,77 +107,118 @@ export function UploadsStep({
 }: UploadsStepProps) {
   const { t, isRTL } = useLocale();
   const { theme } = useTheme();
+  const { showToast } = useToast();
+  const { openAccessoryCamera } = useAccessoryCamera();
+  const [handwrittenSheetOpen, setHandwrittenSheetOpen] = useState(false);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
 
   const add = (items: PendingAttachment[]) => {
     if (!items.length) return;
-    onChange([...attachments, ...items]);
+    onChange([...attachmentsRef.current, ...items]);
     void haptics.selection();
   };
 
   const remove = (id: string) => {
-    onChange(attachments.filter((a) => a.id !== id));
+    onChange(attachmentsRef.current.filter((a) => a.id !== id));
     void haptics.selection();
   };
 
-  const pickGallery = async (kind: AttachmentKind, multi: boolean) => {
-    if (!(await ensureLibraryPermission(t))) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.85,
-      allowsMultipleSelection: multi,
-      selectionLimit: multi ? 8 : 1,
-    });
-    if (result.canceled || !result.assets?.length) return;
-    add(result.assets.map((a) => toAttachment(a, kind)));
+  const failPick = () => {
+    void haptics.error();
+    showToast({ variant: 'error', message: t('mobile.newOrder.pickFailed') });
   };
 
+  const pickGallery = async (kind: AttachmentKind, multi: boolean) => {
+    try {
+      if (!(await ensureLibraryPermission(t))) return;
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.85,
+        // Editing + scroll/modal hosts often flash-dismiss the library on iOS.
+        allowsEditing: false,
+        exif: false,
+        allowsMultipleSelection: multi,
+        selectionLimit: multi ? 8 : 1,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      add(result.assets.map((a) => toAttachment(a, kind)));
+    } catch {
+      failPick();
+    }
+  };
+
+  /** Branded in-app camera — same AccessoryCamera flow as admin inventory / products. */
   const pickCamera = async (kind: AttachmentKind) => {
-    if (!(await ensureCameraPermission(t))) return;
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.85,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    add([toAttachment(result.assets[0], kind)]);
+    try {
+      const handwritten = kind === 'handwritten';
+      const uri = await openAccessoryCamera({
+        title: handwritten
+          ? t('mobile.newOrder.handwrittenTakeTitle')
+          : t('mobile.newOrder.takePhotoTitle'),
+        hint: handwritten
+          ? t('mobile.newOrder.handwrittenTakeHint')
+          : t('mobile.newOrder.takePhotoHint'),
+        aspectRatio: 4 / 3,
+      });
+      if (!uri) return;
+      add([
+        toAttachment(
+          {
+            uri,
+            fileName: `${handwritten ? 'handwritten' : 'order'}-${Date.now()}.jpg`,
+            mimeType: 'image/jpeg',
+          },
+          kind,
+        ),
+      ]);
+    } catch {
+      failPick();
+    }
   };
 
   const pickDocument = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'image/*'],
-      multiple: true,
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled || !result.assets?.length) return;
-    add(
-      result.assets.map((a) =>
-        toAttachment(
-          {
-            uri: a.uri,
-            fileName: a.name,
-            mimeType: a.mimeType,
-            fileSize: a.size,
-          },
-          isPdfMime(a.mimeType ?? '') || a.name.toLowerCase().endsWith('.pdf')
-            ? 'pdf'
-            : 'gallery',
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      add(
+        result.assets.map((a) =>
+          toAttachment(
+            {
+              uri: a.uri,
+              fileName: a.name,
+              mimeType: a.mimeType,
+              fileSize: a.size,
+            },
+            isPdfMime(a.mimeType ?? '') || a.name.toLowerCase().endsWith('.pdf')
+              ? 'pdf'
+              : 'gallery',
+          ),
         ),
-      ),
-    );
+      );
+    } catch {
+      failPick();
+    }
   };
 
-  const pickHandwritten = async () => {
-    Alert.alert(t('mobile.newOrder.handwritten'), t('mobile.newOrder.handwrittenHint'), [
-      {
-        text: t('mobile.newOrder.camera'),
-        onPress: () => void pickCamera('handwritten'),
-      },
-      {
-        text: t('mobile.newOrder.gallery'),
-        onPress: () => void pickGallery('handwritten', false),
-      },
-      { text: t('common.cancel'), style: 'cancel' },
-    ]);
-  };
+  const handwrittenActions: ActionSheetItem[] = [
+    {
+      label: t('mobile.newOrder.camera'),
+      icon: 'camera-outline',
+      deferUntilClosed: true,
+      onPress: () => void pickCamera('handwritten'),
+    },
+    {
+      label: t('mobile.newOrder.gallery'),
+      icon: 'images-outline',
+      deferUntilClosed: true,
+      onPress: () => void pickGallery('handwritten', false),
+    },
+  ];
 
   const aiKey = aiStateMessageKey(aiState);
   const gridItems = attachments.map(toDealerItem);
@@ -220,7 +253,7 @@ export function UploadsStep({
             onAddCamera={() => void pickCamera('gallery')}
             onAddGallery={() => void pickGallery('gallery', true)}
             onAddPdf={() => void pickDocument()}
-            onAddHandwritten={() => void pickHandwritten()}
+            onAddHandwritten={() => setHandwrittenSheetOpen(true)}
             onRetry={onRetry}
             onRemove={remove}
             addLabels={{
@@ -271,6 +304,14 @@ export function UploadsStep({
           {error}
         </AppText>
       ) : null}
+
+      <ActionSheet
+        open={handwrittenSheetOpen}
+        onClose={() => setHandwrittenSheetOpen(false)}
+        title={t('mobile.newOrder.handwritten')}
+        actions={handwrittenActions}
+        cancelLabel={t('common.cancel')}
+      />
     </View>
   );
 }

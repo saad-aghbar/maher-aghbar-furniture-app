@@ -82,6 +82,18 @@ export const ADMIN_OVERFLOW_MODULES: AdminOverflowModule[] = [
     tone: 'ink',
   },
   {
+    key: 'workflow',
+    labelKey: 'mobile.adminHome.navWorkflow',
+    hintKey: 'mobile.adminHome.navWorkflowHint',
+    icon: 'git-network-outline',
+    href: '/(app)/(admin)/production/workflow',
+    permissions: ['production.workflow.read', 'production-order.update'],
+    mode: 'any',
+    span: 'full',
+    tone: 'paper',
+    surfaces: ['more', 'home'],
+  },
+  {
     key: 'returns',
     labelKey: 'mobile.adminHome.navReturns',
     hintKey: 'mobile.adminHome.navReturnsHint',
@@ -100,7 +112,7 @@ export const ADMIN_OVERFLOW_MODULES: AdminOverflowModule[] = [
     href: '/(app)/(admin)/users',
     permissions: ['user.manage'],
     mode: 'all',
-    span: 'full',
+    span: 'half',
     tone: 'ink',
   },
   {

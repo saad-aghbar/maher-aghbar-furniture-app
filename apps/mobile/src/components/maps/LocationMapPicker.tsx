@@ -34,6 +34,8 @@ import { useTheme } from '@/theme';
 export type MapCoords = {
   latitude: number;
   longitude: number;
+  /** Human-readable address from reverse geocode when available. */
+  address?: string;
 };
 
 type LocationMapPickerProps = {
@@ -62,6 +64,39 @@ function regionFrom(coords: MapCoords): Region {
     latitudeDelta: 0.018,
     longitudeDelta: 0.018,
   };
+}
+
+function formatPlacemark(place: Location.LocationGeocodedAddress): string {
+  const streetLine = [place.streetNumber, place.street].filter(Boolean).join(' ').trim();
+  const parts = [
+    place.name && place.name !== streetLine && place.name !== place.street ? place.name : null,
+    streetLine || null,
+    place.district,
+    place.city,
+    place.subregion,
+    place.region,
+    place.postalCode,
+    place.country,
+  ].filter((part): part is string => Boolean(part && String(part).trim()));
+  const unique: string[] = [];
+  for (const part of parts) {
+    if (!unique.some((u) => u.toLowerCase() === part.toLowerCase())) unique.push(part);
+  }
+  return unique.join(', ');
+}
+
+async function reverseGeocodeLabel(coords: MapCoords): Promise<string> {
+  try {
+    const places = await Location.reverseGeocodeAsync({
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+    });
+    const formatted = places[0] ? formatPlacemark(places[0]) : '';
+    if (formatted.trim()) return formatted.trim();
+  } catch {
+    // Fall through to coordinate label.
+  }
+  return `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
 }
 
 function BrandMapPin({ active }: { active: boolean }) {
@@ -475,6 +510,7 @@ export function LocationMapPicker({
               ) : null}
               <PrimaryButton
                 label={t('mobile.newOrder.confirmLocation')}
+                loading={busy}
                 onPress={() => {
                   if (!coords) {
                     Alert.alert(
@@ -483,8 +519,16 @@ export function LocationMapPicker({
                     );
                     return;
                   }
-                  onConfirm(coords);
-                  void haptics.confirmMedium();
+                  void (async () => {
+                    setBusy(true);
+                    try {
+                      const address = await reverseGeocodeLabel(coords);
+                      onConfirm({ ...coords, address });
+                      void haptics.confirmMedium();
+                    } finally {
+                      setBusy(false);
+                    }
+                  })();
                 }}
                 style={{ flex: 1, borderRadius: theme.radius.xl }}
               />

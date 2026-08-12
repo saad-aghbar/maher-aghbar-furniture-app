@@ -75,10 +75,12 @@ export function DealerGlassCard({
           <BlurView
             intensity={dark ? 34 : 48}
             tint={dark ? 'dark' : 'light'}
+            pointerEvents="none"
             style={StyleSheet.absoluteFill}
           />
         ) : null}
         <View
+          pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
             { backgroundColor: Platform.OS === 'android' ? colors.surface : wash },

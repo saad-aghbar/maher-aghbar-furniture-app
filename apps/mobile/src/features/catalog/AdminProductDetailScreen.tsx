@@ -56,6 +56,7 @@ import { MeasurementValuePanel } from './components/MeasurementValueSheet';
 import { ProductGalleryBoard } from './components/ProductGalleryBoard';
 import { ProductPhotoSourceSheet } from './components/ProductPhotoSourceSheet';
 import { mergeProductPhotos, splitProductPhotos } from './productPhotos';
+import { ProductWorkflowSection } from '@/features/workflow/components/ProductWorkflowSection';
 import {
   pickProductPhotosFromLibrary,
   PRODUCT_PHOTO_ASPECT_RATIO,
@@ -995,6 +996,19 @@ export function AdminProductDetailScreen({ productId }: Props) {
         </ListItemEnter>
 
         <ListItemEnter index={6}>
+          <SectionBoard
+            title={t('mobile.production.workflow.productSectionTitle')}
+            titleWeight={titleWeight}
+          >
+            <ProductWorkflowSection
+              productId={productId}
+              showHeading={false}
+              titleWeight={titleWeight}
+            />
+          </SectionBoard>
+        </ListItemEnter>
+
+        <ListItemEnter index={7}>
           <PrimaryButton
             label={label('mobile.adminProduct.save', 'Save product')}
             loading={saveMutation.isPending}

@@ -233,9 +233,14 @@ export function OrderDetailScreen({
   );
   /** Lift sticky bar above floating tab bar; leave room in the scroll. */
   const stickyBottom = SURFACE_TAB_BAR_CLEARANCE;
+  const hasProductionWorkflow = (vm?.productionOrders?.length ?? 0) > 0;
+  /** Extra beige clearance so dock / last boards clear the tab bar. */
   const stickyPad = showStickyActions
-    ? stickyBottom + 132
-    : theme.spacing['3xl'] + Math.max(insets.bottom, 0);
+    ? stickyBottom + 148
+    : theme.spacing['3xl'] +
+      SURFACE_TAB_BAR_CLEARANCE +
+      Math.max(insets.bottom, 0) +
+      (variant === 'dealer' ? 56 : 24);
 
   const actionsSheet: ActionSheetItem[] = useMemo(() => {
     if (!vm) return [];
@@ -508,56 +513,68 @@ export function OrderDetailScreen({
             </ListItemEnter>
           ) : null}
 
-          <ListItemEnter index={nextIndex()}>
-            <OrderBoardCard accent={colors.brand}>
-              <OrderSectionHeader
-                icon="analytics-outline"
-                label={t('mobile.orderDetail.progress')}
-                accent={colors.brand}
-              />
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <AppText
-                  variant="caption"
-                  color="secondary"
-                  numberOfLines={1}
-                  style={{ flex: 1 }}
+          {hasProductionWorkflow || vm.progressPercent > 0 ? (
+            <ListItemEnter index={nextIndex()}>
+              <OrderBoardCard accent={colors.brand}>
+                <OrderSectionHeader
+                  icon="analytics-outline"
+                  label={t('mobile.orderDetail.progress')}
+                  accent={colors.brand}
+                />
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: theme.spacing.sm,
+                  }}
                 >
-                  {vm.progressLabel?.trim() || t('mobile.orders.progress')}
-                </AppText>
-                <AppText
-                  variant="caption"
-                  weight="semibold"
-                  style={{ color: colors.brand }}
-                  dir="ltr"
-                >
-                  {`${Math.round(vm.progressPercent)}%`}
-                </AppText>
-              </View>
-              <WorkflowProgressHit
-                progressPercent={vm.progressPercent}
-                height={6}
-                accessibilityLabel={t('mobile.productionFlow.openWorkflow')}
-                onPress={() => {
-                  void haptics.selection();
-                  router.push(
-                    variant === 'admin'
-                      ? adminOrderFlowHref(vm.id)
-                      : dealerOrderFlowHref(vm.id),
-                  );
-                }}
-              />
-              <AppText variant="caption" color="brand">
-                {t('mobile.productionFlow.openWorkflow')}
-              </AppText>
-            </OrderBoardCard>
-          </ListItemEnter>
+                  <AppText
+                    variant="caption"
+                    color="secondary"
+                    numberOfLines={1}
+                    style={{ flex: 1 }}
+                  >
+                    {vm.progressLabel?.trim() || t('mobile.orders.progress')}
+                  </AppText>
+                  <AppText
+                    variant="caption"
+                    weight="semibold"
+                    style={{ color: colors.brand }}
+                    dir="ltr"
+                  >
+                    {`${Math.round(vm.progressPercent)}%`}
+                  </AppText>
+                </View>
+                <WorkflowProgressHit
+                  progressPercent={vm.progressPercent}
+                  height={6}
+                  accessibilityLabel={
+                    hasProductionWorkflow
+                      ? t('mobile.productionFlow.openWorkflow')
+                      : undefined
+                  }
+                  onPress={
+                    hasProductionWorkflow
+                      ? () => {
+                          void haptics.selection();
+                          router.push(
+                            variant === 'admin'
+                              ? adminOrderFlowHref(vm.id)
+                              : dealerOrderFlowHref(vm.id),
+                          );
+                        }
+                      : undefined
+                  }
+                />
+                {hasProductionWorkflow ? (
+                  <AppText variant="caption" color="brand" weight="medium">
+                    {t('mobile.productionFlow.openWorkflow')}
+                  </AppText>
+                ) : null}
+              </OrderBoardCard>
+            </ListItemEnter>
+          ) : null}
 
           {showSchedule ? (
             <ListItemEnter index={nextIndex()}>

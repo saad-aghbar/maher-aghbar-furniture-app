@@ -53,7 +53,7 @@ type MetricDef = {
 };
 
 export function ProductionOverviewScreen() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
@@ -61,6 +61,7 @@ export function ProductionOverviewScreen() {
   const reduce = useReducedMotion();
   const listRef = useRef<FlatList>(null);
   const allowed = canAny(user, ['production-order.read', 'production-task.read']);
+  const canWorkflow = canAny(user, ['production.workflow.read', 'production-order.update']);
 
   const [bucket, setBucket] = useState<ProductionListBucket>('in_production');
   const [searchInput, setSearchInput] = useState('');
@@ -68,6 +69,12 @@ export function ProductionOverviewScreen() {
   const [dealerId, setDealerId] = useState<string | null>(null);
   const [dealerLabel, setDealerLabel] = useState<string | null>(null);
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
+
+  // Pick up newly seeded production.workflow.* grants without forcing a full reinstall.
+  useEffect(() => {
+    if (!allowed) return;
+    void refreshUser();
+  }, [allowed, refreshUser]);
 
   useEffect(() => {
     const id = setTimeout(() => setQ(searchInput.trim()), 300);
@@ -247,6 +254,48 @@ export function ProductionOverviewScreen() {
                 {t('mobile.production.subtitle')}
               </AppText>
             </View>
+
+            {canWorkflow ? (
+              <AnimatedPressable
+                variant="button"
+                onPress={() => {
+                  void haptics.selection();
+                  router.push('/(app)/(admin)/production/workflow' as Href);
+                }}
+                style={{
+                  borderRadius: theme.radius.xl,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: colors.borderStrong,
+                  backgroundColor: colors.surface,
+                  paddingHorizontal: theme.spacing.lg,
+                  paddingVertical: theme.spacing.md,
+                  gap: theme.spacing.xs,
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.production.workflow.title')}
+              >
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: theme.spacing.md,
+                  }}
+                >
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <AppText variant="body" weight="semibold">
+                      {t('mobile.production.workflow.title')}
+                    </AppText>
+                    <AppText variant="caption" color="muted">
+                      {t('mobile.production.workflow.subtitle')}
+                    </AppText>
+                  </View>
+                  <AppText variant="body" color="brand" weight="semibold">
+                    {isRTL ? '←' : '→'}
+                  </AppText>
+                </View>
+              </AnimatedPressable>
+            ) : null}
 
             {topMetrics && floorMetrics ? (
               <View style={[{ borderRadius: theme.radius.xl }, boardShadow]}>

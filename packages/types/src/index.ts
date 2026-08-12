@@ -130,3 +130,18 @@ export interface FurnitureDimensions {
   depthCm: number;
   heightCm: number;
 }
+
+export type {
+  WorkflowGraphAdminDTO,
+  WorkflowGraphAssigneeDTO,
+  WorkflowGraphBlockerDTO,
+  WorkflowGraphDealerDTO,
+  WorkflowGraphDTO,
+  WorkflowGraphEdgeDTO,
+  WorkflowGraphNodeAdminDTO,
+  WorkflowGraphNodeBaseDTO,
+  WorkflowGraphNodeDealerDTO,
+  WorkflowGraphNodeStatus,
+} from './workflow-graph';
+
+export { isWorkflowGraphAdminDTO } from './workflow-graph';

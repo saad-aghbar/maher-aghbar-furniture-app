@@ -12,6 +12,11 @@ export type ProductionFlowStage = {
   progressPercent: number;
   dependsOnCodes: string[];
   sortOrder: number;
+  /** Snapshot / workflow node id when available (order customize). */
+  snapshotNodeId?: string | null;
+  stageDefinitionId?: string | null;
+  estimatedMinutes?: number | null;
+  estimateReviewRequired?: boolean;
   /** Admin-only (empty for dealer) */
   assignees: Array<{
     id: string;

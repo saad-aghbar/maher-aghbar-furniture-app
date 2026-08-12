@@ -24,15 +24,21 @@ import {
   type FloorBoardSectionKey,
 } from '../groupOrdersByDay';
 import {
+  countDealerFocusBuckets,
   countOrderStages,
   filterByStageFocus,
+  matchesStatusChip,
   type OrdersStageFocus,
 } from '../stageCounts';
 import type { AdminOrderCardModel, DealerOrderCardModel, OrdersListVariant } from '../selectOrderCard';
+import { DealerOrdersFocusRail } from './DealerOrdersFocusRail';
 import { OrdersApprovalChips } from './OrdersApprovalChips';
 import { OrdersCompositionChrome } from './OrdersCompositionChrome';
 import { OrdersDaySectionHeader } from './OrdersDaySectionHeader';
 import { OrdersDealerBar } from './OrdersDealerBar';
+import {
+  type StatusChipKey,
+} from './OrdersFilterChips';
 import type { OrdersApprovalFilter } from './OrdersFilterSheet';
 import { OrdersListSkeleton } from './OrdersListSkeleton';
 import { OrdersProgressCard, type OrdersProgressCardModel } from './OrdersProgressCard';
@@ -57,6 +63,9 @@ type Props = {
   filterActiveCount?: number;
   approval: OrdersApprovalFilter;
   onApprovalChange: (next: OrdersApprovalFilter) => void;
+  /** Dealer status touch bar under On the line. */
+  statusChip?: StatusChipKey;
+  onStatusChipChange?: (next: StatusChipKey) => void;
   /** Admin only — production-style dealer filter under On the line. */
   dealerLabel?: string | null;
   onOpenDealerFilter?: () => void;
@@ -68,6 +77,9 @@ type Props = {
   onPressItem: (id: string, kind?: 'order' | 'rfq') => void;
   banner?: ReactNode;
 };
+
+/** Extra beige clearance under the list so the last cards clear the tab bar. */
+const LIST_BOTTOM_EXTRA = 48;
 
 type Section = {
   key: FloorBoardSectionKey;
@@ -155,6 +167,8 @@ export function OrdersSignatureHome({
   filterActiveCount = 0,
   approval,
   onApprovalChange,
+  statusChip = 'all',
+  onStatusChipChange,
   dealerLabel = null,
   onOpenDealerFilter,
   onClearDealerFilter,
@@ -170,13 +184,14 @@ export function OrdersSignatureHome({
   const reduce = useReducedMotion();
   const router = useRouter();
   const [expanded, setExpanded] = useState<ExpandedMap>(DEFAULT_EXPANDED);
+  const isDealer = variant === 'dealer';
 
   const allStream = useMemo(
     () => toStream(variant, adminItems, dealerItems),
     [adminItems, dealerItems, variant],
   );
 
-  /** Counts follow the filtered list; rail layout stays fixed (see OrdersStageSpine). */
+  /** Spine counts follow admin stream; dealer focus rail counts the searchable stream. */
   const counts = useMemo(
     () =>
       countOrderStages(
@@ -185,8 +200,18 @@ export function OrdersSignatureHome({
     [allStream],
   );
 
+  const dealerFocusCounts = useMemo(
+    () =>
+      countDealerFocusBuckets(
+        allStream.map((o) => ({ status: o.status, deliveryDate: o.deliveryDate })),
+      ),
+    [allStream],
+  );
+
   const sections: Section[] = useMemo(() => {
-    const focused = filterByStageFocus(allStream, stageFocus);
+    const focused = isDealer
+      ? allStream.filter((o) => matchesStatusChip(o, statusChip))
+      : filterByStageFocus(allStream, stageFocus);
     return groupOrdersFloorBoard(focused).map((g) => {
       const sorted = [...g.items].sort(sortForFloor);
       const open = expanded[g.key];
@@ -197,7 +222,7 @@ export function OrdersSignatureHome({
         data: open ? sorted : [],
       };
     });
-  }, [allStream, expanded, stageFocus, t]);
+  }, [allStream, expanded, isDealer, stageFocus, statusChip, t]);
 
   const toggleSection = (key: FloorBoardSectionKey) => {
     void haptics.selection();
@@ -216,25 +241,41 @@ export function OrdersSignatureHome({
       {banner}
       <OrdersCompositionChrome
         title={t('mobile.orders.title')}
+        eyebrow={
+          isDealer ? t('mobile.dealerAccount.ordersEyebrow') : undefined
+        }
+        subtitle={
+          isDealer ? t('mobile.dealerAccount.ordersSubtitle') : undefined
+        }
         searchInput={searchInput}
         setSearchInput={setSearchInput}
         onOpenFilters={onOpenFilters}
         filterActiveCount={filterActiveCount}
       >
         <View style={{ gap: theme.spacing.md }}>
-          <OrdersStageSpine
-            counts={counts}
-            stageFocus={stageFocus}
-            onStageFocusChange={onStageFocusChange}
-          />
-          {variant === 'admin' && onOpenDealerFilter ? (
-            <OrdersDealerBar
-              label={dealerLabel}
-              onPress={onOpenDealerFilter}
-              onClear={dealerLabel ? onClearDealerFilter : undefined}
+          {isDealer && onStatusChipChange ? (
+            <DealerOrdersFocusRail
+              value={statusChip}
+              onChange={onStatusChipChange}
+              counts={dealerFocusCounts}
             />
-          ) : null}
-          <OrdersApprovalChips value={approval} onChange={onApprovalChange} />
+          ) : (
+            <>
+              <OrdersStageSpine
+                counts={counts}
+                stageFocus={stageFocus}
+                onStageFocusChange={onStageFocusChange}
+              />
+              {variant === 'admin' && onOpenDealerFilter ? (
+                <OrdersDealerBar
+                  label={dealerLabel}
+                  onPress={onOpenDealerFilter}
+                  onClear={dealerLabel ? onClearDealerFilter : undefined}
+                />
+              ) : null}
+              <OrdersApprovalChips value={approval} onChange={onApprovalChange} />
+            </>
+          )}
         </View>
       </OrdersCompositionChrome>
     </View>
@@ -255,7 +296,8 @@ export function OrdersSignatureHome({
       ListHeaderComponent={header}
       contentContainerStyle={{
         paddingHorizontal: theme.spacing.lg,
-        paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+        paddingBottom:
+          theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + LIST_BOTTOM_EXTRA,
         flexGrow: 1,
       }}
       refreshControl={

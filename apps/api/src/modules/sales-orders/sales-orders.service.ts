@@ -22,10 +22,10 @@ import {
   type MaterialCostMap,
   type OrderCostResult,
 } from '../../common/helpers/order-costing.util';
-import { buildStageTaskInstructions } from '../../common/helpers/stage-task-instructions';
 import { ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
+import { WorkflowSnapshotService } from '../production/workflow/workflow-snapshot.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { firstImageDocument } from '../../common/helpers/document-image.util';
 import { buildSalesOrderSearchOr } from './build-sales-order-search-or';
@@ -208,6 +208,7 @@ export class SalesOrdersService {
     private readonly notifications: NotificationsService,
     private readonly storage: LocalStorageService,
     private readonly scheduling: SchedulingService,
+    private readonly workflowSnapshots: WorkflowSnapshotService,
   ) {}
 
   /** Short-lived download URL for list thumbnails from request attachments. */
@@ -1059,37 +1060,20 @@ export class SalesOrdersService {
             requiredDeliveryDate: order.requiredDeliveryDate ?? undefined,
             status: 'PLANNED',
             createdById: userId,
-            stages: {
-              create: stages.map((stage) => ({
-                stageDefinitionId: stage.id,
-                status: 'PENDING',
-              })),
-            },
           },
-          include: { stages: true },
         });
 
-        for (const stageInstance of productionOrder.stages) {
-          const stageDef = stages.find((s) => s.id === stageInstance.stageDefinitionId)!;
-          const taskNumber = await this.sequences.next('TASK', 'TSK');
-          await tx.productionTask.create({
-            data: {
-              number: taskNumber,
-              productionOrderId: productionOrder.id,
-              stageDefinitionId: stageDef.id,
-              stageInstanceId: stageInstance.id,
-              name: stageDef.nameEn,
-              description: buildStageTaskInstructions({
-                stageCode: stageDef.code,
-                stageNameEn: stageDef.nameEn,
-                productDescription: line.description,
-                quantity: Number(line.quantity),
-                specifications: line.specifications,
-              }),
-              status: 'NOT_STARTED',
-            },
-          });
-        }
+        await this.workflowSnapshots.createSnapshotForProductionOrder(
+          {
+            productionOrderId: productionOrder.id,
+            productId: line.productId,
+            productDescription: line.description,
+            quantity: Number(line.quantity),
+            specifications: line.specifications,
+            createdById: userId,
+          },
+          tx,
+        );
       }
 
       return tx.salesOrder.update({

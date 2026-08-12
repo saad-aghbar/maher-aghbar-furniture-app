@@ -8,10 +8,14 @@ import {
   selectApprovalsWaiting,
   selectAtRiskCards,
   selectAvailableActions,
+  selectConflictCards,
   selectDashboardStats,
   selectMonthDayMeta,
   selectOrdersForDay,
+  selectOrdersInRange,
   selectWeekStrip,
+  weekRangeFromYmd,
+  filterScheduleCards,
   type AdminScheduleCardModel,
 } from '../selectAdminScheduling';
 
@@ -156,7 +160,7 @@ describe('selectAtRiskCards', () => {
     expect(selectAtRiskCards(undefined)).toEqual([]);
   });
 
-  it('maps at-risk orders including reason and suggested date', () => {
+  it('maps at-risk orders including reason, product, and image', () => {
     const atRisk: AtRiskOrder[] = [
       {
         productionOrderId: 'po-9',
@@ -169,18 +173,130 @@ describe('selectAtRiskCards', () => {
         requiresAdminEstimateReview: true,
         requiredDeliveryDate: '2026-09-01',
         suggestedDeliveryDate: '2026-09-05',
+        productName: 'Armchair',
+        productNameAr: 'كرسي',
+        imageUrl: '/api/v1/files/armchair.jpg',
+        dealerName: 'Acme',
       },
     ];
-    const result = selectAtRiskCards(atRisk);
+    const result = selectAtRiskCards(atRisk, 'en');
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       productionOrderId: 'po-9',
+      title: 'Armchair',
+      dealerName: 'Acme',
+      imageUrl: '/api/v1/files/armchair.jpg',
+      priority: 'HIGH',
       materialRisk: true,
       reason: 'Material shortage',
       requiredDeliveryDate: '2026-09-01',
       suggestedDeliveryDate: '2026-09-05',
       scheduleVersion: null,
     });
+  });
+});
+
+describe('weekRangeFromYmd', () => {
+  it('returns Sunday–Saturday for a midweek anchor', () => {
+    // 2026-08-12 is Wednesday
+    expect(weekRangeFromYmd('2026-08-12')).toEqual({ from: '2026-08-09', to: '2026-08-15' });
+  });
+});
+
+describe('selectOrdersInRange / selectConflictCards', () => {
+  it('includes orders whose planned window overlaps the range', () => {
+    const orders = [
+      orderCard({ id: 'a', productionOrderId: 'po-a', plannedStart: '2026-08-10T08:00:00.000Z' }),
+      orderCard({ id: 'b', productionOrderId: 'po-b', plannedStart: '2026-08-16T08:00:00.000Z' }),
+      orderCard({
+        id: 'c',
+        productionOrderId: 'po-c',
+        plannedStart: '2026-08-08T08:00:00.000Z',
+        plannedEnd: '2026-08-12T12:00:00.000Z',
+      }),
+    ];
+    const result = selectOrdersInRange(orders, '2026-08-09', '2026-08-15');
+    expect(result.map((o) => o.productionOrderId).sort()).toEqual(['po-a', 'po-c']);
+  });
+
+  it('returns only conflict-flagged orders', () => {
+    const orders = [
+      orderCard({ id: 'a', productionOrderId: 'po-a', hasConflict: true }),
+      orderCard({ id: 'b', productionOrderId: 'po-b', hasConflict: false }),
+      orderCard({ id: 'c', productionOrderId: 'po-c', hasConflict: true }),
+    ];
+    expect(selectConflictCards(orders).map((o) => o.productionOrderId).sort()).toEqual([
+      'po-a',
+      'po-c',
+    ]);
+  });
+
+  it('passes imageUrl through to schedule cards', () => {
+    const orders = [
+      orderCard({
+        id: 'a',
+        productionOrderId: 'po-a',
+        imageUrl: '/api/v1/files/table.jpg',
+        plannedStart: '2026-08-11T08:00:00.000Z',
+      }),
+    ];
+    expect(selectOrdersForDay(orders, '2026-08-11')[0]?.imageUrl).toBe('/api/v1/files/table.jpg');
+  });
+});
+
+describe('filterScheduleCards', () => {
+  const cards: AdminScheduleCardModel[] = [
+    {
+      id: '1',
+      productionOrderId: 'po-1',
+      number: 'PO-1001',
+      title: 'Dining Table',
+      dealerName: 'Acme Furniture',
+      imageUrl: null,
+      priority: 'HIGH',
+      quantity: 1,
+      plannedStart: null,
+      plannedEnd: null,
+      status: 'PROPOSED',
+      promiseState: null,
+      materialRisk: false,
+      hasConflict: false,
+      reason: null,
+      scheduleVersion: 1,
+      requiredDeliveryDate: null,
+      suggestedDeliveryDate: null,
+    },
+    {
+      id: '2',
+      productionOrderId: 'po-2',
+      number: 'PO-2002',
+      title: 'Armchair',
+      dealerName: 'Nile Interiors',
+      imageUrl: null,
+      priority: null,
+      quantity: null,
+      plannedStart: null,
+      plannedEnd: null,
+      status: 'APPROVED',
+      promiseState: null,
+      materialRisk: false,
+      hasConflict: false,
+      reason: 'Material delay',
+      scheduleVersion: null,
+      requiredDeliveryDate: null,
+      suggestedDeliveryDate: null,
+    },
+  ];
+
+  it('returns all cards when query is empty', () => {
+    expect(filterScheduleCards(cards, '  ')).toHaveLength(2);
+  });
+
+  it('matches order number, product name, dealer, and reason', () => {
+    expect(filterScheduleCards(cards, '1001').map((c) => c.id)).toEqual(['1']);
+    expect(filterScheduleCards(cards, 'armchair').map((c) => c.id)).toEqual(['2']);
+    expect(filterScheduleCards(cards, 'nile').map((c) => c.id)).toEqual(['2']);
+    expect(filterScheduleCards(cards, 'material').map((c) => c.id)).toEqual(['2']);
   });
 });
 
@@ -192,6 +308,9 @@ describe('selectAvailableActions', () => {
       number: 'PO-0001',
       title: 'Dining Table',
       dealerName: 'Acme',
+      imageUrl: null,
+      priority: null,
+      quantity: null,
       plannedStart: null,
       plannedEnd: null,
       status: 'PROPOSED',

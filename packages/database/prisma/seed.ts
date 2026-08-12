@@ -2,6 +2,10 @@ import { PrismaClient } from '@prisma/client';
 import { hashSync } from 'bcryptjs';
 import { PERMISSIONS, ROLES, ROLE_PERMISSIONS } from '@maher/permissions';
 import { seedDemoWorld, wipeOperationalData } from './seed-demo-world';
+import {
+  ensureFoamStageDefinition,
+  seedStandardFurnitureWorkflow,
+} from './seed/workflow';
 
 const prisma = new PrismaClient();
 
@@ -187,6 +191,10 @@ async function main() {
       },
     });
   }
+
+  await ensureFoamStageDefinition(prisma);
+  await seedStandardFurnitureWorkflow(prisma);
+  console.log('  workflow: STANDARD_FURNITURE v1 (ACTIVE)');
 
   await prisma.systemSetting.upsert({
     where: { key: 'default_vat_rate' },
@@ -524,7 +532,7 @@ async function main() {
     '  cutter | cutter2 | carpenter | carpenter2 | carpenter3 | painter | painter2 | upholsterer | upholsterer2 | assembler | assembler2 | packer | inspector | driver | driver2',
   );
   console.log(
-    '  nile | oasis | balqis | jerash | aqaba | zarqa | irbid | madaba | salt | karak | mafraq | ajloun | rum | deadsea',
+    '  nile | oasis | balqis',
   );
 }
 

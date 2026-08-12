@@ -51,6 +51,27 @@ export function countOrderStages(items: StageCountable[]): Record<OrdersStageKey
   return counts;
 }
 
+/** Dealer focus rail buckets — includes delivered + total. */
+export type DealerFocusCounts = Record<OrdersStageKey, number> & {
+  delivered: number;
+  total: number;
+};
+
+export function countDealerFocusBuckets(items: StageCountable[]): DealerFocusCounts {
+  const counts: DealerFocusCounts = {
+    pending: 0,
+    production: 0,
+    ready: 0,
+    delivered: 0,
+    total: items.length,
+  };
+  for (const item of items) {
+    const stage = classifyOrderStage(item);
+    counts[stage] += 1;
+  }
+  return counts;
+}
+
 /** Client-side lane/spine filter — keeps full counts + avoids refetch thrash. */
 export function matchesStageFocus(item: StageCountable, focus: OrdersStageFocus): boolean {
   if (focus === 'all') return true;

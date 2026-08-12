@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { View, type LayoutChangeEvent } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollView, View, type LayoutChangeEvent } from 'react-native';
 import { GestureDetector, Pressable } from 'react-native-gesture-handler';
 import Animated, {
   interpolateColor,
@@ -25,10 +25,11 @@ type OrdersFilterChipsProps = {
 const CHIPS: StatusChipKey[] = ['all', 'pending', 'production', 'ready', 'delivered'];
 
 const SHELL_PAD_Y = 6;
-const SHELL_PAD_X = 8;
+const SHELL_PAD_X = 6;
 const PILL_HEIGHT = 34;
-const CHIP_PAD_X = 12;
-const CHIP_MIN_WIDTH = 48;
+const CHIP_PAD_X = 14;
+const CHIP_MIN_WIDTH = 44;
+const CHIP_GAP = 2;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
@@ -65,13 +66,16 @@ function accentFor(
 }
 
 /**
- * Full-width status filter bar — Fabric bubble, tap or hold-and-scrub.
+ * Status filter bar — text-hugging Fabric bubble, scrolls when labels need room.
+ * Tap to select, or press-and-hold then drag to scrub.
  */
 export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
   const { t, isRTL, locale } = useLocale();
   const { colors, colorScheme } = useTheme();
   const reduce = useReducedMotion();
+  const scrollRef = useRef<ScrollView>(null);
   const [layouts, setLayouts] = useState<Partial<Record<StatusChipKey, ChipLayout>>>({});
+  const [viewportW, setViewportW] = useState(0);
 
   const activeIdx = Math.max(0, CHIPS.indexOf(value));
   const dark = colorScheme === 'dark';
@@ -110,6 +114,15 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
     });
   }, []);
 
+  /** Keep the selected chip in view when the bar scrolls. */
+  useEffect(() => {
+    const layout = layouts[value];
+    if (!layout || viewportW <= 0) return;
+    const pad = SHELL_PAD_X;
+    const target = Math.max(0, layout.x - (viewportW - layout.width) / 2 + pad);
+    scrollRef.current?.scrollTo({ x: target, animated: true });
+  }, [value, layouts, viewportW, isRTL]);
+
   const pillStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: pillX.value },
@@ -127,92 +140,111 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
   const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
 
   return (
-    <GestureDetector gesture={gesture}>
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          height: shellH,
-          borderRadius: shellH / 2,
-          backgroundColor: dark ? 'rgba(42,36,37,0.92)' : colors.surfaceSecondary,
-          borderWidth: 1,
-          borderColor: colors.border,
+    <View
+      onLayout={(e) => setViewportW(e.nativeEvent.layout.width)}
+      style={{
+        height: shellH,
+        borderRadius: shellH / 2,
+        backgroundColor: dark ? 'rgba(42,36,37,0.92)' : colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+        overflow: 'hidden',
+        shadowColor: dark ? '#000000' : '#1E1A1B',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: dark ? 0.22 : 0.07,
+        shadowRadius: 8,
+        elevation: 2,
+      }}
+    >
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        bounces={false}
+        contentContainerStyle={{
+          flexGrow: 1,
           paddingVertical: SHELL_PAD_Y,
           paddingHorizontal: SHELL_PAD_X,
-          shadowColor: dark ? '#000000' : '#1E1A1B',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: dark ? 0.22 : 0.07,
-          shadowRadius: 8,
-          elevation: 2,
         }}
       >
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            {
-              position: 'absolute',
-              top: SHELL_PAD_Y,
-              height: PILL_HEIGHT,
-              left: 0,
-              borderRadius: PILL_HEIGHT / 2,
-              borderWidth: 1.5,
-              shadowColor: dark ? '#000000' : '#1E1A1B',
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: dark ? 0.25 : 0.08,
-              shadowRadius: 4,
-              elevation: 2,
-            },
-            pillStyle,
-          ]}
-        />
+        <GestureDetector gesture={gesture}>
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              gap: CHIP_GAP,
+              minHeight: PILL_HEIGHT,
+              flexGrow: 1,
+            }}
+          >
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                {
+                  position: 'absolute',
+                  top: 0,
+                  height: PILL_HEIGHT,
+                  left: 0,
+                  borderRadius: PILL_HEIGHT / 2,
+                  borderWidth: 1.5,
+                  shadowColor: dark ? '#000000' : '#1E1A1B',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: dark ? 0.25 : 0.08,
+                  shadowRadius: 4,
+                  elevation: 2,
+                },
+                pillStyle,
+              ]}
+            />
 
-        {CHIPS.map((chip) => {
-          const focused = value === chip;
-          const label = t(`mobile.orders.chips.${chip}`);
-          const ink = accentFor(chip, colors, focused);
+            {CHIPS.map((chip) => {
+              const focused = value === chip;
+              const label = t(`mobile.orders.chips.${chip}`);
+              const ink = accentFor(chip, colors, focused);
 
-          return (
-            <Pressable
-              key={chip}
-              accessibilityRole="button"
-              accessibilityState={{ selected: focused }}
-              accessibilityLabel={label}
-              onLayout={(e) => onChipLayout(chip, e)}
-              onPress={() => {
-                if (chip === value) return;
-                onChange(chip);
-              }}
-              style={{
-                height: PILL_HEIGHT,
-                minWidth: CHIP_MIN_WIDTH,
-                paddingHorizontal: CHIP_PAD_X,
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 2,
-                flexShrink: 1,
-              }}
-            >
-              <AppText
-                variant="caption"
-                weight={
-                  focused ? (locale === 'ar' ? 'medium' : 'semibold') : 'medium'
-                }
-                numberOfLines={1}
-                align="center"
-                style={{
-                  color: ink,
-                  fontSize: 12,
-                  lineHeight: 15,
-                  opacity: focused ? 1 : 0.82,
-                }}
-              >
-                {label}
-              </AppText>
-            </Pressable>
-          );
-        })}
-      </View>
-    </GestureDetector>
+              return (
+                <Pressable
+                  key={chip}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: focused }}
+                  accessibilityLabel={label}
+                  onLayout={(e) => onChipLayout(chip, e)}
+                  onPress={() => {
+                    if (chip === value) return;
+                    onChange(chip);
+                  }}
+                  style={{
+                    height: PILL_HEIGHT,
+                    minWidth: CHIP_MIN_WIDTH,
+                    paddingHorizontal: CHIP_PAD_X,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2,
+                    flexShrink: 0,
+                  }}
+                >
+                  <AppText
+                    variant="caption"
+                    weight={
+                      focused ? (locale === 'ar' ? 'medium' : 'semibold') : 'medium'
+                    }
+                    numberOfLines={1}
+                    align="center"
+                    style={{
+                      color: ink,
+                      fontSize: 13,
+                      lineHeight: 16,
+                      opacity: focused ? 1 : 0.82,
+                    }}
+                  >
+                    {label}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </GestureDetector>
+      </ScrollView>
+    </View>
   );
 }

@@ -40,6 +40,7 @@ export function ConfirmationSheet({
   const { theme } = useTheme();
   const [reason, setReason] = useState('');
   const withReason = Boolean(reasonLabel);
+  const pill = { borderRadius: theme.radius.xl } as const;
 
   useEffect(() => {
     if (!open) setReason('');
@@ -50,14 +51,25 @@ export function ConfirmationSheet({
       open={open}
       onClose={onClose}
       title={title}
-      sheetHeight={withReason ? 420 : 280}
+      fitContent
+      maxHeight={withReason ? 480 : 360}
       overlay={overlay}
     >
-      <AppText variant="body" color="secondary" style={{ marginBottom: theme.spacing.md }}>
-        {message}
-      </AppText>
-      {withReason ? (
-        <View style={{ marginBottom: theme.spacing.lg }}>
+      <View
+        style={{
+          gap: theme.spacing.lg,
+          paddingBottom: theme.spacing.md,
+        }}
+      >
+        <AppText
+          variant="body"
+          color="secondary"
+          style={{ textAlign: 'center', lineHeight: 22 }}
+        >
+          {message}
+        </AppText>
+
+        {withReason ? (
           <TextField
             label={reasonLabel}
             value={reason}
@@ -66,29 +78,30 @@ export function ConfirmationSheet({
             multiline
             growMinHeight={72}
           />
+        ) : null}
+
+        <View style={{ gap: theme.spacing.md }}>
+          {destructive ? (
+            <DestructiveButton
+              label={confirmLabel}
+              style={pill}
+              onPress={() => {
+                onConfirm(withReason ? reason.trim() || undefined : undefined);
+                onClose();
+              }}
+            />
+          ) : (
+            <PrimaryButton
+              label={confirmLabel}
+              style={pill}
+              onPress={() => {
+                onConfirm(withReason ? reason.trim() || undefined : undefined);
+                onClose();
+              }}
+            />
+          )}
+          <SecondaryButton label={cancelLabel} style={pill} onPress={onClose} />
         </View>
-      ) : (
-        <View style={{ marginBottom: theme.spacing.xl }} />
-      )}
-      <View style={{ gap: theme.spacing.sm }}>
-        {destructive ? (
-          <DestructiveButton
-            label={confirmLabel}
-            onPress={() => {
-              onConfirm(withReason ? reason.trim() || undefined : undefined);
-              onClose();
-            }}
-          />
-        ) : (
-          <PrimaryButton
-            label={confirmLabel}
-            onPress={() => {
-              onConfirm(withReason ? reason.trim() || undefined : undefined);
-              onClose();
-            }}
-          />
-        )}
-        <SecondaryButton label={cancelLabel} onPress={onClose} />
       </View>
     </BottomSheet>
   );

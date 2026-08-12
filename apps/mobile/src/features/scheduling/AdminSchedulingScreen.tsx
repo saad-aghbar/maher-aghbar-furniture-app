@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { useMemo, useState, type ReactNode } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import {
   MonthCalendar,
   CalendarLegend,
@@ -20,17 +21,24 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { formatDate, useLocale } from '@/i18n';
-import { AnimatedPressable, ListItemEnter, haptics, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { AnimatedPressable, SkeletonShimmer, haptics } from '@/motion';
+import { resolveAppFontStyle, useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { invalidateKeys } from '@/api/queryKeys';
+import { OrderCardMedia } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { isApiError } from '@/api/errors';
+import { toastMessageForError } from '@/api/queryClient';
+import { useToast } from '@/components/feedback/Toast';
 import {
   addCalendarException,
   approveSchedule,
   dealerDateChange,
   deleteCalendarException,
+  getOrderSchedule,
+  isOwnOrderSchedule,
   recalculateSchedule,
+  type ProductionScheduleDetail,
 } from '@/api/modules/scheduling';
 import {
   AdminChangeScheduleDateSheet,
@@ -44,27 +52,39 @@ import {
   useSchedulingDashboardQuery,
 } from './query';
 import {
+  filterScheduleCards,
   selectAdminCalendarDayMeta,
   selectApprovalsWaiting,
   selectAtRiskCards,
   selectAvailableActions,
+  selectConflictCards,
   selectDashboardStats,
   selectMonthDayMeta,
   selectOrdersForDay,
+  selectOrdersInRange,
+  weekRangeFromYmd,
   type AdminScheduleActionMode,
   type AdminScheduleCardModel,
+  type ScheduleFocusKey,
 } from './selectAdminScheduling';
+
+const FLOOR_ROW_ESTIMATE = 152;
+const FLOOR_LIST_VISIBLE_ROWS = 3;
+const SCHEDULE_MEDIA = 88;
 
 export function AdminSchedulingScreen() {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
-  const reduce = useReducedMotion();
+  const { showToast } = useToast();
   const queryClient = useQueryClient();
 
   const today = todayYmd();
+  const weekRange = useMemo(() => weekRangeFromYmd(today), [today]);
   const [cursor, setCursor] = useState<CalendarCursor>(() => initialCursorFromValue(today));
   const [selectedDay, setSelectedDay] = useState(today);
+  const [focus, setFocus] = useState<ScheduleFocusKey | null>(null);
+  const [orderSearch, setOrderSearch] = useState('');
 
   const [selectedCard, setSelectedCard] = useState<AdminScheduleCardModel | null>(null);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
@@ -84,6 +104,16 @@ export function AdminSchedulingScreen() {
   });
   const atRiskQuery = useAtRiskQuery();
 
+  /** Always load the current week for today/week focus so lists stay filled while the month cursor resets. */
+  const needsWeekWindow = focus === 'today' || focus === 'week';
+
+  const weekCalendarQuery = useSchedulingCalendarQuery(
+    needsWeekWindow
+      ? { from: weekRange.from, to: weekRange.to, view: 'week' }
+      : null,
+    Boolean(needsWeekWindow),
+  );
+
   const stats = useMemo(() => selectDashboardStats(dashboardQuery.data), [dashboardQuery.data]);
   const dayMeta = useMemo(
     () => selectAdminCalendarDayMeta(calendarQuery.data?.days, calendarQuery.data?.orders),
@@ -102,17 +132,82 @@ export function AdminSchedulingScreen() {
     | {
         shiftStart?: string;
         shiftEnd?: string;
-        exceptions?: Array<{ date: string; type: string; shiftStart?: string | null; shiftEnd?: string | null }>;
+        exceptions?: Array<{
+          date: string;
+          type: string;
+          shiftStart?: string | null;
+          shiftEnd?: string | null;
+        }>;
       }
     | undefined;
   const selectedDayException = (calendarMeta?.exceptions ?? []).find(
     (ex) => String(ex.date).slice(0, 10) === selectedDay,
   );
-  const approvals = useMemo(
-    () => selectApprovalsWaiting(calendarQuery.data?.orders, locale),
-    [calendarQuery.data, locale],
+
+  const atRisk = useMemo(
+    () => selectAtRiskCards(atRiskQuery.data?.data, locale),
+    [atRiskQuery.data, locale],
   );
-  const atRisk = useMemo(() => selectAtRiskCards(atRiskQuery.data?.data), [atRiskQuery.data]);
+
+  const focusSourceOrders = useMemo(() => {
+    const monthOrders = calendarQuery.data?.orders ?? [];
+    const weekOrders = weekCalendarQuery.data?.orders ?? [];
+    if (!weekOrders.length) return monthOrders;
+    if (!monthOrders.length) return weekOrders;
+    const byId = new Map<string, (typeof monthOrders)[number]>();
+    for (const order of [...monthOrders, ...weekOrders]) {
+      byId.set(order.productionOrderId, order);
+    }
+    return [...byId.values()];
+  }, [calendarQuery.data?.orders, weekCalendarQuery.data?.orders]);
+
+  const focusCards = useMemo(() => {
+    if (!focus) return [];
+    if (focus === 'today') return selectOrdersForDay(focusSourceOrders, today, locale);
+    if (focus === 'week') {
+      return selectOrdersInRange(focusSourceOrders, weekRange.from, weekRange.to, locale);
+    }
+    if (focus === 'awaitingApproval') return selectApprovalsWaiting(focusSourceOrders, locale);
+    if (focus === 'atRisk') return atRisk;
+    return selectConflictCards(focusSourceOrders, locale);
+  }, [atRisk, focus, focusSourceOrders, locale, today, weekRange.from, weekRange.to]);
+
+  const visibleFocusCards = useMemo(
+    () => filterScheduleCards(focusCards, orderSearch),
+    [focusCards, orderSearch],
+  );
+  const visibleDayOrders = useMemo(
+    () => filterScheduleCards(dayOrders, orderSearch),
+    [dayOrders, orderSearch],
+  );
+
+  const focusEmptyKey =
+    focus === 'today'
+      ? 'mobile.adminScheduling.dayEmpty'
+      : focus === 'week'
+        ? 'mobile.adminScheduling.weekOrdersEmpty'
+        : focus === 'awaitingApproval'
+          ? 'mobile.adminScheduling.approvalsEmpty'
+          : focus === 'atRisk'
+            ? 'mobile.adminScheduling.atRiskEmpty'
+            : focus === 'conflicts'
+              ? 'mobile.adminScheduling.conflictsEmpty'
+              : null;
+
+  const onStatPress = (key: ScheduleFocusKey) => {
+    void haptics.selection();
+    if (focus === key) {
+      setFocus(null);
+      setOrderSearch('');
+      return;
+    }
+    setFocus(key);
+    setOrderSearch('');
+    if (key === 'today' || key === 'week') {
+      setCursor(initialCursorFromValue(today));
+      setSelectedDay(today);
+    }
+  };
 
   const invalidateAfterMutation = (productionOrderId: string) => {
     for (const key of invalidateKeys.afterScheduleMutation(productionOrderId)) {
@@ -120,44 +215,93 @@ export function AdminSchedulingScreen() {
     }
   };
 
+  const jumpToScheduleStart = (detail: ProductionScheduleDetail) => {
+    const allocations = detail.schedule?.allocations ?? [];
+    if (allocations.length === 0) return;
+    let minStart = allocations[0]!.plannedStart;
+    for (const a of allocations) {
+      if (a.plannedStart < minStart) minStart = a.plannedStart;
+    }
+    const ymd = minStart.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return;
+    setFocus(null);
+    setSelectedDay(ymd);
+    setCursor(initialCursorFromValue(ymd));
+  };
+
+  const mutationErrorMessage = (err: unknown) =>
+    isApiError(err) || err instanceof Error
+      ? toastMessageForError(err)
+      : t('mobile.adminScheduling.sheets.genericError');
+
   const approveMutation = useMutation({
-    mutationFn: (vars: { id: string; version: number }) =>
-      approveSchedule(vars.id, {
-        version: vars.version,
+    mutationFn: async (vars: { id: string; version: number }) => {
+      // Calendar cards can carry a stale version after replans; approve against latest.
+      let version = vars.version;
+      try {
+        const latest = await getOrderSchedule(vars.id);
+        if (!isOwnOrderSchedule(latest) && latest.schedule?.version != null) {
+          version = latest.schedule.version;
+        }
+      } catch {
+        // Fall back to the card version if the detail fetch fails.
+      }
+      return approveSchedule(vars.id, {
+        version,
         idempotencyKey: `approve-${vars.id}-${Date.now()}`,
-      }),
+      });
+    },
     onSuccess: (_data, vars) => {
       invalidateAfterMutation(vars.id);
       setApproveOpen(false);
       setMutationError(null);
+      haptics.completeStrong();
+      showToast({
+        variant: 'success',
+        message: t('mobile.adminScheduling.sheets.approveSuccess'),
+      });
     },
-    onError: () => setMutationError(t('mobile.adminScheduling.sheets.genericError')),
+    onError: (err) => setMutationError(mutationErrorMessage(err)),
   });
 
   const changeDateMutation = useMutation({
-    mutationFn: (vars: { id: string; isoDate: string; reason?: string }) =>
-      dealerDateChange(vars.id, {
+    mutationFn: async (vars: { id: string; isoDate: string; reason?: string }) => {
+      await dealerDateChange(vars.id, {
         requestedDeliveryDate: vars.isoDate,
         reason: vars.reason,
         idempotencyKey: `admin-date-${vars.id}-${Date.now()}`,
-      }),
-    onSuccess: (_data, vars) => {
+      });
+      return getOrderSchedule(vars.id);
+    },
+    onSuccess: (detail, vars) => {
       invalidateAfterMutation(vars.id);
       setChangeDateOpen(false);
       setMutationError(null);
+      if (!isOwnOrderSchedule(detail)) jumpToScheduleStart(detail);
+      haptics.completeStrong();
+      showToast({
+        variant: 'success',
+        message: t('mobile.adminScheduling.sheets.changeDateSuccess'),
+      });
     },
-    onError: () => setMutationError(t('mobile.adminScheduling.sheets.genericError')),
+    onError: (err) => setMutationError(mutationErrorMessage(err)),
   });
 
   const recalculateMutation = useMutation({
     mutationFn: (vars: { id: string; reason?: string }) =>
       recalculateSchedule(vars.id, { reason: vars.reason }),
-    onSuccess: (_data, vars) => {
+    onSuccess: (detail, vars) => {
       invalidateAfterMutation(vars.id);
       setRecalculateOpen(false);
       setMutationError(null);
+      jumpToScheduleStart(detail);
+      haptics.completeStrong();
+      showToast({
+        variant: 'success',
+        message: t('mobile.adminScheduling.sheets.recalculateSuccess'),
+      });
     },
-    onError: () => setMutationError(t('mobile.adminScheduling.sheets.genericError')),
+    onError: (err) => setMutationError(mutationErrorMessage(err)),
   });
 
   const dayExceptionMutation = useMutation({
@@ -201,14 +345,12 @@ export function AdminSchedulingScreen() {
       void calendarQuery.refetch();
       void dashboardQuery.refetch();
       void atRiskQuery.refetch();
+      if (needsWeekWindow) void weekCalendarQuery.refetch();
     },
-    onError: () => setMutationError(t('mobile.adminScheduling.sheets.genericError')),
+    onError: (err) => setMutationError(mutationErrorMessage(err)),
   });
 
-  /** Initial cold start only — never blank the screen on month change / refetch. */
-  const hasAnyData = Boolean(
-    dashboardQuery.data || calendarQuery.data || atRiskQuery.data,
-  );
+  const hasAnyData = Boolean(dashboardQuery.data || calendarQuery.data || atRiskQuery.data);
   const isInitialLoading =
     !hasAnyData &&
     (dashboardQuery.isLoading || calendarQuery.isLoading || atRiskQuery.isLoading);
@@ -216,17 +358,30 @@ export function AdminSchedulingScreen() {
     !hasAnyData &&
     (dashboardQuery.isError || calendarQuery.isError || atRiskQuery.isError);
 
-  /** Soft in-place update while month board / sections refetch. */
-  const calendarUpdating =
-    calendarQuery.isFetching && Boolean(calendarQuery.data);
-  const dashboardUpdating =
-    dashboardQuery.isFetching && Boolean(dashboardQuery.data);
-  const atRiskUpdating = atRiskQuery.isFetching && Boolean(atRiskQuery.data);
+  const calendarUpdating = calendarQuery.isFetching && Boolean(calendarQuery.data);
+  const dashboardUpdating = dashboardQuery.isFetching && Boolean(dashboardQuery.data);
+  const focusUpdating =
+    focus === 'atRisk'
+      ? atRiskQuery.isFetching && Boolean(atRiskQuery.data)
+      : (calendarQuery.isFetching || weekCalendarQuery.isFetching) &&
+        Boolean(calendarQuery.data || weekCalendarQuery.data);
+
+  const focusColdLoading =
+    Boolean(focus) &&
+    focus !== 'atRisk' &&
+    needsWeekWindow &&
+    weekCalendarQuery.isLoading &&
+    !weekCalendarQuery.data &&
+    focusCards.length === 0;
+
+  const atRiskColdLoading =
+    focus === 'atRisk' && atRiskQuery.isLoading && !atRiskQuery.data && focusCards.length === 0;
 
   const pullRefreshing =
     (dashboardQuery.isRefetching ||
       calendarQuery.isRefetching ||
-      atRiskQuery.isRefetching) &&
+      atRiskQuery.isRefetching ||
+      weekCalendarQuery.isRefetching) &&
     !dashboardQuery.isPlaceholderData &&
     !calendarQuery.isPlaceholderData &&
     !atRiskQuery.isPlaceholderData;
@@ -235,30 +390,10 @@ export function AdminSchedulingScreen() {
     void dashboardQuery.refetch();
     void calendarQuery.refetch();
     void atRiskQuery.refetch();
+    if (needsWeekWindow) void weekCalendarQuery.refetch();
   };
 
-  const [animateEnter, setAnimateEnter] = useState(true);
-  useEffect(() => {
-    if (!animateEnter || !hasAnyData) return;
-    if (
-      calendarQuery.isPlaceholderData ||
-      dashboardQuery.isPlaceholderData ||
-      atRiskQuery.isPlaceholderData
-    ) {
-      return;
-    }
-    const id = setTimeout(() => setAnimateEnter(false), 520);
-    return () => clearTimeout(id);
-  }, [
-    animateEnter,
-    atRiskQuery.isPlaceholderData,
-    calendarQuery.isPlaceholderData,
-    dashboardQuery.isPlaceholderData,
-    hasAnyData,
-  ]);
-
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const listEnter = (index: number) => (animateEnter && !reduce ? index : 0);
 
   const openActions = (card: AdminScheduleCardModel) => {
     setSelectedCard(card);
@@ -280,28 +415,25 @@ export function AdminSchedulingScreen() {
     return (
       <AppScreen>
         <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.md }}>
-          {[0, 1, 2].map((i) => (
-            <SurfaceCard key={i} style={{ minHeight: 88, opacity: 0.6 }}>
-              <View style={{ gap: theme.spacing.sm }}>
-                <View
-                  style={{
-                    height: 14,
-                    width: '55%',
-                    borderRadius: theme.radius.sm,
-                    backgroundColor: colors.surfaceSecondary,
-                  }}
-                />
-                <View
-                  style={{
-                    height: 10,
-                    width: '35%',
-                    borderRadius: theme.radius.sm,
-                    backgroundColor: colors.surfaceSecondary,
-                  }}
-                />
-              </View>
-            </SurfaceCard>
-          ))}
+          <SkeletonShimmer height={28} width="42%" />
+          <SkeletonShimmer height={18} width="70%" />
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexWrap: 'wrap',
+              gap: theme.spacing.sm,
+            }}
+          >
+            {[0, 1, 2, 3, 4].map((i) => (
+              <SkeletonShimmer
+                key={i}
+                height={72}
+                width={i === 4 ? '100%' : '48%'}
+                style={{ borderRadius: theme.radius.lg }}
+              />
+            ))}
+          </View>
+          <SkeletonShimmer height={220} style={{ borderRadius: theme.radius.lg }} />
         </View>
       </AppScreen>
     );
@@ -329,9 +461,7 @@ export function AdminSchedulingScreen() {
           gap: theme.spacing.lg,
           paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
         }}
-        refreshControl={
-          <RefreshControl refreshing={pullRefreshing} onRefresh={refetchAll} />
-        }
+        refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={refetchAll} />}
       >
         <View style={{ gap: theme.spacing.xs }}>
           <AppText
@@ -367,134 +497,205 @@ export function AdminSchedulingScreen() {
               statKey={stat.key}
               value={stat.value}
               tone={stat.tone}
-              index={reduce ? 0 : index}
               fullWidth={stats.length % 2 === 1 && index === stats.length - 1}
+              active={focus === stat.key}
+              onPress={() => onStatPress(stat.key)}
             />
           ))}
         </View>
 
-        <View
-          style={{
-            gap: theme.spacing.sm,
-            opacity: calendarUpdating ? 0.72 : 1,
-          }}
-        >
-          <AppText variant="heading" weight={titleWeight}>
-            {t('mobile.adminScheduling.monthTitle')}
-          </AppText>
-          <CalendarLegend />
-          <MonthCalendar
-            value={selectedDay}
-            onSelect={setSelectedDay}
-            monthCursor={cursor}
-            onMonthChange={(next) => {
-              setCursor(next);
-              const range = monthRangeYmd(next);
-              if (selectedDay < range.from || selectedDay > range.to) {
-                setSelectedDay(range.from);
-              }
-            }}
-            dayMeta={dayMeta}
-            disableUnavailable={false}
-            variant="admin"
-            showAccentRail={false}
-          />
-        </View>
-
-        <View
-          style={{
-            gap: theme.spacing.sm,
-            opacity: calendarUpdating ? 0.72 : 1,
-          }}
-        >
-          <AppText variant="heading" weight={titleWeight}>
-            {t('mobile.adminScheduling.dayOrdersTitle', {
-              date: formatDate(locale, selectedDay),
-            })}
-          </AppText>
-          <AnimatedPressable
-            variant="button"
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.adminScheduling.dayCapacity.edit')}
-            onPress={() => {
-              void haptics.selection();
-              setMutationError(null);
-              setDayExceptionOpen(true);
-            }}
-            style={{
-              alignSelf: isRTL ? 'flex-end' : 'flex-start',
-              minHeight: 36,
-              paddingHorizontal: theme.spacing.md,
-              borderRadius: theme.radius.full,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.brandSoft,
-              borderWidth: 1,
-              borderColor: colors.brand,
-            }}
-          >
-            <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
-              {t('mobile.adminScheduling.dayCapacity.edit')}
-            </AppText>
-          </AnimatedPressable>
-          {selectedDayInfo && !selectedDayInfo.isWorking ? (
-            <EmptyState title={t('mobile.adminScheduling.dayClosed')} />
-          ) : dayOrders.length === 0 ? (
-            <EmptyState title={t('mobile.adminScheduling.dayEmpty')} />
-          ) : (
-            <View style={{ gap: theme.spacing.sm }}>
-              {dayOrders.map((card, index) => (
-                <ListItemEnter key={card.id} index={listEnter(index)}>
-                  <ScheduleOrderRow card={card} onPress={() => openActions(card)} />
-                </ListItemEnter>
-              ))}
+        {focus && focusEmptyKey ? (
+          <View style={{ gap: theme.spacing.sm, opacity: focusUpdating ? 0.72 : 1 }}>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <AnimatedPressable
+                variant="button"
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.adminScheduling.clearFocus')}
+                onPress={() => {
+                  void haptics.selection();
+                  setFocus(null);
+                  setOrderSearch('');
+                }}
+                style={{
+                  minHeight: 32,
+                  paddingHorizontal: theme.spacing.md,
+                  borderRadius: theme.radius.full,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.brandSoft,
+                  borderWidth: 1,
+                  borderColor: colors.brand,
+                }}
+              >
+                <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
+                  {t('mobile.adminScheduling.clearFocus')}
+                </AppText>
+              </AnimatedPressable>
             </View>
-          )}
-        </View>
 
-        <View
-          style={{
-            gap: theme.spacing.sm,
-            opacity: calendarUpdating ? 0.72 : 1,
-          }}
-        >
-          <AppText variant="heading" weight={titleWeight}>
-            {t('mobile.adminScheduling.approvalsTitle')}
-          </AppText>
-          {approvals.length === 0 ? (
-            <EmptyState title={t('mobile.adminScheduling.approvalsEmpty')} />
-          ) : (
-            <View style={{ gap: theme.spacing.sm }}>
-              {approvals.map((card, index) => (
-                <ListItemEnter key={card.id} index={listEnter(index)}>
-                  <ScheduleOrderRow card={card} onPress={() => openActions(card)} />
-                </ListItemEnter>
-              ))}
+            {focusColdLoading || atRiskColdLoading ? (
+              <ScheduleOrdersBoard
+                title={t(`mobile.adminScheduling.focusFilter.${focus}`)}
+                count={null}
+                search={orderSearch}
+                onSearchChange={setOrderSearch}
+              >
+                <ScheduleListSkeleton />
+              </ScheduleOrdersBoard>
+            ) : focusCards.length === 0 ? (
+              <ScheduleOrdersBoard
+                title={t(`mobile.adminScheduling.focusFilter.${focus}`)}
+                count={0}
+                search={orderSearch}
+                onSearchChange={setOrderSearch}
+              >
+                <EmptyState title={t(focusEmptyKey)} />
+              </ScheduleOrdersBoard>
+            ) : visibleFocusCards.length === 0 ? (
+              <ScheduleOrdersBoard
+                title={t(`mobile.adminScheduling.focusFilter.${focus}`)}
+                count={0}
+                search={orderSearch}
+                onSearchChange={setOrderSearch}
+              >
+                <EmptyState title={t('mobile.adminScheduling.searchEmpty')} />
+              </ScheduleOrdersBoard>
+            ) : (
+              <ScheduleOrdersBoard
+                title={t(`mobile.adminScheduling.focusFilter.${focus}`)}
+                count={visibleFocusCards.length}
+                search={orderSearch}
+                onSearchChange={setOrderSearch}
+              >
+                <CappedNestedScroll
+                  itemCount={visibleFocusCards.length}
+                  rowEstimate={FLOOR_ROW_ESTIMATE}
+                  gap={theme.spacing.sm}
+                >
+                  {visibleFocusCards.map((card) => (
+                    <ScheduleOrderRow key={card.id} card={card} onPress={() => openActions(card)} />
+                  ))}
+                </CappedNestedScroll>
+              </ScheduleOrdersBoard>
+            )}
+          </View>
+        ) : (
+          <>
+            <View style={{ gap: theme.spacing.sm, opacity: calendarUpdating ? 0.72 : 1 }}>
+              <AppText variant="heading" weight={titleWeight}>
+                {t('mobile.adminScheduling.monthTitle')}
+              </AppText>
+              <CalendarLegend />
+              <MonthCalendar
+                value={selectedDay}
+                onSelect={setSelectedDay}
+                monthCursor={cursor}
+                onMonthChange={(next) => {
+                  setCursor(next);
+                  const range = monthRangeYmd(next);
+                  if (selectedDay < range.from || selectedDay > range.to) {
+                    setSelectedDay(range.from);
+                  }
+                }}
+                dayMeta={dayMeta}
+                disableUnavailable={false}
+                variant="admin"
+                showAccentRail={false}
+              />
             </View>
-          )}
-        </View>
 
-        <View
-          style={{
-            gap: theme.spacing.sm,
-            opacity: atRiskUpdating ? 0.72 : 1,
-          }}
-        >
-          <AppText variant="heading" weight={titleWeight}>
-            {t('mobile.adminScheduling.atRiskTitle')}
-          </AppText>
-          {atRisk.length === 0 ? (
-            <EmptyState title={t('mobile.adminScheduling.atRiskEmpty')} />
-          ) : (
-            <View style={{ gap: theme.spacing.sm }}>
-              {atRisk.map((card, index) => (
-                <ListItemEnter key={card.id} index={listEnter(index)}>
-                  <ScheduleOrderRow card={card} onPress={() => openActions(card)} />
-                </ListItemEnter>
-              ))}
+            <View style={{ gap: theme.spacing.sm, opacity: calendarUpdating ? 0.72 : 1 }}>
+              <AnimatedPressable
+                variant="button"
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.adminScheduling.dayCapacity.edit')}
+                onPress={() => {
+                  void haptics.selection();
+                  setMutationError(null);
+                  setDayExceptionOpen(true);
+                }}
+                style={{
+                  alignSelf: isRTL ? 'flex-end' : 'flex-start',
+                  minHeight: 36,
+                  paddingHorizontal: theme.spacing.md,
+                  borderRadius: theme.radius.full,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.brandSoft,
+                  borderWidth: 1,
+                  borderColor: colors.brand,
+                }}
+              >
+                <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
+                  {t('mobile.adminScheduling.dayCapacity.edit')}
+                </AppText>
+              </AnimatedPressable>
+              {selectedDayInfo && !selectedDayInfo.isWorking ? (
+                <ScheduleOrdersBoard
+                  title={t('mobile.adminScheduling.dayOrdersTitle', {
+                    date: formatDate(locale, selectedDay),
+                  })}
+                  count={0}
+                  search={orderSearch}
+                  onSearchChange={setOrderSearch}
+                >
+                  <EmptyState title={t('mobile.adminScheduling.dayClosed')} />
+                </ScheduleOrdersBoard>
+              ) : dayOrders.length === 0 ? (
+                <ScheduleOrdersBoard
+                  title={t('mobile.adminScheduling.dayOrdersTitle', {
+                    date: formatDate(locale, selectedDay),
+                  })}
+                  count={0}
+                  search={orderSearch}
+                  onSearchChange={setOrderSearch}
+                >
+                  <EmptyState title={t('mobile.adminScheduling.dayEmpty')} />
+                </ScheduleOrdersBoard>
+              ) : visibleDayOrders.length === 0 ? (
+                <ScheduleOrdersBoard
+                  title={t('mobile.adminScheduling.dayOrdersTitle', {
+                    date: formatDate(locale, selectedDay),
+                  })}
+                  count={0}
+                  search={orderSearch}
+                  onSearchChange={setOrderSearch}
+                >
+                  <EmptyState title={t('mobile.adminScheduling.searchEmpty')} />
+                </ScheduleOrdersBoard>
+              ) : (
+                <ScheduleOrdersBoard
+                  title={t('mobile.adminScheduling.dayOrdersTitle', {
+                    date: formatDate(locale, selectedDay),
+                  })}
+                  count={visibleDayOrders.length}
+                  search={orderSearch}
+                  onSearchChange={setOrderSearch}
+                >
+                  <CappedNestedScroll
+                    itemCount={visibleDayOrders.length}
+                    rowEstimate={FLOOR_ROW_ESTIMATE}
+                    gap={theme.spacing.sm}
+                  >
+                    {visibleDayOrders.map((card) => (
+                      <ScheduleOrderRow
+                        key={card.id}
+                        card={card}
+                        onPress={() => openActions(card)}
+                      />
+                    ))}
+                  </CappedNestedScroll>
+                </ScheduleOrdersBoard>
+              )}
             </View>
-          )}
-        </View>
+          </>
+        )}
       </ScrollView>
 
       <ActionSheet
@@ -580,10 +781,12 @@ function buildActionItem(
   t: (key: string, params?: Record<string, string | number>) => string,
   handlers: { onApprove: () => void; onChangeDate: () => void; onRecalculate: () => void },
 ): ActionSheetItem {
+  // Nested BottomSheets must wait for ActionSheet Modal unmount (iOS freezes otherwise).
   if (mode === 'approve') {
     return {
       label: t('mobile.adminScheduling.sheets.approveTitle'),
       icon: 'checkmark-circle-outline',
+      deferUntilClosed: true,
       onPress: handlers.onApprove,
     };
   }
@@ -591,12 +794,14 @@ function buildActionItem(
     return {
       label: t('mobile.adminScheduling.sheets.changeDateTitle'),
       icon: 'calendar-outline',
+      deferUntilClosed: true,
       onPress: handlers.onChangeDate,
     };
   }
   return {
     label: t('mobile.adminScheduling.sheets.recalculateTitle'),
     icon: 'refresh-outline',
+    deferUntilClosed: true,
     onPress: handlers.onRecalculate,
   };
 }
@@ -605,22 +810,25 @@ function StatChip({
   statKey,
   value,
   tone,
-  index = 0,
   fullWidth = false,
+  active = false,
+  onPress,
 }: {
-  statKey: string;
+  statKey: ScheduleFocusKey;
   value: number;
   tone: 'neutral' | 'warning' | 'danger';
-  index?: number;
   fullWidth?: boolean;
+  active?: boolean;
+  onPress: () => void;
 }) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const hot = value > 0 && tone !== 'neutral';
   const accent =
     tone === 'danger' ? colors.error : tone === 'warning' ? colors.warning : colors.brand;
-  const wash =
-    tone === 'danger'
+  const wash = active
+    ? colors.brandSoft
+    : tone === 'danger'
       ? colors.errorSoft
       : tone === 'warning'
         ? colors.warningSoft
@@ -636,134 +844,37 @@ function StatChip({
             ? 'warning-outline'
             : 'git-compare-outline';
   const labelWeight = locale === 'ar' ? 'regular' : 'medium';
-
-  return (
-    <ListItemEnter
-      index={index}
-      style={
-        fullWidth
-          ? { width: '100%' }
-          : {
-              width: '48%',
-              flexGrow: 1,
-              minWidth: '46%',
-              maxWidth: '48%',
-            }
-      }
-    >
-      <View
-        style={{
-          borderRadius: theme.radius.lg,
-          borderWidth: 1,
-          borderColor: hot ? accent : colors.border,
-          backgroundColor: wash,
-          paddingVertical: theme.spacing.sm + 2,
-          paddingHorizontal: theme.spacing.md,
-          gap: 6,
-          ...(fullWidth
-            ? {
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                gap: theme.spacing.md,
-              }
-            : null),
-          ...orderBoardShadow(colorScheme),
-        }}
-      >
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
-            ...(fullWidth ? { flex: 1 } : null),
-          }}
-        >
-          <View
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: theme.radius.md,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: hot ? accent : colors.brandSoft,
-            }}
-          >
-            <Ionicons
-              name={iconName as 'today-outline'}
-              size={16}
-              color={hot ? colors.onBrand : colors.brand}
-            />
-          </View>
-          {fullWidth ? (
-            <AppText
-              variant="caption"
-              weight={labelWeight}
-              numberOfLines={1}
-              style={{
-                flex: 1,
-                color: colors.textSecondary,
-                letterSpacing: locale === 'ar' ? 0 : 0.35,
-                fontSize: 12,
-              }}
-            >
-              {t(`mobile.adminScheduling.stats.${statKey}`)}
-            </AppText>
-          ) : null}
-          <AppText
-            variant="title"
-            weight="semibold"
-            style={{
-              ...(fullWidth ? null : { flex: 1, textAlign: isRTL ? 'left' : 'right' }),
-              color: hot ? accent : colors.textPrimary,
-              fontVariant: ['tabular-nums'],
-              letterSpacing: -0.5,
-            }}
-          >
-            {value}
-          </AppText>
-        </View>
-
-        {!fullWidth ? (
-          <AppText
-            variant="caption"
-            weight={labelWeight}
-            numberOfLines={2}
-            style={{
-              color: colors.textSecondary,
-              letterSpacing: locale === 'ar' ? 0 : 0.35,
-              fontSize: 12,
-              lineHeight: 16,
-            }}
-          >
-            {t(`mobile.adminScheduling.stats.${statKey}`)}
-          </AppText>
-        ) : null}
-      </View>
-    </ListItemEnter>
-  );
-}
-
-function ScheduleOrderRow({ card, onPress }: { card: AdminScheduleCardModel; onPress: () => void }) {
-  const { t, isRTL, formatDate } = useLocale();
-  const { colors, theme } = useTheme();
+  const label = t(`mobile.adminScheduling.stats.${statKey}`);
 
   return (
     <AnimatedPressable
       variant="card"
       accessibilityRole="button"
-      accessibilityLabel={card.number}
-      onPress={() => {
-        void haptics.selection();
-        onPress();
-      }}
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={`${label}, ${value}`}
+      onPress={onPress}
       style={{
         borderRadius: theme.radius.lg,
-        borderWidth: 1,
-        borderColor: card.hasConflict ? colors.error : colors.border,
-        backgroundColor: colors.surface,
-        padding: theme.spacing.md,
-        gap: theme.spacing.xs,
-        ...theme.elevation.card,
+        borderWidth: active ? 2 : StyleSheet.hairlineWidth,
+        borderColor: active ? colors.brand : hot ? accent : colors.border,
+        backgroundColor: wash,
+        paddingVertical: theme.spacing.sm,
+        paddingHorizontal: theme.spacing.sm + 2,
+        gap: 4,
+        ...(fullWidth
+          ? {
+              width: '100%',
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+            }
+          : {
+              width: '48%',
+              flexGrow: 1,
+              minWidth: '46%',
+              maxWidth: '48%',
+            }),
+        ...orderBoardShadow(colorScheme),
       }}
     >
       <View
@@ -771,70 +882,622 @@ function ScheduleOrderRow({ card, onPress }: { card: AdminScheduleCardModel; onP
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'center',
           gap: theme.spacing.sm,
+          ...(fullWidth ? { flex: 1 } : null),
         }}
       >
-        <AppText variant="body" weight="semibold" style={{ flex: 1 }} numberOfLines={1}>
-          {card.title !== card.number ? card.title : card.number}
+        <View
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: theme.radius.md,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: hot ? accent : colors.brandSoft,
+          }}
+        >
+          <Ionicons
+            name={iconName as 'today-outline'}
+            size={14}
+            color={hot ? colors.onBrand : colors.brand}
+          />
+        </View>
+        {fullWidth ? (
+          <AppText
+            variant="caption"
+            weight={labelWeight}
+            numberOfLines={1}
+            style={{
+              flex: 1,
+              color: colors.textSecondary,
+              letterSpacing: locale === 'ar' ? 0 : 0.2,
+              fontSize: 12,
+            }}
+          >
+            {label}
+          </AppText>
+        ) : null}
+        <AppText
+          variant="heading"
+          weight="semibold"
+          style={{
+            ...(fullWidth ? null : { flex: 1, textAlign: isRTL ? 'left' : 'right' }),
+            color: hot ? accent : colors.textPrimary,
+            fontVariant: ['tabular-nums'],
+            letterSpacing: -0.3,
+            fontSize: 22,
+            lineHeight: 26,
+          }}
+        >
+          {value}
         </AppText>
-        {card.status ? <StatusBadge status={card.status} /> : null}
       </View>
-      <AppText variant="caption" color="secondary" dir="ltr" numberOfLines={1}>
-        {card.number}
-        {card.dealerName ? ` · ${card.dealerName}` : ''}
-      </AppText>
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          flexWrap: 'wrap',
-          gap: theme.spacing.sm,
-          alignItems: 'center',
-        }}
-      >
-        {card.plannedStart ? (
-          <AppText variant="caption" color="muted">
-            {t('mobile.adminScheduling.plannedFor', { date: formatDate(card.plannedStart) })}
-          </AppText>
-        ) : card.suggestedDeliveryDate ? (
-          <AppText variant="caption" color="muted">
-            {t('mobile.adminScheduling.plannedFor', {
-              date: formatDate(card.suggestedDeliveryDate),
-            })}
-          </AppText>
-        ) : null}
-        {card.materialRisk ? (
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <Ionicons name="warning-outline" size={12} color={colors.error} />
-            <AppText variant="caption" style={{ color: colors.error }}>
-              {t('mobile.adminScheduling.materialRisk')}
-            </AppText>
-          </View>
-        ) : null}
-        {card.hasConflict ? (
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <Ionicons name="alert-circle-outline" size={12} color={colors.error} />
-            <AppText variant="caption" style={{ color: colors.error }}>
-              {t('mobile.adminScheduling.conflict')}
-            </AppText>
-          </View>
-        ) : null}
-      </View>
-      {card.reason ? (
-        <AppText variant="caption" color="secondary" numberOfLines={2}>
-          {card.reason}
+
+      {!fullWidth ? (
+        <AppText
+          variant="caption"
+          weight={labelWeight}
+          numberOfLines={2}
+          style={{
+            color: colors.textSecondary,
+            letterSpacing: locale === 'ar' ? 0 : 0.2,
+            fontSize: 11,
+            lineHeight: 14,
+          }}
+        >
+          {label}
         </AppText>
       ) : null}
     </AnimatedPressable>
+  );
+}
+
+function priorityLabel(priority: string, t: (key: string) => string): string {
+  const upper = priority.toUpperCase();
+  const key = `mobile.production.priority.${upper}`;
+  const label = t(key);
+  return label === key ? priority : label;
+}
+
+function ScheduleOrderRow({
+  card,
+  onPress,
+}: {
+  card: AdminScheduleCardModel;
+  onPress: () => void;
+}) {
+  const { t, isRTL, formatDate, locale } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+
+  const priority = (card.priority ?? '').toUpperCase();
+  const urgent = priority === 'URGENT' || priority === 'HIGH';
+  const alerted = card.hasConflict || card.materialRisk;
+  const accent = card.hasConflict
+    ? colors.error
+    : card.materialRisk
+      ? colors.error
+      : urgent
+        ? colors.warning
+        : colors.brand;
+
+  const productTitle = card.title !== card.number ? card.title : card.number;
+  const plannedStartLabel = card.plannedStart ? formatDate(card.plannedStart) : null;
+  const plannedEndLabel = card.plannedEnd ? formatDate(card.plannedEnd) : null;
+  const plannedLabel =
+    plannedStartLabel && plannedEndLabel && plannedEndLabel !== plannedStartLabel
+      ? t('mobile.adminScheduling.plannedWindow', {
+          start: plannedStartLabel,
+          end: plannedEndLabel,
+        })
+      : plannedStartLabel
+        ? t('mobile.adminScheduling.plannedFor', { date: plannedStartLabel })
+        : null;
+
+  const requiredLabel = card.requiredDeliveryDate
+    ? t('mobile.adminScheduling.requiredBy', {
+        date: formatDate(card.requiredDeliveryDate),
+      })
+    : null;
+  const suggestedLabel =
+    !plannedLabel && card.suggestedDeliveryDate
+      ? t('mobile.adminScheduling.suggestedBy', {
+          date: formatDate(card.suggestedDeliveryDate),
+        })
+      : null;
+
+  return (
+    <AnimatedPressable
+      variant="card"
+      accessibilityRole="button"
+      accessibilityLabel={`${card.number} ${productTitle}`}
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={{
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: alerted ? colors.error : urgent ? colors.warning : colors.borderStrong,
+        backgroundColor: colors.surface,
+        overflow: 'hidden',
+        ...orderBoardShadow(colorScheme),
+      }}
+    >
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          width: 3,
+          backgroundColor: accent,
+          opacity: alerted || urgent ? 1 : 0.5,
+        }}
+      />
+
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          gap: theme.spacing.md,
+          paddingTop: theme.spacing.md,
+          paddingBottom: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.md + 4 }
+            : { paddingLeft: theme.spacing.md + 4 }),
+          alignItems: 'flex-start',
+        }}
+      >
+        <View style={{ width: SCHEDULE_MEDIA, gap: theme.spacing.xs }}>
+          <OrderCardMedia imageUrl={card.imageUrl} size={SCHEDULE_MEDIA} />
+          {urgent && card.priority ? (
+            <View
+              style={{
+                paddingHorizontal: 6,
+                paddingVertical: 3,
+                borderRadius: theme.radius.sm,
+                backgroundColor: colors.warningSoft,
+                alignItems: 'center',
+              }}
+            >
+              <AppText
+                variant="caption"
+                weight="semibold"
+                numberOfLines={1}
+                style={{ color: colors.warning, fontSize: 10, lineHeight: 13 }}
+              >
+                {priorityLabel(card.priority, t)}
+              </AppText>
+            </View>
+          ) : null}
+        </View>
+
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            gap: 5,
+            alignItems: isRTL ? 'flex-end' : 'flex-start',
+          }}
+        >
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: theme.spacing.sm,
+              width: '100%',
+            }}
+          >
+            <AppText
+              variant="label"
+              weight={titleWeight}
+              numberOfLines={2}
+              style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {productTitle}
+            </AppText>
+            {card.status ? <StatusBadge status={card.status} dot /> : null}
+          </View>
+
+          <AppText
+            variant="caption"
+            color="secondary"
+            numberOfLines={1}
+            dir="ltr"
+            style={{ letterSpacing: 0.2, width: '100%' }}
+          >
+            {card.number}
+          </AppText>
+
+          {card.dealerName ? (
+            <AppText
+              variant="caption"
+              color="muted"
+              numberOfLines={1}
+              style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {`${t('mobile.production.dealer')}: ${card.dealerName}`}
+            </AppText>
+          ) : null}
+
+          {plannedLabel ? (
+            <AppText
+              variant="caption"
+              color="muted"
+              numberOfLines={2}
+              style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {plannedLabel}
+            </AppText>
+          ) : null}
+
+          {requiredLabel ? (
+            <AppText
+              variant="caption"
+              color="muted"
+              numberOfLines={1}
+              style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {requiredLabel}
+            </AppText>
+          ) : null}
+
+          {suggestedLabel ? (
+            <AppText
+              variant="caption"
+              color="muted"
+              numberOfLines={1}
+              style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {suggestedLabel}
+            </AppText>
+          ) : null}
+
+          {card.quantity != null ? (
+            <AppText
+              variant="caption"
+              weight="semibold"
+              dir="ltr"
+              style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {t('mobile.adminScheduling.qty', { count: card.quantity })}
+            </AppText>
+          ) : null}
+        </View>
+      </View>
+
+      {alerted || card.reason ? (
+        <View
+          style={{
+            marginHorizontal: theme.spacing.md,
+            marginBottom: theme.spacing.md,
+            paddingTop: theme.spacing.sm,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: colors.border,
+            gap: theme.spacing.sm,
+            ...(isRTL
+              ? { marginRight: theme.spacing.md + 4 }
+              : { marginLeft: theme.spacing.md + 4 }),
+          }}
+        >
+          {alerted ? (
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                flexWrap: 'wrap',
+                gap: theme.spacing.sm,
+                alignItems: 'center',
+              }}
+            >
+              {card.hasConflict ? (
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    gap: 5,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: theme.radius.full,
+                    backgroundColor: colors.errorSoft,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: colors.error,
+                  }}
+                >
+                  <Ionicons name="alert-circle-outline" size={12} color={colors.error} />
+                  <AppText
+                    variant="caption"
+                    weight="semibold"
+                    style={{ color: colors.error, fontSize: 11 }}
+                  >
+                    {t('mobile.adminScheduling.conflict')}
+                  </AppText>
+                </View>
+              ) : null}
+              {card.materialRisk ? (
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    gap: 5,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: theme.radius.full,
+                    backgroundColor: colors.errorSoft,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: colors.error,
+                  }}
+                >
+                  <Ionicons name="warning-outline" size={12} color={colors.error} />
+                  <AppText
+                    variant="caption"
+                    weight="semibold"
+                    style={{ color: colors.error, fontSize: 11 }}
+                  >
+                    {t('mobile.adminScheduling.materialRisk')}
+                  </AppText>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {card.reason ? (
+            <AppText
+              variant="caption"
+              color="secondary"
+              numberOfLines={3}
+              style={{ textAlign: isRTL ? 'right' : 'left', lineHeight: 18 }}
+            >
+              {card.reason}
+            </AppText>
+          ) : null}
+        </View>
+      ) : (
+        <View style={{ height: theme.spacing.sm }} />
+      )}
+    </AnimatedPressable>
+  );
+}
+
+function ScheduleOrdersBoard({
+  title,
+  count,
+  search,
+  onSearchChange,
+  children,
+}: {
+  title: string;
+  count: number | null;
+  search: string;
+  onSearchChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  const { locale, isRTL, t } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+
+  return (
+    <View
+      style={{
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: colors.borderStrong,
+        backgroundColor: colors.surface,
+        overflow: 'hidden',
+        ...orderBoardShadow(colorScheme),
+      }}
+    >
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          width: 3,
+          backgroundColor: colors.brand,
+          opacity: 0.55,
+        }}
+      />
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm + 2,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.md + 4 }
+            : { paddingLeft: theme.spacing.md + 4 }),
+          backgroundColor: colors.surfaceSecondary,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        }}
+      >
+        <AppText
+          variant="caption"
+          weight={titleWeight}
+          numberOfLines={2}
+          style={{
+            flex: 1,
+            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            letterSpacing: locale === 'ar' ? 0 : 0.7,
+            fontSize: 11,
+            color: colors.brand,
+            textAlign: isRTL ? 'right' : 'left',
+          }}
+        >
+          {title}
+        </AppText>
+        {count != null ? (
+          <View
+            style={{
+              minWidth: 28,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              borderRadius: theme.radius.full,
+              backgroundColor: colors.brandSoft,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.brand,
+              alignItems: 'center',
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight="semibold"
+              dir="ltr"
+              style={{ color: colors.brand, fontVariant: ['tabular-nums'], fontSize: 12 }}
+            >
+              {String(count)}
+            </AppText>
+          </View>
+        ) : null}
+      </View>
+
+      <View
+        style={{
+          paddingHorizontal: theme.spacing.md,
+          paddingTop: theme.spacing.sm,
+          paddingBottom: theme.spacing.sm,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.md + 4 }
+            : { paddingLeft: theme.spacing.md + 4 }),
+          backgroundColor: colors.surface,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        }}
+      >
+        <SearchBarShell>
+          <TextInput
+            value={search}
+            onChangeText={onSearchChange}
+            placeholder={t('mobile.adminScheduling.searchPlaceholder')}
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+            accessibilityLabel={t('mobile.adminScheduling.searchPlaceholder')}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              paddingVertical: theme.spacing.sm,
+              fontSize: 16,
+              color: colors.textPrimary,
+              textAlign: isRTL ? 'right' : 'left',
+              ...resolveAppFontStyle(locale, { variant: 'body' }),
+            }}
+          />
+        </SearchBarShell>
+      </View>
+
+      <View
+        style={{
+          backgroundColor: colors.surfaceSecondary,
+          padding: theme.spacing.sm,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.sm + 2 }
+            : { paddingLeft: theme.spacing.sm + 2 }),
+        }}
+      >
+        {children}
+      </View>
+
+      {count != null && count > FLOOR_LIST_VISIBLE_ROWS ? (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            paddingVertical: theme.spacing.sm,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: colors.border,
+            backgroundColor: colors.surface,
+          }}
+        >
+          <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
+          <AppText variant="caption" color="muted" style={{ fontSize: 11 }}>
+            {t('mobile.adminScheduling.scrollForMore')}
+          </AppText>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function CappedNestedScroll({
+  itemCount,
+  rowEstimate,
+  gap,
+  visibleRows = FLOOR_LIST_VISIBLE_ROWS,
+  children,
+}: {
+  itemCount: number;
+  rowEstimate: number;
+  gap: number;
+  visibleRows?: number;
+  children: ReactNode;
+}) {
+  const { colors, theme } = useTheme();
+  const scrollable = itemCount > visibleRows;
+  const capHeight = visibleRows * rowEstimate + Math.max(0, visibleRows - 1) * gap;
+
+  if (!scrollable) {
+    return <View style={{ gap }}>{children}</View>;
+  }
+
+  return (
+    <View
+      style={{
+        height: capHeight,
+        overflow: 'hidden',
+        borderRadius: theme.radius.lg,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+      }}
+    >
+      <ScrollView
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="handled"
+        style={{ flex: 1 }}
+        contentContainerStyle={{ gap, padding: theme.spacing.sm, paddingBottom: theme.spacing.md }}
+      >
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
+function ScheduleListSkeleton() {
+  const { theme } = useTheme();
+  return (
+    <View style={{ gap: theme.spacing.sm }}>
+      {[0, 1, 2].map((i) => (
+        <SurfaceCard key={i} style={{ minHeight: FLOOR_ROW_ESTIMATE - 8, opacity: 0.85 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              gap: theme.spacing.md,
+              alignItems: 'center',
+            }}
+          >
+            <SkeletonShimmer
+              width={SCHEDULE_MEDIA}
+              height={SCHEDULE_MEDIA}
+              style={{ borderRadius: theme.radius.lg }}
+            />
+            <View style={{ flex: 1, gap: theme.spacing.sm }}>
+              <SkeletonShimmer height={14} width="70%" />
+              <SkeletonShimmer height={12} width="45%" />
+              <SkeletonShimmer height={12} width="55%" />
+              <SkeletonShimmer height={12} width="40%" />
+            </View>
+          </View>
+        </SurfaceCard>
+      ))}
+    </View>
   );
 }

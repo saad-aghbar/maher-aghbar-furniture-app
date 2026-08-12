@@ -32,6 +32,7 @@ export type UserRow = {
   departmentId?: string | null;
   department?: UserDepartment | null;
   roles?: Array<{ role: UserRoleRef }>;
+  stageDefinitionIds?: string[];
   temporaryPassword?: string;
 };
 
@@ -60,6 +61,7 @@ export type CreateUserInput = {
   phone?: string;
   preferredLanguage?: string;
   customerId?: string | null;
+  stageDefinitionIds?: string[];
 };
 
 export type UpdateUserInput = {
@@ -74,6 +76,7 @@ export type UpdateUserInput = {
   phone?: string | null;
   preferredLanguage?: string;
   customerId?: string | null;
+  stageDefinitionIds?: string[];
 };
 
 export async function listUsers(filters: UserListFilters = {}) {

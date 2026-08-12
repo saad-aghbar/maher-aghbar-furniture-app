@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost } from '../client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../client';
 import { toSearchParams } from '../pagination';
 
 export type ScheduleEstimateStatus = 'UNAVAILABLE' | 'PRELIMINARY' | 'CALCULATED';
@@ -193,6 +193,13 @@ export type AtRiskOrder = {
   requiresAdminEstimateReview: boolean;
   requiredDeliveryDate: string | null;
   suggestedDeliveryDate: string | null;
+  productName?: string | null;
+  productNameAr?: string | null;
+  productNameHe?: string | null;
+  imageUrl?: string | null;
+  dealerName?: string | null;
+  dealerNameAr?: string | null;
+  dealerNameHe?: string | null;
 };
 
 export async function getAtRisk(): Promise<{ data: AtRiskOrder[] }> {
@@ -209,6 +216,7 @@ export type ScheduleOrderCard = {
   productName?: string | null;
   productNameAr?: string | null;
   productNameHe?: string | null;
+  imageUrl?: string | null;
   dealerName?: string | null;
   dealerNameAr?: string | null;
   dealerNameHe?: string | null;
@@ -274,4 +282,97 @@ export async function deleteCalendarException(dateYmd: string): Promise<Calendar
   return apiDelete<CalendarExceptionResult>(
     `/scheduling/calendar-settings/exceptions/${encodeURIComponent(dateYmd)}`,
   );
+}
+
+export type QuantityScalingMode =
+  | 'LINEAR'
+  | 'FIXED'
+  | 'SETUP_PLUS_LINEAR'
+  | 'BATCH'
+  | 'PARALLEL_CAPACITY';
+
+export type ProductProductionProfile = {
+  productId: string;
+  totalStandardMinutes?: number | null;
+  setupMinutes?: number;
+  complexityFactor?: number | string;
+  defaultBatchSize?: number;
+  minimumLeadTimeDays?: number | null;
+  bufferPercent?: number;
+  isSchedulingEnabled?: boolean;
+};
+
+export type ProductStageEstimate = {
+  id?: string;
+  productId?: string;
+  stageDefinitionId: string;
+  setupMinutes: number;
+  minutesPerUnit: number;
+  fixedMinutes: number;
+  quantityScalingMode: QuantityScalingMode | string;
+  workerCountRequired?: number;
+  isRequired?: boolean;
+  stageDefinition?: {
+    id: string;
+    code: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    sortOrder: number;
+  };
+};
+
+export type ProductStageEstimateInput = {
+  stageDefinitionId: string;
+  setupMinutes?: number;
+  minutesPerUnit?: number;
+  fixedMinutes?: number;
+  quantityScalingMode?: QuantityScalingMode;
+  workerCountRequired?: number;
+  isRequired?: boolean;
+};
+
+export async function getProductProductionProfile(
+  productId: string,
+): Promise<ProductProductionProfile> {
+  return apiGet(`/scheduling/products/${encodeURIComponent(productId)}/production-profile`);
+}
+
+export async function patchProductProductionProfile(
+  productId: string,
+  body: Partial<ProductProductionProfile>,
+): Promise<ProductProductionProfile> {
+  return apiPatch(`/scheduling/products/${encodeURIComponent(productId)}/production-profile`, body);
+}
+
+export async function listProductStageEstimates(
+  productId: string,
+): Promise<ProductStageEstimate[]> {
+  return apiGet(`/scheduling/products/${encodeURIComponent(productId)}/stage-estimates`);
+}
+
+export async function patchProductStageEstimates(
+  productId: string,
+  items: ProductStageEstimateInput[],
+): Promise<ProductStageEstimate[]> {
+  return apiPatch(`/scheduling/products/${encodeURIComponent(productId)}/stage-estimates`, {
+    items,
+  });
+}
+
+/** Qty=1 baseline minutes from a stage estimate row. */
+export function stageEstimateMinutes(row: {
+  quantityScalingMode?: string | null;
+  setupMinutes?: number | null;
+  minutesPerUnit?: number | null;
+  fixedMinutes?: number | null;
+}): number {
+  const mode = row.quantityScalingMode ?? 'SETUP_PLUS_LINEAR';
+  const setup = Number(row.setupMinutes ?? 0);
+  const perUnit = Number(row.minutesPerUnit ?? 0);
+  const fixed = Number(row.fixedMinutes ?? 0);
+  if (mode === 'FIXED') return fixed;
+  if (mode === 'LINEAR') return perUnit;
+  if (fixed > 0 && setup === 0 && perUnit === 0) return fixed;
+  return setup + perUnit;
 }

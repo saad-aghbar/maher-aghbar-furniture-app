@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Armchair, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 interface Category {
@@ -136,6 +137,7 @@ export default function ProductDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const t = useTranslations('catalog');
+  const tp = useTranslations('production');
   const tCustomers = useTranslations('customers');
   const tCommon = useTranslations('common');
   const tSales = useTranslations('sales');
@@ -182,6 +184,14 @@ export default function ProductDetailPage() {
   const [profileBufferPercent, setProfileBufferPercent] = useState('10');
   const [stageEstimates, setStageEstimates] = useState<StageEstimateDraft[]>([]);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [workflowId, setWorkflowId] = useState('');
+  const [workflowOverrides, setWorkflowOverrides] = useState<
+    Array<{
+      key: string;
+      stageDefinitionId: string;
+      applicability: 'INHERIT' | 'REQUIRED' | 'OPTIONAL' | 'EXCLUDED';
+    }>
+  >([]);
 
   const productQuery = useQuery({
     queryKey: ['product', id],
@@ -215,6 +225,36 @@ export default function ProductDetailPage() {
     queryFn: () =>
       apiFetch<ProductStageEstimateRow[]>(`/api/v1/scheduling/products/${id}/stage-estimates`),
     retry: false,
+  });
+
+  const workflowsQuery = useQuery({
+    queryKey: ['production-workflows'],
+    queryFn: () =>
+      apiFetch<
+        Array<{ id: string; code: string; nameEn: string; nameAr: string; nameHe?: string | null }>
+      >('/api/v1/production-workflows'),
+  });
+
+  const productWorkflowQuery = useQuery({
+    queryKey: ['product-workflow-configuration', id],
+    queryFn: () =>
+      apiFetch<{
+        workflowId: string;
+        stageOverrides: Array<{
+          stageDefinitionId: string;
+          applicability: 'INHERIT' | 'REQUIRED' | 'OPTIONAL' | 'EXCLUDED';
+        }>;
+      } | null>(`/api/v1/products/${id}/workflow-configuration`),
+    retry: false,
+  });
+
+  const stageLibraryQuery = useQuery({
+    queryKey: ['production-stage-library'],
+    queryFn: () =>
+      apiFetch<
+        Array<{ id: string; code: string; nameEn: string; nameAr: string; nameHe?: string | null }>
+      >('/api/v1/production-stage-library'),
+    staleTime: 60_000,
   });
 
   const dealerPricesQuery = useQuery({
@@ -306,6 +346,40 @@ export default function ProductDetailPage() {
     );
     setSchedulingMode('advanced');
   }, [stageEstimatesQuery.data]);
+
+  useEffect(() => {
+    const cfg = productWorkflowQuery.data;
+    if (!cfg) return;
+    setWorkflowId(cfg.workflowId);
+    setWorkflowOverrides(
+      (cfg.stageOverrides ?? []).map((o, i) => ({
+        key: `ov-${i}`,
+        stageDefinitionId: o.stageDefinitionId,
+        applicability: o.applicability,
+      })),
+    );
+  }, [productWorkflowQuery.data]);
+
+  const saveProductWorkflowMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/products/${id}/workflow-configuration`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          workflowId,
+          overrides: workflowOverrides
+            .filter((o) => o.stageDefinitionId)
+            .map((o) => ({
+              stageDefinitionId: o.stageDefinitionId,
+              applicability: o.applicability,
+            })),
+        }),
+      }),
+    onSuccess: async () => {
+      setBanner(tCommon('saved'));
+      await qc.invalidateQueries({ queryKey: ['product-workflow-configuration', id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
 
   const liveBomCost = useMemo(() => {
     return bomLines.reduce((sum, line) => {
@@ -736,6 +810,42 @@ export default function ProductDetailPage() {
             <p className="text-xs text-text-tertiary">{t('productionProfileUnavailableHint')}</p>
           ) : null}
 
+          {(() => {
+            const computed = stageEstimates.reduce((sum, row) => {
+              const setup = Number(row.setupMinutes || 0);
+              const per = Number(row.minutesPerUnit || 0);
+              const fixed = Number(row.fixedMinutes || 0);
+              if (row.quantityScalingMode === 'FIXED') return sum + fixed;
+              if (row.quantityScalingMode === 'LINEAR') return sum + per;
+              return sum + setup + per;
+            }, 0);
+            const profileTotal = Number(totalStandardMinutes || 0);
+            const display = computed > 0 ? computed : profileTotal;
+            if (!display) return null;
+            const hours = Math.floor(display / 60);
+            const mins = display % 60;
+            const label =
+              hours > 0 && mins > 0
+                ? `${hours}h ${mins}m`
+                : hours > 0
+                  ? `${hours}h`
+                  : `${mins}m`;
+            return (
+              <div className="rounded-lg border border-border bg-surface-muted px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">
+                  {t('computedTotalProductionTime')}
+                </p>
+                <p className="mt-1 text-lg font-semibold text-text-primary" dir="ltr">
+                  {label}
+                  <span className="ms-2 text-sm font-normal text-text-secondary">
+                    ({display} {t('minutesUnit')})
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-text-tertiary">{t('computedTotalProductionTimeHint')}</p>
+              </div>
+            );
+          })()}
+
           <label className="flex items-center gap-2 text-sm text-text-secondary">
             <input
               type="checkbox"
@@ -936,6 +1046,123 @@ export default function ProductDetailPage() {
               </div>
             </div>
           )}
+        </div>
+      </Card>
+      </MotionSection>
+
+      <MotionSection className="maher-form-section" as="div">
+      <Card
+        title={tp('workflow.title')}
+        description={tp('workflow.subtitle')}
+        actions={
+          <Button
+            size="sm"
+            loading={saveProductWorkflowMutation.isPending}
+            disabled={!workflowId}
+            onClick={() => saveProductWorkflowMutation.mutate()}
+          >
+            {tCommon('save')}
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <Select
+            label={tp('workflow.title')}
+            value={workflowId}
+            onChange={(e) => setWorkflowId(e.target.value)}
+            options={[
+              { value: '', label: t('select') },
+              ...(workflowsQuery.data ?? []).map((w) => ({
+                value: w.id,
+                label: `${localizedName(locale, w, w.code)} (${w.code})`,
+              })),
+            ]}
+          />
+
+          {workflowId ? (
+            <Link
+              href={`/production/workflow/${workflowId}`}
+              className="inline-flex text-sm font-medium text-brand hover:underline"
+            >
+              {t('openAssignedWorkflowChart')}
+            </Link>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-text-primary">{tp('workflow.dependencies')}</p>
+            {workflowOverrides.length === 0 ? (
+              <p className="text-sm text-text-tertiary">{tp('workflow.emptyStages')}</p>
+            ) : (
+              workflowOverrides.map((row, index) => (
+                <div
+                  key={row.key}
+                  className="grid gap-2 rounded-lg border border-border p-3 sm:grid-cols-2"
+                >
+                  <Select
+                    label={tp('workflow.stageName')}
+                    value={row.stageDefinitionId}
+                    onChange={(e) =>
+                      setWorkflowOverrides((prev) =>
+                        prev.map((r, i) =>
+                          i === index ? { ...r, stageDefinitionId: e.target.value } : r,
+                        ),
+                      )
+                    }
+                    options={[
+                      { value: '', label: t('select') },
+                      ...(stageLibraryQuery.data ?? []).map((s) => ({
+                        value: s.id,
+                        label: localizedName(locale, s, s.code),
+                      })),
+                    ]}
+                  />
+                  <Select
+                    label={tp('workflow.required')}
+                    value={row.applicability}
+                    onChange={(e) =>
+                      setWorkflowOverrides((prev) =>
+                        prev.map((r, i) =>
+                          i === index
+                            ? {
+                                ...r,
+                                applicability: e.target.value as
+                                  | 'INHERIT'
+                                  | 'REQUIRED'
+                                  | 'OPTIONAL'
+                                  | 'EXCLUDED',
+                              }
+                            : r,
+                        ),
+                      )
+                    }
+                    options={[
+                      { value: 'INHERIT', label: tp('workflow.parallel') },
+                      { value: 'REQUIRED', label: tp('workflow.required') },
+                      { value: 'OPTIONAL', label: tp('workflow.optional') },
+                      { value: 'EXCLUDED', label: tp('workflow.excluded') },
+                    ]}
+                  />
+                </div>
+              ))
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              leadingIcon={<Plus className="h-4 w-4" />}
+              onClick={() =>
+                setWorkflowOverrides((prev) => [
+                  ...prev,
+                  {
+                    key: `ov-${Date.now()}`,
+                    stageDefinitionId: '',
+                    applicability: 'INHERIT',
+                  },
+                ])
+              }
+            >
+              {tp('workflow.addStage')}
+            </Button>
+          </div>
         </div>
       </Card>
       </MotionSection>

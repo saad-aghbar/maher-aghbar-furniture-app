@@ -116,6 +116,11 @@ class CreateUserDto {
   @IsArray()
   @IsUUID('4', { each: true })
   roleIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  stageDefinitionIds?: string[];
 }
 
 class UpdateUserDto {
@@ -165,6 +170,11 @@ class UpdateUserDto {
   @IsUUID('4', { each: true })
   roleIds?: string[];
 
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  stageDefinitionIds?: string[];
+
   /** Optional new password set by admin. Leave unset to keep current. */
   @IsOptional()
   @IsString()
@@ -190,12 +200,53 @@ const userSelect = {
   customerId: true,
   createdAt: true,
   roles: { include: { role: true } },
+  workerSkills: {
+    where: { isActive: true },
+    select: { stageDefinitionId: true },
+  },
 } as const;
 
 @ApiTags('users')
 @Controller()
 export class UsersController {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async syncWorkerSkills(userId: string, stageDefinitionIds: string[] | undefined) {
+    if (stageDefinitionIds === undefined) return;
+    const desired = new Set(stageDefinitionIds);
+    const existing = await this.prisma.workerSkill.findMany({ where: { userId } });
+    for (const skill of existing) {
+      if (!desired.has(skill.stageDefinitionId)) {
+        if (skill.isActive) {
+          await this.prisma.workerSkill.update({
+            where: { id: skill.id },
+            data: { isActive: false },
+          });
+        }
+      } else if (!skill.isActive) {
+        await this.prisma.workerSkill.update({
+          where: { id: skill.id },
+          data: { isActive: true },
+        });
+      }
+      desired.delete(skill.stageDefinitionId);
+    }
+    for (const stageDefinitionId of desired) {
+      await this.prisma.workerSkill.create({
+        data: { userId, stageDefinitionId, isActive: true },
+      });
+    }
+  }
+
+  private withStageIds<T extends { workerSkills?: Array<{ stageDefinitionId: string }> }>(
+    user: T,
+  ) {
+    const { workerSkills, ...rest } = user;
+    return {
+      ...rest,
+      stageDefinitionIds: (workerSkills ?? []).map((s) => s.stageDefinitionId),
+    };
+  }
 
   @Get('users')
   @RequirePermissions('user.manage')
@@ -236,7 +287,7 @@ export class UsersController {
         take,
       }),
     ]);
-    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+    return { data: data.map((u) => this.withStageIds(u)), meta: paginatedMeta(page, pageSize, totalItems) };
   }
 
   @Get('users/:id')
@@ -259,7 +310,7 @@ export class UsersController {
         user.roles.flatMap((ur) => ur.role.permissions.map((rp) => rp.permission.code)),
       ),
     ];
-    return { ...user, effectivePermissions: permissions };
+    return { ...this.withStageIds(user), effectivePermissions: permissions };
   }
 
   @Post('users')
@@ -298,18 +349,26 @@ export class UsersController {
       select: userSelect,
     });
 
+    await this.syncWorkerSkills(user.id, dto.stageDefinitionIds);
+
     await this.prisma.auditEvent.create({
       data: {
         userId: actor.id,
         action: 'user.create',
         entityType: 'User',
         entityId: user.id,
-        newValues: { username, email, roleIds: dto.roleIds ?? [], isActive: user.isActive },
+        newValues: {
+          username,
+          email,
+          roleIds: dto.roleIds ?? [],
+          stageDefinitionIds: dto.stageDefinitionIds ?? [],
+          isActive: user.isActive,
+        },
       },
     });
 
     return {
-      ...user,
+      ...this.withStageIds(user),
       temporaryPassword: dto.password ? undefined : tempPassword,
     };
   }
@@ -414,6 +473,8 @@ export class UsersController {
       });
     }
 
+    await this.syncWorkerSkills(id, dto.stageDefinitionIds);
+
     await this.prisma.auditEvent.create({
       data: {
         userId: actor.id,
@@ -435,7 +496,7 @@ export class UsersController {
       },
     });
 
-    return user;
+    return this.withStageIds(user);
   }
 
   @Post('users/:id/activate')

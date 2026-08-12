@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@maher/types';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ListProductionOrdersDto, UpdateProductionOrderDto } from './dto/production.dto';
 import { ProductionService } from './production.service';
@@ -17,7 +17,11 @@ export class ProductionController {
     return this.production.list(query, user);
   }
 
-  @RequirePermissions('production-order.assign')
+  @RequireAnyPermissions(
+    'production-order.assign',
+    'production.workflow.manage',
+    'production.workflow.stage.manage',
+  )
   @Get('assignable-workers')
   listAssignableWorkers(@Query('q') q?: string) {
     return this.production.listAssignableWorkers(q);

@@ -55,7 +55,7 @@ function placeForwardStage(args: {
       })?.id ??
       null;
     if (employeeId) {
-      capacity.tryReserve({
+      capacity.forceReserve({
         employeeId,
         start: stage.pinnedStart,
         end: stage.pinnedEnd,
@@ -129,7 +129,7 @@ function placeForwardStage(args: {
 
   if (!best) return null;
 
-  capacity.reserve({
+  capacity.forceReserve({
     employeeId: best.workerId,
     start: best.start,
     end: best.end,
@@ -258,7 +258,7 @@ function placeBackwardStage(args: {
       })?.id ??
       null;
     if (employeeId) {
-      capacity.tryReserve({
+      capacity.forceReserve({
         employeeId,
         start: stage.pinnedStart,
         end: stage.pinnedEnd,
@@ -317,7 +317,7 @@ function placeBackwardStage(args: {
     // Prefer least-loaded eligible that has no overlap in this window
     const free = eligible.find((w) => !capacity.hasOverlap(w.id, start, end));
     if (free) {
-      capacity.reserve({
+      capacity.forceReserve({
         employeeId: free.id,
         start,
         end,
@@ -475,7 +475,7 @@ export function backwardSchedule(
     // Commit trial reservations into main capacity
     for (const a of backwardPlaced) {
       if (a.employeeId) {
-        capacity.reserve({
+        capacity.forceReserve({
           employeeId: a.employeeId,
           start: a.plannedStart,
           end: a.plannedEnd,

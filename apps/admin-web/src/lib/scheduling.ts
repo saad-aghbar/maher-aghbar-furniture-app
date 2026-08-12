@@ -10,6 +10,7 @@ export interface ScheduleOrderCard {
   productName?: string | null;
   productNameAr?: string | null;
   productNameHe?: string | null;
+  imageUrl?: string | null;
   dealerName?: string | null;
   dealerNameAr?: string | null;
   dealerNameHe?: string | null;

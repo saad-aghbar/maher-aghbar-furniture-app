@@ -80,6 +80,38 @@ describe('SchedulingService.dealerDateChange', () => {
     ).rejects.toMatchObject({ response: { code: 'DATE_CHANGE_LOCKED' } });
   });
 
+  it('lets factory admins update the date even when dealer policy would lock', async () => {
+    const { service, prisma } = makeService();
+    prisma.productionOrder.findFirst.mockResolvedValue({
+      id: 'po-1',
+      number: 'PO-0001',
+      customerId: 'customer-1',
+      status: 'IN_PROGRESS',
+      salesOrder: null,
+    });
+    prisma.productionSchedule.findFirst.mockResolvedValue({
+      id: 'sched-1',
+      status: 'APPROVED',
+      reason: null,
+    });
+    prisma.productionOrder.update.mockResolvedValue({});
+    jest.spyOn(service, 'shiftScheduleToDate').mockResolvedValue({} as any);
+
+    const result = await service.dealerDateChange(
+      'po-1',
+      { requestedDeliveryDate: '2030-01-01', reason: 'Factory override' },
+      makeUser({ customerId: undefined, roles: ['ADMIN'], permissions: ['schedule.manage'] }),
+    );
+
+    expect(result).toEqual({ ok: true, action: 'updated' });
+    expect(service.shiftScheduleToDate).toHaveBeenCalledWith(
+      'po-1',
+      expect.any(Date),
+      'user-1',
+      expect.objectContaining({ reason: 'Factory override' }),
+    );
+  });
+
   it('updates the order directly and notifies admins when no schedule is approved yet', async () => {
     const { service, prisma, notifications } = makeService();
     prisma.productionOrder.findFirst.mockResolvedValue({

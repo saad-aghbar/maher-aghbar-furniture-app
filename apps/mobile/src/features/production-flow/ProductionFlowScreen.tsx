@@ -14,6 +14,7 @@ import { ProgressBar } from '@/motion';
 import { useTheme } from '@/theme';
 import { useSalesOrderQuery } from '@/features/sales-orders/query';
 import { useProductionOrderQuery } from '@/features/production/query';
+import { useProductionOrderWorkflowQuery } from '@/features/workflow/query';
 import { AdminStageDrillSheet } from './components/AdminStageDrillSheet';
 import { DealerStageSheet } from './components/DealerStageSheet';
 import { ProductionFlowMap } from './components/ProductionFlowMap';
@@ -22,8 +23,18 @@ import {
   type ProductionFlowRole,
   type ProductionFlowStage,
 } from './selectProductionFlow';
-import { toDealerProgressStages } from './toDealerProgressStages';
-import { DealerEmptyState, DealerProgressMap } from '@/features/dealer-ui';
+import {
+  pickProductionOrderIdFromSalesOrder,
+  selectProductionFlowFromWorkflowGraph,
+} from './selectProductionFlowFromWorkflowGraph';
+import { AssignOrderWorkflowCard } from '@/features/workflow/components/AssignOrderWorkflowCard';
+import { StageDurationSheet } from '@/features/workflow/components/StageDurationSheet';
+import { useCustomizeOrderWorkflowMinutesMutation } from '@/features/scheduling/productEstimates';
+import { useOrderScheduleQuery } from '@/features/scheduling/query';
+import { isOwnOrderSchedule } from '@/api/modules/scheduling';
+import { isApiError } from '@/api/errors';
+import { toastMessageForError } from '@/api/queryClient';
+import { useToast } from '@/components/feedback/Toast';
 
 type Props = {
   role: ProductionFlowRole;
@@ -36,27 +47,127 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
   const { t, locale, formatDate, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const { showToast } = useToast();
   const [selected, setSelected] = useState<ProductionFlowStage | null>(null);
+  const [durationStage, setDurationStage] = useState<ProductionFlowStage | null>(null);
 
   const salesQuery = useSalesOrderQuery(id, source === 'sales-order');
   const productionQuery = useProductionOrderQuery(id, source === 'production-order');
   const query = source === 'sales-order' ? salesQuery : productionQuery;
 
+  const productionOrderId = useMemo(() => {
+    if (source === 'production-order') return id;
+    if (!salesQuery.data) return null;
+    return pickProductionOrderIdFromSalesOrder(salesQuery.data as never);
+  }, [id, salesQuery.data, source]);
+
+  const workflowQuery = useProductionOrderWorkflowQuery(
+    productionOrderId ?? '',
+    Boolean(productionOrderId),
+  );
+  const scheduleQuery = useOrderScheduleQuery(
+    productionOrderId ?? undefined,
+    Boolean(productionOrderId) && role === 'admin',
+  );
+  const customizeMinutes = useCustomizeOrderWorkflowMinutesMutation(productionOrderId ?? '');
+
+  const awaitingTimeApproval = useMemo(() => {
+    if (role !== 'admin') return false;
+    const graph = workflowQuery.data;
+    if (graph?.stages?.some((s) => s.estimateReviewRequired || !(s.estimatedMinutes && s.estimatedMinutes > 0))) {
+      return true;
+    }
+    const sched = scheduleQuery.data;
+    if (!sched || isOwnOrderSchedule(sched)) return false;
+    return Boolean(sched.schedule?.requiresAdminEstimateReview);
+  }, [role, scheduleQuery.data, workflowQuery.data]);
+
   const flow = useMemo(() => {
     if (!query.data) return null;
+
+    const graph = workflowQuery.data;
+    if (graph?.needsWorkflow) {
+      return { kind: 'needs-workflow' as const };
+    }
+
+    const legacy =
+      source === 'sales-order'
+        ? selectProductionFlow({ kind: 'sales-order', order: query.data as never }, role, locale)
+        : selectProductionFlow(
+            { kind: 'production-order', order: query.data as never },
+            role,
+            locale,
+          );
+
+    if (!graph?.stages?.length) return { kind: 'flow' as const, model: legacy };
+
     if (source === 'sales-order') {
-      return selectProductionFlow(
-        { kind: 'sales-order', order: query.data as never },
+      const order = query.data as {
+        id: string;
+        number: string;
+        title?: string | null;
+        status: string;
+        progressPercent?: number | null;
+        committedDeliveryDate?: string | null;
+        requiredDeliveryDate?: string | null;
+        requestedDeliveryDate?: string | null;
+        promiseState?: string | null;
+      };
+      const committed = order.committedDeliveryDate ?? null;
+      return {
+        kind: 'flow' as const,
+        model: selectProductionFlowFromWorkflowGraph(
+          graph,
+          {
+            id: order.id,
+            number: order.number,
+            title: order.title ?? null,
+            status: order.status,
+            progressPercent: Number(order.progressPercent ?? 0),
+            estimatedDelivery:
+              committed ?? order.requiredDeliveryDate ?? order.requestedDeliveryDate ?? null,
+            isCommittedDelivery: Boolean(committed),
+            promiseState: order.promiseState ?? null,
+            source: 'sales-order',
+          },
+          role,
+          locale,
+        ),
+      };
+    }
+
+    const order = query.data as {
+      id: string;
+      number: string;
+      product?: { nameEn?: string | null } | null;
+      productDescription?: string | null;
+      status: string;
+      progressPercent?: number | null;
+      committedDeliveryDate?: string | null;
+      requiredDeliveryDate?: string | null;
+      promiseState?: string | null;
+    };
+    const committed = order.committedDeliveryDate ?? null;
+    return {
+      kind: 'flow' as const,
+      model: selectProductionFlowFromWorkflowGraph(
+        graph,
+        {
+          id: order.id,
+          number: order.number,
+          title: order.product?.nameEn || order.productDescription || order.number,
+          status: order.status,
+          progressPercent: Number(order.progressPercent ?? 0),
+          estimatedDelivery: committed ?? order.requiredDeliveryDate ?? null,
+          isCommittedDelivery: Boolean(committed),
+          promiseState: order.promiseState ?? null,
+          source: 'production-order',
+        },
         role,
         locale,
-      );
-    }
-    return selectProductionFlow(
-      { kind: 'production-order', order: query.data as never },
-      role,
-      locale,
-    );
-  }, [locale, query.data, role, source]);
+      ),
+    };
+  }, [locale, query.data, role, source, workflowQuery.data]);
 
   if (query.isLoading && !query.data) {
     return (
@@ -85,16 +196,52 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
     );
   }
 
-  const pct = Math.max(0, Math.min(100, Math.round(flow.progressPercent || 0)));
+  if (flow.kind === 'needs-workflow') {
+    return (
+      <AppScreen backFallback={backFallback}>
+        {showOfflineBanner ? <OfflineBanner /> : null}
+        <ScrollView
+          contentContainerStyle={{
+            gap: theme.spacing.lg,
+            paddingBottom: theme.spacing['6xl'] + 48,
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={query.isRefetching || workflowQuery.isRefetching}
+              onRefresh={() => {
+                void query.refetch();
+                if (productionOrderId) void workflowQuery.refetch();
+              }}
+            />
+          }
+        >
+          <AppText variant="title" weight="semibold">
+            {t('mobile.productionFlow.title')}
+          </AppText>
+          {role === 'admin' && productionOrderId ? (
+            <AssignOrderWorkflowCard productionOrderId={productionOrderId} />
+          ) : (
+            <EmptyState
+              title={t('mobile.production.workflow.needsWorkflowTitle')}
+              description={t('mobile.production.workflow.needsWorkflowBody')}
+            />
+          )}
+        </ScrollView>
+      </AppScreen>
+    );
+  }
+
+  const model = flow.model;
+  const pct = Math.max(0, Math.min(100, Math.round(model.progressPercent || 0)));
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const late =
-    Boolean(flow.estimatedDelivery) &&
-    new Date(flow.estimatedDelivery!).getTime() < Date.now() &&
-    flow.status !== 'COMPLETED' &&
-    flow.status !== 'CANCELLED';
+    Boolean(model.estimatedDelivery) &&
+    new Date(model.estimatedDelivery!).getTime() < Date.now() &&
+    model.status !== 'COMPLETED' &&
+    model.status !== 'CANCELLED';
   const accent = late
     ? colors.error
-    : pct >= 100 || flow.status === 'COMPLETED'
+    : pct >= 100 || model.status === 'COMPLETED'
       ? colors.success
       : colors.brand;
   const boardShadow = theme.elevation.card;
@@ -109,8 +256,11 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
         }}
         refreshControl={
           <RefreshControl
-            refreshing={query.isRefetching}
-            onRefresh={() => void query.refetch()}
+            refreshing={query.isRefetching || workflowQuery.isRefetching}
+            onRefresh={() => {
+              void query.refetch();
+              if (productionOrderId) void workflowQuery.refetch();
+            }}
           />
         }
       >
@@ -178,15 +328,15 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
               >
                 {t('mobile.productionFlow.title')}
               </AppText>
-              {role === 'dealer' && flow.promiseState ? (
-                <StatusBadge status={flow.promiseState} dot />
+              {role === 'dealer' && model.promiseState ? (
+                <StatusBadge status={model.promiseState} dot />
               ) : (
-                <StatusBadge status={flow.status} dot />
+                <StatusBadge status={model.status} dot />
               )}
             </View>
 
             <AppText variant="title" weight={titleWeight} numberOfLines={2}>
-              {flow.title?.trim() || flow.number}
+              {model.title?.trim() || model.number}
             </AppText>
 
             <AppText
@@ -195,10 +345,10 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
               dir="ltr"
               style={{ letterSpacing: 0.2 }}
             >
-              {flow.number}
+              {model.number}
             </AppText>
 
-            {flow.estimatedDelivery ? (
+            {model.estimatedDelivery ? (
               <View
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -220,46 +370,42 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
                   style={late ? { color: colors.error } : undefined}
                 >
                   {t(
-                    flow.isCommittedDelivery
+                    model.isCommittedDelivery
                       ? 'mobile.productionFlow.committedDelivery'
                       : 'mobile.productionFlow.estimatedDelivery',
                   )}
-                  : {formatDate(flow.estimatedDelivery)}
+                  : {formatDate(model.estimatedDelivery)}
                 </AppText>
               </View>
             ) : null}
           </View>
         </View>
 
-        {flow.stages.length === 0 ? (
-          role === 'dealer' ? (
-            <DealerEmptyState
-              title={t('mobile.productionFlow.emptyTitle')}
-              body={t('mobile.productionFlow.emptyBody')}
-            />
-          ) : (
-            <EmptyState
-              title={t('mobile.productionFlow.emptyTitle')}
-              description={t('mobile.productionFlow.emptyBody')}
-            />
-          )
-        ) : role === 'dealer' ? (
+        {awaitingTimeApproval ? (
           <View
             style={{
-              borderRadius: theme.radius.xl,
+              borderRadius: theme.radius.lg,
               borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surface,
-              overflow: 'hidden',
+              borderColor: colors.error,
+              backgroundColor: colors.errorSoft,
               padding: theme.spacing.md,
-              ...boardShadow,
+              gap: 4,
             }}
           >
-            <DealerProgressMap
-              title={t('mobile.productionFlow.overallProgress')}
-              stages={toDealerProgressStages(flow.stages)}
-            />
+            <AppText variant="body" weight="semibold" style={{ color: colors.error }}>
+              {t('mobile.production.workflow.awaitingTimeApprovalTitle')}
+            </AppText>
+            <AppText variant="caption" color="muted">
+              {t('mobile.production.workflow.awaitingTimeApprovalBody')}
+            </AppText>
           </View>
+        ) : null}
+
+        {model.stages.length === 0 ? (
+          <EmptyState
+            title={t('mobile.productionFlow.emptyTitle')}
+            description={t('mobile.productionFlow.emptyBody')}
+          />
         ) : (
           <View
             style={{
@@ -272,8 +418,19 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
             }}
           >
             <ProductionFlowMap
-              stages={flow.stages}
-              onStagePress={(stage) => setSelected(stage)}
+              stages={model.stages}
+              onStagePress={(stage) => {
+                if (
+                  role === 'admin' &&
+                  (stage.estimateReviewRequired ||
+                    !(stage.estimatedMinutes && stage.estimatedMinutes > 0)) &&
+                  stage.snapshotNodeId
+                ) {
+                  setDurationStage(stage);
+                  return;
+                }
+                setSelected(stage);
+              }}
             />
           </View>
         )}
@@ -397,8 +554,8 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
                 style={late ? { color: colors.error, flex: 1 } : { flex: 1 }}
               >
                 {t('mobile.productionFlow.estimatedDelivery')}:{' '}
-                {flow.estimatedDelivery
-                  ? formatDate(flow.estimatedDelivery)
+                {model.estimatedDelivery
+                  ? formatDate(model.estimatedDelivery)
                   : t('mobile.productionFlow.deliveryTbd')}
               </AppText>
             </View>
@@ -411,16 +568,49 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
           open={Boolean(selected)}
           onClose={() => setSelected(null)}
           stage={selected}
-          flow={flow}
+          flow={model}
         />
       ) : (
         <DealerStageSheet
           open={Boolean(selected)}
           onClose={() => setSelected(null)}
           stage={selected}
-          flow={flow}
+          flow={model}
         />
       )}
+
+      {role === 'admin' && productionOrderId ? (
+        <StageDurationSheet
+          open={Boolean(durationStage)}
+          onClose={() => setDurationStage(null)}
+          stageName={durationStage?.name ?? ''}
+          initialMinutes={durationStage?.estimatedMinutes}
+          saving={customizeMinutes.isPending}
+          onSave={async (minutes) => {
+            if (!durationStage?.snapshotNodeId) return;
+            try {
+              await customizeMinutes.mutateAsync({
+                snapshotNodeId: durationStage.snapshotNodeId,
+                estimatedMinutes: minutes,
+              });
+              showToast({
+                variant: 'success',
+                message: t('mobile.production.workflow.stageDurationSaved'),
+              });
+              setDurationStage(null);
+              void workflowQuery.refetch();
+              void scheduleQuery.refetch();
+            } catch (err) {
+              showToast({
+                variant: 'error',
+                message: isApiError(err)
+                  ? toastMessageForError(err)
+                  : t('mobile.production.workflow.loadError'),
+              });
+            }
+          }}
+        />
+      ) : null}
     </AppScreen>
   );
 }

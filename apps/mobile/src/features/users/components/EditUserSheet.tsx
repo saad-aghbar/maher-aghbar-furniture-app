@@ -15,12 +15,14 @@ import { useDepartmentsQuery, useRolesQuery, useUpdateUserMutation } from '../qu
 import { DepartmentField } from './DepartmentField';
 import { DepartmentPickerSheet } from './DepartmentPickerSheet';
 import { RolesTouchBar } from './RolesTouchBar';
+import { StageSkillsPicker } from './StageSkillsPicker';
 import {
   UserActiveToggle,
   UserFormError,
   UserFormFooter,
   UserFormSection,
 } from './userSheetForm';
+import { useStageLibraryQuery } from '@/features/workflow/query';
 
 
 type Props = {
@@ -39,6 +41,7 @@ type FormState = {
   isActive: boolean;
   roleId: string;
   departmentId: string;
+  stageDefinitionIds: string[];
 };
 
 function formFromUser(user: UserRow): FormState {
@@ -50,6 +53,7 @@ function formFromUser(user: UserRow): FormState {
     isActive: user.isActive,
     roleId: user.roles?.[0]?.role.id ?? '',
     departmentId: user.departmentId ?? user.department?.id ?? '',
+    stageDefinitionIds: user.stageDefinitionIds ?? [],
   };
 }
 
@@ -66,6 +70,7 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
 
   const rolesQuery = useRolesQuery(open && !passwordMode);
   const departmentsQuery = useDepartmentsQuery(open && !passwordMode);
+  const stagesQuery = useStageLibraryQuery(open && !passwordMode);
   const updateMutation = useUpdateUserMutation();
 
   const [form, setForm] = useState<FormState | null>(null);
@@ -92,6 +97,7 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
   const isCustomer =
     selectedRole?.code === 'CUSTOMER' ||
     (user?.roles ?? []).some((r) => r.role.code === 'CUSTOMER');
+  const isWorker = selectedRole?.code === 'PRODUCTION_WORKER';
   const selectedDept = form
     ? departments.find((d) => d.id === form.departmentId)
     : undefined;
@@ -153,6 +159,7 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
           isActive: form.isActive,
           roleIds: [form.roleId],
           departmentId: isCustomer ? null : form.departmentId || null,
+          ...(isWorker ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
         },
       });
       void haptics.confirmLight();
@@ -312,6 +319,21 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
                       department={selectedDept}
                       onPress={() => setDeptOpen(true)}
                       onClear={() => set('departmentId', '')}
+                    />
+                  </UserFormSection>
+                ) : null}
+
+                {isWorker ? (
+                  <UserFormSection
+                    icon="construct-outline"
+                    label={t('users.stageSkills')}
+                    titleWeight={titleWeight}
+                  >
+                    <StageSkillsPicker
+                      stages={(stagesQuery.data ?? []).filter((s) => s.isActive)}
+                      selectedIds={form.stageDefinitionIds}
+                      onChange={(ids) => set('stageDefinitionIds', ids)}
+                      loading={stagesQuery.isLoading}
                     />
                   </UserFormSection>
                 ) : null}

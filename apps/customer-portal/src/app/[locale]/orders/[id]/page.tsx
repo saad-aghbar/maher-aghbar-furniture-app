@@ -3,10 +3,11 @@
 import { BackButton } from '@/components/back-button';
 import { DealerOrderDetails } from '@/components/dealer-order-details';
 import { ProductionScheduleCard } from '@/components/production-schedule-card';
+import { DealerOrderWorkflowGraph } from '@/components/dealer-order-workflow-graph';
 import { apiFetch, API_URL } from '@/lib/api-client';
 import { Card, MotionSection, Skeleton, StatusBadge, cn, Ltr } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
-import { Armchair, Check } from 'lucide-react';
+import { Armchair } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -104,13 +105,6 @@ function mediaSrc(url: string | null | undefined): string | null {
   if (!url?.trim()) return null;
   if (/^https?:\/\//i.test(url) || url.startsWith('blob:')) return url;
   return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
-}
-
-function stageTone(status: string) {
-  if (status === 'COMPLETED') return 'done';
-  if (status === 'IN_PROGRESS' || status === 'READY') return 'active';
-  if (status === 'BLOCKED') return 'blocked';
-  return 'pending';
 }
 
 export default function OrderTrackingPage({ params }: { params: { id: string } }) {
@@ -378,47 +372,10 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
                     style={{ width: `${Math.min(100, Math.max(0, po.progressPercent))}%` }}
                   />
                 </div>
-                <ol className="space-y-0">
-                  {(po.stages ?? []).map((stage, idx) => {
-                    const tone = stageTone(stage.status);
-                    const label =
-                      locale.startsWith('ar')
-                        ? stage.nameAr || stage.nameEn || stage.code
-                        : stage.nameEn || stage.nameAr || stage.code;
-                    return (
-                      <li key={stage.code} className="relative flex gap-4 pb-5 last:pb-0">
-                        {idx < (po.stages?.length ?? 0) - 1 ? (
-                          <span
-                            aria-hidden
-                            className={cn(
-                              'absolute start-[15px] top-8 bottom-0 w-0.5',
-                              tone === 'done' ? 'bg-brand' : 'bg-border',
-                            )}
-                          />
-                        ) : null}
-                        <span
-                          className={cn(
-                            'relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold',
-                            tone === 'done' && 'border-brand bg-brand text-white',
-                            tone === 'active' && 'border-brand bg-brand-soft text-brand',
-                            tone === 'pending' && 'border-border bg-surface text-text-tertiary',
-                            tone === 'blocked' &&
-                              'border-[var(--maher-error)] bg-[var(--maher-error-soft)] text-[var(--maher-error)]',
-                          )}
-                        >
-                          {tone === 'done' ? <Check className="h-4 w-4" /> : idx + 1}
-                        </span>
-                        <div className="min-w-0 flex-1 pt-1">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="font-medium">{label}</p>
-                            <Ltr className="text-xs text-text-tertiary">{stage.progressPercent}%</Ltr>
-                          </div>
-                          <StatusBadge status={stage.status} />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
+                <DealerOrderWorkflowGraph
+                  productionOrderId={po.id}
+                  fallbackStages={po.stages}
+                />
                 {(po.photos ?? []).length > 0 ? (
                   <div className="mt-4">
                     <p className="mb-2 text-sm font-medium">{t('productionPhotos')}</p>

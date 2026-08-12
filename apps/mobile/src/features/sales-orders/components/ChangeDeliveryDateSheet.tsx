@@ -47,7 +47,7 @@ export function ChangeDeliveryDateSheet({
   onSubmit,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const initial = current ? current.slice(0, 10) : '';
   const [value, setValue] = useState(initial);
   const [cursor, setCursor] = useState<CalendarCursor>(() =>

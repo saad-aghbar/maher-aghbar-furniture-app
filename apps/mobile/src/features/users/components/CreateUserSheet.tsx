@@ -16,12 +16,14 @@ import { namesFromUsername, type UsersSegment, SEGMENT_ROLE_CODE } from '../segm
 import { DepartmentField } from './DepartmentField';
 import { DepartmentPickerSheet } from './DepartmentPickerSheet';
 import { RolesTouchBar } from './RolesTouchBar';
+import { StageSkillsPicker } from './StageSkillsPicker';
 import { TempPasswordSheet } from './TempPasswordSheet';
 import {
   UserFormError,
   UserFormFooter,
   UserFormSection,
 } from './userSheetForm';
+import { useStageLibraryQuery } from '@/features/workflow/query';
 
 type Props = {
   open: boolean;
@@ -34,6 +36,7 @@ const empty = () => ({
   password: '',
   roleId: '',
   departmentId: '',
+  stageDefinitionIds: [] as string[],
 });
 
 /**
@@ -49,6 +52,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
 
   const rolesQuery = useRolesQuery(open);
   const departmentsQuery = useDepartmentsQuery(open);
+  const stagesQuery = useStageLibraryQuery(open);
   const createMutation = useCreateUserMutation();
 
   const [form, setForm] = useState(empty);
@@ -77,10 +81,13 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
 
   const selectedRole: RoleRow | undefined = roles.find((r) => r.id === form.roleId);
   const isCustomer = selectedRole?.code === 'CUSTOMER';
+  const isWorker = selectedRole?.code === 'PRODUCTION_WORKER';
   const selectedDept = departments.find((d) => d.id === form.departmentId);
 
-  const set = <K extends keyof ReturnType<typeof empty>>(key: K, value: string) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  const set = <K extends keyof ReturnType<typeof empty>>(
+    key: K,
+    value: ReturnType<typeof empty>[K],
+  ) => setForm((f) => ({ ...f, [key]: value }));
 
   const resetAndClose = () => {
     setForm(empty());
@@ -113,6 +120,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
         roleIds: [form.roleId],
         ...(!isCustomer && form.departmentId ? { departmentId: form.departmentId } : {}),
         ...(form.password.trim() ? { password: form.password } : {}),
+        ...(isWorker ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
       });
 
       void haptics.confirmLight();
@@ -188,7 +196,10 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
               onChange={(roleId) => {
                 set('roleId', roleId);
                 const code = roles.find((r) => r.id === roleId)?.code;
-                if (code === 'CUSTOMER') set('departmentId', '');
+                if (code === 'CUSTOMER') {
+                  set('departmentId', '');
+                  setForm((f) => ({ ...f, stageDefinitionIds: [] }));
+                }
               }}
             />
           </UserFormSection>
@@ -203,6 +214,21 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
                 department={selectedDept}
                 onPress={() => setDeptOpen(true)}
                 onClear={() => set('departmentId', '')}
+              />
+            </UserFormSection>
+          ) : null}
+
+          {isWorker ? (
+            <UserFormSection
+              icon="construct-outline"
+              label={t('users.stageSkills')}
+              titleWeight={titleWeight}
+            >
+              <StageSkillsPicker
+                stages={(stagesQuery.data ?? []).filter((s) => s.isActive)}
+                selectedIds={form.stageDefinitionIds}
+                onChange={(ids) => setForm((f) => ({ ...f, stageDefinitionIds: ids }))}
+                loading={stagesQuery.isLoading}
               />
             </UserFormSection>
           ) : null}

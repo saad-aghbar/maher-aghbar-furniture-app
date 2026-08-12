@@ -54,3 +54,56 @@ export const paginationQuerySchema = z.object({
 });
 
 export type PaginationQueryInput = z.infer<typeof paginationQuerySchema>;
+
+const workflowCodeSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Z][A-Z0-9_]*$/, 'Code must be UPPER_SNAKE_CASE');
+
+export const createWorkflowSchema = z.object({
+  code: workflowCodeSchema,
+  nameAr: z.string().min(1).max(200),
+  nameEn: z.string().min(1).max(200),
+  nameHe: z.string().max(200).optional(),
+  descriptionAr: z.string().max(2000).optional(),
+  descriptionEn: z.string().max(2000).optional(),
+  descriptionHe: z.string().max(2000).optional(),
+});
+
+export type CreateWorkflowInput = z.infer<typeof createWorkflowSchema>;
+
+export const workflowNodeSchema = z.object({
+  stageDefinitionId: z.string().uuid(),
+  nodeKey: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Z][A-Z0-9_]*$/, 'Node key must be UPPER_SNAKE_CASE'),
+  sortOrder: z.number().int().min(0).default(0),
+  isRequiredByDefault: z.boolean().default(true),
+  canBeSkipped: z.boolean().default(false),
+  defaultEstimatedMinutes: z.number().int().positive().nullable().optional(),
+  responsibleDepartmentId: z.string().uuid().nullable().optional(),
+  requiresInspectionOverride: z.boolean().nullable().optional(),
+  requiresPhotosOverride: z.boolean().nullable().optional(),
+  displayX: z.number().nullable().optional(),
+  displayY: z.number().nullable().optional(),
+});
+
+export type WorkflowNodeInput = z.infer<typeof workflowNodeSchema>;
+
+export const workflowEdgeSchema = z.object({
+  fromNodeId: z.string().uuid(),
+  toNodeId: z.string().uuid(),
+  dependencyType: z.enum(['HARD']).default('HARD'),
+});
+
+export type WorkflowEdgeInput = z.infer<typeof workflowEdgeSchema>;
+
+export const publishWorkflowVersionSchema = z.object({
+  revision: z.number().int().positive(),
+  changelog: z.string().max(2000).optional(),
+});
+
+export type PublishWorkflowVersionInput = z.infer<typeof publishWorkflowVersionSchema>;

@@ -13,6 +13,8 @@ export type AdminScheduleStat = {
   tone: 'neutral' | 'warning' | 'danger';
 };
 
+export type ScheduleFocusKey = AdminScheduleStat['key'];
+
 /** Stat chips for the top of the admin scheduling dashboard. */
 export function selectDashboardStats(dashboard: SchedulingDashboard | undefined): AdminScheduleStat[] {
   if (!dashboard) return [];
@@ -27,6 +29,30 @@ export function selectDashboardStats(dashboard: SchedulingDashboard | undefined)
     { key: 'atRisk', value: dashboard.atRisk, tone: dashboard.atRisk > 0 ? 'danger' : 'neutral' },
     { key: 'conflicts', value: dashboard.conflicts, tone: dashboard.conflicts > 0 ? 'danger' : 'neutral' },
   ];
+}
+
+/**
+ * Sunday–Saturday week range in local calendar days (matches dashboard weekCount).
+ */
+export function weekRangeFromYmd(anchorYmd: string): { from: string; to: string } {
+  const [ys, ms, ds] = anchorYmd.split('-').map(Number);
+  const anchor = new Date(ys!, (ms ?? 1) - 1, ds ?? 1);
+  const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - anchor.getDay());
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    from: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
+    to: `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`,
+  };
+}
+
+/** Shift a YMD date by `delta` local calendar days. */
+export function addDaysToYmd(anchorYmd: string, delta: number): string {
+  const [ys, ms, ds] = anchorYmd.split('-').map(Number);
+  const dt = new Date(ys!, (ms ?? 1) - 1, ds ?? 1);
+  dt.setDate(dt.getDate() + delta);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
 
 export type WeekStripDay = {
@@ -129,32 +155,46 @@ export function selectOrdersForDay(
     if (!orderIntersectsDay(order, ymd)) continue;
     if (seen.has(order.productionOrderId)) continue;
     seen.add(order.productionOrderId);
-    result.push({
-      id: order.id,
-      productionOrderId: order.productionOrderId,
-      number: order.number,
-      title: localizedName(
-        asLocale(locale),
-        { nameEn: order.productName, nameAr: order.productNameAr, nameHe: order.productNameHe },
-        order.number,
-      ),
-      dealerName:
-        localizedName(
-          asLocale(locale),
-          { nameEn: order.dealerName, nameAr: order.dealerNameAr, nameHe: order.dealerNameHe },
-          '',
-        ) || null,
-      plannedStart: order.plannedStart ?? null,
-      plannedEnd: order.plannedEnd ?? null,
-      status: order.status ?? null,
-      promiseState: order.promiseState ?? null,
-      materialRisk: Boolean(order.materialRisk),
-      hasConflict: Boolean(order.hasConflict),
-      reason: order.conflictReason ?? null,
-      scheduleVersion: order.version ?? null,
-      requiredDeliveryDate: null,
-      suggestedDeliveryDate: null,
-    });
+    result.push(toScheduleCard(order, locale));
+  }
+  return result.sort((a, b) => (a.plannedStart ?? '').localeCompare(b.plannedStart ?? ''));
+}
+
+/** Orders whose planned window intersects any day in `[fromYmd, toYmd]` (inclusive). */
+export function selectOrdersInRange(
+  orders: ScheduleOrderCard[] | undefined,
+  fromYmd: string,
+  toYmd: string,
+  locale = 'en',
+): AdminScheduleCardModel[] {
+  if (!orders?.length || !fromYmd || !toYmd) return [];
+  const seen = new Set<string>();
+  const result: AdminScheduleCardModel[] = [];
+  for (const order of orders) {
+    const start = (order.plannedStart ?? '').slice(0, 10);
+    const end = (order.plannedEnd ?? order.plannedStart ?? '').slice(0, 10) || start;
+    if (!start) continue;
+    if (end < fromYmd || start > toYmd) continue;
+    if (seen.has(order.productionOrderId)) continue;
+    seen.add(order.productionOrderId);
+    result.push(toScheduleCard(order, locale));
+  }
+  return result.sort((a, b) => (a.plannedStart ?? '').localeCompare(b.plannedStart ?? ''));
+}
+
+/** Orders flagged with a schedule conflict in the calendar payload. */
+export function selectConflictCards(
+  orders: ScheduleOrderCard[] | undefined,
+  locale = 'en',
+): AdminScheduleCardModel[] {
+  if (!orders?.length) return [];
+  const seen = new Set<string>();
+  const result: AdminScheduleCardModel[] = [];
+  for (const order of orders) {
+    if (!order.hasConflict) continue;
+    if (seen.has(order.productionOrderId)) continue;
+    seen.add(order.productionOrderId);
+    result.push(toScheduleCard(order, locale));
   }
   return result.sort((a, b) => (a.plannedStart ?? '').localeCompare(b.plannedStart ?? ''));
 }
@@ -178,6 +218,9 @@ export type AdminScheduleCardModel = {
   number: string;
   title: string;
   dealerName: string | null;
+  imageUrl: string | null;
+  priority: string | null;
+  quantity: number | null;
   plannedStart: string | null;
   plannedEnd: string | null;
   status: string | null;
@@ -195,6 +238,38 @@ function asLocale(locale: string): Locale {
   return locale === 'ar' || locale === 'he' || locale === 'en' ? locale : 'en';
 }
 
+function toScheduleCard(order: ScheduleOrderCard, locale: string): AdminScheduleCardModel {
+  return {
+    id: order.id,
+    productionOrderId: order.productionOrderId,
+    number: order.number,
+    title: localizedName(
+      asLocale(locale),
+      { nameEn: order.productName, nameAr: order.productNameAr, nameHe: order.productNameHe },
+      order.number,
+    ),
+    dealerName:
+      localizedName(
+        asLocale(locale),
+        { nameEn: order.dealerName, nameAr: order.dealerNameAr, nameHe: order.dealerNameHe },
+        '',
+      ) || null,
+    imageUrl: order.imageUrl ?? null,
+    priority: order.priority ?? null,
+    quantity: order.quantity ?? null,
+    plannedStart: order.plannedStart ?? null,
+    plannedEnd: order.plannedEnd ?? null,
+    status: order.status ?? null,
+    promiseState: order.promiseState ?? null,
+    materialRisk: Boolean(order.materialRisk),
+    hasConflict: Boolean(order.hasConflict),
+    reason: order.conflictReason ?? null,
+    scheduleVersion: order.version ?? null,
+    requiredDeliveryDate: null,
+    suggestedDeliveryDate: null,
+  };
+}
+
 const APPROVAL_STATUSES = new Set(['PROPOSED', 'NEEDS_REVIEW']);
 
 /** Orders whose latest schedule needs an admin decision — sourced from the calendar window. */
@@ -209,44 +284,35 @@ export function selectApprovalsWaiting(
     if (!order.status || !APPROVAL_STATUSES.has(order.status)) continue;
     if (seen.has(order.productionOrderId)) continue;
     seen.add(order.productionOrderId);
-    result.push({
-      id: order.id,
-      productionOrderId: order.productionOrderId,
-      number: order.number,
-      title: localizedName(
-        asLocale(locale),
-        { nameEn: order.productName, nameAr: order.productNameAr, nameHe: order.productNameHe },
-        order.number,
-      ),
-      dealerName: localizedName(
-        asLocale(locale),
-        { nameEn: order.dealerName, nameAr: order.dealerNameAr, nameHe: order.dealerNameHe },
-        '',
-      ) || null,
-      plannedStart: order.plannedStart ?? null,
-      plannedEnd: order.plannedEnd ?? null,
-      status: order.status,
-      promiseState: order.promiseState ?? null,
-      materialRisk: Boolean(order.materialRisk),
-      hasConflict: Boolean(order.hasConflict),
-      reason: order.conflictReason ?? null,
-      scheduleVersion: order.version ?? null,
-      requiredDeliveryDate: null,
-      suggestedDeliveryDate: null,
-    });
+    result.push(toScheduleCard(order, locale));
   }
   return result.sort((a, b) => (a.plannedStart ?? '').localeCompare(b.plannedStart ?? ''));
 }
 
-/** At-risk orders (material risk, needs review, or admin-estimate-review) from the dedicated endpoint. */
-export function selectAtRiskCards(atRisk: AtRiskOrder[] | undefined): AdminScheduleCardModel[] {
+/** May-be-late orders (material risk, needs review, or admin-estimate-review) from the dedicated endpoint. */
+export function selectAtRiskCards(
+  atRisk: AtRiskOrder[] | undefined,
+  locale = 'en',
+): AdminScheduleCardModel[] {
   if (!atRisk?.length) return [];
   return atRisk.map((order) => ({
     id: order.productionOrderId,
     productionOrderId: order.productionOrderId,
     number: order.number,
-    title: order.number,
-    dealerName: null,
+    title: localizedName(
+      asLocale(locale),
+      { nameEn: order.productName, nameAr: order.productNameAr, nameHe: order.productNameHe },
+      order.number,
+    ),
+    dealerName:
+      localizedName(
+        asLocale(locale),
+        { nameEn: order.dealerName, nameAr: order.dealerNameAr, nameHe: order.dealerNameHe },
+        '',
+      ) || null,
+    imageUrl: order.imageUrl ?? null,
+    priority: order.priority ?? null,
+    quantity: null,
     plannedStart: null,
     plannedEnd: null,
     status: order.scheduleStatus,
@@ -270,4 +336,28 @@ export function selectAvailableActions(card: AdminScheduleCardModel): AdminSched
   }
   actions.push('changeDate', 'recalculate');
   return actions;
+}
+
+/** Client filter for schedule order boards — number, product, dealer, status, reason. */
+export function filterScheduleCards(
+  cards: AdminScheduleCardModel[],
+  query: string,
+): AdminScheduleCardModel[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return cards;
+  return cards.filter((card) => {
+    const haystack = [
+      card.number,
+      card.title,
+      card.dealerName,
+      card.status,
+      card.priority,
+      card.reason,
+      card.promiseState,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(q);
+  });
 }

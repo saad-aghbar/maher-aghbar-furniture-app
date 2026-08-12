@@ -44,6 +44,8 @@ type OrdersFilterSheetProps = {
   onReset: () => void;
   dealers?: OrdersFilterDealerOption[];
   showDealers?: boolean;
+  /** Admin-only approval section. Hidden for dealers. */
+  showApproval?: boolean;
 };
 
 const SORT_OPTIONS: OrdersSortBy[] = [
@@ -129,10 +131,15 @@ export function deliveryBoundsForPreset(
   return { deliveryFrom: '', deliveryTo: '' };
 }
 
-export function countActiveOrderFilters(draft: OrdersFilterDraft): number {
+export function countActiveOrderFilters(
+  draft: OrdersFilterDraft,
+  opts?: { includeDealers?: boolean; includeApproval?: boolean },
+): number {
+  const includeDealers = opts?.includeDealers !== false;
+  const includeApproval = opts?.includeApproval !== false;
   let n = 0;
-  if (draft.dealerId !== 'all') n += 1;
-  if (draft.approval !== 'any') n += 1;
+  if (includeDealers && draft.dealerId !== 'all') n += 1;
+  if (includeApproval && draft.approval !== 'any') n += 1;
   if (draft.deliveryPreset !== 'any' || draft.deliveryFrom || draft.deliveryTo) n += 1;
   if (draft.sortBy !== 'createdAt') n += 1;
   if (draft.sortDir !== 'desc') n += 1;
@@ -161,6 +168,7 @@ export function OrdersFilterSheet({
   onReset,
   dealers = [],
   showDealers = false,
+  showApproval = true,
 }: OrdersFilterSheetProps) {
   const { t, isRTL } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
@@ -168,7 +176,10 @@ export function OrdersFilterSheet({
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.min(Math.round(height * 0.88), 720);
-  const activeCount = countActiveOrderFilters(draft);
+  const activeCount = countActiveOrderFilters(draft, {
+    includeDealers: showDealers,
+    includeApproval: showApproval,
+  });
   const [dealerQuery, setDealerQuery] = useState('');
 
   useEffect(() => {
@@ -242,27 +253,29 @@ export function OrdersFilterSheet({
             </FilterSection>
           ) : null}
 
-          <FilterSection
-            index={nextIndex()}
-            reduce={reduce}
-            icon={SECTION_ICON.approval}
-            title={t('mobile.orders.filterApproval')}
-            accent={draft.approval !== 'any' ? colors.brand : undefined}
-          >
-            <View style={chipRow}>
-              {APPROVAL_OPTIONS.map((opt) => (
-                <FloorChip
-                  key={opt}
-                  label={t(`mobile.orders.filterApprovalOptions.${opt}`)}
-                  active={draft.approval === opt}
-                  onPress={() => {
-                    void haptics.selection();
-                    onChange({ ...draft, approval: opt });
-                  }}
-                />
-              ))}
-            </View>
-          </FilterSection>
+          {showApproval ? (
+            <FilterSection
+              index={nextIndex()}
+              reduce={reduce}
+              icon={SECTION_ICON.approval}
+              title={t('mobile.orders.filterApproval')}
+              accent={draft.approval !== 'any' ? colors.brand : undefined}
+            >
+              <View style={chipRow}>
+                {APPROVAL_OPTIONS.map((opt) => (
+                  <FloorChip
+                    key={opt}
+                    label={t(`mobile.orders.filterApprovalOptions.${opt}`)}
+                    active={draft.approval === opt}
+                    onPress={() => {
+                      void haptics.selection();
+                      onChange({ ...draft, approval: opt });
+                    }}
+                  />
+                ))}
+              </View>
+            </FilterSection>
+          ) : null}
 
           <FilterSection
             index={nextIndex()}

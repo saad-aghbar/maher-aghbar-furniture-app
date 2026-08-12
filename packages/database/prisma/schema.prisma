@@ -329,6 +329,30 @@ enum FactoryCalendarExceptionType {
   EXTRA_SHIFT
 }
 
+enum ProductionWorkflowStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum ProductionWorkflowVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  ARCHIVED
+}
+
+enum WorkflowDependencyType {
+  HARD
+}
+
+enum StageApplicability {
+  INHERIT
+  REQUIRED
+  OPTIONAL
+  EXCLUDED
+}
+
 // ─── IAM ─────────────────────────────────────────────────────────────────────
 
 model User {
@@ -652,6 +676,7 @@ model Product {
   productionProfile ProductProductionProfile?
   stageEstimates    ProductStageEstimate[]
   estimateStats     StageEstimateStat[]
+  workflowConfiguration ProductWorkflowConfiguration?
 
   @@index([categoryId])
   @@map("products")
@@ -1383,6 +1408,9 @@ model ProductionStageDefinition {
   stageEstimates ProductStageEstimate[]
   workerSkills   WorkerSkill[]
   estimateStats  StageEstimateStat[]
+  workflowNodes  ProductionWorkflowNode[]
+  snapshotNodes  ProductionOrderWorkflowSnapshotNode[]
+  stageOverrides ProductWorkflowStageOverride[]
 
   @@map("production_stage_definitions")
 }
@@ -1425,6 +1453,7 @@ model ProductionOrder {
   documents    Document[]
   schedules    ProductionSchedule[]
   estimateProposals SchedulingEstimateProposal[]
+  workflowSnapshot ProductionOrderWorkflowSnapshot?
 
   @@index([salesOrderId])
   @@index([status])
@@ -2261,5 +2290,219 @@ model StageEstimateStat {
   @@unique([productId, stageDefinitionId])
   @@index([stageDefinitionId])
   @@map("stage_estimate_stats")
+}
+
+// ─── Production Workflow Templates + Order Snapshots ─────────────────────────
+
+model ProductionWorkflow {
+  id              String                   @id @default(uuid())
+  code            String                   @unique
+  nameAr          String
+  nameEn          String
+  nameHe          String?
+  descriptionAr   String?
+  descriptionEn   String?
+  descriptionHe   String?
+  status          ProductionWorkflowStatus @default(DRAFT)
+  activeVersionId String?                  @unique
+  activeVersion   ProductionWorkflowVersion? @relation("WorkflowActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  archivedAt      DateTime?
+  createdById     String?
+
+  versions                ProductionWorkflowVersion[] @relation("WorkflowVersions")
+  productConfigurations   ProductWorkflowConfiguration[]
+  orderSnapshots          ProductionOrderWorkflowSnapshot[]
+
+  @@index([status])
+  @@map("production_workflows")
+}
+
+model ProductionWorkflowVersion {
+  id            String                           @id @default(uuid())
+  workflowId    String
+  workflow      ProductionWorkflow               @relation("WorkflowVersions", fields: [workflowId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  status        ProductionWorkflowVersionStatus  @default(DRAFT)
+  name          String
+  description   String?
+  changelog     String?
+  publishedAt   DateTime?
+  publishedById String?
+  createdAt     DateTime                         @default(now())
+  updatedAt     DateTime                         @updatedAt
+  createdById   String?
+  /// Optimistic concurrency token bumped on every draft mutation
+  revision      Int                              @default(1)
+
+  nodes               ProductionWorkflowNode[]
+  edges               ProductionWorkflowEdge[]
+  activeForWorkflow   ProductionWorkflow? @relation("WorkflowActiveVersion")
+  orderSnapshots      ProductionOrderWorkflowSnapshot[]
+
+  @@unique([workflowId, versionNumber])
+  @@index([workflowId, status])
+  @@map("production_workflow_versions")
+}
+
+model ProductionWorkflowNode {
+  id                           String                   @id @default(uuid())
+  workflowVersionId            String
+  workflowVersion              ProductionWorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  stageDefinitionId            String
+  stageDefinition              ProductionStageDefinition @relation(fields: [stageDefinitionId], references: [id])
+  nodeKey                      String
+  sortOrder                    Int                      @default(0)
+  displayX                     Float?
+  displayY                     Float?
+  isRequiredByDefault          Boolean                  @default(true)
+  canBeSkipped                 Boolean                  @default(false)
+  defaultEstimatedMinutes      Int?
+  responsibleDepartmentId      String?
+  requiresInspectionOverride   Boolean?
+  requiresPhotosOverride       Boolean?
+  metadata                     Json?
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
+
+  outgoingEdges ProductionWorkflowEdge[] @relation("WorkflowEdgeFrom")
+  incomingEdges ProductionWorkflowEdge[] @relation("WorkflowEdgeTo")
+  productOverrides ProductWorkflowStageOverride[]
+
+  @@unique([workflowVersionId, nodeKey])
+  @@index([workflowVersionId])
+  @@index([stageDefinitionId])
+  @@map("production_workflow_nodes")
+}
+
+model ProductionWorkflowEdge {
+  id                String                 @id @default(uuid())
+  workflowVersionId String
+  workflowVersion   ProductionWorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  fromNodeId        String
+  fromNode          ProductionWorkflowNode @relation("WorkflowEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNodeId          String
+  toNode            ProductionWorkflowNode @relation("WorkflowEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+  dependencyType    WorkflowDependencyType @default(HARD)
+  createdAt         DateTime               @default(now())
+
+  @@unique([workflowVersionId, fromNodeId, toNodeId])
+  @@index([workflowVersionId])
+  @@map("production_workflow_edges")
+}
+
+model ProductWorkflowConfiguration {
+  id         String             @id @default(uuid())
+  productId  String             @unique
+  product    Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  workflowId String
+  workflow   ProductionWorkflow @relation(fields: [workflowId], references: [id])
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  stageOverrides ProductWorkflowStageOverride[]
+
+  @@index([workflowId])
+  @@map("product_workflow_configurations")
+}
+
+model ProductWorkflowStageOverride {
+  id                    String                   @id @default(uuid())
+  configurationId       String
+  configuration         ProductWorkflowConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  productId             String
+  workflowNodeId        String?
+  workflowNode          ProductionWorkflowNode?  @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
+  stageDefinitionId     String
+  stageDefinition       ProductionStageDefinition @relation(fields: [stageDefinitionId], references: [id])
+  applicability         StageApplicability       @default(INHERIT)
+  estimatedMinutes      Int?
+  responsibleDepartmentId String?
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  @@unique([configurationId, stageDefinitionId])
+  @@index([productId])
+  @@index([workflowNodeId])
+  @@index([stageDefinitionId])
+  @@map("product_workflow_stage_overrides")
+}
+
+model ProductionOrderWorkflowSnapshot {
+  id                     String   @id @default(uuid())
+  productionOrderId      String   @unique
+  productionOrder        ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  sourceWorkflowId       String?
+  sourceWorkflow         ProductionWorkflow? @relation(fields: [sourceWorkflowId], references: [id], onDelete: SetNull)
+  sourceWorkflowVersionId String?
+  sourceWorkflowVersion  ProductionWorkflowVersion? @relation(fields: [sourceWorkflowVersionId], references: [id], onDelete: SetNull)
+  sourceVersionNumber    Int?
+  isLegacyBackfill       Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  customizedAt           DateTime?
+  customizedById         String?
+
+  nodes ProductionOrderWorkflowSnapshotNode[]
+  edges ProductionOrderWorkflowSnapshotEdge[]
+
+  @@index([sourceWorkflowId])
+  @@index([sourceWorkflowVersionId])
+  @@map("production_order_workflow_snapshots")
+}
+
+model ProductionOrderWorkflowSnapshotNode {
+  id                    String   @id @default(uuid())
+  snapshotId            String
+  snapshot              ProductionOrderWorkflowSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  sourceWorkflowNodeId  String?
+  stageDefinitionId     String?
+  stageDefinition       ProductionStageDefinition? @relation(fields: [stageDefinitionId], references: [id], onDelete: SetNull)
+  stageInstanceId       String?  @unique
+  nodeKey               String
+  stageCode             String
+  nameArSnapshot        String
+  nameEnSnapshot        String
+  nameHeSnapshot        String?
+  isRequired            Boolean  @default(true)
+  isSkipped             Boolean  @default(false)
+  skipReason            String?
+  responsibleDepartmentId String?
+  responsibleDepartmentCode String?
+  estimatedMinutes      Int?
+  estimateReviewRequired Boolean @default(false)
+  requiresInspection    Boolean  @default(false)
+  requiresPhotos        Boolean  @default(false)
+  sortOrder             Int      @default(0)
+  displayX              Float?
+  displayY              Float?
+  metadata              Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  outgoingEdges ProductionOrderWorkflowSnapshotEdge[] @relation("SnapshotEdgeFrom")
+  incomingEdges ProductionOrderWorkflowSnapshotEdge[] @relation("SnapshotEdgeTo")
+
+  @@unique([snapshotId, nodeKey])
+  @@index([snapshotId])
+  @@index([stageDefinitionId])
+  @@index([stageCode])
+  @@map("production_order_workflow_snapshot_nodes")
+}
+
+model ProductionOrderWorkflowSnapshotEdge {
+  id                   String   @id @default(uuid())
+  snapshotId           String
+  snapshot             ProductionOrderWorkflowSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  fromSnapshotNodeId   String
+  fromSnapshotNode     ProductionOrderWorkflowSnapshotNode @relation("SnapshotEdgeFrom", fields: [fromSnapshotNodeId], references: [id], onDelete: Cascade)
+  toSnapshotNodeId     String
+  toSnapshotNode       ProductionOrderWorkflowSnapshotNode @relation("SnapshotEdgeTo", fields: [toSnapshotNodeId], references: [id], onDelete: Cascade)
+  dependencyType       WorkflowDependencyType @default(HARD)
+  createdAt            DateTime @default(now())
+
+  @@unique([snapshotId, fromSnapshotNodeId, toSnapshotNodeId])
+  @@index([snapshotId])
+  @@map("production_order_workflow_snapshot_edges")
 }
 

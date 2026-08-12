@@ -704,8 +704,8 @@ export function NewOrderScreen() {
       priority,
       notes,
       deliveryAddress: deliveryAddress.trim() || undefined,
-      endCustomerName: endCustomerName.trim() || undefined,
-      endCustomerPhone: endCustomerPhone.trim() || undefined,
+      endCustomerName: endCustomerName.trim() || user?.name?.trim() || undefined,
+      endCustomerPhone: endCustomerPhone.trim() || user?.phone?.trim() || undefined,
       deliveryLat,
       deliveryLng,
       requiredDeliveryDate:
@@ -1256,17 +1256,43 @@ export function NewOrderScreen() {
                       label={t('mobile.newOrder.endCustomerName')}
                       value={endCustomerName}
                       onChangeText={setEndCustomerName}
-                      placeholder={t('mobile.newOrder.endCustomerNamePlaceholder')}
+                      placeholder={
+                        user?.name?.trim()
+                          ? t('mobile.newOrder.endCustomerNamePlaceholderDealer', {
+                              name: user.name.trim(),
+                            })
+                          : t('mobile.newOrder.endCustomerNamePlaceholder')
+                      }
                     />
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      style={{ textAlign: isRTL ? 'right' : 'left', marginTop: -theme.spacing.sm }}
+                    >
+                      {t('mobile.newOrder.endCustomerNameHint')}
+                    </AppText>
                     <PhoneField
                       label={t('mobile.newOrder.endCustomerPhone')}
                       value={endCustomerPhone}
                       onChangeText={setEndCustomerPhone}
-                      placeholder={t('mobile.newOrder.endCustomerPhonePlaceholder')}
+                      placeholder={
+                        user?.phone?.trim()
+                          ? t('mobile.newOrder.endCustomerPhonePlaceholderDealer', {
+                              phone: user.phone.trim(),
+                            })
+                          : t('mobile.newOrder.endCustomerPhonePlaceholder')
+                      }
                       error={
                         error && !isValidOptionalPhone(endCustomerPhone) ? error : undefined
                       }
                     />
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      style={{ textAlign: isRTL ? 'right' : 'left', marginTop: -theme.spacing.sm }}
+                    >
+                      {t('mobile.newOrder.endCustomerPhoneHint')}
+                    </AppText>
 
                     <NewOrderDeliveryAddressBlock
                       savedAddresses={savedAddresses}
@@ -1505,6 +1531,10 @@ export function NewOrderScreen() {
           onConfirm={(coords) => {
             setDeliveryLat(coords.latitude);
             setDeliveryLng(coords.longitude);
+            setDeliveryAddress(
+              coords.address?.trim() ||
+                `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`,
+            );
             setMapOpen(false);
           }}
           onClear={() => {

@@ -8,8 +8,10 @@ export class CapacityTracker {
   private readonly byEmployee = new Map<string, OccupancyInterval[]>();
 
   constructor(initial: OccupancyInterval[] = []) {
+    // Soft-load: seed/occupancy snapshots can overlap. Throwing here aborted
+    // every recalculate into an empty NEEDS_REVIEW and left the old plan on the board.
     for (const iv of initial) {
-      this.reserve(iv);
+      this.tryReserve(iv);
     }
   }
 
@@ -75,6 +77,21 @@ export class CapacityTracker {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Always record the interval (used for pinned/completed work and for committing
+   * a successful trial plan). Overlaps are allowed — the planner already accepted them.
+   */
+  forceReserve(interval: OccupancyInterval): void {
+    if (interval.end.getTime() <= interval.start.getTime()) {
+      throw new Error('Invalid occupancy interval: end must be after start');
+    }
+    const list = this.byEmployee.get(interval.employeeId) ?? [];
+    const next = list.filter((iv) => iv.allocationId !== interval.allocationId);
+    next.push({ ...interval });
+    next.sort((a, b) => a.start.getTime() - b.start.getTime());
+    this.byEmployee.set(interval.employeeId, next);
   }
 
   release(employeeId: string, allocationId: string): void {

@@ -9,6 +9,7 @@ import { ProgressBar } from '@/motion';
 import { useTheme } from '@/theme';
 import type { ProductionFlowModel, ProductionFlowStage } from '../selectProductionFlow';
 import { isStageStatusComplete, StageWorkPhotos } from './StageWorkPhotos';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
   open: boolean;
@@ -22,7 +23,7 @@ type Props = {
  */
 export function DealerStageSheet({ open, onClose, stage, flow }: Props) {
   const { t, formatDate, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
   const completed = stage ? isStageStatusComplete(stage.status) : false;
   const pct = stage
@@ -57,10 +58,11 @@ export function DealerStageSheet({ open, onClose, stage, flow }: Props) {
               borderRadius: theme.radius.xl,
               borderWidth: 1,
               borderColor: colors.borderStrong,
-              backgroundColor: colors.surfaceSecondary,
+              backgroundColor: colors.surface,
               padding: theme.spacing.md,
               gap: theme.spacing.sm,
               overflow: 'hidden',
+              ...orderBoardShadow(colorScheme),
             }}
           >
             <View
