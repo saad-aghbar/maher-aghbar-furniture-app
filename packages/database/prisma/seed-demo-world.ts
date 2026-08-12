@@ -16,6 +16,7 @@ import { seedSequences } from './seed/sequences';
 import { attachProductWorkflowConfigurations } from './seed/workflow';
 import { seedProductEstimates } from './seed/product-estimates';
 import { seedDealerOrdersRecent } from './seed/dealer-orders-recent';
+import { seedDealerFinance } from './seed/dealer-finance';
 
 export { wipeOperationalData };
 
@@ -95,6 +96,14 @@ export async function seedDemoWorld(prisma: PrismaClient, passwordHash: string):
   });
   console.log(
     `  dealer orders (14d): ${dealerOrders.salesOrders} SO · ${dealerOrders.productionOrders} PO · ${dealerOrders.schedules} schedules`,
+  );
+
+  const finance = await seedDealerFinance(prisma, {
+    adminId: admin.id,
+    dealers,
+  });
+  console.log(
+    `  dealer finance: ${finance.invoices} invoices · ${finance.payments} payments · ${finance.returns} returns`,
   );
 
   const counts = {

@@ -164,8 +164,11 @@ export function setStageWorkers(stageId: string, userIds: string[]) {
   return apiPut<AssignableWorker[]>(`/production-stage-library/${stageId}/workers`, { userIds });
 }
 
-export function listAssignableWorkers(q?: string) {
-  const qs = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : '';
+export function listAssignableWorkers(q?: string, stageDefinitionId?: string) {
+  const params = new URLSearchParams();
+  if (q?.trim()) params.set('q', q.trim());
+  if (stageDefinitionId?.trim()) params.set('stageDefinitionId', stageDefinitionId.trim());
+  const qs = params.toString() ? `?${params.toString()}` : '';
   return apiGet<AssignableWorker[]>(`/production-orders/assignable-workers${qs}`);
 }
 

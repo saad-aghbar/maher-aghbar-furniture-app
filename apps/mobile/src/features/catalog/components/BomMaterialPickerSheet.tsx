@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   ScrollView,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
   type LayoutChangeEvent,
@@ -39,6 +38,7 @@ import {
   useReducedMotion,
 } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 const CATEGORIES: InventoryCategoryGroup[] = ['fabric', 'foam', 'wood', 'accessories'];
 
@@ -307,7 +307,7 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
 
         <Animated.View entering={enter(2)}>
           <SearchBarShell>
-            <TextInput
+            <AppTextInput
               value={q}
               onChangeText={setQ}
               placeholder={t('mobile.inventory.searchPlaceholder', { group: groupLabel })}

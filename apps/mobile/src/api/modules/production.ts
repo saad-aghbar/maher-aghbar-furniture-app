@@ -230,8 +230,8 @@ export async function updateProductionOrder(
   );
 }
 
-export async function listAssignableWorkers(q?: string) {
-  const qs = toSearchParams({ q });
+export async function listAssignableWorkers(q?: string, stageDefinitionId?: string) {
+  const qs = toSearchParams({ q, stageDefinitionId });
   return apiGet<AssignableWorker[]>(`/production-orders/assignable-workers${qs}`);
 }
 

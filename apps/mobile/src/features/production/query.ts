@@ -76,10 +76,14 @@ export function useProductionOrderQuery(id: string | undefined, enabled: boolean
   });
 }
 
-export function useAssignableWorkersQuery(enabled: boolean, q?: string) {
+export function useAssignableWorkersQuery(
+  enabled: boolean,
+  q?: string,
+  stageDefinitionId?: string,
+) {
   return useQuery({
-    queryKey: queryKeys.production.workers(q),
-    queryFn: () => listAssignableWorkers(q),
+    queryKey: queryKeys.production.workers(q, stageDefinitionId),
+    queryFn: () => listAssignableWorkers(q, stageDefinitionId),
     enabled,
     staleTime: 60_000,
   });

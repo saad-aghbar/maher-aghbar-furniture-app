@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { TextField } from '@/components/forms/TextField';
+import { InlineDateCalendar } from '@/components/calendar';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -329,9 +329,9 @@ export function DeliveryDateSheet({
       open={open}
       onClose={onClose}
       title={t('mobile.production.changeDelivery')}
-      sheetHeight={340}
+      fitContent
     >
-      <View style={{ gap: theme.spacing.md, flex: 1 }}>
+      <View style={{ gap: theme.spacing.md }}>
         <View
           style={{
             borderRadius: theme.radius.xl,
@@ -365,13 +365,12 @@ export function DeliveryDateSheet({
               {t('mobile.production.deliveryDate')}
             </AppText>
           </View>
-          <TextField
-            value={value}
-            onChangeText={setValue}
-            placeholder="YYYY-MM-DD"
-            autoCapitalize="none"
-            error={error ?? undefined}
-          />
+          <InlineDateCalendar value={value} onSelect={setValue} resetKey={open} />
+          {error ? (
+            <AppText variant="caption" color="error">
+              {error}
+            </AppText>
+          ) : null}
         </View>
 
         <SheetFooterActions

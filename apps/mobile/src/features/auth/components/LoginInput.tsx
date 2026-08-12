@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 import { useLocale } from '@/i18n';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import type { LoginColors } from '../theme/loginColors';
@@ -90,7 +91,7 @@ export function LoginInput({
           borderStyle,
         ]}
       >
-        <TextInput
+        <AppTextInput
           ref={inputRef}
           testID={testID}
           accessibilityLabel={label}

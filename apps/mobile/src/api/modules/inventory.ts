@@ -1,8 +1,7 @@
 import type { PaginatedResponse } from '@maher/types';
-import { Linking, Share } from 'react-native';
-import { getAccessToken } from '@/storage/tokens';
 import { apiGet, apiPatch, apiPost } from '../client';
-import { getApiV1Url } from '../config';
+import { openAuthedPdf, withPdfOptions } from '../openPdf';
+import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 import { toSearchParams, type PageParams } from '../pagination';
 
 export type InventoryCategoryGroup = 'fabric' | 'foam' | 'wood' | 'accessories';
@@ -276,40 +275,17 @@ export async function updateInventoryItem(id: string, body: UpdateInventoryItemI
   return apiPatch<InventoryItem>(`/inventory/items/${encodeURIComponent(id)}`, body);
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return globalThis.btoa(binary);
-}
-
 /** Fetch inventory label PDF with Bearer auth and open / share. */
-export async function openInventoryLabelPdf(id: string, sku?: string): Promise<void> {
-  const token = await getAccessToken();
-  const url = `${getApiV1Url()}/inventory/items/${encodeURIComponent(id)}/label`;
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/pdf',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Inventory label PDF failed (${res.status})`);
-  }
-  const buf = await res.arrayBuffer();
-  const dataUrl = `data:application/pdf;base64,${arrayBufferToBase64(buf)}`;
-  const canOpen = await Linking.canOpenURL(dataUrl);
-  if (canOpen) {
-    await Linking.openURL(dataUrl);
-    return;
-  }
-  await Share.share({
-    url: dataUrl,
-    message: sku ? `Label ${sku}` : 'Inventory label PDF',
-  });
+export async function openInventoryLabelPdf(
+  id: string,
+  sku?: string,
+  opts?: PdfDownloadOptions,
+): Promise<void> {
+  await openAuthedPdf(
+    withPdfOptions(`/inventory/items/${encodeURIComponent(id)}/label`, opts),
+    'Inventory label PDF failed',
+    sku ? `Label ${sku}` : 'Inventory label PDF',
+  );
 }
 
 export async function createWarehouseTransfer(body: CreateWarehouseTransferInput) {

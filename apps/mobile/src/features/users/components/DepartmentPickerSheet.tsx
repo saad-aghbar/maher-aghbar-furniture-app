@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
   open: boolean;
@@ -93,7 +93,7 @@ export function DepartmentPickerSheet({
     >
       <View style={{ gap: theme.spacing.md, flex: 1 }}>
         <SearchBarShell>
-          <TextInput
+          <AppTextInput
             value={query}
             onChangeText={setQuery}
             placeholder={t('users.searchDepartments')}

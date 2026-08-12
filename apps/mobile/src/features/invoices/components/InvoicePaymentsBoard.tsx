@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
-import { ListItemEnter } from '@/motion';
+import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InvoiceDetailModel } from '../selectInvoice';
 import { InvoiceFloorBoard } from './InvoiceFloorBoard';
@@ -10,6 +10,7 @@ type Props = {
   model: InvoiceDetailModel;
   currencySuffix?: string;
   methodLabel: (method: string) => string;
+  onPaymentPdf?: (paymentId: string) => void;
 };
 
 /** Timeline-ish payment history board. */
@@ -17,6 +18,7 @@ export function InvoicePaymentsBoard({
   model,
   currencySuffix = 'JOD',
   methodLabel,
+  onPaymentPdf,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
@@ -102,15 +104,44 @@ export function InvoicePaymentsBoard({
                     {`${p.amountLabel} ${currencySuffix}`}
                   </AppText>
                 </View>
-                <AppText
-                  variant="caption"
-                  color="secondary"
-                  style={{ textAlign: isRTL ? 'right' : 'left', lineHeight: 17 }}
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: theme.spacing.sm,
+                  }}
                 >
-                  {[p.dateLabel, methodLabel(p.method), p.reference]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </AppText>
+                  <AppText
+                    variant="caption"
+                    color="secondary"
+                    style={{
+                      flex: 1,
+                      textAlign: isRTL ? 'right' : 'left',
+                      lineHeight: 17,
+                    }}
+                  >
+                    {[p.dateLabel, methodLabel(p.method), p.reference]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </AppText>
+                  {onPaymentPdf ? (
+                    <AnimatedPressable
+                      variant="button"
+                      accessibilityRole="button"
+                      accessibilityLabel={t('accounting.downloadPdf')}
+                      onPress={() => {
+                        void haptics.selection();
+                        onPaymentPdf(p.id);
+                      }}
+                      hitSlop={8}
+                    >
+                      <AppText variant="caption" color="brand" weight="semibold">
+                        {t('catalog.pdf')}
+                      </AppText>
+                    </AnimatedPressable>
+                  ) : null}
+                </View>
               </View>
             </View>
           </ListItemEnter>

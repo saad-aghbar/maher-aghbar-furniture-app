@@ -12,6 +12,7 @@ type Props = {
   invoices: Invoice[];
   emptyLabel: string;
   onPressInvoice: (id: string) => void;
+  onInvoicePdf?: (id: string) => void;
 };
 
 const LIST_MAX_H = 320;
@@ -19,7 +20,12 @@ const LIST_MAX_H = 320;
 /**
  * Scrollable invoices ledger for dealer summary — capped height, floor-row aesthetic.
  */
-export function DealerInvoicesList({ invoices, emptyLabel, onPressInvoice }: Props) {
+export function DealerInvoicesList({
+  invoices,
+  emptyLabel,
+  onPressInvoice,
+  onInvoicePdf,
+}: Props) {
   const { t, formatCurrency, formatDate, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -147,6 +153,22 @@ export function DealerInvoicesList({ invoices, emptyLabel, onPressInvoice }: Pro
                   {formatDate(inv.invoiceDate)}
                 </AppText>
                 <StatusBadge status={inv.status} dot />
+                {onInvoicePdf ? (
+                  <AnimatedPressable
+                    variant="button"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('accounting.downloadPdf')}
+                    onPress={() => {
+                      void haptics.selection();
+                      onInvoicePdf(inv.id);
+                    }}
+                    hitSlop={8}
+                  >
+                    <AppText variant="caption" color="brand" weight="semibold">
+                      {t('catalog.pdf')}
+                    </AppText>
+                  </AnimatedPressable>
+                ) : null}
               </View>
             </View>
           </AnimatedPressable>

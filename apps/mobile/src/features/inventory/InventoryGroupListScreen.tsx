@@ -12,6 +12,7 @@ import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
@@ -50,6 +51,7 @@ export function InventoryGroupListScreen({
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const router = useRouter();
   const allowed = can(user, 'inventory.read');
   const canReceive = can(user, 'inventory.receive');
@@ -88,13 +90,19 @@ export function InventoryGroupListScreen({
     (move?.mode === 'issue' && issueMutation.isPending);
 
   function openLabelPdf(item: InventoryItemCardModel) {
-    void openInventoryLabelPdf(item.id, item.sku).catch(() => {
-      void haptics.error();
-      Alert.alert(
-        t('mobile.inventory.labelPdfFailedTitle'),
-        t('mobile.inventory.labelPdfFailedBody'),
-      );
-    });
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openInventoryLabelPdf(item.id, item.sku, opts);
+      } catch {
+        void haptics.error();
+        Alert.alert(
+          t('mobile.inventory.labelPdfFailedTitle'),
+          t('mobile.inventory.labelPdfFailedBody'),
+        );
+      }
+    })();
   }
 
   if (!allowed) {
@@ -301,6 +309,7 @@ export function InventoryGroupListScreen({
           );
         }}
       />
+      {pdfDownloadSheet}
     </AppScreen>
   );
 }

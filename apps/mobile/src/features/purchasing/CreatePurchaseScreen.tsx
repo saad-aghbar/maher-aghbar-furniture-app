@@ -8,6 +8,7 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { useToast } from '@/components/feedback/Toast';
+import { DatePickerField } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
@@ -186,11 +187,10 @@ export function CreatePurchaseScreen() {
           </View>
         ) : null}
 
-        <TextField
+        <DatePickerField
           label={t('mobile.purchasing.expectedArrival')}
           value={expectedDate}
-          onChangeText={setExpectedDate}
-          placeholder="YYYY-MM-DD"
+          onChange={setExpectedDate}
         />
         <TextField
           label={t('mobile.purchasing.notes')}

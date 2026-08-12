@@ -3,7 +3,6 @@ import {
   Image,
   ScrollView,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -24,6 +23,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { useCreateInvoiceMutation, useInvoiceSalesOrdersQuery } from '../query';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
   open: boolean;
@@ -120,7 +120,7 @@ export function CreateInvoiceFromSalesOrderSheet({ open, onClose, onCreated }: P
         </AppText>
 
         <SearchBarShell>
-          <TextInput
+          <AppTextInput
             value={query}
             onChangeText={setQuery}
             placeholder={t('accounting.searchSalesOrders')}

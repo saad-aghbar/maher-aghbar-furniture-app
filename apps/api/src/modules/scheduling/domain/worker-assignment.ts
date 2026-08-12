@@ -3,6 +3,7 @@ import type { WorkerCandidate } from './types';
 
 export interface AssignWorkerInput {
   workers: WorkerCandidate[];
+  /** Kept for callers / department-resource fallback booking; not used for eligibility. */
   departmentCode: string | null;
   stageDefinitionId?: string | null;
   /** Prefer this worker when still eligible. */
@@ -10,18 +11,20 @@ export interface AssignWorkerInput {
   capacity?: CapacityTracker;
 }
 
-function isEligible(
+/**
+ * Eligibility: active + stage skill match when a stage is provided.
+ * Department is not used — workers are matched by Stage Skills only.
+ * Empty skills with a required stage → ineligible.
+ */
+export function isEligible(
   worker: WorkerCandidate,
-  departmentCode: string | null,
+  _departmentCode: string | null,
   stageDefinitionId?: string | null,
 ): boolean {
   if (!worker.isActive) return false;
-  if (departmentCode && worker.departmentCode !== departmentCode) return false;
   if (stageDefinitionId) {
-    const skills = worker.skillStageDefinitionIds;
-    if (skills && skills.length > 0 && !skills.includes(stageDefinitionId)) {
-      return false;
-    }
+    const skills = worker.skillStageDefinitionIds ?? [];
+    return skills.includes(stageDefinitionId);
   }
   return true;
 }
@@ -33,7 +36,7 @@ function loadOf(worker: WorkerCandidate, capacity?: CapacityTracker): number {
 
 /**
  * Pick the least-loaded eligible worker.
- * Eligibility: active, department code match (when provided), optional skill for stage.
+ * Eligibility: active + required stage skill (when stageDefinitionId is set).
  * Ties break by worker id for determinism.
  */
 export function assignWorker(input: AssignWorkerInput): WorkerCandidate | null {

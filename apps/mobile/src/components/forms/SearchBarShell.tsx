@@ -29,13 +29,24 @@ type ShellProps = {
   style?: StyleProp<ViewStyle>;
   /** Hide the leading search bubble (rare). */
   hideIcon?: boolean;
+  /** Defaults to brand; dealer search uses muted taupe. */
+  iconColor?: string;
+  /** Defaults to surface; dealer search uses a lighter cream bubble. */
+  iconBubbleColor?: string;
 };
 
 /**
  * Shared search aesthetic — full pill, soft border, icon in a light circle bubble.
  * Wrap any TextInput / pressable placeholder with this for app-wide consistency.
  */
-export function SearchBarShell({ children, error, style, hideIcon = false }: ShellProps) {
+export function SearchBarShell({
+  children,
+  error,
+  style,
+  hideIcon = false,
+  iconColor,
+  iconBubbleColor,
+}: ShellProps) {
   const { colors, theme, colorScheme } = useTheme();
   const { isRTL } = useLocale();
   const dark = colorScheme === 'dark';
@@ -67,12 +78,12 @@ export function SearchBarShell({ children, error, style, hideIcon = false }: She
             borderRadius: 16,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.surface,
+            backgroundColor: iconBubbleColor ?? colors.surface,
             borderWidth: 1,
             borderColor: colors.border,
           }}
         >
-          <Ionicons name="search-outline" size={16} color={colors.brand} />
+          <Ionicons name="search-outline" size={16} color={iconColor ?? colors.brand} />
         </View>
       )}
       {children}

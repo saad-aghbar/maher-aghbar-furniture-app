@@ -98,6 +98,8 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
     selectedRole?.code === 'CUSTOMER' ||
     (user?.roles ?? []).some((r) => r.role.code === 'CUSTOMER');
   const isWorker = selectedRole?.code === 'PRODUCTION_WORKER';
+  const isAdmin = selectedRole?.code === 'SYSTEM_ADMINISTRATOR';
+  const showDepartment = !isCustomer && !isWorker && !isAdmin;
   const selectedDept = form
     ? departments.find((d) => d.id === form.departmentId)
     : undefined;
@@ -158,7 +160,11 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
           lastName,
           isActive: form.isActive,
           roleIds: [form.roleId],
-          departmentId: isCustomer ? null : form.departmentId || null,
+          ...(showDepartment
+            ? { departmentId: form.departmentId || null }
+            : isCustomer
+              ? { departmentId: null }
+              : {}),
           ...(isWorker ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
         },
       });
@@ -304,12 +310,21 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
                     onChange={(roleId) => {
                       set('roleId', roleId);
                       const code = roles.find((r) => r.id === roleId)?.code;
-                      if (code === 'CUSTOMER') set('departmentId', '');
+                      if (
+                        code === 'CUSTOMER' ||
+                        code === 'PRODUCTION_WORKER' ||
+                        code === 'SYSTEM_ADMINISTRATOR'
+                      ) {
+                        set('departmentId', '');
+                      }
+                      if (code !== 'PRODUCTION_WORKER') {
+                        set('stageDefinitionIds', []);
+                      }
                     }}
                   />
                 </UserFormSection>
 
-                {!isCustomer ? (
+                {showDepartment ? (
                   <UserFormSection
                     icon="business-outline"
                     label={t('users.department')}
@@ -352,7 +367,7 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
         ) : null}
       </BottomSheet>
 
-      {!passwordMode ? (
+      {!passwordMode && showDepartment ? (
         <DepartmentPickerSheet
           open={deptOpen}
           onClose={() => setDeptOpen(false)}

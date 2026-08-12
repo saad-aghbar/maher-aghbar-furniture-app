@@ -66,16 +66,12 @@ const PILL_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
  */
 const APPLE_BUBBLE_SPRING = { damping: 24, stiffness: 170, mass: 0.92 } as const;
 
-type TabInk = 'brand' | 'onBrand';
-
 function TabItemContent({
   iconName,
   label,
   expanded,
-  ink,
   isRTL,
-  brand,
-  onBrand,
+  color,
   iconSize = 22,
   slotHeight = ACTIVE_HEIGHT,
   iconsOnly = false,
@@ -83,16 +79,13 @@ function TabItemContent({
   iconName: keyof typeof Ionicons.glyphMap;
   label: string;
   expanded: boolean;
-  ink: TabInk;
   isRTL: boolean;
-  brand: string;
-  onBrand: string;
+  color: string;
   iconSize?: number;
   slotHeight?: number;
   /** Dealer bar: icons only, no expanding labels. */
   iconsOnly?: boolean;
 }) {
-  const color = ink === 'onBrand' ? onBrand : brand;
   const showLabel = !iconsOnly && expanded;
   return (
     <View
@@ -135,7 +128,7 @@ function TabItemContent({
 /**
  * Surface-level tab bar — stays mounted when Stack pushes products / details / etc.
  * Floating admin/worker bar: press-and-hold then drag; hovered tab reveals its label.
- * On-brand ink is clipped to the sliding pill so contrast stays correct mid-slide.
+ * Frosted glass shell + cream bubble (dealer material) on every floating surface.
  */
 export function PersistentSurfaceTabBar({ surface }: Props) {
   const { user } = useAuth();
@@ -146,7 +139,6 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [layouts, setLayouts] = useState<Record<string, { x: number; width: number }>>({});
-  const [trackWidth, setTrackWidth] = useState(0);
   /** While scrubbing, which tab shows its label (null = route active). */
   const [scrubIndex, setScrubIndex] = useState<number | null>(null);
 
@@ -276,37 +268,14 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
     transform: [{ scale: 1 + dragging.value * 0.04 }],
   }));
 
-  const pillInkStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -pillX.value }],
-  }));
-
   if (tabs.length === 0) return null;
 
   if (floating) {
     const dark = colorScheme === 'dark';
-    const glassShell = iconsOnly;
-    const shellBg = glassShell
-      ? dark
-        ? 'rgba(42,36,37,0.42)'
-        : 'rgba(255,255,255,0.42)'
-      : dark
-        ? 'rgba(42,36,37,0.94)'
-        : 'rgba(255,255,255,0.96)';
-    const shellBorder = glassShell
-      ? dark
-        ? 'rgba(255,255,255,0.14)'
-        : 'rgba(63,52,44,0.12)'
-      : colors.border;
-    const bubbleFill = glassShell
-      ? dark
-        ? 'rgba(255,255,255,0.28)'
-        : 'rgba(255,255,255,0.92)'
-      : colors.brand;
-    const bubbleBorder = glassShell
-      ? dark
-        ? 'rgba(255,255,255,0.32)'
-        : 'rgba(63,52,44,0.14)'
-      : 'transparent';
+    const shellBg = dark ? 'rgba(42,36,37,0.42)' : 'rgba(255,255,255,0.42)';
+    const shellBorder = dark ? 'rgba(255,255,255,0.14)' : 'rgba(63,52,44,0.12)';
+    const bubbleFill = dark ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.92)';
+    const bubbleBorder = dark ? 'rgba(255,255,255,0.32)' : 'rgba(63,52,44,0.14)';
 
     /**
      * Flat equal slots so onLayout x/width are relative to the track (pill math).
@@ -335,42 +304,24 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
       flexDirection: (isRTL ? 'row-reverse' : 'row') as 'row' | 'row-reverse',
       alignItems: 'center' as const,
       // Visible so the glass capsule shadow isn’t clipped.
-      overflow: (glassShell ? 'visible' : 'hidden') as 'visible' | 'hidden',
+      overflow: 'visible' as const,
       borderRadius: ACTIVE_HEIGHT / 2,
     };
 
-    const rowStyle = {
-      flexDirection: (isRTL ? 'row-reverse' : 'row') as 'row' | 'row-reverse',
-      alignItems: 'center' as const,
-      height: ACTIVE_HEIGHT,
-      width: trackWidth > 0 ? trackWidth : ('100%' as const),
-    };
-
-    const renderTabSlot = (
-      tab: (typeof tabs)[number],
-      index: number,
-      ink: TabInk,
-      opts?: { glassActive?: boolean },
-    ) => {
+    const renderTabSlot = (tab: (typeof tabs)[number], index: number) => {
       const expanded = index === expandedIndex;
       const label = t(`mobile.tabs.${tab.labelKey}`);
       const iconName = TAB_ICONS[tab.name] ?? 'ellipse-outline';
-      const glassActive = Boolean(opts?.glassActive);
-      // Glass bubble: active stays brand ink; inactive softens.
-      const brandInk = glassActive
-        ? tab.name === activeName
-          ? colors.brand
-          : colors.textMuted
-        : colors.brand;
+      const highlighted =
+        index === expandedIndex ||
+        (expandedIndex < 0 && tab.name === activeName);
       const content = (
         <TabItemContent
           iconName={iconName}
           label={label}
           expanded={expanded}
-          ink={ink}
           isRTL={isRTL}
-          brand={brandInk}
-          onBrand={colors.onBrand}
+          color={highlighted ? colors.brand : colors.textMuted}
           iconsOnly={iconsOnly}
         />
       );
@@ -384,14 +335,6 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
           }
         : undefined;
 
-      if (ink === 'onBrand') {
-        return (
-          <View key={`ink-${tab.name}`} style={slotStyle}>
-            {content}
-          </View>
-        );
-      }
-
       return (
         <Pressable
           key={tab.name}
@@ -400,7 +343,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
           accessibilityLabel={label}
           onLayout={(e) => onLayoutTab(tab.name, e)}
           onPress={() => go(tab.name)}
-          style={[{ zIndex: glassShell ? 2 : 1 }, slotStyle]}
+          style={[{ zIndex: 2 }, slotStyle]}
         >
           {content}
         </Pressable>
@@ -455,39 +398,36 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
             height: shellHeight,
             borderRadius: shellRadius,
             // Allow glass bubble shadows to breathe; BlurView is clipped separately.
-            overflow: glassShell ? 'visible' : 'hidden',
+            overflow: 'visible',
             borderWidth: 1,
             borderColor: shellBorder,
-            backgroundColor: glassShell ? undefined : shellBg,
             ...theme.elevation.raised,
           }}
         >
-          {glassShell ? (
-            <View
-              pointerEvents="none"
-              style={{
-                ...StyleSheet.absoluteFillObject,
-                borderRadius: shellRadius,
-                overflow: 'hidden',
-              }}
-            >
-              {Platform.OS === 'ios' ? (
-                <BlurView
-                  intensity={dark ? 36 : 52}
-                  tint={dark ? 'dark' : 'light'}
-                  style={StyleSheet.absoluteFill}
-                />
-              ) : null}
-              <View
-                style={[StyleSheet.absoluteFill, { backgroundColor: shellBg }]}
+          <View
+            pointerEvents="none"
+            style={{
+              ...StyleSheet.absoluteFillObject,
+              borderRadius: shellRadius,
+              overflow: 'hidden',
+            }}
+          >
+            {Platform.OS === 'ios' ? (
+              <BlurView
+                intensity={dark ? 36 : 52}
+                tint={dark ? 'dark' : 'light'}
+                style={StyleSheet.absoluteFill}
               />
-            </View>
-          ) : null}
+            ) : null}
+            <View
+              style={[StyleSheet.absoluteFill, { backgroundColor: shellBg }]}
+            />
+          </View>
           <View
             style={{
               flex: 1,
               padding: SHELL_PAD,
-              overflow: glassShell ? 'visible' : 'hidden',
+              overflow: 'visible',
             }}
           >
             <GestureDetector gesture={gesture}>
@@ -496,17 +436,11 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
                   trackRowStyle,
                   !equalSlots ? { justifyContent: 'space-between' as const } : null,
                 ]}
-                onLayout={(e) => {
-                  const w = e.nativeEvent.layout.width;
-                  if (w > 0 && w !== trackWidth) setTrackWidth(w);
-                }}
               >
                 {slots.map((slot) =>
                   slot.kind === 'fab'
                     ? renderFabSpacer('fab-slot')
-                    : renderTabSlot(slot.tab, slot.index, 'brand', {
-                        glassActive: glassShell,
-                      }),
+                    : renderTabSlot(slot.tab, slot.index),
                 )}
 
                 {tabInBar && layoutsReady && activeLayout ? (
@@ -519,10 +453,8 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
                         bottom: 0,
                         left: 0,
                         borderRadius: ACTIVE_HEIGHT / 2,
-                        // Don’t clip glass bubble shadows.
-                        overflow: glassShell ? 'visible' : 'hidden',
-                        // Glass capsule sits behind icons; brand pill sits above for ink clip.
-                        zIndex: glassShell ? 0 : 2,
+                        overflow: 'visible',
+                        zIndex: 0,
                       },
                       pillStyle,
                     ]}
@@ -537,37 +469,17 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
                           left: 0,
                           borderRadius: ACTIVE_HEIGHT / 2,
                           backgroundColor: bubbleFill,
-                          borderWidth: glassShell ? StyleSheet.hairlineWidth * 2 : 0,
+                          borderWidth: StyleSheet.hairlineWidth * 2,
                           borderColor: bubbleBorder,
-                          ...(glassShell
-                            ? {
-                                shadowColor: dark ? '#000' : '#1E1A1B',
-                                shadowOpacity: dark ? 0.55 : 0.28,
-                                shadowRadius: 10,
-                                shadowOffset: { width: 0, height: 3 },
-                                elevation: 8,
-                              }
-                            : null),
+                          shadowColor: dark ? '#000' : '#1E1A1B',
+                          shadowOpacity: dark ? 0.55 : 0.28,
+                          shadowRadius: 10,
+                          shadowOffset: { width: 0, height: 3 },
+                          elevation: 8,
                         },
                         pillFillStyle,
                       ]}
                     />
-                    {/* Solid brand bubble still clips on-brand ink; glass uses icons underneath. */}
-                    {!glassShell ? (
-                      <Animated.View
-                        style={[
-                          rowStyle,
-                          !equalSlots ? { justifyContent: 'space-between' as const } : null,
-                          pillInkStyle,
-                        ]}
-                      >
-                        {slots.map((slot) =>
-                          slot.kind === 'fab'
-                            ? renderFabSpacer('ink-fab-slot')
-                            : renderTabSlot(slot.tab, slot.index, 'onBrand'),
-                        )}
-                      </Animated.View>
-                    ) : null}
                   </Animated.View>
                 ) : null}
               </View>

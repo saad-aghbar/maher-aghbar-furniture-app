@@ -1,4 +1,12 @@
-import { Controller, ForbiddenException, Get, Param, Query, Res } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Headers,
+  Param,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { AuthUser } from '@maher/types';
@@ -6,7 +14,12 @@ import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { roundMoney } from '../../common/helpers/money.util';
-import { buildSimplePdf, sendPdf } from '../../common/helpers/pdf.util';
+import {
+  buildSimplePdf,
+  parsePdfQuery,
+  sendPdf,
+} from '../../common/helpers/pdf.util';
+import { localizedName, pdfMessages } from '../../common/helpers/pdf-i18n';
 
 @ApiTags('statements')
 @Controller('statements')
@@ -15,7 +28,10 @@ export class StatementsController {
 
   private assertAccess(user: AuthUser, customerId: string) {
     if (user.customerId && user.customerId !== customerId) {
-      throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Not your statement.' });
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Not your statement.',
+      });
     }
   }
 
@@ -26,18 +42,28 @@ export class StatementsController {
     @CurrentUser() user: AuthUser,
     @Res() res: Response,
     @Query('asOf') asOf?: string,
+    @Query('lang') lang?: string,
+    @Query('theme') theme?: string,
+    @Headers('accept-language') acceptLanguage?: string,
   ) {
     this.assertAccess(user, customerId);
-    const statement = await this.get(customerId, user, asOf);
-    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
+    const { locale, theme: pdfTheme } = parsePdfQuery({
+      lang,
+      theme,
+      acceptLanguage,
+    });
+    const m = pdfMessages(locale);
+    const statement = await this.buildStatement(customerId, user, asOf, locale);
     const buffer = await buildSimplePdf({
-      title: company,
-      subtitle: `Statement of Account — ${statement.customer.name} (${statement.customer.code})`,
+      locale,
+      theme: pdfTheme,
+      title: m.statementOfAccount,
+      subtitle: statement.customer.name,
       meta: [
-        `As of: ${statement.asOf.slice(0, 10)}`,
-        `Closing balance: ${statement.closingBalance} ${statement.currency}`,
+        `${m.asOf}: ${statement.asOf.slice(0, 10)}`,
+        `${m.closing}: ${statement.closingBalance} ${statement.currency}`,
       ],
-      columns: ['Date', 'Ref', 'Description', 'Debit', 'Credit', 'Balance'],
+      columns: [m.date, m.ref, m.description, m.debit, m.credit, m.balance],
       rows: statement.entries.map((e) => [
         e.date.slice(0, 10),
         e.reference,
@@ -46,7 +72,9 @@ export class StatementsController {
         e.credit,
         e.balance,
       ]),
-      footerLines: [`Closing: ${statement.closingBalance} ${statement.currency}`],
+      footerLines: [
+        `${m.closing}: ${statement.closingBalance} ${statement.currency}`,
+      ],
     });
     sendPdf(res, `SOA-${statement.customer.code}.pdf`, buffer);
   }
@@ -58,9 +86,21 @@ export class StatementsController {
     @CurrentUser() user: AuthUser,
     @Query('asOf') asOf?: string,
   ) {
+    return this.buildStatement(customerId, user, asOf, 'en');
+  }
+
+  private async buildStatement(
+    customerId: string,
+    user: AuthUser,
+    asOf: string | undefined,
+    locale: import('../../common/helpers/pdf.util').PdfLocale,
+  ) {
     this.assertAccess(user, customerId);
-    const customer = await this.prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
+    const customer = await this.prisma.customer.findUniqueOrThrow({
+      where: { id: customerId },
+    });
     const asOfDate = asOf ? new Date(asOf) : new Date();
+    const m = pdfMessages(locale);
 
     const invoices = await this.prisma.invoice.findMany({
       where: {
@@ -77,6 +117,7 @@ export class StatementsController {
     });
 
     type Entry = {
+      entityId: string;
       date: Date;
       type: 'INVOICE' | 'PAYMENT';
       reference: string;
@@ -87,20 +128,22 @@ export class StatementsController {
 
     const entries: Entry[] = [
       ...invoices.map((inv) => ({
+        entityId: inv.id,
         date: inv.invoiceDate,
         type: 'INVOICE' as const,
         reference: inv.number,
         debit: String(inv.total),
         credit: '0.000',
-        description: `Invoice ${inv.number}`,
+        description: `${m.invoice} ${inv.number}`,
       })),
       ...payments.map((pay) => ({
+        entityId: pay.id,
         date: pay.paymentDate,
         type: 'PAYMENT' as const,
         reference: pay.number,
         debit: '0.000',
         credit: String(pay.amount),
-        description: `Payment ${pay.number}`,
+        description: `${m.paymentReceipt} ${pay.number}`,
       })),
     ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -114,8 +157,14 @@ export class StatementsController {
       return { ...e, balance: roundMoney(balance), date: e.date.toISOString() };
     });
 
+    const displayName = localizedName(locale, customer);
+
     return {
-      customer: { id: customer.id, code: customer.code, name: customer.name },
+      customer: {
+        id: customer.id,
+        code: customer.code,
+        name: displayName || customer.name,
+      },
       asOf: asOfDate.toISOString(),
       openingBalance: '0.000',
       closingBalance: roundMoney(balance),

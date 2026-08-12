@@ -127,7 +127,7 @@ export function MoreAccountScreen({
     setBioBusy(true);
     try {
       if (next) {
-        const ok = await promptBiometricUnlock(t('auth.biometricPrompt'));
+        const ok = await promptBiometricUnlock(t('auth.biometricPrompt'), t('common.cancel'));
         if (!ok) {
           void haptics.error();
           showToast({

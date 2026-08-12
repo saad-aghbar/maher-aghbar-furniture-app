@@ -8,10 +8,10 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import {
-  isCustomerUser,
   localizedDepartmentName,
   userDisplayName,
   userRoleLabels,
+  userShowsDepartment,
 } from '../display';
 
 type Props = {
@@ -42,7 +42,7 @@ export function UserBoardCard({
   const lastLogin = user.lastLoginAt
     ? formatDateTime(user.lastLoginAt)
     : t('users.never');
-  const hideDept = !showDepartment || isCustomerUser(user);
+  const hideDept = !showDepartment || !userShowsDepartment(user);
 
   return (
     <View

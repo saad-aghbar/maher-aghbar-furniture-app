@@ -248,6 +248,34 @@ export class UsersController {
     };
   }
 
+  /** Worker and Admin accounts do not use department; ignore client-supplied departmentId. */
+  private async resolveDepartmentIdForRoles(
+    roleIds: string[] | undefined,
+    departmentId: string | null | undefined,
+    fallbackRoleCodes?: string[],
+  ): Promise<string | null | undefined> {
+    if (departmentId === undefined) return undefined;
+
+    let codes = fallbackRoleCodes;
+    if (roleIds?.length) {
+      const roles = await this.prisma.role.findMany({
+        where: { id: { in: roleIds } },
+        select: { code: true },
+      });
+      codes = roles.map((r) => r.code);
+    }
+
+    const noDepartment = (codes ?? []).some(
+      (code) => code === 'PRODUCTION_WORKER' || code === 'SYSTEM_ADMINISTRATOR',
+    );
+    if (noDepartment) {
+      // Leave existing DB value unchanged on update (caller should pass undefined).
+      // On create, omit department entirely.
+      return undefined;
+    }
+    return departmentId === null || departmentId === '' ? null : departmentId;
+  }
+
   @Get('users')
   @RequirePermissions('user.manage')
   async listUsers(@Query() query: ListUsersDto) {
@@ -330,6 +358,11 @@ export class UsersController {
       dto.password ?? `Tmp-${randomBytes(6).toString('base64url')}!A1`;
     const passwordHash = await bcrypt.hash(tempPassword, 12);
 
+    const departmentId = await this.resolveDepartmentIdForRoles(
+      dto.roleIds,
+      dto.departmentId ?? null,
+    );
+
     const user = await this.prisma.user.create({
       data: {
         username,
@@ -339,7 +372,7 @@ export class UsersController {
         phone: dto.phone,
         preferredLanguage: dto.preferredLanguage ?? 'ar',
         customerId: dto.customerId,
-        departmentId: dto.departmentId || undefined,
+        ...(departmentId ? { departmentId } : {}),
         passwordHash,
         isActive: dto.isActive ?? true,
         roles: dto.roleIds?.length
@@ -444,6 +477,13 @@ export class UsersController {
       ? await bcrypt.hash(dto.password, 12)
       : undefined;
 
+    const existingRoleCodes = existing.roles.map((r) => r.role.code);
+    const departmentId = await this.resolveDepartmentIdForRoles(
+      dto.roleIds,
+      dto.departmentId,
+      existingRoleCodes,
+    );
+
     const user = await this.prisma.user.update({
       where: { id },
       data: {
@@ -454,12 +494,9 @@ export class UsersController {
         phone: dto.phone,
         preferredLanguage: dto.preferredLanguage,
         customerId: dto.customerId === undefined ? undefined : dto.customerId,
-        departmentId:
-          dto.departmentId === undefined
-            ? undefined
-            : dto.departmentId === null
-              ? null
-              : dto.departmentId,
+        ...(departmentId === undefined
+          ? {}
+          : { departmentId }),
         isActive: dto.isActive,
         ...(passwordHash ? { passwordHash } : {}),
       },

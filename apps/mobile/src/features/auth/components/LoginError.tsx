@@ -14,7 +14,7 @@ export function LoginError({ colors, message }: Props) {
   return (
     <View
       style={{
-        minHeight: 40,
+        minHeight: message ? 40 : 0,
         justifyContent: 'center',
         paddingHorizontal: theme.spacing.sm,
       }}

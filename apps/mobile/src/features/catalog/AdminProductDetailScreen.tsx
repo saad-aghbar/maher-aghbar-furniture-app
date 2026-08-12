@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -63,6 +62,7 @@ import {
   uploadProductImage,
   uploadProductPhotoUri,
 } from './productPhotoUpload';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 function displayUnit(unit?: string | null): string {
   const u = String(unit ?? 'cm').trim();
@@ -1469,7 +1469,7 @@ function BomFloorRow({
             }}
           >
             <View style={[chipStyle, { minWidth: 72 }]}>
-              <TextInput
+              <AppTextInput
                 value={qty}
                 onChangeText={onQtyChange}
                 keyboardType="decimal-pad"

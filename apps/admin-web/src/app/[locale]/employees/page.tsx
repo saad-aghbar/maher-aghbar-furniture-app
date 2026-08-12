@@ -45,6 +45,7 @@ interface UserRow {
     nameAr?: string | null;
     nameEn?: string | null;
   } | null;
+  stageDefinitionIds?: string[];
   roles?: Array<{ role: { id: string; code: string; nameEn: string; nameAr?: string } }>;
 }
 
@@ -53,6 +54,15 @@ interface RoleRow {
   code: string;
   nameEn: string;
   nameAr: string;
+}
+
+interface StageDefinitionRow {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  nameHe?: string | null;
+  isActive: boolean;
 }
 
 type DepartmentRow = DepartmentOption;
@@ -65,6 +75,7 @@ interface UserFormState {
   isActive: boolean;
   roleId: string;
   departmentId: string;
+  stageDefinitionIds: string[];
 }
 
 type Segment = 'staff' | 'customers' | 'admins' | 'all';
@@ -74,6 +85,24 @@ const SEGMENT_ROLE_CODE: Record<Exclude<Segment, 'all'>, string> = {
   customers: 'CUSTOMER',
   admins: 'SYSTEM_ADMINISTRATOR',
 };
+
+/** Customer, Worker, and Admin do not use department on create/edit/list. */
+const NO_DEPARTMENT_ROLE_CODES = new Set([
+  'CUSTOMER',
+  'PRODUCTION_WORKER',
+  'SYSTEM_ADMINISTRATOR',
+]);
+
+function roleUsesDepartment(roleCode: string | undefined | null): boolean {
+  if (!roleCode) return false;
+  return !NO_DEPARTMENT_ROLE_CODES.has(roleCode);
+}
+
+function userShowsDepartment(user: UserRow): boolean {
+  const roles = user.roles ?? [];
+  if (!roles.length) return false;
+  return roles.some((r) => roleUsesDepartment(r.role.code));
+}
 
 function namesFromUsername(username: string): { firstName: string; lastName: string } {
   const normalized = username.trim().toLowerCase();
@@ -97,6 +126,7 @@ const emptyForm = (): UserFormState => ({
   isActive: true,
   roleId: '',
   departmentId: '',
+  stageDefinitionIds: [],
 });
 
 export default function UsersPage() {
@@ -141,8 +171,9 @@ function UsersHub() {
   const [editDeepLinkHandled, setEditDeepLinkHandled] = useState(false);
 
   const showRoleFilter = segment === 'all';
-  const showDepartmentFilter = segment !== 'customers';
-  const showDepartmentColumn = segment !== 'customers';
+  // Department unused for Worker/Admin/Customer; only relevant for other roles under "all".
+  const showDepartmentFilter = segment === 'all';
+  const showDepartmentColumn = segment === 'all';
 
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: '20' });
@@ -179,6 +210,13 @@ function UsersHub() {
       apiFetch<{ data: DepartmentRow[] }>('/api/v1/departments?pageSize=100').then(
         (r) => r.data ?? [],
       ),
+    enabled: showDepartmentFilter || formOpen,
+  });
+
+  const stagesQuery = useQuery({
+    queryKey: ['production-stage-library'],
+    queryFn: () => apiFetch<StageDefinitionRow[]>('/api/v1/production-stage-library'),
+    enabled: formOpen,
   });
 
   const saveMutation = useMutation({
@@ -187,6 +225,11 @@ function UsersHub() {
       if (!username) {
         throw new ApiClientError(tVal('usernameRequired'), 400);
       }
+
+      const selectedRoleCode = rolesQuery.data?.find((r) => r.id === form.roleId)?.code;
+      const isCustomerRole = selectedRoleCode === 'CUSTOMER';
+      const isWorkerRole = selectedRoleCode === 'PRODUCTION_WORKER';
+      const usesDepartment = roleUsesDepartment(selectedRoleCode);
 
       if (editing) {
         const firstName = form.firstName.trim();
@@ -205,12 +248,14 @@ function UsersHub() {
             firstName,
             lastName,
             isActive: form.isActive,
-            departmentId:
-              rolesQuery.data?.find((r) => r.id === form.roleId)?.code === 'CUSTOMER'
-                ? null
-                : form.departmentId || null,
+            ...(usesDepartment
+              ? { departmentId: form.departmentId || null }
+              : isCustomerRole
+                ? { departmentId: null }
+                : {}),
             roleIds: [form.roleId],
             ...(form.password.trim() ? { password: form.password.trim() } : {}),
+            ...(isWorkerRole ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
           }),
         });
       }
@@ -220,8 +265,6 @@ function UsersHub() {
       }
 
       const { firstName, lastName } = namesFromUsername(username);
-      const isCustomerRole =
-        rolesQuery.data?.find((r) => r.id === form.roleId)?.code === 'CUSTOMER';
 
       return apiFetch<UserRow & { temporaryPassword?: string }>('/api/v1/users', {
         method: 'POST',
@@ -230,8 +273,9 @@ function UsersHub() {
           firstName,
           lastName,
           roleIds: [form.roleId],
-          ...(!isCustomerRole && form.departmentId ? { departmentId: form.departmentId } : {}),
+          ...(usesDepartment && form.departmentId ? { departmentId: form.departmentId } : {}),
           ...(form.password.trim() ? { password: form.password } : {}),
+          ...(isWorkerRole ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
         }),
       });
     },
@@ -304,6 +348,7 @@ function UsersHub() {
       isActive: user.isActive,
       roleId: (user.roles ?? [])[0]?.role.id ?? '',
       departmentId: user.departmentId ?? user.department?.id ?? '',
+      stageDefinitionIds: user.stageDefinitionIds ?? [],
     });
     setFormError(null);
     setFormOpen(true);
@@ -332,7 +377,9 @@ function UsersHub() {
   const departments = departmentsQuery.data ?? [];
   const formRoles = roles;
   const selectedFormRoleCode = roles.find((r) => r.id === form.roleId)?.code;
-  const showFormDepartment = selectedFormRoleCode !== 'CUSTOMER';
+  const showFormDepartment = roleUsesDepartment(selectedFormRoleCode);
+  const showFormStageSkills = selectedFormRoleCode === 'PRODUCTION_WORKER';
+  const activeStages = (stagesQuery.data ?? []).filter((s) => s.isActive);
 
   const segments: Array<{ key: Segment; label: string }> = [
     { key: 'staff', label: t('segmentStaff') },
@@ -384,7 +431,7 @@ function UsersHub() {
             onClick={() => {
               setSegment(s.key);
               setRoleCode('');
-              if (s.key === 'customers') setDepartmentId('');
+              if (s.key !== 'all') setDepartmentId('');
               setPage(1);
             }}
             className={[
@@ -529,7 +576,7 @@ function UsersHub() {
                     <dt className="text-text-tertiary">{t('roles')}</dt>
                     <dd className="mt-0.5 text-text-primary">{roleLabel}</dd>
                   </div>
-                  {showDepartmentColumn ? (
+                  {showDepartmentColumn && userShowsDepartment(row) ? (
                     <div>
                       <dt className="text-text-tertiary">{t('department')}</dt>
                       <dd className="mt-0.5 text-text-primary">
@@ -651,7 +698,8 @@ function UsersHub() {
               setForm((f) => ({
                 ...f,
                 roleId: nextRoleId,
-                ...(nextCode === 'CUSTOMER' ? { departmentId: '' } : {}),
+                ...(!roleUsesDepartment(nextCode) ? { departmentId: '' } : {}),
+                ...(nextCode !== 'PRODUCTION_WORKER' ? { stageDefinitionIds: [] } : {}),
               }));
             }}
             required
@@ -672,6 +720,43 @@ function UsersHub() {
               }
               onChange={(id) => setForm((f) => ({ ...f, departmentId: id }))}
             />
+          ) : null}
+          {showFormStageSkills ? (
+            <fieldset className="grid gap-2">
+              <legend className="text-sm font-medium text-text-primary">{t('stageSkills')}</legend>
+              <p className="text-xs text-text-tertiary">{t('stageSkillsHint')}</p>
+              {stagesQuery.isLoading ? (
+                <p className="text-sm text-text-tertiary">{tCommon('loading')}</p>
+              ) : activeStages.length === 0 ? (
+                <p className="text-sm text-text-tertiary">{t('noStagesYet')}</p>
+              ) : (
+                <div className="grid gap-1.5">
+                  {activeStages.map((stage) => {
+                    const checked = form.stageDefinitionIds.includes(stage.id);
+                    return (
+                      <label
+                        key={stage.id}
+                        className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:border-brand/40"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setForm((f) => ({
+                              ...f,
+                              stageDefinitionIds: checked
+                                ? f.stageDefinitionIds.filter((id) => id !== stage.id)
+                                : [...f.stageDefinitionIds, stage.id],
+                            }))
+                          }
+                        />
+                        <span>{localizedName(locale, stage, stage.code)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </fieldset>
           ) : null}
         </div>
       </Modal>

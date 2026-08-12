@@ -5,6 +5,7 @@ import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reani
 import { FormShake } from '@/motion';
 import { useTheme } from '@/theme';
 import type { LoginColors } from '../theme/loginColors';
+import { LoginBiometricButton } from './LoginBiometricButton';
 import { LoginButton } from './LoginButton';
 import { LoginError } from './LoginError';
 import { LoginInput } from './LoginInput';
@@ -40,6 +41,13 @@ type Props = {
   rateLimited: boolean;
   onSubmit: () => void;
   onFocusChange?: (focused: boolean) => void;
+  biometric?: {
+    visible: boolean;
+    label: string;
+    icon: 'scan-outline' | 'finger-print-outline' | 'shield-checkmark-outline';
+    loading: boolean;
+    onPress: () => void;
+  };
 };
 
 export function LoginForm({
@@ -63,6 +71,7 @@ export function LoginForm({
   rateLimited,
   onSubmit,
   onFocusChange,
+  biometric,
 }: Props) {
   const { theme } = useTheme();
   const passwordRef = useRef<TextInput>(null);
@@ -152,7 +161,17 @@ export function LoginForm({
               />
             </Animated.View>
             <LoginError colors={colors} message={errorMessage} />
-            <Animated.View style={f2}>
+            <Animated.View style={[f2, { gap: theme.spacing.sm }]}>
+              {biometric?.visible ? (
+                <LoginBiometricButton
+                  colors={colors}
+                  label={biometric.label}
+                  icon={biometric.icon}
+                  loading={biometric.loading}
+                  disabled={loading || success || rateLimited}
+                  onPress={biometric.onPress}
+                />
+              ) : null}
               <LoginButton
                 colors={colors}
                 label={signInLabel}

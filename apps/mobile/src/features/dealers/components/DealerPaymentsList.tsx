@@ -3,12 +3,14 @@ import { Ionicons } from '@expo/vector-icons';
 import type { Payment } from '@/api/modules/payments';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { DealerEmptyPanel } from './DealerEmptyPanel';
 
 type Props = {
   payments: Payment[];
   emptyLabel: string;
+  onPaymentPdf?: (paymentId: string) => void;
 };
 
 /** Visible window — enough rows to invite scroll without eating the page. */
@@ -41,7 +43,7 @@ function methodLabel(
 /**
  * Scrollable payments ledger for dealer summary — capped height, floor-row aesthetic.
  */
-export function DealerPaymentsList({ payments, emptyLabel }: Props) {
+export function DealerPaymentsList({ payments, emptyLabel, onPaymentPdf }: Props) {
   const { t, formatCurrency, formatDate, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -152,14 +154,43 @@ export function DealerPaymentsList({ payments, emptyLabel }: Props) {
                     {formatCurrency(Number(p.amount))}
                   </AppText>
                 </View>
-                <AppText
-                  variant="caption"
-                  color="muted"
-                  numberOfLines={1}
-                  style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 11 }}
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: theme.spacing.sm,
+                  }}
                 >
-                  {`${formatDate(p.paymentDate)} · ${methodLabel(method, t)}`}
-                </AppText>
+                  <AppText
+                    variant="caption"
+                    color="muted"
+                    numberOfLines={1}
+                    style={{
+                      flex: 1,
+                      textAlign: isRTL ? 'right' : 'left',
+                      fontSize: 11,
+                    }}
+                  >
+                    {`${formatDate(p.paymentDate)} · ${methodLabel(method, t)}`}
+                  </AppText>
+                  {onPaymentPdf ? (
+                    <AnimatedPressable
+                      variant="button"
+                      accessibilityRole="button"
+                      accessibilityLabel={t('accounting.downloadPdf')}
+                      onPress={() => {
+                        void haptics.selection();
+                        onPaymentPdf(p.id);
+                      }}
+                      hitSlop={8}
+                    >
+                      <AppText variant="caption" color="brand" weight="semibold">
+                        {t('catalog.pdf')}
+                      </AppText>
+                    </AnimatedPressable>
+                  ) : null}
+                </View>
               </View>
             </View>
           );

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -18,6 +17,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import type { BrowseCategory } from '@/api/modules/catalog';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
   open: boolean;
@@ -151,7 +151,7 @@ export function CategoryPickerSheet({
 
         <Animated.View entering={enter(1)}>
           <SearchBarShell>
-            <TextInput
+            <AppTextInput
               value={query}
               onChangeText={setQuery}
               placeholder={t('catalog.searchCategories')}

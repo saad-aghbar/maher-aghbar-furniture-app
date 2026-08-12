@@ -3,6 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { InlineDateCalendar, todayYmd } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
@@ -26,14 +27,6 @@ type AssignWorkerSheetProps = {
   currentEmployeeId?: string | null;
   onSubmit: (payload: AssignWorkerPayload) => void;
 };
-
-function todayYmd(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
 export function AssignWorkerSheet({
   open,
@@ -80,8 +73,13 @@ export function AssignWorkerSheet({
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={title} sheetHeight={620}>
-      <View style={{ gap: theme.spacing.md, flex: 1 }}>
+    <BottomSheet open={open} onClose={onClose} title={title} fitContent>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ gap: theme.spacing.md }}
+      >
         <TextField
           value={q}
           onChangeText={setQ}
@@ -130,12 +128,7 @@ export function AssignWorkerSheet({
         <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
           {t('mobile.production.dueDate')}
         </AppText>
-        <TextField
-          value={dueDate}
-          onChangeText={setDueDate}
-          placeholder="YYYY-MM-DD"
-          autoCorrect={false}
-        />
+        <InlineDateCalendar value={dueDate} onSelect={setDueDate} resetKey={open} />
         <HoursMinutesRow
           sectionLabel={t('mobile.production.dueTime')}
           hours={dueHour}
@@ -162,7 +155,7 @@ export function AssignWorkerSheet({
           onPress={submit}
         />
         <SecondaryButton label={t('mobile.production.cancel')} onPress={onClose} />
-      </View>
+      </ScrollView>
     </BottomSheet>
   );
 }

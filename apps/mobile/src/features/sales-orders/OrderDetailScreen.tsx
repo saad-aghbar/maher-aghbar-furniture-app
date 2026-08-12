@@ -17,6 +17,11 @@ import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { openInvoicePdf } from '@/api/modules/invoices';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
+import {
+  listCustomerAddresses,
+  type CustomerAddress,
+} from '@/api/modules/customers';
 import { resolveDocumentUrl } from '@/api/modules/uploads';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -29,6 +34,7 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
+import { DatePickerField } from '@/components/calendar';
 import { LockedTextField } from '@/components/forms/LockedTextField';
 import { CopyNotesButton } from '@/components/forms/CopyNotesButton';
 import { AppScreen } from '@/components/layout/AppScreen';
@@ -44,6 +50,7 @@ import {
   dealerOrderFlowHref,
 } from '@/features/production-flow/flowRoutes';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
+import { DeliveryFavoriteSummary } from '@/features/requests/components/DeliveryFavoriteSummary';
 import {
   canCancelSalesOrder,
   canHoldSalesOrder,
@@ -101,6 +108,7 @@ export function OrderDetailScreen({
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const router = useRouter();
   const allowed = can(user, 'sales-order.read');
   const canUpdate = can(user, 'sales-order.update');
@@ -124,12 +132,36 @@ export function OrderDetailScreen({
   const [editDeliveryDate, setEditDeliveryDate] = useState('');
   const [editDeliveryAddress, setEditDeliveryAddress] = useState('');
   const [costEdit, setCostEdit] = useState<CostBreakdownEdit>(emptyCostBreakdownEdit);
+  const [savedAddresses, setSavedAddresses] = useState<CustomerAddress[]>([]);
 
   const raw: SalesOrderDetail | undefined =
     forceState === 'success' || forceState === 'offline'
       ? (fixture ??
         (variant === 'admin' ? adminOrderDetailFixture : dealerOrderDetailFixture))
       : query.data;
+
+  const addressCustomerId = user?.customerId ?? raw?.customer?.id ?? null;
+  const canReadAddresses = Boolean(
+    variant === 'dealer' && addressCustomerId && can(user, 'customer.read'),
+  );
+
+  useEffect(() => {
+    if (!canReadAddresses || !addressCustomerId) {
+      setSavedAddresses([]);
+      return;
+    }
+    let cancelled = false;
+    void listCustomerAddresses(addressCustomerId)
+      .then((rows) => {
+        if (!cancelled) setSavedAddresses(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedAddresses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canReadAddresses, addressCustomerId]);
 
   const vm: OrderDetailViewModel | null = useMemo(
     () => (raw ? selectOrderDetail(raw, variant, locale) : null),
@@ -250,12 +282,18 @@ export function OrderDetailScreen({
         label: t('mobile.orderDetail.downloadInvoice'),
         icon: 'download-outline',
         onPress: () => {
-          void openInvoicePdf(vm.invoices[0]!.id).catch(() => {
-            Alert.alert(
-              t('mobile.orderDetail.invoiceErrorTitle'),
-              t('mobile.orderDetail.invoiceErrorBody'),
-            );
-          });
+          void (async () => {
+            const opts = await pickPdfOptions();
+            if (!opts) return;
+            try {
+              await openInvoicePdf(vm.invoices[0]!.id, opts);
+            } catch {
+              Alert.alert(
+                t('mobile.orderDetail.invoiceErrorTitle'),
+                t('mobile.orderDetail.invoiceErrorBody'),
+              );
+            }
+          })();
         },
       });
     }
@@ -276,7 +314,7 @@ export function OrderDetailScreen({
       });
     }
     return items;
-  }, [vm, canInvoice, canDocument, t]);
+  }, [vm, canInvoice, canDocument, t, pickPdfOptions]);
 
   function runStatusAction(kind: ConfirmKind, reason?: string) {
     if (!kind || forceState) return;
@@ -658,12 +696,10 @@ export function OrderDetailScreen({
                 <FieldRow label={t('mobile.orderDetail.fax')} value={vm.fax} ltr />
                 {vm.canEdit ? (
                   <>
-                    <LockedTextField
+                    <DatePickerField
                       label={t('mobile.orderDetail.deliveryDate')}
                       value={editDeliveryDate}
-                      onChangeText={setEditDeliveryDate}
-                      placeholder="YYYY-MM-DD"
-                      locked={false}
+                      onChange={setEditDeliveryDate}
                     />
                     <LockedTextField
                       label={t('mobile.orderDetail.deliveryAddress')}
@@ -699,7 +735,7 @@ export function OrderDetailScreen({
             <ListItemEnter index={nextIndex()}>
               <OrderBoardCard>
                 <OrderSectionHeader
-                  icon="calendar-outline"
+                  icon="navigate-outline"
                   label={t('mobile.orders.expectedDelivery')}
                 />
                 {vm.deliveryDate ? (
@@ -709,11 +745,10 @@ export function OrderDetailScreen({
                     —
                   </AppText>
                 )}
-                {vm.deliveryAddress ? (
-                  <AppText variant="caption" color="muted">
-                    {vm.deliveryAddress}
-                  </AppText>
-                ) : null}
+                <DeliveryFavoriteSummary
+                  deliveryAddress={vm.deliveryAddress}
+                  savedAddresses={savedAddresses}
+                />
               </OrderBoardCard>
             </ListItemEnter>
           )}
@@ -1066,6 +1101,7 @@ export function OrderDetailScreen({
         actions={actionsSheet}
         cancelLabel={t('mobile.orderDetail.cancel')}
       />
+      {pdfDownloadSheet}
 
       <ConfirmationSheet
         open={confirmKind === 'confirm'}

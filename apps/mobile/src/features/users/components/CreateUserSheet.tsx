@@ -82,6 +82,8 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
   const selectedRole: RoleRow | undefined = roles.find((r) => r.id === form.roleId);
   const isCustomer = selectedRole?.code === 'CUSTOMER';
   const isWorker = selectedRole?.code === 'PRODUCTION_WORKER';
+  const isAdmin = selectedRole?.code === 'SYSTEM_ADMINISTRATOR';
+  const showDepartment = !isCustomer && !isWorker && !isAdmin;
   const selectedDept = departments.find((d) => d.id === form.departmentId);
 
   const set = <K extends keyof ReturnType<typeof empty>>(
@@ -118,7 +120,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
         firstName,
         lastName,
         roleIds: [form.roleId],
-        ...(!isCustomer && form.departmentId ? { departmentId: form.departmentId } : {}),
+        ...(showDepartment && form.departmentId ? { departmentId: form.departmentId } : {}),
         ...(form.password.trim() ? { password: form.password } : {}),
         ...(isWorker ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
       });
@@ -196,15 +198,21 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
               onChange={(roleId) => {
                 set('roleId', roleId);
                 const code = roles.find((r) => r.id === roleId)?.code;
-                if (code === 'CUSTOMER') {
+                if (
+                  code === 'CUSTOMER' ||
+                  code === 'PRODUCTION_WORKER' ||
+                  code === 'SYSTEM_ADMINISTRATOR'
+                ) {
                   set('departmentId', '');
+                }
+                if (code !== 'PRODUCTION_WORKER') {
                   setForm((f) => ({ ...f, stageDefinitionIds: [] }));
                 }
               }}
             />
           </UserFormSection>
 
-          {!isCustomer ? (
+          {showDepartment ? (
             <UserFormSection
               icon="business-outline"
               label={t('users.department')}
@@ -244,14 +252,16 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
         />
       </BottomSheet>
 
-      <DepartmentPickerSheet
-        open={deptOpen}
-        onClose={() => setDeptOpen(false)}
-        departments={departments}
-        selectedId={form.departmentId || null}
-        onSelect={(id) => set('departmentId', id ?? '')}
-        overlay
-      />
+      {showDepartment ? (
+        <DepartmentPickerSheet
+          open={deptOpen}
+          onClose={() => setDeptOpen(false)}
+          departments={departments}
+          selectedId={form.departmentId || null}
+          onSelect={(id) => set('departmentId', id ?? '')}
+          overlay
+        />
+      ) : null}
 
       <TempPasswordSheet
         open={Boolean(tempPassword)}

@@ -2,7 +2,6 @@ import { ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { statusLabel } from '@maher/i18n';
 import { TertiaryButton } from '@/components/buttons/TertiaryButton';
-import { resolveStatusVariant } from '@/components/badges/badgeStyles';
 import {
   DealerInvoiceCard,
   DealerSectionHeader,
@@ -15,17 +14,6 @@ import type { DealerHomeInvoiceCardModel } from '../selectDealerHome';
 type Props = {
   invoices: DealerHomeInvoiceCardModel[];
 };
-
-function toneForStatus(
-  status: string,
-): 'neutral' | 'success' | 'warning' | 'danger' | 'info' {
-  const v = resolveStatusVariant(status);
-  if (v === 'success') return 'success';
-  if (v === 'warning') return 'warning';
-  if (v === 'error') return 'danger';
-  if (v === 'info' || v === 'brand') return 'info';
-  return 'neutral';
-}
 
 export function RecentInvoices({ invoices }: Props) {
   const { t, locale, formatCurrency, formatDate, isRTL } = useLocale();
@@ -71,7 +59,7 @@ export function RecentInvoices({ invoices }: Props) {
                       : formatDate(inv.issuedAt)
                 }
                 statusLabel={statusLabel(locale, inv.status)}
-                statusTone={toneForStatus(inv.status)}
+                status={inv.status}
                 onPress={() =>
                   router.push(`/(app)/(customer)/invoices/${inv.id}` as Href)
                 }

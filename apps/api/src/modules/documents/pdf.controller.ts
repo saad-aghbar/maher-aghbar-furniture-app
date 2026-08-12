@@ -1,4 +1,12 @@
-import { Controller, ForbiddenException, Get, Param, Res } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Headers,
+  Param,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { AuthUser } from '@maher/types';
@@ -6,7 +14,12 @@ import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
-import { buildSimplePdf, sendPdf } from '../../common/helpers/pdf.util';
+import {
+  buildSimplePdf,
+  parsePdfQuery,
+  sendPdf,
+} from '../../common/helpers/pdf.util';
+import { localizedName, pdfMessages } from '../../common/helpers/pdf-i18n';
 import { roundMoney } from '../../common/helpers/money.util';
 
 @ApiTags('pdf')
@@ -14,30 +27,46 @@ import { roundMoney } from '../../common/helpers/money.util';
 export class PdfController {
   constructor(private readonly prisma: PrismaService) {}
 
+  private opts(
+    query: { lang?: string; theme?: string },
+    acceptLanguage?: string | string[],
+  ) {
+    return parsePdfQuery({ ...query, acceptLanguage });
+  }
+
   @Get('quotations/:id/pdf')
   @RequirePermissions('quotation.read')
-  async quotationPdf(@Param('id') id: string, @Res() res: Response) {
+  async quotationPdf(
+    @Param('id') id: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
     const q = await this.prisma.quotation.findUniqueOrThrow({
       where: { id },
       include: { customer: true, lines: true },
     });
-    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
     const buffer = await buildSimplePdf({
-      title: company,
-      subtitle: `Quotation ${q.number} v${q.version}`,
+      locale,
+      theme: pdfTheme,
+      title: m.quotation,
+      subtitle: `${q.number} · ${m.version} ${q.version}`,
       meta: [
-        `Customer: ${q.customer.name}`,
-        `Status: ${q.status}`,
-        `Currency: ${q.currency}`,
+        `${m.customer}: ${localizedName(locale, q.customer)}`,
+        `${m.status}: ${q.status}`,
+        `${m.currency}: ${q.currency}`,
       ],
-      columns: ['Description', 'Qty', 'Unit price', 'Line total'],
+      columns: [m.description, m.qty, m.unitPrice, m.lineTotal],
       rows: q.lines.map((l) => [
         l.description,
         String(l.quantity),
         String(l.unitPrice),
         String(l.lineTotal),
       ]),
-      footerLines: [`Total: ${q.total} ${q.currency}`],
+      footerLines: [`${m.total}: ${q.total} ${q.currency}`],
     });
     sendPdf(res, `${q.number}-v${q.version}.pdf`, buffer);
   }
@@ -47,8 +76,13 @@ export class PdfController {
   async invoicePdf(
     @Param('id') id: string,
     @CurrentUser() user: AuthUser,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
     @Res() res: Response,
   ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
     const inv = await this.prisma.invoice.findUniqueOrThrow({
       where: { id },
       include: { customer: true, lines: true },
@@ -59,12 +93,16 @@ export class PdfController {
         message: 'Not your invoice.',
       });
     }
-    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
     const buffer = await buildSimplePdf({
-      title: company,
-      subtitle: `Invoice ${inv.number}`,
-      meta: [`Customer: ${inv.customer.name}`, `Status: ${inv.status}`],
-      columns: ['Description', 'Qty', 'Unit price', 'Line total'],
+      locale,
+      theme: pdfTheme,
+      title: m.invoice,
+      subtitle: inv.number,
+      meta: [
+        `${m.customer}: ${localizedName(locale, inv.customer)}`,
+        `${m.status}: ${inv.status}`,
+      ],
+      columns: [m.description, m.qty, m.unitPrice, m.lineTotal],
       rows: inv.lines.map((l) => [
         l.description,
         String(l.quantity),
@@ -72,16 +110,79 @@ export class PdfController {
         String(l.lineTotal),
       ]),
       footerLines: [
-        `Total: ${inv.total} ${inv.currency}`,
-        `Outstanding: ${inv.outstandingAmount} ${inv.currency}`,
+        `${m.total}: ${inv.total} ${inv.currency}`,
+        `${m.outstanding}: ${inv.outstandingAmount} ${inv.currency}`,
       ],
     });
     sendPdf(res, `${inv.number}.pdf`, buffer);
   }
 
+  @Get('payments/:id/pdf')
+  @RequirePermissions('payment.read')
+  async paymentPdf(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const payment = await this.prisma.payment.findUniqueOrThrow({
+      where: { id },
+      include: {
+        customer: true,
+        invoice: { select: { id: true, number: true, total: true } },
+      },
+    });
+    if (!assertCustomerOwns(user, payment.customerId)) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Not your payment.',
+      });
+    }
+    const buffer = await buildSimplePdf({
+      locale,
+      theme: pdfTheme,
+      title: m.paymentReceipt,
+      subtitle: payment.number,
+      meta: [
+        `${m.customer}: ${localizedName(locale, payment.customer)}`,
+        `${m.date}: ${payment.paymentDate.toISOString().slice(0, 10)}`,
+        `${m.method}: ${payment.method}`,
+      ],
+      columns: [m.field, m.value],
+      rows: [
+        [m.paymentNumber, payment.number],
+        [m.amount, `${payment.amount} ${payment.currency}`],
+        [m.method, payment.method],
+        [m.invoiceRef, payment.invoice?.number ?? '—'],
+        [m.reference, payment.referenceNumber ?? '—'],
+        [m.bank, payment.bank ?? '—'],
+        [m.notes, payment.notes ?? '—'],
+      ],
+      footerLines: [
+        payment.invoice
+          ? `${m.appliedToInvoice} ${payment.invoice.number}`
+          : m.unallocatedPayment,
+        `${m.generated} ${new Date().toISOString().slice(0, 10)}`,
+      ],
+    });
+    sendPdf(res, `${payment.number}.pdf`, buffer);
+  }
+
   @Get('contracts/:id/pdf')
   @RequirePermissions('contract.read')
-  async contractPdf(@Param('id') id: string, @Res() res: Response) {
+  async contractPdf(
+    @Param('id') id: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
     const c = await this.prisma.contract.findUniqueOrThrow({
       where: { id },
       include: {
@@ -89,51 +190,63 @@ export class PdfController {
         salesOrder: { select: { number: true, externalOrderNumber: true } },
       },
     });
-    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
     const buffer = await buildSimplePdf({
-      title: company,
-      subtitle: `Contract ${c.number}`,
+      locale,
+      theme: pdfTheme,
+      title: m.contract,
+      subtitle: c.number,
       meta: [
-        `Customer: ${c.customer.name}`,
-        `Status: ${c.status}`,
-        `Sales order: ${c.salesOrder?.number ?? '—'}`,
+        `${m.customer}: ${localizedName(locale, c.customer)}`,
+        `${m.status}: ${c.status}`,
+        `${m.salesOrder}: ${c.salesOrder?.number ?? '—'}`,
         c.salesOrder?.externalOrderNumber
-          ? `External ref: ${c.salesOrder.externalOrderNumber}`
+          ? `${m.externalRef}: ${c.salesOrder.externalOrderNumber}`
           : '',
-        c.startDate ? `Start: ${c.startDate.toISOString().slice(0, 10)}` : '',
-        c.endDate ? `End: ${c.endDate.toISOString().slice(0, 10)}` : '',
+        c.startDate
+          ? `${m.start}: ${c.startDate.toISOString().slice(0, 10)}`
+          : '',
+        c.endDate ? `${m.end}: ${c.endDate.toISOString().slice(0, 10)}` : '',
       ].filter(Boolean),
-      columns: ['Field', 'Value'],
+      columns: [m.field, m.value],
       rows: [
-        ['Contract value', `${c.contractValue} ${c.currency}`],
-        ['Payment schedule', c.paymentSchedule ?? '—'],
-        ['Delivery milestones', c.deliveryMilestones ?? '—'],
-        ['Warranty', c.warranty ?? '—'],
-        ['Terms', c.terms ?? '—'],
+        [m.contractValue, `${c.contractValue} ${c.currency}`],
+        [m.paymentSchedule, c.paymentSchedule ?? '—'],
+        [m.deliveryMilestones, c.deliveryMilestones ?? '—'],
+        [m.warranty, c.warranty ?? '—'],
+        [m.terms, c.terms ?? '—'],
       ],
-      footerLines: [`Generated ${new Date().toISOString().slice(0, 10)}`],
+      footerLines: [`${m.generated} ${new Date().toISOString().slice(0, 10)}`],
     });
     sendPdf(res, `${c.number}.pdf`, buffer);
   }
 
   @Get('purchasing/orders/:id/pdf')
   @RequirePermissions('purchase-order.read')
-  async purchaseOrderPdf(@Param('id') id: string, @Res() res: Response) {
+  async purchaseOrderPdf(
+    @Param('id') id: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
     const po = await this.prisma.purchaseOrder.findUniqueOrThrow({
       where: { id },
       include: { supplier: true, lines: true, warehouse: true },
     });
-    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
     const buffer = await buildSimplePdf({
-      title: company,
-      subtitle: `Purchase Order ${po.number}`,
+      locale,
+      theme: pdfTheme,
+      title: m.purchaseOrder,
+      subtitle: po.number,
       meta: [
-        `Supplier: ${po.supplier.name}`,
-        `Status: ${po.status}`,
-        `Warehouse: ${po.warehouse?.code ?? '—'}`,
-        `Order date: ${po.orderDate.toISOString().slice(0, 10)}`,
+        `${m.supplier}: ${localizedName(locale, po.supplier)}`,
+        `${m.status}: ${po.status}`,
+        `${m.warehouse}: ${po.warehouse?.code ?? '—'}`,
+        `${m.orderDate}: ${po.orderDate.toISOString().slice(0, 10)}`,
       ],
-      columns: ['Description', 'Qty', 'Unit price', 'Line total'],
+      columns: [m.description, m.qty, m.unitPrice, m.lineTotal],
       rows: po.lines.map((l) => [
         l.description,
         String(l.quantity),
@@ -141,10 +254,10 @@ export class PdfController {
         String(l.lineTotal),
       ]),
       footerLines: [
-        `Subtotal: ${po.subtotal} ${po.currency}`,
-        `Tax: ${po.taxAmount} ${po.currency}`,
-        `Shipping: ${po.shippingAmount} ${po.currency}`,
-        `Total: ${po.total} ${po.currency}`,
+        `${m.subtotal}: ${po.subtotal} ${po.currency}`,
+        `${m.tax}: ${po.taxAmount} ${po.currency}`,
+        `${m.shipping}: ${po.shippingAmount} ${po.currency}`,
+        `${m.total}: ${po.total} ${po.currency}`,
       ],
     });
     sendPdf(res, `${po.number}.pdf`, buffer);
@@ -152,8 +265,18 @@ export class PdfController {
 
   @Get('suppliers/:id/statement/pdf')
   @RequirePermissions('supplier.read')
-  async supplierStatementPdf(@Param('id') id: string, @Res() res: Response) {
-    const supplier = await this.prisma.supplier.findUniqueOrThrow({ where: { id } });
+  async supplierStatementPdf(
+    @Param('id') id: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const supplier = await this.prisma.supplier.findUniqueOrThrow({
+      where: { id },
+    });
     const invoices = await this.prisma.supplierInvoice.findMany({
       where: {
         supplierId: id,
@@ -180,14 +303,14 @@ export class PdfController {
         reference: inv.number,
         debit: Number(inv.total),
         credit: 0,
-        description: `Supplier invoice ${inv.number}`,
+        description: `${m.invoice} ${inv.number}`,
       })),
       ...payments.map((pay) => ({
         date: pay.paymentDate,
         reference: pay.number,
         debit: 0,
         credit: Number(pay.amount),
-        description: `Payment ${pay.number}`,
+        description: `${m.paymentReceipt} ${pay.number}`,
       })),
     ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -204,38 +327,61 @@ export class PdfController {
       ];
     });
 
-    const company = process.env.COMPANY_NAME_EN ?? 'Maher Al-Aghbar & Sons Furniture';
     const buffer = await buildSimplePdf({
-      title: company,
-      subtitle: `Supplier statement — ${supplier.name} (${supplier.code})`,
-      meta: [`Closing balance (AP): ${roundMoney(balance)} JOD`],
-      columns: ['Date', 'Ref', 'Description', 'Debit', 'Credit', 'Balance'],
+      locale,
+      theme: pdfTheme,
+      title: m.supplierStatement,
+      subtitle: `${localizedName(locale, supplier)} (${supplier.code})`,
+      meta: [`${m.closingAp}: ${roundMoney(balance)} JOD`],
+      columns: [m.date, m.ref, m.description, m.debit, m.credit, m.balance],
       rows,
-      footerLines: [`Closing: ${roundMoney(balance)} JOD`],
+      footerLines: [`${m.closing}: ${roundMoney(balance)} JOD`],
     });
     sendPdf(res, `SOA-SUP-${supplier.code}.pdf`, buffer);
   }
 
   @Get('inventory/items/:id/label')
   @RequirePermissions('inventory.read')
-  async inventoryLabel(@Param('id') id: string, @Res() res: Response) {
-    const item = await this.prisma.inventoryItem.findUniqueOrThrow({ where: { id } });
+  async inventoryLabel(
+    @Param('id') id: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const item = await this.prisma.inventoryItem.findUniqueOrThrow({
+      where: { id },
+    });
+    const primary =
+      locale === 'ar'
+        ? item.nameAr || item.nameEn
+        : item.nameEn || item.nameAr;
+    const secondary =
+      locale === 'en' && item.nameAr
+        ? item.nameAr
+        : locale === 'ar' && item.nameEn
+          ? item.nameEn
+          : undefined;
     const buffer = await buildSimplePdf({
-      title: item.nameAr || item.nameEn,
-      subtitle: item.nameEn && item.nameAr ? item.nameEn : undefined,
+      locale,
+      theme: pdfTheme,
+      title: primary,
+      subtitle: secondary,
       meta: [
-        `SKU: ${item.sku}`,
-        `Barcode: ${item.barcode ?? '—'}`,
-        `QR: ${item.qrCode ?? item.sku}`,
-        `Unit: ${item.unit}`,
+        `${m.sku}: ${item.sku}`,
+        `${m.barcode}: ${item.barcode ?? '—'}`,
+        `${m.qr}: ${item.qrCode ?? item.sku}`,
+        `${m.unit}: ${item.unit}`,
       ],
-      columns: ['Field', 'Value'],
+      columns: [m.field, m.value],
       rows: [
-        ['SKU', item.sku],
-        ['Barcode', item.barcode ?? '—'],
-        ['Min stock', String(item.minStock)],
+        [m.sku, item.sku],
+        [m.barcode, item.barcode ?? '—'],
+        [m.minStock, String(item.minStock)],
       ],
-      footerLines: ['Scan barcode / QR at warehouse stations'],
+      footerLines: [m.labelScanHint],
     });
     sendPdf(res, `label-${item.sku}.pdf`, buffer);
   }

@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { CustomerAddress } from '@/api/modules/customers';
@@ -30,11 +31,18 @@ export function SavedAddressPickerSheet({
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const dark = colorScheme === 'dark';
+  /** Defer nested Modal until this sheet fully unmounts (avoids iOS freeze). */
+  const pendingSaveRef = useRef<(() => void) | null>(null);
 
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
+      onClosed={() => {
+        const action = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        action?.();
+      }}
       title={t('mobile.newOrder.savedAddressesTitle')}
       sheetHeight={520}
     >
@@ -186,8 +194,8 @@ export function SavedAddressPickerSheet({
           <Pressable
             onPress={() => {
               void haptics.selection();
+              pendingSaveRef.current = onSaveCurrent;
               onClose();
-              onSaveCurrent();
             }}
             accessibilityRole="button"
             style={({ pressed }) => ({

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
+import { DealerSearchBar } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { OrdersFilterButton } from './OrdersFilterButton';
@@ -16,6 +17,8 @@ type Props = {
   setSearchInput: (v: string) => void;
   onOpenFilters: () => void;
   filterActiveCount?: number;
+  /** Dealer portal — touch-bar track + cream inner pill search. */
+  dealerSearch?: boolean;
   children?: ReactNode;
 };
 
@@ -31,6 +34,7 @@ export function OrdersCompositionChrome({
   setSearchInput,
   onOpenFilters,
   filterActiveCount = 0,
+  dealerSearch = false,
   children,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -39,6 +43,7 @@ export function OrdersCompositionChrome({
   const heading = title ?? t('mobile.orders.title');
   const eyebrowLabel = eyebrow ?? t('mobile.orders.pulseEyebrow');
   const subtitleLabel = subtitle ?? t('mobile.orders.subtitle');
+  const searchPlaceholder = t('mobile.orders.searchPlaceholder');
 
   return (
     <View style={{ gap: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
@@ -77,14 +82,22 @@ export function OrdersCompositionChrome({
         <OrdersFilterButton onPress={onOpenFilters} activeCount={filterActiveCount} />
       </View>
 
-      <TextField
-        value={searchInput}
-        onChangeText={setSearchInput}
-        placeholder={t('mobile.orders.searchPlaceholder')}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-      />
+      {dealerSearch ? (
+        <DealerSearchBar
+          value={searchInput}
+          onChangeText={setSearchInput}
+          placeholder={searchPlaceholder}
+        />
+      ) : (
+        <TextField
+          value={searchInput}
+          onChangeText={setSearchInput}
+          placeholder={searchPlaceholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+        />
+      )}
       {children}
     </View>
   );

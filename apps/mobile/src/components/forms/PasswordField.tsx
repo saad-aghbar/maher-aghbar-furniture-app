@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Pressable, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { PasswordVisibilityIcon } from '@/features/auth/components/PasswordVisibilityIcon';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n/useLocale';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from './AppTextInput';
 
 type PasswordFieldProps = {
   label: string;
@@ -48,7 +49,7 @@ export function PasswordField({
           ...orderBoardShadow(colorScheme),
         }}
       >
-        <TextInput
+        <AppTextInput
           accessibilityLabel={label}
           value={value}
           onChangeText={onChangeText}

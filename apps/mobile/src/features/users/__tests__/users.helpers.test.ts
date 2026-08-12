@@ -6,8 +6,10 @@ import {
 import {
   isCustomerUser,
   localizedDepartmentName,
+  roleUsesDepartment,
   userDisplayName,
   userRoleLabels,
+  userShowsDepartment,
 } from '../display';
 import type { UserRow } from '@/api/modules/users';
 
@@ -75,5 +77,26 @@ describe('users display helpers', () => {
       roles: [{ role: { id: 'c', code: 'CUSTOMER', nameEn: 'Customer', nameAr: 'عميل' } }],
     };
     expect(isCustomerUser(customer)).toBe(true);
+  });
+
+  it('hides department for worker and admin roles', () => {
+    expect(userShowsDepartment(base)).toBe(false);
+    const admin: UserRow = {
+      ...base,
+      roles: [
+        {
+          role: {
+            id: 'a',
+            code: 'SYSTEM_ADMINISTRATOR',
+            nameEn: 'Admin',
+            nameAr: 'مسؤول',
+          },
+        },
+      ],
+    };
+    expect(userShowsDepartment(admin)).toBe(false);
+    expect(roleUsesDepartment('PRODUCTION_WORKER')).toBe(false);
+    expect(roleUsesDepartment('SYSTEM_ADMINISTRATOR')).toBe(false);
+    expect(roleUsesDepartment('CUSTOMER')).toBe(false);
   });
 });

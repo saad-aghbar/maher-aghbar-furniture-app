@@ -16,6 +16,11 @@ import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import {
+  createCustomerAddress,
+  listCustomerAddresses,
+  type CustomerAddress,
+} from '@/api/modules/customers';
+import {
   getRequest,
   updateRequest,
   type RequestPriority,
@@ -49,9 +54,12 @@ import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel'
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { DeliveryAvailabilityCard } from './components/DeliveryAvailabilityCard';
+import { DeliveryFavoriteSummary } from './components/DeliveryFavoriteSummary';
 import { NewOrderDeliveryAddressBlock } from './components/NewOrderDeliveryAddressBlock';
 import { NewOrderDimensionsEditor } from './components/NewOrderDimensionsEditor';
 import { NewOrderPriorityBar } from './components/NewOrderPriorityBar';
+import { SavedAddressPickerSheet } from './components/SavedAddressPickerSheet';
+import { SaveAddressSheet } from './components/SaveAddressSheet';
 import {
   emptyDimensionFields,
   formatDimensionsNotes,
@@ -61,6 +69,9 @@ import {
 } from './newOrderMeasurements';
 import {
   composeRequestNotes,
+  formatAddressLine,
+  guessCityFromAddress,
+  isAddressAlreadySaved,
   isValidOptionalDate,
   isValidOptionalPhone,
 } from './newOrderValidation';
@@ -148,12 +159,20 @@ export function EditRequestScreen({
   const detail = query.data;
   const policy = detail?.editPolicy;
   const item = detail?.items?.[0];
+  const addressCustomerId = user?.customerId ?? detail?.customer?.id ?? null;
+  const canReadAddresses = Boolean(addressCustomerId && can(user, 'customer.read'));
+  const canSaveAddresses = Boolean(addressCustomerId && can(user, 'address.manage'));
 
   const [shake, setShake] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [mapOpen, setMapOpen] = useState(false);
+  const [addressSheetOpen, setAddressSheetOpen] = useState(false);
+  const [saveAddressSheetOpen, setSaveAddressSheetOpen] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [saveAddressError, setSaveAddressError] = useState<string | null>(null);
+  const [savedAddresses, setSavedAddresses] = useState<CustomerAddress[]>([]);
   const [galleryUris, setGalleryUris] = useState<string[]>([]);
   const [deliveryNotes, setDeliveryNotes] = useState('');
 
@@ -190,6 +209,73 @@ export function EditRequestScreen({
     setDimensions(seedDimensionsFromItem(item, t('mobile.newOrder.dimSeat')));
     setQuantity(String(item?.quantity ?? '1'));
   }, [detail, item, t]);
+
+  useEffect(() => {
+    if (!canReadAddresses || !addressCustomerId) {
+      setSavedAddresses([]);
+      return;
+    }
+    let cancelled = false;
+    void listCustomerAddresses(addressCustomerId)
+      .then((rows) => {
+        if (!cancelled) setSavedAddresses(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedAddresses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canReadAddresses, addressCustomerId]);
+
+  const openSaveAddressSheet = () => {
+    if (!canSaveAddresses) return;
+    if (!deliveryAddress.trim()) {
+      setError(t('mobile.newOrder.saveAddressNeedAddress'));
+      setShake((n) => n + 1);
+      return;
+    }
+    setSaveAddressError(null);
+    setSaveAddressSheetOpen(true);
+  };
+
+  const saveCurrentAddress = async (input: {
+    label: string;
+    isDefaultDelivery: boolean;
+  }) => {
+    if (!addressCustomerId || !canSaveAddresses) return;
+    const address = deliveryAddress.trim();
+    if (!address) {
+      setSaveAddressError(t('mobile.newOrder.saveAddressNeedAddress'));
+      return;
+    }
+    setSavingAddress(true);
+    setSaveAddressError(null);
+    try {
+      const created = await createCustomerAddress(addressCustomerId, {
+        label: input.label,
+        city: guessCityFromAddress(address),
+        street: address,
+        country: 'JO',
+        latitude: deliveryLat,
+        longitude: deliveryLng,
+        isDefaultDelivery: input.isDefaultDelivery || savedAddresses.length === 0,
+      });
+      setSavedAddresses((prev) => {
+        const cleared = input.isDefaultDelivery
+          ? prev.map((a) => ({ ...a, isDefaultDelivery: false }))
+          : prev;
+        return [created, ...cleared.filter((a) => a.id !== created.id)];
+      });
+      void haptics.confirmMedium();
+      setSaveAddressSheetOpen(false);
+    } catch {
+      setSaveAddressError(t('mobile.newOrder.saveAddressFailed'));
+      void haptics.error();
+    } finally {
+      setSavingAddress(false);
+    }
+  };
 
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000);
@@ -611,19 +697,15 @@ export function EditRequestScreen({
                   />
                   {fieldsLocked ? (
                     <>
-                      <LockedTextField
-                        label={t('mobile.requestEdit.address')}
-                        value={deliveryAddress}
-                        onChangeText={setDeliveryAddress}
-                        locked
-                        lockReason={orderReason}
-                        multiline
+                      <DeliveryFavoriteSummary
+                        deliveryAddress={deliveryAddress}
+                        savedAddresses={savedAddresses}
+                        footer={
+                          deliveryLat != null
+                            ? t('mobile.requestEdit.mapPinned')
+                            : null
+                        }
                       />
-                      {deliveryLat != null ? (
-                        <AppText variant="caption" color="muted">
-                          {t('mobile.requestEdit.mapPinned')}
-                        </AppText>
-                      ) : null}
                       <LockedTextField
                         label={t('mobile.requestEdit.deliveryDate')}
                         value={requiredDeliveryDate || '—'}
@@ -635,12 +717,14 @@ export function EditRequestScreen({
                   ) : (
                     <>
                       <NewOrderDeliveryAddressBlock
-                        savedAddresses={[]}
+                        savedAddresses={savedAddresses}
                         deliveryAddress={deliveryAddress}
                         deliveryNotes={deliveryNotes}
                         deliveryLat={deliveryLat}
                         notesMax={200}
-                        onOpenSavedAddresses={() => undefined}
+                        canSaveAddress={canSaveAddresses}
+                        onOpenSavedAddresses={() => setAddressSheetOpen(true)}
+                        onSaveAddress={openSaveAddressSheet}
                         onChangeAddress={setDeliveryAddress}
                         onClearCoords={() => {
                           setDeliveryLat(undefined);
@@ -874,6 +958,41 @@ export function EditRequestScreen({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <SavedAddressPickerSheet
+        open={addressSheetOpen}
+        onClose={() => setAddressSheetOpen(false)}
+        addresses={savedAddresses}
+        selectedLine={deliveryAddress}
+        canSaveCurrent={
+          canSaveAddresses &&
+          deliveryAddress.trim().length > 0 &&
+          !isAddressAlreadySaved(deliveryAddress, savedAddresses)
+        }
+        onSaveCurrent={openSaveAddressSheet}
+        onSelect={(addr) => {
+          setDeliveryAddress(formatAddressLine(addr));
+          setDeliveryLat(addr.latitude ?? undefined);
+          setDeliveryLng(addr.longitude ?? undefined);
+        }}
+      />
+
+      <SaveAddressSheet
+        open={saveAddressSheetOpen}
+        onClose={() => {
+          if (savingAddress) return;
+          setSaveAddressSheetOpen(false);
+          setSaveAddressError(null);
+        }}
+        addressLine={deliveryAddress}
+        pinned={deliveryLat != null}
+        defaultAsFirst={savedAddresses.length === 0}
+        saving={savingAddress}
+        error={saveAddressError}
+        onSave={(input) => {
+          void saveCurrentAddress(input);
+        }}
+      />
 
       <LocationMapPicker
         open={mapOpen}

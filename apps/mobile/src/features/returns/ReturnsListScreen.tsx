@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, TextInput, View } from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
@@ -25,6 +25,7 @@ import { ReturnBoardCard } from './components/ReturnBoardCard';
 import { ReturnsDealerSheet } from './components/ReturnsDealerSheet';
 import { ReturnsFilterTriggers } from './components/ReturnsFilterTriggers';
 import { ReturnsStatusFilterSheet } from './components/ReturnsStatusFilterSheet';
+import { ReturnsStatusRail } from './components/ReturnsStatusRail';
 import {
   isReturnStatusFilterActive,
   type ReturnStatusFilter,
@@ -32,6 +33,7 @@ import {
 } from './returnFilters';
 import { flattenReturns, useReturnsInfiniteQuery } from './query';
 import { selectReturnCard } from './selectReturn';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
   detailHref: (id: string) => Href;
@@ -237,16 +239,7 @@ export function ReturnsListScreen({
                   onChangeText={setSearch}
                   placeholder={searchPlaceholder}
                 />
-                <ReturnsFilterTriggers
-                  showDealers={false}
-                  dealerLabel={null}
-                  onOpenDealers={() => undefined}
-                  statusActive={isReturnStatusFilterActive(chip)}
-                  statusLabel={
-                    statusLabel === 'accounting.filter' ? 'Filter' : statusLabel
-                  }
-                  onOpenStatus={() => setStatusSheetOpen(true)}
-                />
+                <ReturnsStatusRail value={chip} onChange={setChip} />
               </View>
             ) : (
               <View
@@ -261,7 +254,7 @@ export function ReturnsListScreen({
                 }}
               >
                 <SearchBarShell>
-                  <TextInput
+                  <AppTextInput
                     value={search}
                     onChangeText={setSearch}
                     placeholder={searchPlaceholder}
@@ -345,12 +338,14 @@ export function ReturnsListScreen({
         />
       ) : null}
 
-      <ReturnsStatusFilterSheet
-        open={statusSheetOpen}
-        onClose={() => setStatusSheetOpen(false)}
-        status={chip}
-        onApply={setChip}
-      />
+      {adminControls ? (
+        <ReturnsStatusFilterSheet
+          open={statusSheetOpen}
+          onClose={() => setStatusSheetOpen(false)}
+          status={chip}
+          onApply={setChip}
+        />
+      ) : null}
     </AppScreen>
   );
 }

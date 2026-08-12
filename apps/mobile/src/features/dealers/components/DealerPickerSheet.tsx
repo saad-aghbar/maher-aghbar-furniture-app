@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -17,6 +16,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 export type DealerPickerOption = {
   id: string;
@@ -120,7 +120,7 @@ export function DealerPickerSheet({
       <View style={{ gap: theme.spacing.md, flex: 1, minHeight: 0 }}>
         <Animated.View entering={enter(0)}>
           <SearchBarShell>
-            <TextInput
+            <AppTextInput
               value={query}
               onChangeText={setQuery}
               placeholder={searchPlaceholder}

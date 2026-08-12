@@ -18,6 +18,12 @@ type KeyboardAwareScreenProps = {
   padding?: keyof ReturnType<typeof useTheme>['theme']['spacing'];
   contentContainerStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
+  /**
+   * `padding` — shrink the screen (default).
+   * `insets` — keep the screen full-bleed; ScrollView insets around the keyboard.
+   *            Use on login so the canvas isn’t replaced by a hole above the keys.
+   */
+  keyboardMode?: 'padding' | 'insets';
 };
 
 export function KeyboardAwareScreen({
@@ -27,14 +33,18 @@ export function KeyboardAwareScreen({
   padding = 'lg',
   contentContainerStyle,
   style,
+  keyboardMode = 'padding',
 }: KeyboardAwareScreenProps) {
   const insets = useSafeAreaInsets();
   const { colors, theme } = useTheme();
   const pad = theme.spacing[padding];
+  const useInsets = keyboardMode === 'insets';
+  const avoidEnabled = !useInsets || Platform.OS !== 'ios';
 
   return (
     <KeyboardAvoidingView
       style={[{ flex: 1, backgroundColor: colors.background }, style]}
+      enabled={avoidEnabled}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
     >
@@ -42,6 +52,7 @@ export function KeyboardAwareScreen({
         <ScrollView
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={useInsets && Platform.OS === 'ios'}
           contentContainerStyle={[
             {
               paddingTop: insets.top + pad,

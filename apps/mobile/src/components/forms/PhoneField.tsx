@@ -3,7 +3,6 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
   type StyleProp,
@@ -17,6 +16,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from './AppTextInput';
 import {
   COUNTRY_DIAL_CODES,
   defaultCountry,
@@ -162,7 +162,7 @@ export function PhoneField({
           <Ionicons name="chevron-down" size={14} color={colors.brand} />
         </Pressable>
 
-        <TextInput
+        <AppTextInput
           accessibilityLabel={label ?? t('mobile.phone.number')}
           value={national}
           onChangeText={onNationalChange}
@@ -296,7 +296,7 @@ export function PhoneField({
               </View>
 
               <SearchBarShell>
-                <TextInput
+                <AppTextInput
                   value={query}
                   onChangeText={setQuery}
                   placeholder={t('mobile.phone.searchCountry')}

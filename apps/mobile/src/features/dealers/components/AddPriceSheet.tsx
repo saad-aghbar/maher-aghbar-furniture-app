@@ -3,7 +3,6 @@ import {
   Image,
   ScrollView,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -31,6 +30,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { useUpsertDealerPriceMutation } from '../query';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
   open: boolean;
@@ -379,7 +379,7 @@ export function AddPriceSheet({
           </View>
 
           <SearchBarShell>
-            <TextInput
+            <AppTextInput
               value={query}
               onChangeText={setQuery}
               placeholder={t('catalog.searchProducts')}

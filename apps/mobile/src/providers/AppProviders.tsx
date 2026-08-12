@@ -7,6 +7,7 @@ import { ToastProvider } from '@/components/feedback/Toast';
 import { LocationMapVisibilityProvider } from '@/components/maps/LocationMapVisibility';
 import { CodeScannerProvider } from '@/components/scan/CodeScannerProvider';
 import { SheetOverlayYieldProvider } from '@/components/sheets/SheetOverlayYield';
+import { KeyboardDismissAccessory } from '@/components/forms/KeyboardDismissAccessory';
 import { AccessoryCameraProvider } from '@/features/inventory/components/AccessoryCameraProvider';
 import { LocaleProvider } from '@/i18n';
 import { ThemeProvider } from '@/theme';
@@ -28,7 +29,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
                       <CodeScannerProvider>
                         <AccessoryCameraProvider>
                           <LocationMapVisibilityProvider>
-                            <SheetOverlayYieldProvider>{children}</SheetOverlayYieldProvider>
+                            <SheetOverlayYieldProvider>
+                              {children}
+                              <KeyboardDismissAccessory />
+                            </SheetOverlayYieldProvider>
                           </LocationMapVisibilityProvider>
                         </AccessoryCameraProvider>
                       </CodeScannerProvider>

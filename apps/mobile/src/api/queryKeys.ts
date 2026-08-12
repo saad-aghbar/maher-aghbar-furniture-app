@@ -98,7 +98,8 @@ export const queryKeys = {
     list: (filters: unknown = {}) => [...queryKeys.production.lists(), filters] as const,
     details: () => [...queryKeys.production.all, 'detail'] as const,
     detail: (id: string) => [...queryKeys.production.details(), id] as const,
-    workers: (q?: string) => [...queryKeys.production.all, 'workers', q ?? ''] as const,
+    workers: (q?: string, stageDefinitionId?: string) =>
+      [...queryKeys.production.all, 'workers', q ?? '', stageDefinitionId ?? ''] as const,
   },
   purchasing: {
     all: ['purchasing'] as const,

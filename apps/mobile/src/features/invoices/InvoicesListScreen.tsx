@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, TextInput, View } from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
-import { localizedName, statusLabel as localizeStatus } from '@maher/i18n';
+import { localizedName } from '@maher/i18n';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
@@ -16,12 +16,11 @@ import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import {
   DealerEmptyState,
-  DealerInvoiceCard,
   DealerSearchBar,
-  statusToDealerTone,
 } from '@/features/dealer-ui';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { openInvoicePdf } from './api';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { CreateInvoiceFromSalesOrderSheet } from './components/CreateInvoiceFromSalesOrderSheet';
 import { InvoiceBoardCard } from './components/InvoiceBoardCard';
 import { InvoiceDealerSheet } from './components/InvoiceDealerSheet';
@@ -42,6 +41,7 @@ import {
   useInvoicesInfiniteQuery,
 } from './query';
 import { selectInvoiceCard } from './selectInvoice';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
   detailHref: (id: string) => Href;
@@ -112,6 +112,7 @@ export function InvoicesListScreen({
   const [createOpen, setCreateOpen] = useState(false);
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
   const [statusSheetOpen, setStatusSheetOpen] = useState(false);
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
   useEffect(() => {
     const id = setTimeout(() => setQ(search.trim()), 300);
@@ -245,7 +246,7 @@ export function InvoicesListScreen({
                 }}
               >
                 <SearchBarShell>
-                  <TextInput
+                  <AppTextInput
                     value={search}
                     onChangeText={setSearch}
                     placeholder={t('accounting.searchPlaceholder')}
@@ -297,26 +298,25 @@ export function InvoicesListScreen({
         }
         renderItem={({ item, index }) => (
           <ListItemEnter index={index}>
-            {dealerSurface ? (
-              <DealerInvoiceCard
-                title={item.number}
-                amountLabel={item.outstandingLabel}
-                dueLabel={item.dueDateLabel ?? undefined}
-                statusLabel={localizeStatus(locale, item.status)}
-                statusTone={statusToDealerTone(item.status)}
-                onPress={() => router.push(detailHref(item.id))}
-              />
-            ) : (
-              <InvoiceBoardCard
-                invoice={item}
-                onPress={() => router.push(detailHref(item.id))}
-                onPdf={() => {
-                  void openInvoicePdf(item.id).catch(() => {
-                    showToast({ variant: 'error', message: t('mobile.invoices.pdfFailed') });
-                  });
-                }}
-              />
-            )}
+            <InvoiceBoardCard
+              invoice={item}
+              dealerFacing={dealerSurface}
+              onPress={() => router.push(detailHref(item.id))}
+              onPdf={() => {
+                void (async () => {
+                  const opts = await pickPdfOptions();
+                  if (!opts) return;
+                  try {
+                    await openInvoicePdf(item.id, opts);
+                  } catch {
+                    showToast({
+                      variant: 'error',
+                      message: t('mobile.invoices.pdfFailed'),
+                    });
+                  }
+                })();
+              }}
+            />
           </ListItemEnter>
         )}
       />
@@ -348,6 +348,7 @@ export function InvoicesListScreen({
         status={chip}
         onApply={setChip}
       />
+      {pdfDownloadSheet}
     </AppScreen>
   );
 }

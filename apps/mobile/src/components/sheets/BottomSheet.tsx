@@ -1,11 +1,11 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
-  Platform,
   StyleSheet,
   View,
+  type KeyboardEvent,
   type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
@@ -13,6 +13,7 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
+import { KeyboardDismissAccessory } from '@/components/forms/KeyboardDismissAccessory';
 import { useCodeScannerState } from '@/components/scan/CodeScannerProvider';
 import { useLocationMapVisibility } from '@/components/maps/LocationMapVisibility';
 import { useSheetOverlayYield } from '@/components/sheets/SheetOverlayYield';
@@ -71,6 +72,7 @@ export function BottomSheet({
 
   const [mounted, setMounted] = useState(false);
   const [progress, setProgress] = useState(1);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   /** Overlay Modal gate — false until host has yielded; stays true through exit motion. */
   const [overlayModalVisible, setOverlayModalVisible] = useState(false);
 
@@ -87,10 +89,34 @@ export function BottomSheet({
 
   const heightCap = useMemo(() => {
     const windowH = Dimensions.get('window').height;
-    return maxHeight ?? Math.round(windowH * 0.7);
-  }, [maxHeight]);
+    const cap = maxHeight ?? Math.round(windowH * 0.7);
+    if (keyboardHeight <= 0) return cap;
+    return Math.min(cap, Math.max(240, windowH - keyboardHeight));
+  }, [maxHeight, keyboardHeight]);
 
   const [animHeight, setAnimHeight] = useState(() => Math.min(320, heightCap));
+
+  useEffect(() => {
+    if (!mounted) {
+      setKeyboardHeight(0);
+      return;
+    }
+    const onShow = (e: KeyboardEvent) => {
+      const height = e.endCoordinates?.height ?? 0;
+      if (height > 0) setKeyboardHeight(height);
+    };
+    const onHide = () => setKeyboardHeight(0);
+    const willShow = Keyboard.addListener('keyboardWillShow', onShow);
+    const didShow = Keyboard.addListener('keyboardDidShow', onShow);
+    const willHide = Keyboard.addListener('keyboardWillHide', onHide);
+    const didHide = Keyboard.addListener('keyboardDidHide', onHide);
+    return () => {
+      willShow.remove();
+      didShow.remove();
+      willHide.remove();
+      didHide.remove();
+    };
+  }, [mounted]);
 
   useEffect(() => {
     if (open) {
@@ -149,8 +175,17 @@ export function BottomSheet({
     return () => cancelAnimationFrame(id);
   }, [overlay, open, mounted, hostBlocked]);
 
-  const resolvedAnimHeight = fitContent ? animHeight : sheetHeight;
-  const bottomPad = Math.max(insets.bottom, theme.spacing.md) + theme.spacing.sm;
+  const keyboardOpen = keyboardHeight > 0;
+  const windowH = Dimensions.get('window').height;
+  const visibleSheetHeight = fitContent
+    ? animHeight
+    : keyboardOpen
+      ? Math.min(sheetHeight, Math.max(240, windowH - keyboardHeight))
+      : sheetHeight;
+  const resolvedAnimHeight = visibleSheetHeight;
+  const bottomPad = keyboardOpen
+    ? theme.spacing.md + 44
+    : Math.max(insets.bottom, theme.spacing.md) + theme.spacing.sm;
 
   const onSheetLayout = (e: LayoutChangeEvent) => {
     if (!fitContent) return;
@@ -170,11 +205,7 @@ export function BottomSheet({
       presentationStyle="overFullScreen"
     >
       <GestureHandlerRootView style={styles.root}>
-        <KeyboardAvoidingView
-          style={styles.root}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={0}
-        >
+        <View style={styles.root}>
           <BottomSheetTransition
             progress={progress}
             sheetHeight={resolvedAnimHeight}
@@ -193,11 +224,12 @@ export function BottomSheet({
                   paddingTop: theme.spacing.md,
                   paddingHorizontal: theme.spacing.lg,
                   paddingBottom: bottomPad,
+                  marginBottom: keyboardHeight,
                   overflow: 'hidden',
                   ...theme.elevation.raised,
                   ...(fitContent
                     ? { maxHeight: heightCap, alignSelf: 'stretch' as const }
-                    : { height: sheetHeight, maxHeight: '100%' as const }),
+                    : { height: visibleSheetHeight, maxHeight: '100%' as const }),
                 },
                 style,
               ]}
@@ -223,7 +255,8 @@ export function BottomSheet({
               <View style={fitContent ? styles.fitBody : styles.fillBody}>{children}</View>
             </View>
           </BottomSheetTransition>
-        </KeyboardAvoidingView>
+        </View>
+        <KeyboardDismissAccessory inModal />
       </GestureHandlerRootView>
     </Modal>
   );

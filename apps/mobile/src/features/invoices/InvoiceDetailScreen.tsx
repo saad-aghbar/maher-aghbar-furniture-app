@@ -16,6 +16,8 @@ import { ListItemEnter } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { openInvoicePdf } from './api';
+import { openPaymentPdf } from '@/api/modules/payments';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { InvoiceBalanceBoard } from './components/InvoiceBalanceBoard';
 import { InvoiceDetailHero } from './components/InvoiceDetailHero';
 import { InvoiceJofotaraBoard } from './components/InvoiceJofotaraBoard';
@@ -51,6 +53,7 @@ export function InvoiceDetailScreen({
   const canPay = can(user, 'payment.record');
 
   const [payOpen, setPayOpen] = useState(false);
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
   const query = useInvoiceQuery(invoiceId, canRead);
   const model = useMemo(
@@ -102,9 +105,30 @@ export function InvoiceDetailScreen({
   const stickyPad = stickyBottom + (showPay ? 108 : 72);
 
   const onPdf = () => {
-    void openInvoicePdf(invoiceId).catch(() => {
-      showToast({ variant: 'error', message: t('mobile.invoices.pdfFailed') });
-    });
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openInvoicePdf(invoiceId, opts);
+      } catch {
+        showToast({ variant: 'error', message: t('mobile.invoices.pdfFailed') });
+      }
+    })();
+  };
+
+  const onPaymentPdf = (paymentId: string) => {
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openPaymentPdf(paymentId, opts);
+      } catch {
+        showToast({
+          variant: 'error',
+          message: t('mobile.account.paymentPdfFailed'),
+        });
+      }
+    })();
   };
 
   return (
@@ -139,7 +163,11 @@ export function InvoiceDetailScreen({
         </ListItemEnter>
 
         <InvoiceLinesBoard model={model} />
-        <InvoicePaymentsBoard model={model} methodLabel={methodLabel} />
+        <InvoicePaymentsBoard
+          model={model}
+          methodLabel={methodLabel}
+          onPaymentPdf={onPaymentPdf}
+        />
         <InvoiceJofotaraBoard model={model} />
       </ScrollView>
 
@@ -177,6 +205,7 @@ export function InvoiceDetailScreen({
           defaultAmount={model.outstanding}
         />
       ) : null}
+      {pdfDownloadSheet}
     </AppScreen>
   );
 }

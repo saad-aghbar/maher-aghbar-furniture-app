@@ -15,6 +15,7 @@ import {
   shiftMonth,
   toYmd,
   todayYmd,
+  ymdInRange,
   type CalendarCursor,
   type DayMeta,
 } from './calendarMath';
@@ -24,11 +25,15 @@ import type { ThemeColors } from '@/theme/types';
 export type MonthCalendarVariant = 'dealer' | 'admin' | 'default';
 
 type Props = {
-  /** Selected YYYY-MM-DD (may be empty). */
-  value: string;
+  /** Selected YYYY-MM-DD (may be empty). Ignored when `rangeStart` is set. */
+  value?: string;
   onSelect: (ymd: string) => void;
   monthCursor: CalendarCursor;
   onMonthChange: (cursor: CalendarCursor) => void;
+  /** Inclusive range start (YYYY-MM-DD). Enables range highlighting. */
+  rangeStart?: string;
+  /** Inclusive range end (YYYY-MM-DD). */
+  rangeEnd?: string;
   /** Per-day visual meta keyed by YYYY-MM-DD. */
   dayMeta?: Record<string, DayMeta>;
   minDate?: string;
@@ -49,10 +54,12 @@ const DAY_CELL_COMPACT = 36;
  * Used by dealer availability, admin scheduling, and completed-date picker.
  */
 export function MonthCalendar({
-  value,
+  value = '',
   onSelect,
   monthCursor,
   onMonthChange,
+  rangeStart,
+  rangeEnd,
   dayMeta = {},
   minDate,
   maxDate,
@@ -204,7 +211,15 @@ export function MonthCalendar({
               }
               const ymd = toYmd(monthCursor.y, monthCursor.m, day);
               const meta = dayMeta[ymd];
-              const selected = value === ymd;
+              const rangeActive = Boolean(rangeStart);
+              const isRangeStart = Boolean(rangeStart && ymd === rangeStart);
+              const isRangeEnd = Boolean(rangeEnd && ymd === rangeEnd);
+              const isRangeEdge = isRangeStart || isRangeEnd;
+              const inRangeStrip =
+                Boolean(rangeStart && rangeEnd) &&
+                ymdInRange(ymd, rangeStart!, rangeEnd!) &&
+                !isRangeEdge;
+              const selected = rangeActive ? isRangeEdge : value === ymd;
               const isToday = ymd === today;
               const outOfRange =
                 (minDate != null && ymd < minDate) || (maxDate != null && ymd > maxDate);
@@ -217,6 +232,7 @@ export function MonthCalendar({
 
               const cellColors = resolveCellColors({
                 selected,
+                inRangeStrip,
                 isToday,
                 tone: meta?.tone,
                 isEarliest: meta?.isEarliest,
@@ -239,7 +255,7 @@ export function MonthCalendar({
                   style={{
                     flex: 1,
                     height: cellH,
-                    borderRadius: theme.radius.md,
+                    borderRadius: inRangeStrip ? 6 : theme.radius.md,
                     alignItems: 'center',
                     justifyContent: 'center',
                     backgroundColor: cellColors.bg,
@@ -251,7 +267,11 @@ export function MonthCalendar({
                 >
                   <AppText
                     variant="label"
-                    weight={selected || isToday || meta?.isEarliest ? titleWeight : 'medium'}
+                    weight={
+                      selected || inRangeStrip || isToday || meta?.isEarliest
+                        ? titleWeight
+                        : 'medium'
+                    }
                     style={{
                       color: cellColors.ink,
                       fontSize: compact ? 13 : 14,
@@ -293,19 +313,28 @@ export function MonthCalendar({
 
 function resolveCellColors(input: {
   selected: boolean;
+  inRangeStrip?: boolean;
   isToday: boolean;
   tone?: DayMeta['tone'];
   isEarliest?: boolean;
   variant: MonthCalendarVariant;
   colors: ThemeColors;
 }): { bg: string; border: string; ink: string; dot: string } {
-  const { selected, isToday, tone, isEarliest, colors, variant } = input;
+  const { selected, inRangeStrip, isToday, tone, isEarliest, colors, variant } = input;
   if (selected) {
     return {
       bg: colors.brand,
       border: colors.brand,
       ink: colors.onBrand,
       dot: colors.onBrand,
+    };
+  }
+  if (inRangeStrip) {
+    return {
+      bg: colors.brandSoft,
+      border: colors.brandSoft,
+      ink: colors.textPrimary,
+      dot: colors.brand,
     };
   }
 

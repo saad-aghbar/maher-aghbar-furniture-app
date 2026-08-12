@@ -10,6 +10,7 @@ import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from './AppTextInput';
 import { CopyNotesButton } from './CopyNotesButton';
 import { useGrowingMultilineInput } from './useGrowingMultilineInput';
 
@@ -101,7 +102,7 @@ export function LockedTextField({
           ...orderBoardShadow(colorScheme),
         }}
       >
-        <TextInput
+        <AppTextInput
           ref={inputRef}
           accessibilityLabel={label}
           placeholderTextColor={colors.textMuted}

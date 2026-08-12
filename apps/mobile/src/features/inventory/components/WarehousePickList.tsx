@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { Warehouse } from '../api';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 export type WarehouseBalanceHint = {
   warehouseId: string;
@@ -156,7 +157,7 @@ export function WarehousePickList({
       ) : null}
 
       <SearchBarShell>
-        <TextInput
+        <AppTextInput
           value={q}
           onChangeText={setQ}
           placeholder={t('mobile.inventory.searchWarehouses')}

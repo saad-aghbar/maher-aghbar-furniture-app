@@ -8,6 +8,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 /** Built-in measurement types — custom types (e.g. pcs) are free-text. */
 export const MEASUREMENT_UNIT_PRESETS = ['cm', 'm', 'mm', 'in', 'pcs'] as const;
@@ -234,7 +235,7 @@ export function MeasurementValuePanel({
             }}
           >
             <Ionicons name="create-outline" size={16} color={colors.brand} />
-            <TextInput
+            <AppTextInput
               value={customUnit}
               onChangeText={setCustomUnit}
               placeholder={label('catalog.customUnitPlaceholder', 'e.g. pcs')}
@@ -293,13 +294,13 @@ export function MeasurementValuePanel({
             gap: theme.spacing.sm,
           }}
         >
-          <TextInput
+          <AppTextInput
             value={draftValue}
             onChangeText={setDraftValue}
             placeholder={label('catalog.customMeasurementPlaceholder', 'e.g. 12')}
             placeholderTextColor={colors.textMuted}
             keyboardType="decimal-pad"
-            // Don't set returnKeyType — RN adds an iOS "Done" accessory bar for
+            // Don't set returnKeyType — iOS hides the shared Done accessory on
             // decimal/number pads when returnKeyType is Done/Go/Next/etc.
             style={{
               flex: 1,

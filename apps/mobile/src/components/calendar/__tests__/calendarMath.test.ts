@@ -9,6 +9,7 @@ import {
   toYmd,
   todayYmd,
   ymdInRange,
+  nextDateRange,
 } from '../calendarMath';
 
 describe('calendarMath', () => {
@@ -39,6 +40,29 @@ describe('calendarMath', () => {
     expect(compareYmd('2026-08-01', '2026-08-11')).toBe(-1);
     expect(ymdInRange('2026-08-11', '2026-08-01', '2026-08-31')).toBe(true);
     expect(ymdInRange('2026-07-31', '2026-08-01', null)).toBe(false);
+  });
+
+  it('builds a date range from successive taps', () => {
+    expect(nextDateRange('', '', '2026-08-11')).toEqual({
+      start: '2026-08-11',
+      end: '',
+    });
+    expect(nextDateRange('2026-08-11', '', '2026-08-20')).toEqual({
+      start: '2026-08-11',
+      end: '2026-08-20',
+    });
+    expect(nextDateRange('2026-08-11', '', '2026-08-05')).toEqual({
+      start: '2026-08-05',
+      end: '2026-08-11',
+    });
+    expect(nextDateRange('2026-08-11', '', '2026-08-11')).toEqual({
+      start: '2026-08-11',
+      end: '2026-08-11',
+    });
+    expect(nextDateRange('2026-08-11', '2026-08-20', '2026-08-01')).toEqual({
+      start: '2026-08-01',
+      end: '',
+    });
   });
 
   it('returns today as local YMD', () => {

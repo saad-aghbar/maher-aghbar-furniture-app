@@ -1,4 +1,4 @@
-import { Platform, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { BrandMark } from '@/components/BrandMark';
@@ -46,9 +46,8 @@ export function DealerCatalogChrome({
   showCategories = true,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { colors, theme } = useTheme();
   const reduce = useReducedMotion();
-  const dark = colorScheme === 'dark';
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const body = (
@@ -124,16 +123,7 @@ export function DealerCatalogChrome({
           gap: theme.spacing.sm,
         }}
       >
-        <View
-          style={{
-            flex: 1,
-            borderRadius: theme.radius.xl,
-            backgroundColor: colors.surface,
-            ...theme.elevation.rest,
-            shadowOpacity: dark ? 0.35 : 0.1,
-            elevation: Platform.OS === 'android' ? 3 : theme.elevation.rest.elevation,
-          }}
-        >
+        <View style={{ flex: 1 }}>
           <DealerSearchBar
             value={searchInput}
             onChangeText={onSearchChange}

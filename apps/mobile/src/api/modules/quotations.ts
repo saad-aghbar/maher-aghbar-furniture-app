@@ -1,7 +1,6 @@
-import { Linking, Share } from 'react-native';
-import { getAccessToken } from '@/storage/tokens';
 import { apiGet, apiPatch, apiPost } from '../client';
-import { getApiV1Url } from '../config';
+import { openAuthedPdf, withPdfOptions } from '../openPdf';
+import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 
 export type CreateQuotationLineInput = {
   description: string;
@@ -96,16 +95,6 @@ export type QuotationDetail = {
   salesOrders?: Array<{ id: string; number: string; status: string }>;
 };
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return globalThis.btoa(binary);
-}
-
 export async function createQuotation(
   body: CreateQuotationInput,
 ): Promise<QuotationSummary> {
@@ -150,24 +139,13 @@ export async function rejectQuotation(id: string): Promise<QuotationDetail> {
 }
 
 /** Fetch quotation PDF with Bearer auth and open via data URL / share sheet. */
-export async function openQuotationPdf(id: string): Promise<void> {
-  const token = await getAccessToken();
-  const url = `${getApiV1Url()}/quotations/${encodeURIComponent(id)}/pdf`;
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/pdf',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Quotation PDF failed (${res.status})`);
-  }
-  const buf = await res.arrayBuffer();
-  const dataUrl = `data:application/pdf;base64,${arrayBufferToBase64(buf)}`;
-  const canOpen = await Linking.canOpenURL(dataUrl);
-  if (canOpen) {
-    await Linking.openURL(dataUrl);
-    return;
-  }
-  await Share.share({ url: dataUrl, message: 'Quotation PDF' });
+export async function openQuotationPdf(
+  id: string,
+  opts?: PdfDownloadOptions,
+): Promise<void> {
+  await openAuthedPdf(
+    withPdfOptions(`/quotations/${encodeURIComponent(id)}/pdf`, opts),
+    'Quotation PDF failed',
+    'Quotation PDF',
+  );
 }

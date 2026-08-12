@@ -15,7 +15,12 @@ import { queryKeys } from '@/api/queryKeys';
 import { onSessionExpired, clearSession } from '@/auth/session';
 import { mapLoginError, type AuthStatus, type LoginUiError } from '@/auth/mapAuthError';
 import { restoreSession } from '@/auth/sessionRestore';
-import { shouldRequireBiometricGate } from '@/auth/biometrics';
+import {
+  clearBiometricCredentials,
+  isBiometricUnlockEnabled,
+  saveBiometricCredentials,
+  shouldRequireBiometricGate,
+} from '@/auth/biometrics';
 import { registerPushDevice } from '@/features/notifications/registerPushDevice';
 
 type AuthContextValue = {
@@ -95,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         applyUser(profile);
         setPendingMfa(null);
         setStatus('authenticated');
+        void saveBiometricCredentials(input.username, input.password);
         void registerPushDevice(profile);
         return { ok: true as const };
       } catch (error) {
@@ -137,6 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     queryClient.removeQueries({ queryKey: queryKeys.auth.all });
     setStatus('unauthenticated');
+    const bioOn = await isBiometricUnlockEnabled();
+    if (!bioOn) await clearBiometricCredentials();
     const { requestShortBrandIntro } = await import('@/theme/brandIntroMotion');
     requestShortBrandIntro();
   }, [queryClient]);

@@ -14,6 +14,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
@@ -91,7 +92,7 @@ export function LoginPasswordField({
   );
 
   const input = (
-    <TextInput
+    <AppTextInput
       ref={inputRef}
       testID={testID}
       accessibilityLabel={label}

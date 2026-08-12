@@ -23,8 +23,11 @@ export class ProductionController {
     'production.workflow.stage.manage',
   )
   @Get('assignable-workers')
-  listAssignableWorkers(@Query('q') q?: string) {
-    return this.production.listAssignableWorkers(q);
+  listAssignableWorkers(
+    @Query('q') q?: string,
+    @Query('stageDefinitionId') stageDefinitionId?: string,
+  ) {
+    return this.production.listAssignableWorkers(q, stageDefinitionId);
   }
 
   @RequirePermissions('production-order.read')

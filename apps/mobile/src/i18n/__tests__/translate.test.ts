@@ -7,6 +7,20 @@ describe('translate', () => {
     expect(translate('he', 'mobile.languageName.he')).toBe('עברית');
   });
 
+  it('resolves keyboard Done labels', () => {
+    expect(translate('en', 'mobile.keyboardDone')).toBe('Done');
+    expect(translate('ar', 'mobile.keyboardDone')).toBe('تم');
+    expect(translate('he', 'mobile.keyboardDone')).toBe('סיום');
+  });
+
+  it('resolves biometric login labels', () => {
+    expect(translate('en', 'auth.loginWithFaceId')).toBe('Face ID');
+    expect(translate('en', 'auth.loginWithTouchId')).toBe('Touch ID');
+    expect(translate('en', 'auth.loginWithFingerprint')).toBe('Fingerprint');
+    expect(translate('ar', 'auth.loginWithFingerprint')).toBe('البصمة');
+    expect(translate('he', 'auth.loginWithFaceId')).toBe('Face ID');
+  });
+
   it('resolves auth signing labels', () => {
     expect(translate('en', 'auth.login')).toBe('Sign in');
     expect(translate('en', 'auth.signingIn')).toBe('Signing in…');

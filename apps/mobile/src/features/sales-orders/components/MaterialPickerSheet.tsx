@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   FlatList,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
   type LayoutChangeEvent,
@@ -29,6 +28,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter, useDraggablePillBar, useReducedMotion } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { orderBoardShadow } from './orderFloorStyle';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 const CATEGORIES: InventoryCategoryGroup[] = [
   'fabric',
@@ -328,7 +328,7 @@ export function MaterialPickerSheet({
         </GestureDetector>
 
         <SearchBarShell>
-          <TextInput
+          <AppTextInput
             value={q}
             onChangeText={setQ}
             placeholder={t('mobile.inventory.searchPlaceholder', {
@@ -609,7 +609,7 @@ export function MaterialPickerSheet({
                     −
                   </AppText>
                 </AnimatedPressable>
-                <TextInput
+                <AppTextInput
                   value={qty}
                   onChangeText={setQty}
                   keyboardType="decimal-pad"

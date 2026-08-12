@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
@@ -67,6 +67,7 @@ import {
   type AdminScheduleCardModel,
   type ScheduleFocusKey,
 } from './selectAdminScheduling';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 const FLOOR_ROW_ESTIMATE = 152;
 const FLOOR_LIST_VISIBLE_ROWS = 3;
@@ -1368,7 +1369,7 @@ function ScheduleOrdersBoard({
         }}
       >
         <SearchBarShell>
-          <TextInput
+          <AppTextInput
             value={search}
             onChangeText={onSearchChange}
             placeholder={t('mobile.adminScheduling.searchPlaceholder')}

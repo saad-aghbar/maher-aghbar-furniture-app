@@ -1,5 +1,4 @@
 import {
-  TextInput,
   View,
   type TextInputProps,
   type StyleProp,
@@ -9,6 +8,7 @@ import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n/useLocale';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from './AppTextInput';
 import { CopyNotesButton } from './CopyNotesButton';
 import { SearchBarShell } from './SearchBarShell';
 import { useGrowingMultilineInput } from './useGrowingMultilineInput';
@@ -64,7 +64,7 @@ export function TextField({
   });
 
   const input = (
-    <TextInput
+    <AppTextInput
       accessibilityLabel={label ?? rest.placeholder}
       placeholderTextColor={colors.textMuted}
       multiline={multiline}

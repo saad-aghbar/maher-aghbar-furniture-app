@@ -4,7 +4,6 @@ import {
   FlatList,
   type LayoutChangeEvent,
   Pressable,
-  TextInput,
   View,
 } from 'react-native';
 import Animated, {
@@ -24,6 +23,7 @@ import { useLocale } from '@/i18n';
 import { haptics, springs, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { InventorySheetFooter } from './InventorySheetFooter';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 const CATEGORIES: InventoryCategoryGroup[] = [
   'fabric',
@@ -193,7 +193,7 @@ export function InventoryItemPickPanel({
       </View>
 
       <SearchBarShell>
-        <TextInput
+        <AppTextInput
           value={q}
           onChangeText={setQ}
           placeholder={t('mobile.inventory.searchPlaceholder', { group: groupLabel })}

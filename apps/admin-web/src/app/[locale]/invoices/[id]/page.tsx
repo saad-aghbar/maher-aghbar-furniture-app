@@ -368,6 +368,7 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
                 <TableHeaderCell>{ta('paymentMethod')}</TableHeaderCell>
                 <TableHeaderCell>{ta('reference')}</TableHeaderCell>
                 <TableHeaderCell>{ta('amount')}</TableHeaderCell>
+                <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -380,6 +381,17 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
                   </TableCell>
                   <TableNumericCell>{p.referenceNumber ?? '—'}</TableNumericCell>
                   <TableNumericCell>{money(p.amount)}</TableNumericCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        window.open(`${API_URL}/api/v1/payments/${p.id}/pdf`, '_blank');
+                      }}
+                    >
+                      {ta('downloadPdf')}
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

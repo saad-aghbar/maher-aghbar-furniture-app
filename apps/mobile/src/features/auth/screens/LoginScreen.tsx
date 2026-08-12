@@ -4,6 +4,14 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
+import {
+  biometricLoginPresentation,
+  canShowBiometricLogin,
+  getBiometricCredentials,
+  getBiometricKind,
+  promptBiometricUnlock,
+  type BiometricKind,
+} from '@/auth/biometrics';
 import { AnimatedBrandIntro } from '@/components/branding';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { KeyboardAwareScreen } from '@/components/layout/KeyboardAwareScreen';
@@ -14,7 +22,7 @@ import { haptics } from '@/motion';
 import { resetBrandIntroSessionFlags } from '@/theme/brandIntroMotion';
 import { useTheme } from '@/theme';
 import { AmbientBackground } from '../components/AmbientBackground';
-import { LoginLanguageSwitcher } from '../components/LoginLanguageSwitcher';
+import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { LoginThemeSwitcher } from '../components/LoginThemeSwitcher';
 import { LoginScreenContent } from '../LoginScreenContent';
 import { mapLoginErrorMessage, useLoginForm } from '../hooks/useLoginForm';
@@ -33,6 +41,9 @@ export function LoginScreen() {
   const { theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [bioVisible, setBioVisible] = useState(false);
+  const [bioKind, setBioKind] = useState<BiometricKind>('generic');
+  const [bioBusy, setBioBusy] = useState(false);
 
   const { height: winH } = useWindowDimensions();
   const colors = useMemo(() => getLoginColors(colorScheme), [colorScheme]);
@@ -56,6 +67,22 @@ export function LoginScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [visible, kind] = await Promise.all([
+        canShowBiometricLogin(),
+        getBiometricKind(),
+      ]);
+      if (cancelled) return;
+      setBioVisible(visible);
+      setBioKind(kind);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const onSuccess = useCallback(async () => {
     void haptics.completeStrong();
     await new Promise((r) => setTimeout(r, 520));
@@ -75,6 +102,56 @@ export function LoginScreen() {
   });
 
   const err = mapLoginErrorMessage(form.errorCode, t);
+  const bioChrome = biometricLoginPresentation(bioKind);
+  const bioLabel = (() => {
+    const value = t(bioChrome.labelKey);
+    return value === bioChrome.labelKey ? bioChrome.fallback : value;
+  })();
+
+  const onBiometricLogin = useCallback(async () => {
+    if (bioBusy || form.loading || form.success) return;
+    setBioBusy(true);
+    try {
+      const creds = await getBiometricCredentials();
+      if (!creds) {
+        setBioVisible(false);
+        return;
+      }
+      const ok = await promptBiometricUnlock(
+        t('auth.biometricPrompt'),
+        t('common.cancel'),
+      );
+      if (!ok) return;
+      clearLoginError();
+      const result = await login({
+        username: creds.username,
+        password: creds.password,
+      });
+      if (result.ok) {
+        void haptics.completeStrong();
+        await onSuccess();
+        return;
+      }
+      if (result.error === 'mfa_required') {
+        router.push('/(auth)/mfa' as Href);
+        return;
+      }
+      if (result.error === 'disabled') {
+        router.replace('/(auth)/disabled' as Href);
+      }
+    } finally {
+      setBioBusy(false);
+    }
+  }, [
+    bioBusy,
+    clearLoginError,
+    form.loading,
+    form.success,
+    login,
+    onSuccess,
+    router,
+    t,
+  ]);
 
   const chromeStyle = useAnimatedStyle(() => ({
     opacity: intro.shared.chromeOpacity.value,
@@ -107,11 +184,12 @@ export function LoginScreen() {
         ]}
         pointerEvents="box-none"
       >
-        <LoginLanguageSwitcher colors={colors} />
+        <ExpandableLocaleSwitcher expandToward="end" />
         <LoginThemeSwitcher colors={colors} />
       </Animated.View>
 
       <KeyboardAwareScreen
+        keyboardMode="insets"
         style={{ backgroundColor: 'transparent', zIndex: 10 }}
         contentContainerStyle={{
           justifyContent: 'flex-start',
@@ -151,6 +229,17 @@ export function LoginScreen() {
             onSubmit: () => {
               void form.onSubmit();
             },
+            biometric: bioVisible
+              ? {
+                  visible: true,
+                  label: bioLabel,
+                  icon: bioChrome.icon,
+                  loading: bioBusy,
+                  onPress: () => {
+                    void onBiometricLogin();
+                  },
+                }
+              : undefined,
           }}
         />
       </KeyboardAwareScreen>

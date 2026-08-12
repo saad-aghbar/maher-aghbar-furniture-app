@@ -1,7 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   RefreshControl,
   ScrollView,
   View,
@@ -13,10 +12,9 @@ import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { useAuth } from '@/auth/AuthProvider';
-import { getApiV1Url } from '@/api/config';
 import { listAdminProducts } from '@/api/modules/catalogAdmin';
-import { listInvoices } from '@/api/modules/invoices';
-import { getStatement, listPayments } from '@/api/modules/payments';
+import { listInvoices, openInvoicePdf } from '@/api/modules/invoices';
+import { getStatement, listPayments, openPaymentPdf, openStatementPdf } from '@/api/modules/payments';
 import { listSalesOrders } from '@/api/modules/sales-orders';
 import { queryKeys } from '@/api/queryKeys';
 import { AppText } from '@/components/AppText';
@@ -27,6 +25,8 @@ import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
+import { useToast } from '@/components/feedback/Toast';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { Divider } from '@/components/layout/Divider';
 import { useNetwork } from '@/components/network/NetworkProvider';
@@ -84,6 +84,8 @@ export function DealerDetailScreen({ dealerId }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL, formatCurrency, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { showToast } = useToast();
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const onBack = useSmartBack('/(app)/(admin)/dealers' as Href);
@@ -161,10 +163,42 @@ export function DealerDetailScreen({ dealerId }: Props) {
     { key: 'priceList', label: t('customers.priceList') },
   ];
 
-  const openStatementPdf = async () => {
+  const downloadStatementPdf = async () => {
     void haptics.selection();
-    const url = `${getApiV1Url()}/statements/${encodeURIComponent(dealerId)}/pdf`;
-    await Linking.openURL(url);
+    const opts = await pickPdfOptions();
+    if (!opts) return;
+    try {
+      await openStatementPdf(dealerId, opts);
+    } catch {
+      showToast({ variant: 'error', message: t('mobile.account.pdfFailed') });
+    }
+  };
+
+  const downloadInvoicePdf = (id: string) => {
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openInvoicePdf(id, opts);
+      } catch {
+        showToast({ variant: 'error', message: t('mobile.invoices.pdfFailed') });
+      }
+    })();
+  };
+
+  const downloadPaymentPdf = (id: string) => {
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openPaymentPdf(id, opts);
+      } catch {
+        showToast({
+          variant: 'error',
+          message: t('mobile.account.paymentPdfFailed'),
+        });
+      }
+    })();
   };
 
   const refetchAll = () => {
@@ -443,7 +477,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
             >
               <SecondaryButton
                 label={t('navigation.statement')}
-                onPress={() => void openStatementPdf()}
+                onPress={() => void downloadStatementPdf()}
                 style={{
                   borderRadius: theme.radius.full,
                   flexGrow: 1,
@@ -771,7 +805,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
                   </View>
                   <SecondaryButton
                     label={t('navigation.statement')}
-                    onPress={() => void openStatementPdf()}
+                    onPress={() => void downloadStatementPdf()}
                     style={{ borderRadius: theme.radius.full }}
                   />
                 </View>
@@ -797,6 +831,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
               <DealerPaymentsList
                 payments={paymentsQuery.data?.data ?? []}
                 emptyLabel={t('customers.noPayments')}
+                onPaymentPdf={downloadPaymentPdf}
               />
             </DealerBoard>
           )}
@@ -813,6 +848,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
                 onPressInvoice={(id) =>
                   router.push(`/(app)/(admin)/invoices/${id}` as Href)
                 }
+                onInvoicePdf={downloadInvoicePdf}
               />
             </DealerBoard>
           )}
@@ -1100,6 +1136,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
           .map((row) => row.productId || row.product?.id)
           .filter((id): id is string => Boolean(id))}
       />
+      {pdfDownloadSheet}
     </ScrollableScreen>
   );
 }

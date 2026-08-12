@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
-import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { listBrowseProducts, type BrowseProduct } from '@/features/catalog/api';
+import { DealerSearchBar } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -49,17 +49,14 @@ export function CatalogModelPicker({ open, onClose, onSelect }: CatalogModelPick
       sheetHeight={520}
     >
       <View style={{ gap: theme.spacing.md }}>
-        <TextField
-          label={t('mobile.newOrder.searchCatalog')}
+        <DealerSearchBar
           value={q}
           onChangeText={(v) => {
             setQ(v);
             void search(v.trim());
           }}
           placeholder={t('mobile.newOrder.searchCatalogPlaceholder')}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
+          accessibilityLabel={t('mobile.newOrder.searchCatalog')}
         />
         {error ? (
           <AppText variant="caption" color="error">

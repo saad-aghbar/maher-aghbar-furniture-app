@@ -1492,10 +1492,7 @@ export function NewOrderScreen() {
             deliveryAddress.trim().length > 0 &&
             !isAddressAlreadySaved(deliveryAddress, savedAddresses)
           }
-          onSaveCurrent={() => {
-            setAddressSheetOpen(false);
-            setTimeout(() => openSaveAddressSheet(), 280);
-          }}
+          onSaveCurrent={openSaveAddressSheet}
           onSelect={(addr) => {
             setDeliveryAddress(formatAddressLine(addr));
             setDeliveryLat(addr.latitude ?? undefined);

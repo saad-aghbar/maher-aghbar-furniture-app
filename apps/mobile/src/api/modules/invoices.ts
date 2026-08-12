@@ -1,9 +1,8 @@
-import { Linking, Share } from 'react-native';
 import type { PaginatedResponse } from '@maher/types';
-import { getAccessToken } from '@/storage/tokens';
 import { apiGet, apiPost } from '../client';
-import { getApiV1Url } from '../config';
 import { toSearchParams, type PageParams } from '../pagination';
+import { openAuthedPdf, withPdfOptions } from '../openPdf';
+import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 
 export type InvoiceLine = {
   id: string;
@@ -77,35 +76,14 @@ export async function createInvoiceFromSalesOrder(salesOrderId: string) {
   return apiPost<Invoice>('/invoices', { salesOrderId });
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return globalThis.btoa(binary);
-}
-
 /** Fetch invoice PDF with Bearer auth and open via data URL / share sheet. */
-export async function openInvoicePdf(id: string): Promise<void> {
-  const token = await getAccessToken();
-  const url = `${getApiV1Url()}/invoices/${encodeURIComponent(id)}/pdf`;
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/pdf',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Invoice PDF failed (${res.status})`);
-  }
-  const buf = await res.arrayBuffer();
-  const dataUrl = `data:application/pdf;base64,${arrayBufferToBase64(buf)}`;
-  const canOpen = await Linking.canOpenURL(dataUrl);
-  if (canOpen) {
-    await Linking.openURL(dataUrl);
-    return;
-  }
-  await Share.share({ url: dataUrl, message: 'Invoice PDF' });
+export async function openInvoicePdf(
+  id: string,
+  opts?: PdfDownloadOptions,
+): Promise<void> {
+  await openAuthedPdf(
+    withPdfOptions(`/invoices/${encodeURIComponent(id)}/pdf`, opts),
+    'Invoice PDF failed',
+    'Invoice PDF',
+  );
 }

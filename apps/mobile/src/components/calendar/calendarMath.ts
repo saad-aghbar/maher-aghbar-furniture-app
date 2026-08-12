@@ -93,6 +93,24 @@ export function ymdInRange(ymd: string, start: string | null, end: string | null
   return true;
 }
 
+/**
+ * Tap-to-build a date range: first tap is start, second is end (swapped if
+ * needed). A third tap starts a new range.
+ */
+export function nextDateRange(
+  start: string,
+  end: string,
+  tapped: string,
+): { start: string; end: string } {
+  if (!start || (start && end)) {
+    return { start: tapped, end: '' };
+  }
+  if (compareYmd(tapped, start) < 0) {
+    return { start: tapped, end: start };
+  }
+  return { start, end: tapped };
+}
+
 /** English weekday short labels Mon→Sun (display only; layout flips for RTL). */
 export const WEEKDAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] as const;
 

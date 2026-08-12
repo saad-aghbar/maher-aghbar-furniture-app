@@ -8,6 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { InlineDateCalendar } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
@@ -602,12 +603,7 @@ export function ProductionTaskSheet({
                   <AppText variant="caption" color="muted" style={{ marginTop: theme.spacing.sm }}>
                     {t('mobile.production.dueDate')}
                   </AppText>
-                  <TextField
-                    value={dueDate}
-                    onChangeText={setDueDate}
-                    placeholder="YYYY-MM-DD"
-                    autoCorrect={false}
-                  />
+                  <InlineDateCalendar value={dueDate} onSelect={setDueDate} resetKey={open} />
                   <HoursMinutesRow
                     sectionLabel={t('mobile.production.dueTime')}
                     hours={dueHour}

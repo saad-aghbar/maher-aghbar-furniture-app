@@ -1,9 +1,8 @@
-import { Linking, Share } from 'react-native';
 import type { PaginatedResponse } from '@maher/types';
-import { getAccessToken } from '@/storage/tokens';
 import { apiGet, apiPost } from '../client';
-import { getApiV1Url } from '../config';
 import { toSearchParams, type PageParams } from '../pagination';
+import { openAuthedPdf, withPdfOptions } from '../openPdf';
+import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 
 export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'CHEQUE' | 'CARD' | 'OTHER';
 
@@ -21,6 +20,8 @@ export type Payment = {
 };
 
 export type StatementEntry = {
+  /** Invoice or payment id — used for per-row PDF download. */
+  entityId?: string;
   date: string;
   type: 'INVOICE' | 'PAYMENT';
   reference: string;
@@ -72,35 +73,30 @@ export async function getStatement(customerId: string) {
   return apiGet<AccountStatement>(`/statements/${encodeURIComponent(customerId)}`);
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return globalThis.btoa(binary);
+/** Fetch statement PDF with Bearer auth and open via data URL / share sheet. */
+export async function openStatementPdf(
+  customerId: string,
+  opts?: PdfDownloadOptions,
+): Promise<void> {
+  await openAuthedPdf(
+    withPdfOptions(
+      `/statements/${encodeURIComponent(customerId)}/pdf`,
+      opts,
+    ),
+    'Statement PDF failed',
+    'Account statement PDF',
+  );
 }
 
-/** Fetch statement PDF with Bearer auth and open via data URL / share sheet. */
-export async function openStatementPdf(customerId: string): Promise<void> {
-  const token = await getAccessToken();
-  const url = `${getApiV1Url()}/statements/${encodeURIComponent(customerId)}/pdf`;
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/pdf',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Statement PDF failed (${res.status})`);
-  }
-  const buf = await res.arrayBuffer();
-  const dataUrl = `data:application/pdf;base64,${arrayBufferToBase64(buf)}`;
-  const canOpen = await Linking.canOpenURL(dataUrl);
-  if (canOpen) {
-    await Linking.openURL(dataUrl);
-    return;
-  }
-  await Share.share({ url: dataUrl, message: 'Account statement PDF' });
+/** Fetch payment receipt PDF with Bearer auth and open via data URL / share sheet. */
+export async function openPaymentPdf(
+  id: string,
+  opts?: PdfDownloadOptions,
+): Promise<void> {
+  await openAuthedPdf(
+    withPdfOptions(`/payments/${encodeURIComponent(id)}/pdf`, opts),
+    'Payment PDF failed',
+    'Payment receipt PDF',
+  );
 }
+

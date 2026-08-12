@@ -20,7 +20,7 @@ export default function UnlockScreen() {
 
   const tryUnlock = async () => {
     setBusy(true);
-    const ok = await promptBiometricUnlock(t('auth.biometricPrompt'));
+    const ok = await promptBiometricUnlock(t('auth.biometricPrompt'), t('common.cancel'));
     setBusy(false);
     if (ok) {
       completeBiometric();

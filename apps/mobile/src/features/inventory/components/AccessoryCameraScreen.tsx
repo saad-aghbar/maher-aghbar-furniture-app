@@ -40,6 +40,7 @@ export function AccessoryCameraScreen({
   const [busy, setBusy] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [mountError, setMountError] = useState(false);
   const { isLandscape, overlayRotation, cameraOrientationProps } =
     useResponsiveCameraOrientation();
 
@@ -97,7 +98,7 @@ export function AccessoryCameraScreen({
 
   return (
     <View style={[styles.root, { backgroundColor: ink }]}>
-      {permission?.granted && !previewUri ? (
+      {permission?.granted && !previewUri && !mountError ? (
         <CameraView
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
@@ -105,6 +106,10 @@ export function AccessoryCameraScreen({
           enableTorch={torch}
           mode="picture"
           onCameraReady={() => setCameraReady(true)}
+          onMountError={() => {
+            setMountError(true);
+            setCameraReady(false);
+          }}
           {...cameraOrientationProps}
         />
       ) : null}
@@ -132,6 +137,25 @@ export function AccessoryCameraScreen({
           <PrimaryButton
             label={t('mobile.scan.allowCamera')}
             onPress={() => void requestPermission()}
+            style={{ marginTop: theme.spacing.lg, alignSelf: 'stretch' }}
+          />
+        </View>
+      ) : null}
+
+      {mountError && permission?.granted && !previewUri ? (
+        <View style={[StyleSheet.absoluteFill, styles.permFallback, { backgroundColor: ink }]}>
+          <AppText variant="title" style={{ color: cream, textAlign: 'center' }}>
+            {t('mobile.returns.cameraUnavailableTitle')}
+          </AppText>
+          <AppText
+            variant="body"
+            style={{ color: creamMuted, textAlign: 'center', marginTop: theme.spacing.sm }}
+          >
+            {t('mobile.returns.cameraUnavailable')}
+          </AppText>
+          <PrimaryButton
+            label={t('mobile.inventory.cancel')}
+            onPress={onCancel}
             style={{ marginTop: theme.spacing.lg, alignSelf: 'stretch' }}
           />
         </View>
@@ -215,7 +239,7 @@ export function AccessoryCameraScreen({
               {sub}
             </AppText>
 
-            {!previewUri && permission?.granted ? (
+            {!previewUri && permission?.granted && !mountError ? (
               <View
                 style={[
                   styles.viewfinder,
@@ -248,7 +272,7 @@ export function AccessoryCameraScreen({
               style={{ flex: 1 }}
             />
           </View>
-        ) : permission?.granted ? (
+        ) : permission?.granted && !mountError ? (
           <View style={[styles.shutterRow, { transform: [{ rotate: overlayRotation }] }]}>
             <Pressable
               accessibilityRole="button"

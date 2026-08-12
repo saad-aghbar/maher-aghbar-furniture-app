@@ -251,6 +251,7 @@ export function OrdersSignatureHome({
         setSearchInput={setSearchInput}
         onOpenFilters={onOpenFilters}
         filterActiveCount={filterActiveCount}
+        dealerSearch={isDealer}
       >
         <View style={{ gap: theme.spacing.md }}>
           {isDealer && onStatusChipChange ? (

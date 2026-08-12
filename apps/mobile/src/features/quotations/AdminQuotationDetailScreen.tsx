@@ -35,6 +35,7 @@ import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import {
@@ -184,6 +185,7 @@ export function AdminQuotationDetailScreen({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const [confirm, setConfirm] = useState<ConfirmKind>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [paymentTerms, setPaymentTerms] = useState('');
@@ -386,9 +388,11 @@ export function AdminQuotationDetailScreen({
 
   const openPdf = async () => {
     if (pdfBusy) return;
+    const opts = await pickPdfOptions();
+    if (!opts) return;
     setPdfBusy(true);
     try {
-      await openQuotationPdf(quotationId);
+      await openQuotationPdf(quotationId, opts);
       void haptics.selection();
     } catch {
       void haptics.error();
@@ -1036,6 +1040,7 @@ export function AdminQuotationDetailScreen({
       </ScrollView>
 
       {sheets}
+      {pdfDownloadSheet}
     </AppScreen>
   );
 }

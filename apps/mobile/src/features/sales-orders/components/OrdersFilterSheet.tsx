@@ -4,6 +4,14 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
+import {
+  MonthCalendar,
+  initialCursorFromValue,
+  nextDateRange,
+  parseYmd,
+  todayYmd,
+  type CalendarCursor,
+} from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
@@ -146,6 +154,15 @@ export function countActiveOrderFilters(
   return n;
 }
 
+function formatFilterYmd(
+  ymd: string,
+  formatDate: (value: Date | string | number) => string,
+): string {
+  const parsed = parseYmd(ymd);
+  if (!parsed) return '—';
+  return formatDate(new Date(parsed.y, parsed.m, parsed.d));
+}
+
 export const defaultOrdersFilterDraft: OrdersFilterDraft = {
   dealerId: 'all',
   approval: 'any',
@@ -170,7 +187,7 @@ export function OrdersFilterSheet({
   showDealers = false,
   showApproval = true,
 }: OrdersFilterSheetProps) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, formatDate } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const insets = useSafeAreaInsets();
@@ -181,10 +198,18 @@ export function OrdersFilterSheet({
     includeApproval: showApproval,
   });
   const [dealerQuery, setDealerQuery] = useState('');
+  const [rangeCursor, setRangeCursor] = useState<CalendarCursor>(() =>
+    initialCursorFromValue(draft.deliveryFrom || todayYmd()),
+  );
 
   useEffect(() => {
     if (!open) setDealerQuery('');
   }, [open]);
+
+  useEffect(() => {
+    if (!open || draft.deliveryPreset !== 'custom') return;
+    setRangeCursor(initialCursorFromValue(draft.deliveryFrom || todayYmd()));
+  }, [open, draft.deliveryPreset]);
 
   const setDeliveryPreset = (preset: OrdersDeliveryPreset) => {
     void haptics.selection();
@@ -299,24 +324,41 @@ export function OrdersFilterSheet({
               ))}
             </View>
             {draft.deliveryPreset === 'custom' ? (
-              <View style={{ gap: theme.spacing.md, marginTop: theme.spacing.sm }}>
-                <TextField
-                  label={t('mobile.orders.deliveryFrom')}
-                  value={draft.deliveryFrom}
-                  onChangeText={(deliveryFrom) =>
-                    onChange({ ...draft, deliveryFrom, deliveryPreset: 'custom' })
-                  }
-                  placeholder="YYYY-MM-DD"
-                  autoCapitalize="none"
-                />
-                <TextField
-                  label={t('mobile.orders.deliveryTo')}
-                  value={draft.deliveryTo}
-                  onChangeText={(deliveryTo) =>
-                    onChange({ ...draft, deliveryTo, deliveryPreset: 'custom' })
-                  }
-                  placeholder="YYYY-MM-DD"
-                  autoCapitalize="none"
+              <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
+                <AppText
+                  variant="caption"
+                  color="secondary"
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {t('mobile.orders.filterDateRangeHint')}
+                </AppText>
+                <AppText
+                  variant="label"
+                  weight="medium"
+                  style={{
+                    color: colors.textPrimary,
+                    textAlign: isRTL ? 'right' : 'left',
+                  }}
+                >
+                  {`${t('mobile.orders.deliveryFrom')} ${formatFilterYmd(draft.deliveryFrom, formatDate)}  ·  ${t('mobile.orders.deliveryTo')} ${formatFilterYmd(draft.deliveryTo, formatDate)}`}
+                </AppText>
+                <MonthCalendar
+                  rangeStart={draft.deliveryFrom}
+                  rangeEnd={draft.deliveryTo}
+                  onSelect={(ymd) => {
+                    const next = nextDateRange(draft.deliveryFrom, draft.deliveryTo, ymd);
+                    onChange({
+                      ...draft,
+                      deliveryFrom: next.start,
+                      deliveryTo: next.end,
+                      deliveryPreset: 'custom',
+                    });
+                  }}
+                  monthCursor={rangeCursor}
+                  onMonthChange={setRangeCursor}
+                  disableUnavailable={false}
+                  showAccentRail={false}
+                  compact
                 />
               </View>
             ) : null}

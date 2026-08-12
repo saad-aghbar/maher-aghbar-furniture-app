@@ -14,23 +14,42 @@ type Props = {
   onPress: () => void;
   onPdf?: () => void;
   currencySuffix?: string;
+  /** Dealer portal — hide dealer name (PDF still available when onPdf is passed). */
+  dealerFacing?: boolean;
 };
 
 /**
  * Outstanding-first invoice floor card — matches admin-web list cards.
  */
-export function InvoiceBoardCard({ invoice, onPress, onPdf, currencySuffix = 'JOD' }: Props) {
+export function InvoiceBoardCard({
+  invoice,
+  onPress,
+  onPdf,
+  currencySuffix = 'JOD',
+  dealerFacing = false,
+}: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const overdue = invoice.isOverdue;
   const accent = overdue ? colors.error : colors.brand;
+  const showPdf = Boolean(onPdf);
+  const dealerOrderLabel = dealerFacing
+    ? (() => {
+        const v = t('mobile.dealerAccount.yourOrderNumber');
+        return v === 'mobile.dealerAccount.yourOrderNumber'
+          ? t('accounting.dealerOrderShort')
+          : v;
+      })()
+    : t('accounting.dealerOrderShort');
 
   return (
     <AnimatedPressable
       variant="card"
       accessibilityRole="button"
-      accessibilityLabel={`${invoice.number} ${invoice.dealerName}`}
+      accessibilityLabel={
+        dealerFacing ? invoice.number : `${invoice.number} ${invoice.dealerName}`
+      }
       onPress={() => {
         void haptics.selection();
         onPress();
@@ -80,12 +99,12 @@ export function InvoiceBoardCard({ invoice, onPress, onPdf, currencySuffix = 'JO
             gap: theme.spacing.md,
           }}
         >
-          {onPdf ? (
+          {showPdf ? (
             <AnimatedPressable
               variant="button"
               onPress={() => {
                 void haptics.selection();
-                onPdf();
+                onPdf?.();
               }}
               hitSlop={8}
             >
@@ -144,14 +163,16 @@ export function InvoiceBoardCard({ invoice, onPress, onPdf, currencySuffix = 'JO
             >
               {invoice.number}
             </AppText>
-            <AppText
-              variant="caption"
-              color="secondary"
-              numberOfLines={2}
-              style={{ textAlign: isRTL ? 'right' : 'left', lineHeight: 18 }}
-            >
-              {invoice.dealerName}
-            </AppText>
+            {!dealerFacing ? (
+              <AppText
+                variant="caption"
+                color="secondary"
+                numberOfLines={2}
+                style={{ textAlign: isRTL ? 'right' : 'left', lineHeight: 18 }}
+              >
+                {invoice.dealerName}
+              </AppText>
+            ) : null}
           </View>
         </View>
 
@@ -170,7 +191,7 @@ export function InvoiceBoardCard({ invoice, onPress, onPdf, currencySuffix = 'JO
             ) : null}
             {invoice.dealerOrderNumber ? (
               <RefChip
-                label={`${t('accounting.dealerOrderShort')} ${invoice.dealerOrderNumber}`}
+                label={`${dealerOrderLabel} ${invoice.dealerOrderNumber}`}
               />
             ) : null}
           </View>

@@ -443,11 +443,19 @@ export class ProductionService {
     };
   }
 
-  async listAssignableWorkers(q?: string) {
+  async listAssignableWorkers(q?: string, stageDefinitionId?: string) {
+    const stageId = stageDefinitionId?.trim() || undefined;
     const where: Prisma.UserWhereInput = {
       archivedAt: null,
       isActive: true,
       roles: { some: { role: { code: 'PRODUCTION_WORKER' } } },
+      ...(stageId
+        ? {
+            workerSkills: {
+              some: { stageDefinitionId: stageId, isActive: true },
+            },
+          }
+        : {}),
       ...(q?.trim()
         ? {
             OR: [

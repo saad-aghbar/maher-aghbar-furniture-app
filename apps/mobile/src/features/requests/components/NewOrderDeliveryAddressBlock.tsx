@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { CustomerAddress } from '@/api/modules/customers';
 import { AppText } from '@/components/AppText';
@@ -7,6 +7,7 @@ import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { formatAddressLine, isAddressAlreadySaved } from '../newOrderValidation';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
   savedAddresses: CustomerAddress[];
@@ -209,7 +210,7 @@ export function NewOrderDeliveryAddressBlock({
             >
               <Ionicons name="home-outline" size={15} color={colors.brand} />
             </View>
-            <TextInput
+            <AppTextInput
               value={deliveryAddress}
               onChangeText={(v) => {
                 onChangeAddress(v);

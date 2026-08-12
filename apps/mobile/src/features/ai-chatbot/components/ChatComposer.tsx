@@ -1,4 +1,4 @@
-import { Platform, TextInput, View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import {
   SURFACE_TAB_BAR_HEIGHT,
 } from '@/navigation/tabBarClearance';
 import { resolveAppFontStyle, useTheme } from '@/theme';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
   value: string;
@@ -91,7 +92,7 @@ export function ChatComposer({ value, onChangeText, onSend, disabled }: Props) {
             gap: 4,
           }}
         >
-          <TextInput
+          <AppTextInput
             value={value}
             onChangeText={onChangeText}
             placeholder={t('mobile.aiChat.placeholder')}

@@ -3,7 +3,6 @@ import {
   FlatList,
   RefreshControl,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import type { Href } from 'expo-router';
@@ -50,6 +49,7 @@ import {
   useUsersInfiniteQuery,
 } from './query';
 import { roleCodeForSegment, type UsersSegment } from './segment';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 function UsersScreenTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
   const { t, isRTL } = useLocale();
@@ -123,8 +123,9 @@ export function UsersListScreen() {
   }, [segment]);
 
   const showRoleFilter = segment === 'all';
-  const showDepartmentFilter = segment !== 'customers';
-  const showDepartmentColumn = segment !== 'customers';
+  // Department is unused for Worker/Admin/Customer; only relevant for other roles under "all".
+  const showDepartmentFilter = segment === 'all';
+  const showDepartmentColumn = segment === 'all';
 
   const listFilters = useMemo(() => {
     const segmentRole = roleCodeForSegment(segment);
@@ -328,7 +329,7 @@ export function UsersListScreen() {
               }}
             >
               <SearchBarShell>
-                <TextInput
+                <AppTextInput
                   value={q}
                   onChangeText={setQ}
                   placeholder={t('users.searchPlaceholder')}

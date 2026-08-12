@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import type { InventoryCategoryGroup, InventoryItem } from '@/api/modules/inventory';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
@@ -8,6 +8,7 @@ import { useTheme } from '@/theme';
 import type { OrderCostMaterial } from '../selectOrderDetail';
 import { MaterialPickerSheet } from './MaterialPickerSheet';
 import { OrderBoardCard, OrderSectionHeader } from './OrderBoardCard';
+import { AppTextInput } from '@/components/forms/AppTextInput';
 
 export type CostBreakdownEdit = {
   fabricQty: string;
@@ -325,7 +326,7 @@ function FieldInline({
       <AppText variant="caption" color="muted">
         {label}
       </AppText>
-      <TextInput
+      <AppTextInput
         value={value}
         onChangeText={onChangeText}
         keyboardType="decimal-pad"

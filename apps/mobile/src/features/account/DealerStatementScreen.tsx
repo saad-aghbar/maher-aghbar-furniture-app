@@ -1,49 +1,119 @@
+import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import type { Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { LastUpdatedLabel } from '@/components/feedback/LastUpdatedLabel';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import {
-  DealerBalanceCard,
-  DealerEmptyState,
-  DealerStatusBadge,
-} from '@/features/dealer-ui';
-import { getStatement, openStatementPdf, type Payment } from '@/api/modules/payments';
+import { DealerEmptyState, DealerSearchBar } from '@/features/dealer-ui';
+import { openInvoicePdf } from '@/api/modules/invoices';
+import { getStatement, openPaymentPdf, openStatementPdf } from '@/api/modules/payments';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { useLocale } from '@/i18n';
+import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
-import { MoreBoard } from '@/features/more/components/MoreBoard';
+import { StatementActivityCard } from './components/StatementActivityCard';
+import { StatementBalanceBoard } from './components/StatementBalanceBoard';
+import {
+  StatementDateSheet,
+  StatementDateTrigger,
+} from './components/StatementDateSheet';
+import { StatementTypeRail } from './components/StatementTypeRail';
+import {
+  datePresetRange,
+  filterStatementRows,
+  selectStatementRows,
+  selectStatementSummary,
+  type StatementDatePreset,
+  type StatementTypeFilter,
+} from './selectStatement';
 
-function methodTone(method: string): 'neutral' | 'success' | 'warning' | 'info' {
-  const m = method.toUpperCase();
-  if (m === 'CASH') return 'success';
-  if (m === 'CHEQUE') return 'warning';
-  if (m === 'BANK_TRANSFER') return 'info';
-  return 'neutral';
+const BACK_FALLBACK = '/(app)/(customer)/(tabs)/account' as Href;
+
+function StatementScreenTitle({
+  titleWeight,
+  customerName,
+  updatedAt,
+}: {
+  titleWeight: 'medium' | 'semibold';
+  customerName?: string | null;
+  updatedAt?: number;
+}) {
+  const { t, isRTL } = useLocale();
+  const { theme } = useTheme();
+  const leadSize = theme.sizes.touch.min;
+
+  return (
+    <View style={{ gap: theme.spacing.xs }}>
+      <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
+            zIndex: 1,
+            justifyContent: 'center',
+          }}
+        >
+          <ScreenBackLead fallback={BACK_FALLBACK} />
+        </View>
+        <AppText
+          variant="largeTitle"
+          weight={titleWeight}
+          align="center"
+          numberOfLines={1}
+          style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
+        >
+          {t('mobile.account.statementTitle')}
+        </AppText>
+      </View>
+      {customerName ? (
+        <AppText
+          variant="caption"
+          color="muted"
+          align="center"
+          numberOfLines={1}
+          style={{ paddingHorizontal: theme.spacing.lg }}
+        >
+          {customerName}
+        </AppText>
+      ) : null}
+      <View style={{ alignItems: 'center' }}>
+        <LastUpdatedLabel updatedAt={updatedAt} />
+      </View>
+    </View>
+  );
 }
 
 /**
- * Premium banking-style account statement for dealers.
- * Totals, outstanding, ledger entries, and Cash/Cheque/Transfer payments.
+ * Dealer account statement — floor balance board + filterable ledger activity.
  */
 export function DealerStatementScreen() {
   const { user } = useAuth();
-  const { t, formatDate, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { t, isRTL, locale } = useLocale();
+  const { theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const customerId = user?.customerId;
   const allowed = can(user, 'statement.read') && Boolean(customerId);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<StatementTypeFilter>('all');
+  const [datePreset, setDatePreset] = useState<StatementDatePreset>('all');
+  const [dateSheetOpen, setDateSheetOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
   const query = useQuery({
     queryKey: queryKeys.statements.detail(customerId ?? ''),
@@ -51,9 +121,74 @@ export function DealerStatementScreen() {
     enabled: allowed,
   });
 
+  const summary = useMemo(
+    () => (query.data ? selectStatementSummary(query.data) : null),
+    [query.data],
+  );
+
+  const allRows = useMemo(
+    () => (query.data ? selectStatementRows(query.data) : []),
+    [query.data],
+  );
+
+  const dateRange = useMemo(() => datePresetRange(datePreset), [datePreset]);
+
+  const filteredRows = useMemo(
+    () =>
+      filterStatementRows(allRows, {
+        type: typeFilter,
+        q: search,
+        dateFrom: dateRange.dateFrom,
+        dateTo: dateRange.dateTo,
+      }),
+    [allRows, typeFilter, search, dateRange.dateFrom, dateRange.dateTo],
+  );
+
+  const filtersActive =
+    typeFilter !== 'all' || datePreset !== 'all' || search.trim().length > 0;
+
+  const downloadPdf = async () => {
+    if (!customerId || pdfBusy) return;
+    const opts = await pickPdfOptions();
+    if (!opts) return;
+    setPdfBusy(true);
+    try {
+      await openStatementPdf(customerId, opts);
+    } catch {
+      showToast({ variant: 'error', message: t('mobile.account.pdfFailed') });
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const downloadRowPdf = async (row: (typeof filteredRows)[number]) => {
+    if (!row.entityId) {
+      showToast({ variant: 'error', message: t('mobile.account.pdfFailed') });
+      return;
+    }
+    const opts = await pickPdfOptions();
+    if (!opts) return;
+    try {
+      if (row.type === 'INVOICE') {
+        await openInvoicePdf(row.entityId, opts);
+      } else {
+        await openPaymentPdf(row.entityId, opts);
+      }
+    } catch {
+      showToast({
+        variant: 'error',
+        message:
+          row.type === 'INVOICE'
+            ? t('mobile.invoices.pdfFailed')
+            : t('mobile.account.paymentPdfFailed'),
+      });
+    }
+  };
+
   if (!allowed) {
     return (
-      <AppScreen backFallback={'/(app)/(customer)/(tabs)/account' as Href}>
+      <AppScreen>
+        <StatementScreenTitle titleWeight={titleWeight} />
         <DealerEmptyState
           title={t('mobile.noModules')}
           body={t('mobile.noModulesHint')}
@@ -64,7 +199,8 @@ export function DealerStatementScreen() {
 
   if (query.isError && !query.data) {
     return (
-      <AppScreen backFallback={'/(app)/(customer)/(tabs)/account' as Href}>
+      <AppScreen>
+        <StatementScreenTitle titleWeight={titleWeight} />
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.account.errorTitle')}
@@ -76,30 +212,11 @@ export function DealerStatementScreen() {
     );
   }
 
-  const stmt = query.data;
-  const payments = stmt?.payments ?? [];
-  const entries = stmt?.entries ?? [];
-  /** Prefer ledger entries when present; otherwise fall back to payment rows. */
-  const listData: Array<
-    | { kind: 'entry'; id: string; date: string; label: string; amount: string; side: 'debit' | 'credit' }
-    | { kind: 'payment'; id: string; payment: Payment }
-  > =
-    entries.length > 0
-      ? entries.map((e, i) => ({
-          kind: 'entry' as const,
-          id: `e-${e.reference}-${i}`,
-          date: e.date,
-          label: e.description || e.reference,
-          amount: e.type === 'INVOICE' ? e.debit : e.credit,
-          side: (e.type === 'INVOICE' ? 'debit' : 'credit') as 'debit' | 'credit',
-        }))
-      : payments.map((p) => ({ kind: 'payment' as const, id: p.id, payment: p }));
-
   return (
-    <AppScreen backFallback={'/(app)/(customer)/(tabs)/account' as Href}>
+    <AppScreen>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
-        data={listData}
+        data={filteredRows}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           gap: theme.spacing.md,
@@ -114,178 +231,88 @@ export function DealerStatementScreen() {
         }
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
-            <AppText
-              variant="title"
-              weight={titleWeight}
-              style={{ textAlign: isRTL ? 'right' : 'left' }}
+            <StatementScreenTitle
+              titleWeight={titleWeight}
+              customerName={summary?.customerLabel}
+              updatedAt={query.dataUpdatedAt}
+            />
+
+            {summary ? (
+              <StatementBalanceBoard
+                summary={summary}
+                onDownloadPdf={() => void downloadPdf()}
+                pdfBusy={pdfBusy}
+              />
+            ) : null}
+
+            <DealerSearchBar
+              value={search}
+              onChangeText={setSearch}
+              placeholder={t('mobile.account.searchPlaceholder')}
+            />
+            <StatementTypeRail value={typeFilter} onChange={setTypeFilter} />
+            <StatementDateTrigger
+              value={datePreset}
+              onPress={() => setDateSheetOpen(true)}
+            />
+
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: theme.spacing.sm,
+                marginTop: theme.spacing.xs,
+              }}
             >
-              {t('mobile.account.statementTitle')}
-            </AppText>
-            {stmt ? (
-              <>
-                <AppText
-                  variant="caption"
-                  color="secondary"
-                  style={{ textAlign: isRTL ? 'right' : 'left' }}
-                >
-                  {stmt.customer.name} ({stmt.customer.code})
-                </AppText>
-                <LastUpdatedLabel updatedAt={query.dataUpdatedAt} />
-                <DealerBalanceCard
-                  label={t('mobile.account.outstanding')}
-                  amountLabel={`${stmt.outstandingBalance} ${stmt.currency}`}
-                  hint={t('mobile.account.asOf', { date: formatDate(stmt.asOf) })}
-                />
-                <View
-                  style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  <MoreBoard
-                    style={{
-                      flex: 1,
-                      padding: theme.spacing.md,
-                      paddingStart: theme.spacing.md + 4,
-                    }}
-                  >
-                    <AppText variant="caption" color="secondary">
-                      {t('mobile.account.totalInvoiced')}
-                    </AppText>
-                    <AppText weight="semibold" dir="ltr">
-                      {stmt.totalInvoiced}
-                    </AppText>
-                  </MoreBoard>
-                  <MoreBoard
-                    style={{
-                      flex: 1,
-                      padding: theme.spacing.md,
-                      paddingStart: theme.spacing.md + 4,
-                    }}
-                  >
-                    <AppText variant="caption" color="secondary">
-                      {t('mobile.account.totalPaid')}
-                    </AppText>
-                    <AppText weight="semibold" dir="ltr">
-                      {stmt.totalPaid}
-                    </AppText>
-                  </MoreBoard>
-                </View>
-                <SecondaryButton
-                  label={t('mobile.account.downloadPdf')}
-                  onPress={() => {
-                    void openStatementPdf(customerId!).catch(() => {
-                      showToast({
-                        variant: 'error',
-                        message: t('mobile.account.pdfFailed'),
-                      });
-                    });
-                  }}
-                  style={{ borderRadius: theme.radius.xl }}
-                />
-                <AppText
-                  variant="heading"
-                  weight={titleWeight}
-                  style={{ textAlign: isRTL ? 'right' : 'left' }}
-                >
-                  {t('mobile.account.activity')}
-                </AppText>
-              </>
-            ) : (
-              <AppText>{t('mobile.account.loading')}</AppText>
-            )}
+              <AppText variant="label" weight={titleWeight}>
+                {t('mobile.account.activity')}
+              </AppText>
+              <AppText variant="caption" color="muted">
+                {t('mobile.account.activityCount', {
+                  count: String(filteredRows.length),
+                })}
+              </AppText>
+            </View>
           </View>
         }
         ListEmptyComponent={
-          stmt ? (
+          query.isLoading ? (
+            <AppText variant="caption" color="muted">
+              {t('mobile.account.loading')}
+            </AppText>
+          ) : filtersActive ? (
             <DealerEmptyState
-              title={t('mobile.account.emptyPayments')}
-              body={t('mobile.account.emptyPaymentsBody')}
+              title={t('mobile.account.emptyFilterTitle')}
+              body={t('mobile.account.emptyFilterBody')}
             />
-          ) : null
+          ) : (
+            <DealerEmptyState
+              title={t('mobile.account.emptyActivity')}
+              body={t('mobile.account.emptyActivityBody')}
+            />
+          )
         }
-        renderItem={({ item }) => {
-          if (item.kind === 'entry') {
-            return (
-              <MoreBoard
-                style={{
-                  padding: theme.spacing.md,
-                  paddingStart: theme.spacing.md + 4,
-                  gap: theme.spacing.xs,
-                  alignItems: isRTL ? 'flex-end' : 'flex-start',
-                }}
-              >
-                <View
-                  style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    justifyContent: 'space-between',
-                    alignSelf: 'stretch',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  <AppText weight="semibold" style={{ flex: 1 }} numberOfLines={2}>
-                    {item.label}
-                  </AppText>
-                  <AppText
-                    weight="semibold"
-                    dir="ltr"
-                    style={{
-                      color: item.side === 'debit' ? colors.error : colors.success,
-                    }}
-                  >
-                    {item.side === 'debit' ? `−${item.amount}` : `+${item.amount}`}
-                  </AppText>
-                </View>
-                <AppText variant="caption" color="secondary" dir="ltr">
-                  {formatDate(item.date)}
-                </AppText>
-              </MoreBoard>
-            );
-          }
-          const payment = item.payment;
-          const methodKey = `mobile.account.method.${payment.method}`;
-          const methodLabel = (() => {
-            const label = t(methodKey);
-            return label === methodKey ? String(payment.method) : label;
-          })();
-          return (
-            <MoreBoard
-              style={{
-                padding: theme.spacing.md,
-                paddingStart: theme.spacing.md + 4,
-                gap: theme.spacing.xs,
-                alignItems: isRTL ? 'flex-end' : 'flex-start',
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  justifyContent: 'space-between',
-                  alignSelf: 'stretch',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <AppText weight="semibold">{payment.number}</AppText>
-                <DealerStatusBadge
-                  label={methodLabel}
-                  tone={methodTone(String(payment.method))}
-                />
-              </View>
-              <AppText variant="caption" color="secondary" dir="ltr">
-                {formatDate(payment.paymentDate)}
-              </AppText>
-              <AppText weight="medium" dir="ltr">
-                {String(payment.amount)}
-              </AppText>
-              {payment.referenceNumber ? (
-                <AppText variant="caption" color="secondary">
-                  {payment.referenceNumber}
-                </AppText>
-              ) : null}
-            </MoreBoard>
-          );
-        }}
+        renderItem={({ item, index }) => (
+          <ListItemEnter index={index}>
+            <StatementActivityCard
+              row={item}
+              currency={summary?.currency ?? 'JOD'}
+              onDownloadPdf={
+                item.entityId ? () => void downloadRowPdf(item) : undefined
+              }
+            />
+          </ListItemEnter>
+        )}
       />
+
+      <StatementDateSheet
+        open={dateSheetOpen}
+        onClose={() => setDateSheetOpen(false)}
+        value={datePreset}
+        onChange={setDatePreset}
+      />
+      {pdfDownloadSheet}
     </AppScreen>
   );
 }

@@ -1,20 +1,27 @@
-import { type ReactNode } from 'react';
-import { View } from 'react-native';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { Switch, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAuth } from '@/auth/AuthProvider';
+import {
+  canUseBiometrics,
+  isBiometricUnlockEnabled,
+  promptBiometricUnlock,
+  setBiometricUnlockEnabled,
+} from '@/auth/biometrics';
 import { AppText } from '@/components/AppText';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { DestructiveButton } from '@/components/buttons/DestructiveButton';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
+import { useToast } from '@/components/feedback/Toast';
 import { Divider } from '@/components/layout/Divider';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { useLocale } from '@/i18n';
-import { useReducedMotion } from '@/motion';
+import { haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
 /**
@@ -26,8 +33,60 @@ export function WorkerProfileScreen() {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const { showToast } = useToast();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioEnabled, setBioEnabled] = useState(false);
+  const [bioBusy, setBioBusy] = useState(false);
+
+  const refreshBio = useCallback(async () => {
+    const [available, enabled] = await Promise.all([
+      canUseBiometrics(),
+      isBiometricUnlockEnabled(),
+    ]);
+    setBioAvailable(available);
+    setBioEnabled(enabled);
+  }, []);
+
+  useEffect(() => {
+    void refreshBio();
+  }, [refreshBio]);
+
+  async function onToggleBiometrics(next: boolean) {
+    if (bioBusy) return;
+    setBioBusy(true);
+    try {
+      if (next) {
+        const ok = await promptBiometricUnlock(t('auth.biometricPrompt'), t('common.cancel'));
+        if (!ok) {
+          void haptics.error();
+          showToast({
+            variant: 'error',
+            message: t('mobile.more.biometricEnableFailed'),
+          });
+          return;
+        }
+        await setBiometricUnlockEnabled(true);
+        setBioEnabled(true);
+        void haptics.confirmMedium();
+        showToast({
+          variant: 'success',
+          message: t('auth.biometricEnabled'),
+        });
+      } else {
+        await setBiometricUnlockEnabled(false);
+        setBioEnabled(false);
+        void haptics.selection();
+        showToast({
+          variant: 'success',
+          message: t('auth.biometricDisabled'),
+        });
+      }
+    } finally {
+      setBioBusy(false);
+    }
+  }
 
   if (!user) return null;
 
@@ -177,6 +236,41 @@ export function WorkerProfileScreen() {
                 <ExpandableLocaleSwitcher expandToward={isRTL ? 'start' : 'end'} />
               }
             />
+          </MoreBoard>
+        </Animated.View>
+
+        <Animated.View entering={enter(130)} style={{ gap: theme.spacing.sm }}>
+          <SectionLabel label={t('mobile.more.securitySection')} locale={locale} />
+          <MoreBoard
+            style={{
+              padding: theme.spacing.lg,
+              paddingLeft: isRTL ? theme.spacing.lg : theme.spacing.lg + 4,
+              paddingRight: isRTL ? theme.spacing.lg + 4 : theme.spacing.lg,
+              gap: theme.spacing.md,
+            }}
+          >
+            {bioAvailable ? (
+              <PrefRow
+                label={t('mobile.more.biometricLabel')}
+                hint={t('mobile.more.biometricHint')}
+                isRTL={isRTL}
+                titleWeight={titleWeight}
+                control={
+                  <Switch
+                    value={bioEnabled}
+                    disabled={bioBusy}
+                    onValueChange={(v) => void onToggleBiometrics(v)}
+                    trackColor={{ false: colors.border, true: colors.brandSoft }}
+                    thumbColor={bioEnabled ? colors.brand : colors.surfaceSecondary}
+                    accessibilityLabel={t('mobile.more.biometricLabel')}
+                  />
+                }
+              />
+            ) : (
+              <AppText variant="caption" color="muted" weight="regular">
+                {t('mobile.more.biometricUnavailable')}
+              </AppText>
+            )}
           </MoreBoard>
         </Animated.View>
 
