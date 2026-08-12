@@ -66,5 +66,12 @@
   "FAIL": "راسب",
   "NOT_APPLICABLE": "غير منطبق",
   "IN_TRANSIT": "قيد النقل",
-  "POSTED": "مرحّل"
+  "POSTED": "مرحّل",
+  "PROPOSED": "مقترح",
+  "SUPERSEDED": "مستبدل",
+  "NEEDS_REVIEW": "يحتاج مراجعة",
+  "PROVISIONAL": "مبدئي",
+  "ESTIMATED": "مُقدّر",
+  "AWAITING_APPROVAL": "بانتظار الاعتماد",
+  "AT_RISK": "معرض للخطر"
 }

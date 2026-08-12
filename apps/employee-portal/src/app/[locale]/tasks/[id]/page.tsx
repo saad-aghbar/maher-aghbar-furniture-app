@@ -2,8 +2,10 @@
 
 import { BackButton } from '@/components/back-button';
 import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client';
+import { isScheduledForToday, toDateOnly } from '@/lib/scheduling';
 import {
   Alert,
+  Badge,
   Button,
   Card,
   ErrorState,
@@ -16,7 +18,7 @@ import {
 } from '@maher/ui';
 import { localizedName, translateApiError } from '@maher/i18n';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Armchair, ImageIcon } from 'lucide-react';
+import { Armchair, CalendarClock, ImageIcon } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -29,6 +31,8 @@ interface TaskDetail {
   priority: string;
   factoryOrderNumber?: string | null;
   salesOrderNumber?: string | null;
+  plannedStart?: string | null;
+  plannedCompletion?: string | null;
   productImageUrl?: string | null;
   timing?: {
     status: string;
@@ -205,6 +209,8 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
       : null);
   const qty =
     data.productionOrder?.quantity != null ? Number(data.productionOrder.quantity) : null;
+  const scheduledToday =
+    isScheduledForToday(data.plannedStart) || isScheduledForToday(data.plannedCompletion);
 
   return (
     <div className="space-y-4">
@@ -223,6 +229,12 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
             <span className="text-xs text-text-secondary">
               {t('priority')}: {data.priority}
             </span>
+            {scheduledToday ? (
+              <Badge variant="brand">
+                <CalendarClock className="h-3 w-3" />
+                {t('scheduledForToday')}
+              </Badge>
+            ) : null}
           </div>
         }
       />
@@ -271,6 +283,22 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
                   <Ltr>{data.number}</Ltr>
                 </p>
               </div>
+              {data.plannedStart ? (
+                <div>
+                  <p className="text-xs text-text-tertiary">{t('plannedStart')}</p>
+                  <p className="mt-0.5 font-medium">
+                    <Ltr>{toDateOnly(data.plannedStart)}</Ltr>
+                  </p>
+                </div>
+              ) : null}
+              {data.plannedCompletion ? (
+                <div>
+                  <p className="text-xs text-text-tertiary">{t('plannedCompletion')}</p>
+                  <p className="mt-0.5 font-medium">
+                    <Ltr>{toDateOnly(data.plannedCompletion)}</Ltr>
+                  </p>
+                </div>
+              ) : null}
             </div>
 
             <div>

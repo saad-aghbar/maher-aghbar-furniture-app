@@ -42,6 +42,10 @@ export type ProductionFlowModel = {
   status: string;
   progressPercent: number;
   estimatedDelivery: string | null;
+  /** True when estimatedDelivery reflects a scheduler-committed date (vs. requested). */
+  isCommittedDelivery: boolean;
+  /** Dealer-safe promise state, when the scheduling module has projected one. */
+  promiseState: string | null;
   stages: ProductionFlowStage[];
   role: ProductionFlowRole;
   source: 'sales-order' | 'production-order';
@@ -334,6 +338,7 @@ export function selectProductionFlowFromSalesOrder(
   if (role === 'dealer') {
     stages = stages.map(enforceDealerStageStrip);
   }
+  const committed = order.committedDeliveryDate ?? null;
   return {
     id: order.id,
     number: order.number,
@@ -341,10 +346,13 @@ export function selectProductionFlowFromSalesOrder(
     status: order.status,
     progressPercent: Number(order.progressPercent ?? 0),
     estimatedDelivery:
+      committed ??
       order.requiredDeliveryDate ??
       order.requestedDeliveryDate ??
       order.customerRequest?.requiredDeliveryDate ??
       null,
+    isCommittedDelivery: Boolean(committed),
+    promiseState: order.promiseState ?? null,
     stages,
     role,
     source: 'sales-order',
@@ -366,13 +374,16 @@ export function selectProductionFlowFromProductionOrder(
     order.product?.nameEn ||
     order.productDescription ||
     order.number;
+  const committed = order.committedDeliveryDate ?? null;
   return {
     id: order.id,
     number: order.number,
     title,
     status: order.status,
     progressPercent: Number(order.progressPercent ?? 0),
-    estimatedDelivery: order.requiredDeliveryDate ?? null,
+    estimatedDelivery: committed ?? order.requiredDeliveryDate ?? null,
+    isCommittedDelivery: Boolean(committed),
+    promiseState: order.promiseState ?? null,
     stages,
     role,
     source: 'production-order',

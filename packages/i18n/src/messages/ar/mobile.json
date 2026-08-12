@@ -370,6 +370,8 @@
     "navUsersHint": "الأشخاص والصلاحيات",
     "navReturns": "المرتجعات",
     "navReturnsHint": "الموافقات وإعادة التخزين",
+    "navScheduling": "الجدولة",
+    "navSchedulingHint": "الموافقات والطلبات المعرضة للخطر",
     "homeDestEyebrow": "إلى أين",
     "homeDestTitle": "أماكنك",
     "homeDestHint": "المنزل باب، لا تقرير.",
@@ -450,6 +452,7 @@
     "activeOrders": "الطلبات النشطة",
     "nearDelivery": "قرب التسليم",
     "nearDeliveryEmpty": "لا شيء يقترب من التسليم بعد.",
+    "committedDeliveryLabel": "مؤكد {date}",
     "featuredModels": "نماذج مميزة",
     "metrics": {
       "activeOrders": "نشطة",
@@ -673,7 +676,10 @@
       "DESIGN_ISSUE": "تصميم",
       "PREVIOUS_STAGE_DEFECT": "مرحلة سابقة",
       "OTHER": "أخرى"
-    }
+    },
+    "cardScheduled": "مجدول",
+    "scheduledToday": "مجدول لليوم",
+    "timerScheduledStart": "موعد البدء المجدول: {date}"
   },
   "aiChat": {
     "title": "روبوت المحادثة",
@@ -1125,7 +1131,9 @@
       "images": "الصور",
       "attachments": "المرفقات",
       "estimatedTotal": "الإجمالي التقديري",
-      "unitPrice": "سعر الوحدة"
+      "unitPrice": "سعر الوحدة",
+      "requestedDelivery": "التسليم المطلوب",
+      "estimatedDelivery": "التسليم المتوقع"
     },
     "submittedTitle": "تم تقديم الطلب!",
     "submittedBody": "تم إرسال الطلب {number} بنجاح.",
@@ -1199,7 +1207,49 @@
       "deliveryRequired": "أدخل عنوان التسليم للمتابعة.",
       "phoneInvalid": "أدخل رقم هاتف صالحاً، أو اتركه فارغاً.",
       "saveFailed": "تعذّر حفظ المسودة. تحقق من الاتصال وحاول مرة أخرى.",
-      "submitFailed": "تعذّر إرسال الطلب. تحقق من الاتصال وحاول مرة أخرى."
+      "submitFailed": "تعذّر إرسال الطلب. تحقق من الاتصال وحاول مرة أخرى.",
+      "dateInvalid": "أدخل تاريخاً صحيحاً (YYYY-MM-DD)، أو اتركه فارغاً."
+    },
+    "delivery": {
+      "title": "موعد التسليم",
+      "checking": "جارٍ التحقق من التوفر…",
+      "checkFailed": "تعذّر التحقق من التوفر. يمكنك المتابعة بالإرسال — سنؤكد المواعيد بعد المراجعة.",
+      "unavailable": "لا يمكننا تقدير موعد التسليم بعد — سنؤكده بعد الإرسال.",
+      "earliest": "أقرب موعد متاح: {date}",
+      "earliestChip": "الأقرب",
+      "infeasible": "هذا التاريخ غير متاح بعد — سنؤكد أقرب موعد ممكن.",
+      "infeasibleWithSuggestion": "هذا التاريخ غير متاح — أقرب موعد يمكننا تقديمه هو {date}.",
+      "customDateLabel": "تاريخ التسليم المفضل (اختياري)",
+      "customDateHint": "اتركه فارغاً إذا لم يكن لديك تفضيل — سنقترح أقرب تاريخ.",
+      "selectedDate": "المحدد: {date}",
+      "preliminaryNote": "هذا تقدير أولي وقد يتغير بعد تأكيد تفاصيل الإنتاج."
+    }
+  },
+  "calendar": {
+    "prevMonth": "الشهر السابق",
+    "nextMonth": "الشهر التالي",
+    "weekdays": {
+      "mo": "إث",
+      "tu": "ثل",
+      "we": "أر",
+      "th": "خم",
+      "fr": "جم",
+      "sa": "سب",
+      "su": "أح"
+    },
+    "legend": {
+      "empty": "فارغ",
+      "light": "خفيف",
+      "half": "متوسط",
+      "busy": "مزدحم",
+      "closed": "مغلق",
+      "dealer": {
+        "light": "أقرب موعد",
+        "half": "مقترح",
+        "empty": "متاح",
+        "busy": "مبكر جداً",
+        "closed": "مغلق"
+      }
     }
   },
   "requestEdit": {
@@ -1486,7 +1536,27 @@
     "attachmentErrorBody": "تحقق من الاتصال وحاول مرة أخرى.",
     "errorTitle": "تعذّر تحميل الطلب",
     "errorBody": "قد يكون الطلب غير متاح أو ليس لديك صلاحية الوصول.",
-    "retry": "إعادة المحاولة"
+    "retry": "إعادة المحاولة",
+    "schedule": {
+      "title": "جدول التسليم",
+      "committedDate": "التسليم المؤكد",
+      "estimatedDate": "التسليم المتوقع",
+      "requestedDate": "التاريخ الذي طلبته",
+      "noDateYet": "لا يوجد موعد تسليم بعد — سنؤكده قريباً.",
+      "changeDate": "تغيير التاريخ",
+      "requestDateChange": "طلب تغيير التاريخ",
+      "dateLocked": "تاريخ التسليم مقفل",
+      "changeDateTitle": "تغيير تاريخ التسليم",
+      "changeDateBody": "حدّث تاريخ التسليم لهذا الطلب. سنعيد التحقق من التوفر.",
+      "requestDateChangeTitle": "طلب تغيير التاريخ",
+      "requestDateChangeBody": "تمت الموافقة على جدولك بالفعل — أرسل طلباً وسيؤكده فريقنا.",
+      "newDateLabel": "تاريخ التسليم الجديد",
+      "saveDate": "حفظ التاريخ",
+      "sendRequest": "إرسال الطلب",
+      "dateChangeFailed": "تعذّر تحديث تاريخ التسليم. حاول مرة أخرى.",
+      "dateUpdated": "تم تحديث تاريخ التسليم.",
+      "dateRequestSent": "تم إرسال طلب تغيير التاريخ."
+    }
   },
   "productionFlow": {
     "title": "مسار الإنتاج",
@@ -1520,7 +1590,8 @@
     "loading": "جاري تحميل المسار…",
     "errorTitle": "تعذّر تحميل المسار",
     "errorBody": "تحقق من الاتصال وحاول مرة أخرى.",
-    "retry": "إعادة المحاولة"
+    "retry": "إعادة المحاولة",
+    "committedDelivery": "التسليم المؤكد"
   },
   "production": {
     "title": "الإنتاج",
@@ -2150,5 +2221,56 @@
     "apply": "تطبيق",
     "clearSearch": "مسح البحث",
     "loading": "جارٍ التحميل"
+  },
+  "adminScheduling": {
+    "eyebrow": "تخطيط الإنتاج",
+    "title": "الجدولة",
+    "subtitle": "لوحة الشهر، الموافقات، والطلبات المعرضة للخطر",
+    "weekStripTitle": "هذا الأسبوع",
+    "monthTitle": "لوحة الشهر",
+    "dayOrdersTitle": "طلبات يوم {date}",
+    "dayEmpty": "لا توجد طلبات مخططة لهذا اليوم.",
+    "dayClosed": "المصنع مغلق — لا إنتاج مجدول.",
+    "dayCapacity": {
+      "edit": "تعديل طاقة اليوم",
+      "title": "طاقة اليوم · {date}",
+      "body": "افتح يوماً مغلقاً، أغلق يوم عمل، أو أضف عملاً إضافياً. تُعاد جدولة الطلبات النشطة تلقائياً.",
+      "open": "فتح هذا اليوم",
+      "close": "إغلاق هذا اليوم",
+      "addOvertime": "إضافة عمل إضافي",
+      "overtimeUntil": "العمل الإضافي حتى (HH:MM)",
+      "clear": "إزالة استثناء اليوم",
+      "normalShift": "الدوام العادي {start}–{end}"
+    },
+    "approvalsTitle": "بانتظار الموافقة",
+    "approvalsEmpty": "لا توجد جداول بانتظار الموافقة.",
+    "atRiskTitle": "معرضة للخطر",
+    "atRiskEmpty": "لا توجد طلبات معرضة للخطر حالياً.",
+    "errorTitle": "تعذّر تحميل الجدولة",
+    "errorBody": "تحقق من الاتصال وحاول مرة أخرى.",
+    "retry": "إعادة المحاولة",
+    "plannedFor": "مخطط لـ {date}",
+    "materialRisk": "خطر توفر المواد",
+    "conflict": "تعارض",
+    "stats": {
+      "today": "اليوم",
+      "week": "هذا الأسبوع",
+      "awaitingApproval": "بانتظار الموافقة",
+      "atRisk": "معرضة للخطر",
+      "conflicts": "تعارضات"
+    },
+    "sheets": {
+      "approveTitle": "الموافقة على الجدول",
+      "approveBody": "هل توافق على الجدول الحالي للطلب {number}؟",
+      "approveConfirm": "موافقة",
+      "changeDateTitle": "تغيير تاريخ الجدول",
+      "reasonLabel": "السبب (اختياري)",
+      "reasonPlaceholder": "لماذا يتم هذا التغيير؟",
+      "saveDate": "حفظ التاريخ",
+      "recalculateTitle": "إعادة احتساب الجدول",
+      "recalculateBody": "إعادة احتساب جدول الإنتاج للطلب {number}؟",
+      "recalculateConfirm": "إعادة الاحتساب",
+      "genericError": "حدث خطأ ما. حاول مرة أخرى."
+    }
   }
 }

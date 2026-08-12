@@ -97,6 +97,18 @@ interface ProductionReport {
   openCount?: number;
   delayedCount?: number;
   tasksByStatus: Array<{ status: string; _count: number }>;
+  plannedVsActual?: {
+    sampleSize: number;
+    avgPlannedMinutes: number | null;
+    avgActualMinutes: number | null;
+    varianceMinutes: number | null;
+    variancePercent: number | null;
+  };
+  onTimeRate?: {
+    sampleSize: number;
+    onTimeCount: number;
+    onTimeRate: number | null;
+  };
 }
 
 interface OrderProfitReport {
@@ -1095,6 +1107,38 @@ export default function ReportsPage() {
       {showProduction ? (
         <MotionSection enter="rise" className="space-y-4">
           <h2 className="text-lg font-semibold">{ta('reportProduction')}</h2>
+          <div className="maher-stagger grid gap-4 sm:grid-cols-3">
+            <MetricCard
+              label={ta('onTimeRate')}
+              value={
+                <span dir="ltr">
+                  {production.data.onTimeRate?.onTimeRate != null
+                    ? `${production.data.onTimeRate.onTimeRate}%`
+                    : '—'}
+                </span>
+              }
+            />
+            <MetricCard
+              label={ta('plannedVsActualMinutes')}
+              value={
+                <span dir="ltr">
+                  {production.data.plannedVsActual?.avgPlannedMinutes != null
+                    ? `${production.data.plannedVsActual.avgPlannedMinutes} / ${production.data.plannedVsActual.avgActualMinutes}`
+                    : '—'}
+                </span>
+              }
+            />
+            <MetricCard
+              label={ta('scheduleVariancePercent')}
+              value={
+                <span dir="ltr">
+                  {production.data.plannedVsActual?.variancePercent != null
+                    ? `${production.data.plannedVsActual.variancePercent > 0 ? '+' : ''}${production.data.plannedVsActual.variancePercent}%`
+                    : '—'}
+                </span>
+              }
+            />
+          </div>
           <div className="maher-stagger grid gap-4 lg:grid-cols-2">
             <Card title={ta('ordersByStatus')}>
               <StatusCountTable

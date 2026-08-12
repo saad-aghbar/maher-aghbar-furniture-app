@@ -30,6 +30,8 @@ export type NewOrderLocalDraft = {
   deliveryNotes: string;
   deliveryLat?: number;
   deliveryLng?: number;
+  /** ISO date (yyyy-mm-dd) the dealer needs delivery by. Empty string = no preference. */
+  requiredDeliveryDate: string;
   serverDraftId?: string;
   serverDraftNumber?: string;
   updatedAt: string;
@@ -113,6 +115,7 @@ export function normalizeLocalDraft(
     deliveryNotes: String(parsed.deliveryNotes ?? ''),
     deliveryLat: parsed.deliveryLat,
     deliveryLng: parsed.deliveryLng,
+    requiredDeliveryDate: String(parsed.requiredDeliveryDate ?? ''),
     serverDraftId: parsed.serverDraftId,
     serverDraftNumber: parsed.serverDraftNumber,
     updatedAt: String(parsed.updatedAt ?? new Date().toISOString()),

@@ -35,7 +35,7 @@ export interface CrudColumn<T> {
 export interface CrudField {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'checkbox' | 'select' | 'textarea';
+  type?: 'text' | 'number' | 'checkbox' | 'select' | 'textarea' | 'multiselect';
   required?: boolean;
   options?: Array<{ value: string; label: string }>;
   hint?: string;
@@ -53,8 +53,8 @@ interface MasterCrudPageProps<T extends { id: string }> {
   columns: CrudColumn<T>[];
   fields: CrudField[];
   emptyTitle: string;
-  mapRowToForm?: (row: T) => Record<string, string | boolean | number>;
-  buildPayload?: (form: Record<string, string | boolean | number>) => Record<string, unknown>;
+  mapRowToForm?: (row: T) => Record<string, string | boolean | number | string[]>;
+  buildPayload?: (form: Record<string, string | boolean | number | string[]>) => Record<string, unknown>;
   activeField?: keyof T;
   extraActions?: (row: T, refresh: () => void) => ReactNode;
 }
@@ -83,7 +83,7 @@ export function MasterCrudPage<T extends { id: string }>({
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
-  const [form, setForm] = useState<Record<string, string | boolean | number>>({});
+  const [form, setForm] = useState<Record<string, string | boolean | number | string[]>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ type: 'activate' | 'deactivate' | 'delete'; row: T } | null>(
@@ -119,14 +119,25 @@ export function MasterCrudPage<T extends { id: string }>({
     Object.fromEntries(
       fields.map((f) => [
         f.name,
-        f.type === 'checkbox' ? true : f.type === 'number' ? 0 : f.options?.[0]?.value ?? '',
+        f.type === 'checkbox'
+          ? true
+          : f.type === 'multiselect'
+            ? []
+            : f.type === 'number'
+              ? 0
+              : (f.options?.[0]?.value ?? ''),
       ]),
     );
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       for (const field of fields) {
-        if (field.required && !String(form[field.name] ?? '').trim() && field.type !== 'checkbox') {
+        if (
+          field.required &&
+          field.type !== 'checkbox' &&
+          field.type !== 'multiselect' &&
+          !String(form[field.name] ?? '').trim()
+        ) {
           throw new ApiClientError(tVal('fieldRequired', { field: field.label }), 400);
         }
       }
@@ -137,6 +148,7 @@ export function MasterCrudPage<T extends { id: string }>({
               const v = form[f.name];
               if (f.type === 'number') return [f.name, Number(v)];
               if (f.type === 'checkbox') return [f.name, Boolean(v)];
+              if (f.type === 'multiselect') return [f.name, Array.isArray(v) ? v : []];
               return [f.name, typeof v === 'string' ? v.trim() || undefined : v];
             }),
           );
@@ -414,6 +426,59 @@ export function MasterCrudPage<T extends { id: string }>({
                   value={String(form[field.name] ?? '')}
                   onChange={(e) => setForm((f) => ({ ...f, [field.name]: e.target.value }))}
                 />
+              );
+            }
+            if (field.type === 'multiselect') {
+              const selected = Array.isArray(form[field.name])
+                ? (form[field.name] as string[])
+                : [];
+              return (
+                <div key={field.name} className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-text-primary">
+                    {field.label}
+                    {field.required ? ' *' : ''}
+                  </span>
+                  {field.hint ? (
+                    <p className="text-xs text-text-secondary">{field.hint}</p>
+                  ) : null}
+                  {(field.options ?? []).length === 0 ? (
+                    <p className="text-xs text-text-tertiary">—</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 rounded-[var(--maher-radius-md)] border border-border bg-surface-muted p-2.5">
+                      {(field.options ?? []).map((opt) => {
+                        const checked = selected.includes(opt.value);
+                        return (
+                          <label
+                            key={opt.value}
+                            className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                              checked
+                                ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
+                                : 'border-border bg-surface text-text-secondary hover:border-border-strong'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5 accent-[var(--maher-brand)]"
+                              checked={checked}
+                              onChange={(e) =>
+                                setForm((f) => {
+                                  const current = Array.isArray(f[field.name])
+                                    ? (f[field.name] as string[])
+                                    : [];
+                                  const next = e.target.checked
+                                    ? [...current, opt.value]
+                                    : current.filter((v) => v !== opt.value);
+                                  return { ...f, [field.name]: next };
+                                })
+                              }
+                            />
+                            {opt.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             }
             return (

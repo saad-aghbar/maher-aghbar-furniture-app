@@ -42,6 +42,8 @@ export type TaskTimingSummary = {
   openStartedAt: string | null;
   estimatedMinutes: number | null;
   plannedCompletion: string | null;
+  /** Scheduler allocation start, when this task has been scheduled. */
+  plannedStart?: string | null;
   elapsedMinutes: number;
 };
 
@@ -53,6 +55,8 @@ export type TaskListItem = {
   status: TaskStatus | string;
   priority: TaskPriority | string;
   plannedCompletion?: string | null;
+  /** Scheduler allocation start, when this task has been scheduled. */
+  plannedStart?: string | null;
   estimatedMinutes?: number | null;
   actualMinutes?: number | null;
   timing?: TaskTimingSummary;

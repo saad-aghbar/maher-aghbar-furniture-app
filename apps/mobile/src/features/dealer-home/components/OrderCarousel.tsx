@@ -79,7 +79,11 @@ export function OrderCarousel({
                   progressLabel={order.progressLabel ?? undefined}
                   deliveryLabel={
                     order.deliveryDate
-                      ? formatDate(order.deliveryDate)
+                      ? order.isCommittedDate
+                        ? t('mobile.dealerHome.committedDeliveryLabel', {
+                            date: formatDate(order.deliveryDate),
+                          })
+                        : formatDate(order.deliveryDate)
                       : undefined
                   }
                   imageUri={order.imageUrl}

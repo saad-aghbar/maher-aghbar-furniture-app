@@ -72,6 +72,7 @@ describe('SalesOrdersService.list scope', () => {
       sequences,
       { sendFromTemplate: jest.fn().mockResolvedValue({ ok: true }), notifyAdminUsers: jest.fn().mockResolvedValue({ ok: true }), notifyCustomerUsers: jest.fn().mockResolvedValue({ ok: true }) } as any,
       { createAccessToken: jest.fn(() => 'tok') } as any,
+      { generateForProductionOrder: jest.fn().mockResolvedValue(undefined) } as any,
     );
 
     // Avoid hydrate / catalog side effects

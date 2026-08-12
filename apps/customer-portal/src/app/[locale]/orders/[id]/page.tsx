@@ -2,6 +2,7 @@
 
 import { BackButton } from '@/components/back-button';
 import { DealerOrderDetails } from '@/components/dealer-order-details';
+import { ProductionScheduleCard } from '@/components/production-schedule-card';
 import { apiFetch, API_URL } from '@/lib/api-client';
 import { Card, MotionSection, Skeleton, StatusBadge, cn, Ltr } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -464,6 +465,12 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
         )}
       </Card>
       </MotionSection>
+
+      {pos.map((po, index) => (
+        <MotionSection key={`schedule-${po.id}`} delayMs={160 + index * 20}>
+          <ProductionScheduleCard productionOrderId={po.id} />
+        </MotionSection>
+      ))}
 
       <MotionSection delayMs={180}>
       <Card title={t('deliveryStatus')} className="maher-form-section">

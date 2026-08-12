@@ -6,9 +6,13 @@ import { Link } from '@/i18n/navigation';
 import { API_URL, apiFetch, apiUpload, apiUploadFromUrl, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { PRIORITY_STATUSES, statusOptions } from '@/lib/status-options';
+import { allocationPersonLabel, fmtTime, type ProductionScheduleDetail } from '@/lib/scheduling';
 import {
   Alert,
+  Badge,
   Button,
+  Card,
+  EmptyState,
   ErrorState,
   Input,
   PhotoAttachField,
@@ -27,6 +31,7 @@ import {
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { localizedName } from '@maher/i18n';
+import { AlertTriangle, Pin, PinOff, RefreshCw } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -380,6 +385,54 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
     },
     onError: (err) => setError(mutationErrorMessage(err)),
     onSettled: () => setUploadingTaskId(null),
+  });
+
+  const scheduleQuery = useQuery({
+    queryKey: ['scheduling-order', params.id],
+    queryFn: () => apiFetch<ProductionScheduleDetail>(`/api/v1/scheduling/orders/${params.id}`),
+    retry: false,
+  });
+
+  const scheduleApproveMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/scheduling/orders/${params.id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ version: scheduleQuery.data?.schedule?.version ?? 1 }),
+      }),
+    onSuccess: async () => {
+      setError(null);
+      setBanner(tp('scheduleApproved'));
+      await qc.invalidateQueries({ queryKey: ['scheduling-order', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const scheduleRecalculateMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/scheduling/orders/${params.id}/recalculate`, {
+        method: 'POST',
+        body: '{}',
+      }),
+    onSuccess: async () => {
+      setError(null);
+      setBanner(tp('scheduleRecalculated'));
+      await qc.invalidateQueries({ queryKey: ['scheduling-order', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const schedulePinMutation = useMutation({
+    mutationFn: ({ allocationId, pin }: { allocationId: string; pin: boolean }) =>
+      apiFetch(`/api/v1/scheduling/orders/${params.id}/${pin ? 'pin' : 'unpin'}`, {
+        method: 'POST',
+        body: JSON.stringify({ allocationId, pin, version: scheduleQuery.data?.schedule?.version ?? 1 }),
+      }),
+    onSuccess: async () => {
+      setError(null);
+      setBanner(tp('scheduleUpdated'));
+      await qc.invalidateQueries({ queryKey: ['scheduling-order', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
   });
 
   async function openDocument(id: string) {
@@ -977,6 +1030,142 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
           })}
         </TableBody>
       </Table>
+      </MotionSection>
+
+      <MotionSection className="maher-form-section" as="div">
+      <Card
+        title={tp('schedulingSection')}
+        description={tp('schedulingSectionHint')}
+        actions={
+          scheduleQuery.data?.schedule ? (
+            <div className="flex flex-wrap gap-2">
+              {scheduleQuery.data.schedule.status === 'PROPOSED' ||
+              scheduleQuery.data.schedule.status === 'NEEDS_REVIEW' ? (
+                <Button
+                  size="sm"
+                  loading={scheduleApproveMutation.isPending}
+                  onClick={() => scheduleApproveMutation.mutate()}
+                >
+                  {tp('approve')}
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="secondary"
+                leadingIcon={<RefreshCw className="h-3.5 w-3.5" />}
+                loading={scheduleRecalculateMutation.isPending}
+                onClick={() => scheduleRecalculateMutation.mutate()}
+              >
+                {tp('recalculate')}
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        {scheduleQuery.isLoading ? (
+          <Skeleton className="h-28 w-full" />
+        ) : scheduleQuery.isError || !scheduleQuery.data?.schedule ? (
+          <EmptyState
+            title={tp('schedulingUnavailable')}
+            description={tp('schedulingNotAvailableForOrder')}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => scheduleQuery.refetch()}>
+                {tCommon('retry')}
+              </Button>
+            }
+          />
+        ) : (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={scheduleQuery.data.schedule.status} />
+              <StatusBadge status={scheduleQuery.data.schedule.promiseState} />
+              <span className="text-xs text-text-secondary">
+                {tp('version')}: <span dir="ltr">{scheduleQuery.data.schedule.version}</span>
+              </span>
+              {scheduleQuery.data.schedule.materialRisk ? (
+                <Badge variant="warning">
+                  <AlertTriangle className="h-3 w-3" />
+                  {tp('materialRisk')}
+                </Badge>
+              ) : null}
+            </div>
+
+            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <dt className="text-xs text-text-tertiary">{tp('requestedDate')}</dt>
+                <dd className="text-sm" dir="ltr">
+                  {toDateInput(scheduleQuery.data.schedule.requestedDeliveryDate) || '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-tertiary">{tp('suggestedDate')}</dt>
+                <dd className="text-sm" dir="ltr">
+                  {toDateInput(scheduleQuery.data.schedule.suggestedDeliveryDate) || '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-tertiary">{tp('committedDate')}</dt>
+                <dd className="text-sm" dir="ltr">
+                  {toDateInput(
+                    scheduleQuery.data.schedule.committedDeliveryDate ??
+                      scheduleQuery.data.schedule.committedCompletionDate,
+                  ) || '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-text-tertiary">{tp('earliestDate')}</dt>
+                <dd className="text-sm" dir="ltr">
+                  {toDateInput(scheduleQuery.data.schedule.earliestAvailableDate) || '—'}
+                </dd>
+              </div>
+            </dl>
+
+            <div>
+              <p className="mb-2 text-sm font-semibold text-text-primary">
+                {tp('allocationsTimeline')}
+              </p>
+              {!scheduleQuery.data.schedule.allocations?.length ? (
+                <p className="text-sm text-text-tertiary">{tp('noAllocations')}</p>
+              ) : (
+                <ul className="space-y-2">
+                  {scheduleQuery.data.schedule.allocations.map((a) => (
+                    <li
+                      key={a.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-text-primary">{a.task?.name || '—'}</p>
+                        <p className="text-xs text-text-secondary">
+                          {allocationPersonLabel(locale, a)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-text-secondary" dir="ltr">
+                        <span>
+                          {fmtTime(a.plannedStart)} – {fmtTime(a.plannedEnd)}
+                        </span>
+                        <span>{a.estimatedMinutes}m</span>
+                        <button
+                          type="button"
+                          disabled={
+                            schedulePinMutation.isPending && schedulePinMutation.variables?.allocationId === a.id
+                          }
+                          onClick={() =>
+                            schedulePinMutation.mutate({ allocationId: a.id, pin: !a.isPinned })
+                          }
+                          className={a.isPinned ? 'text-brand' : 'text-text-tertiary hover:text-text-primary'}
+                          title={a.isPinned ? tp('unpin') : tp('pin')}
+                        >
+                          {a.isPinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
       </MotionSection>
       </div>
 

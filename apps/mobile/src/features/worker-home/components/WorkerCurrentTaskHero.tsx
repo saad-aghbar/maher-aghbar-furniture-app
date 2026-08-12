@@ -9,6 +9,7 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+import { isScheduledToday } from '@/features/tasks/isScheduledToday';
 import type { WorkerHomeTask } from '../api';
 import {
   formatEstimatedDuration,
@@ -71,6 +72,8 @@ export function WorkerCurrentTaskHero({ task }: Props) {
         })
       : null;
   const running = task.timing?.status === 'running';
+  const scheduledToday =
+    !inProgress && isScheduledToday(task.timing?.plannedStart ?? task.deadline);
 
   const open = () => {
     void haptics.selection();
@@ -183,36 +186,70 @@ export function WorkerCurrentTaskHero({ task }: Props) {
               justifyContent: 'space-between',
             }}
           >
-            {high ? (
+            {high || scheduledToday ? (
               <View
                 style={{
                   alignSelf: isRTL ? 'flex-end' : 'flex-start',
                   flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'center',
+                  flexWrap: 'wrap',
                   gap: 6,
-                  backgroundColor: 'rgba(20,18,16,0.72)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(247,244,239,0.16)',
-                  paddingHorizontal: theme.spacing.sm + 2,
-                  paddingVertical: 5,
-                  borderRadius: theme.radius.full,
                 }}
               >
-                <View
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor: colors.error,
-                  }}
-                />
-                <AppText
-                  variant="caption"
-                  weight="semibold"
-                  style={{ color: CREAM, fontSize: 11 }}
-                >
-                  {t('mobile.workerHome.highPriority')}
-                </AppText>
+                {high ? (
+                  <View
+                    style={{
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: 'rgba(20,18,16,0.72)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(247,244,239,0.16)',
+                      paddingHorizontal: theme.spacing.sm + 2,
+                      paddingVertical: 5,
+                      borderRadius: theme.radius.full,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: colors.error,
+                      }}
+                    />
+                    <AppText
+                      variant="caption"
+                      weight="semibold"
+                      style={{ color: CREAM, fontSize: 11 }}
+                    >
+                      {t('mobile.workerHome.highPriority')}
+                    </AppText>
+                  </View>
+                ) : null}
+                {scheduledToday ? (
+                  <View
+                    style={{
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: 'rgba(20,18,16,0.72)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(247,244,239,0.16)',
+                      paddingHorizontal: theme.spacing.sm + 2,
+                      paddingVertical: 5,
+                      borderRadius: theme.radius.full,
+                    }}
+                  >
+                    <Ionicons name="today-outline" size={12} color={colors.brand} />
+                    <AppText
+                      variant="caption"
+                      weight="semibold"
+                      style={{ color: CREAM, fontSize: 11 }}
+                    >
+                      {t('mobile.tasks.scheduledToday')}
+                    </AppText>
+                  </View>
+                ) : null}
               </View>
             ) : (
               <View />

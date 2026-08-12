@@ -35,6 +35,12 @@ export type ThemeColors = {
   disabled: string;
   disabledFill: string;
   overlay: string;
+  /** Admin schedule month-board load tones (must read on parchment). */
+  calendarLoadEmpty: string;
+  calendarLoadLight: string;
+  calendarLoadHalf: string;
+  calendarLoadBusy: string;
+  calendarLoadClosed: string;
 };
 
 export type FontWeightToken = 'regular' | 'medium' | 'semibold';

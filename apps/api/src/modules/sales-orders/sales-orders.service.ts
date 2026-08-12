@@ -25,6 +25,7 @@ import {
 import { buildStageTaskInstructions } from '../../common/helpers/stage-task-instructions';
 import { ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SchedulingService } from '../scheduling/scheduling.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { firstImageDocument } from '../../common/helpers/document-image.util';
 import { buildSalesOrderSearchOr } from './build-sales-order-search-or';
@@ -206,6 +207,7 @@ export class SalesOrdersService {
     private readonly sequences: SequenceService,
     private readonly notifications: NotificationsService,
     private readonly storage: LocalStorageService,
+    private readonly scheduling: SchedulingService,
   ) {}
 
   /** Short-lived download URL for list thumbnails from request attachments. */
@@ -837,6 +839,7 @@ export class SalesOrdersService {
           createdAt: request.createdAt,
           items: request.items.map((item) => ({
             id: item.id,
+            productId: item.productId ?? null,
             productName: item.productName,
             description: item.description,
             quantity: item.quantity,
@@ -868,6 +871,7 @@ export class SalesOrdersService {
           projectName: order.projectName,
           items: order.lines.map((line) => ({
             id: line.id,
+            productId: line.productId ?? null,
             productName: line.description,
             description: line.specifications,
             quantity: line.quantity,
@@ -1104,6 +1108,13 @@ export class SalesOrdersService {
           linkUrl: `/sales-orders/${order.id}`,
         })
         .catch(() => undefined);
+
+      for (const productionOrder of updated.productionOrders ?? []) {
+        await this.scheduling
+          .generateForProductionOrder(productionOrder.id, userId)
+          .catch((err) => this.scheduling.markNeedsReview(productionOrder.id, userId, err).catch(() => undefined));
+      }
+
       return updated;
     });
   }

@@ -1,6 +1,7 @@
 'use client';
 
 import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
+import { AvailabilityCard } from '@/components/availability-card';
 import { useRouter } from '@/i18n/navigation';
 import {
   Alert,
@@ -13,8 +14,18 @@ import {
   Select,
   TextArea,
 } from '@maher/ui';
-import { useTranslations } from 'next-intl';
+import { localizedName } from '@maher/i18n';
+import { useQuery } from '@tanstack/react-query';
+import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
+
+interface CatalogProduct {
+  id: string;
+  sku: string;
+  nameEn: string;
+  nameAr?: string;
+  nameHe?: string;
+}
 
 const STEP_KEYS = [
   'stepProduct',
@@ -34,12 +45,14 @@ const CHANNELS = [
 ];
 
 export default function RequestQuotePage() {
+  const locale = useLocale();
   const t = useTranslations('navigation');
   const tQ = useTranslations('quotations');
   const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
   const router = useRouter();
   const [step, setStep] = useState(1);
+  const [productId, setProductId] = useState('');
   const [productName, setProductName] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [width, setWidth] = useState('');
@@ -64,6 +77,14 @@ export default function RequestQuotePage() {
   );
 
   const channelLabel = CHANNELS.find((c) => c.value === source);
+
+  const productsQuery = useQuery({
+    queryKey: ['catalog-browse-products'],
+    queryFn: () =>
+      apiFetch<{ data: CatalogProduct[] }>('/api/v1/catalog/browse/products?pageSize=100').then(
+        (r) => r.data ?? [],
+      ),
+  });
 
   async function submit() {
     setLoading(true);
@@ -92,6 +113,7 @@ export default function RequestQuotePage() {
             .join('\n'),
           items: [
             {
+              productId: productId || undefined,
               productName,
               quantity: Number(quantity),
               width: width ? Number(width) : undefined,
@@ -158,10 +180,30 @@ export default function RequestQuotePage() {
           {success ? <Alert variant="success">{success}</Alert> : null}
           {step === 1 ? (
             <>
+              <Select
+                label={tc('modelName')}
+                value={productId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setProductId(id);
+                  const match = (productsQuery.data ?? []).find((p) => p.id === id);
+                  if (match) setProductName(localizedName(locale, match));
+                }}
+              >
+                <option value="">{tc('select')}</option>
+                {(productsQuery.data ?? []).map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {localizedName(locale, product)}
+                  </option>
+                ))}
+              </Select>
               <Input
-                label={tc('product')}
+                label={tc('modelNameManual')}
                 value={productName}
-                onChange={(e) => setProductName(e.target.value)}
+                onChange={(e) => {
+                  setProductName(e.target.value);
+                  if (e.target.value.trim()) setProductId('');
+                }}
                 required
               />
               <Input
@@ -199,6 +241,12 @@ export default function RequestQuotePage() {
                 value={preferredDate}
                 onChange={(e) => setPreferredDate(e.target.value)}
               />
+              {productId ? (
+                <AvailabilityCard
+                  items={[{ productId, quantity: Number(quantity) || 0 }]}
+                  requestedDeliveryDate={preferredDate || undefined}
+                />
+              ) : null}
             </>
           ) : null}
           {step === 5 ? (

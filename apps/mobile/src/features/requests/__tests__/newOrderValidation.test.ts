@@ -5,6 +5,7 @@ import {
   guessCityFromAddress,
   isAddressAlreadySaved,
   isValidDeliveryAddress,
+  isValidOptionalDate,
   isValidOptionalPhone,
   isValidQuantity,
   resolveModelName,
@@ -108,6 +109,14 @@ describe('newOrderValidation', () => {
       Boolean(resolveModelName({ customProductName: 'Sofa', catalogName: null })) &&
         isValidQuantity('0'),
     ).toBe(false);
+  });
+
+  it('soft-validates an optional required-delivery-date field', () => {
+    expect(isValidOptionalDate('')).toBe(true);
+    expect(isValidOptionalDate('2026-09-01')).toBe(true);
+    expect(isValidOptionalDate('2026-02-30')).toBe(false);
+    expect(isValidOptionalDate('09/01/2026')).toBe(false);
+    expect(isValidOptionalDate('not-a-date')).toBe(false);
   });
 
   it('supports delivery-step validation pairing (address + optional phone)', () => {

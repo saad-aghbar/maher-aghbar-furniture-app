@@ -370,6 +370,8 @@
     "navUsersHint": "אנשים והרשאות",
     "navReturns": "החזרות",
     "navReturnsHint": "אישורים והחזרה למלאי",
+    "navScheduling": "תזמון",
+    "navSchedulingHint": "אישורים והזמנות בסיכון",
     "homeDestEyebrow": "לאן",
     "homeDestTitle": "המקומות שלכם",
     "homeDestHint": "בית הוא דלת, לא דוח.",
@@ -450,6 +452,7 @@
     "activeOrders": "הזמנות פעילות",
     "nearDelivery": "קרובות לאספקה",
     "nearDeliveryEmpty": "אין הזמנות שקרובות לאספקה עדיין.",
+    "committedDeliveryLabel": "אושר {date}",
     "featuredModels": "דגמים מובילים",
     "metrics": {
       "activeOrders": "פעילות",
@@ -673,7 +676,10 @@
       "DESIGN_ISSUE": "עיצוב",
       "PREVIOUS_STAGE_DEFECT": "שלב קודם",
       "OTHER": "אחר"
-    }
+    },
+    "cardScheduled": "מתוזמן",
+    "scheduledToday": "מתוזמן להיום",
+    "timerScheduledStart": "התחלה מתוזמנת: {date}"
   },
   "aiChat": {
     "title": "צ'אטבוט AI",
@@ -1125,7 +1131,9 @@
       "images": "תמונות",
       "attachments": "קבצים מצורפים",
       "estimatedTotal": "סה״כ משוער",
-      "unitPrice": "מחיר יחידה"
+      "unitPrice": "מחיר יחידה",
+      "requestedDelivery": "אספקה מבוקשת",
+      "estimatedDelivery": "אספקה משוערת"
     },
     "submittedTitle": "ההזמנה בוצעה!",
     "submittedBody": "בקשה {number} נשלחה בהצלחה.",
@@ -1199,7 +1207,49 @@
       "deliveryRequired": "הזינו כתובת אספקה להמשך.",
       "phoneInvalid": "הזינו מספר טלפון תקין, או השאירו ריק.",
       "saveFailed": "לא ניתן לשמור טיוטה. בדקו את החיבור ונסו שוב.",
-      "submitFailed": "לא ניתן לשלוח את ההזמנה. בדקו את החיבור ונסו שוב."
+      "submitFailed": "לא ניתן לשלוח את ההזמנה. בדקו את החיבור ונסו שוב.",
+      "dateInvalid": "הזן תאריך תקין (YYYY-MM-DD), או השאר ריק."
+    },
+    "delivery": {
+      "title": "חלון אספקה",
+      "checking": "בודק זמינות…",
+      "checkFailed": "לא ניתן היה לבדוק זמינות. אפשר עדיין לשלוח — נאשר תאריכים לאחר בדיקה.",
+      "unavailable": "עדיין לא ניתן להעריך תאריך אספקה — נאשר לאחר השליחה.",
+      "earliest": "הכי מוקדם שזמין: {date}",
+      "earliestChip": "המוקדם ביותר",
+      "infeasible": "התאריך הזה עדיין לא זמין — נאשר את המוקדם ביותר שאפשר.",
+      "infeasibleWithSuggestion": "התאריך הזה לא זמין — המוקדם ביותר שנוכל להציע הוא {date}.",
+      "customDateLabel": "תאריך אספקה מועדף (אופציונלי)",
+      "customDateHint": "השאר ריק אם אין העדפה — נציע את התאריך המוקדם ביותר.",
+      "selectedDate": "נבחר: {date}",
+      "preliminaryNote": "זוהי הערכה ראשונית שעשויה להשתנות לאחר אישור פרטי הייצור."
+    }
+  },
+  "calendar": {
+    "prevMonth": "חודש קודם",
+    "nextMonth": "חודש הבא",
+    "weekdays": {
+      "mo": "ב׳",
+      "tu": "ג׳",
+      "we": "ד׳",
+      "th": "ה׳",
+      "fr": "ו׳",
+      "sa": "ש׳",
+      "su": "א׳"
+    },
+    "legend": {
+      "empty": "ריק",
+      "light": "קל",
+      "half": "בינוני",
+      "busy": "עמוס",
+      "closed": "סגור",
+      "dealer": {
+        "light": "הכי מוקדם",
+        "half": "מוצע",
+        "empty": "פתוח",
+        "busy": "מוקדם מדי",
+        "closed": "סגור"
+      }
     }
   },
   "requestEdit": {
@@ -1486,7 +1536,27 @@
     "attachmentErrorBody": "בדקו את החיבור ונסו שוב.",
     "errorTitle": "לא ניתן לטעון הזמנה",
     "errorBody": "ייתכן שההזמנה אינה זמינה או שאין לכם גישה.",
-    "retry": "נסה שוב"
+    "retry": "נסה שוב",
+    "schedule": {
+      "title": "לוח זמנים לאספקה",
+      "committedDate": "אספקה מאושרת",
+      "estimatedDate": "אספקה משוערת",
+      "requestedDate": "התאריך שביקשת",
+      "noDateYet": "עדיין אין תאריך אספקה — נאשר בקרוב.",
+      "changeDate": "שנה תאריך",
+      "requestDateChange": "בקש שינוי תאריך",
+      "dateLocked": "תאריך האספקה נעול",
+      "changeDateTitle": "שינוי תאריך אספקה",
+      "changeDateBody": "עדכן את תאריך האספקה עבור הזמנה זו. נבדוק מחדש את הזמינות.",
+      "requestDateChangeTitle": "בקשת שינוי תאריך",
+      "requestDateChangeBody": "לוח הזמנים שלך כבר אושר — שלח בקשה והצוות שלנו יאשר.",
+      "newDateLabel": "תאריך אספקה חדש",
+      "saveDate": "שמור תאריך",
+      "sendRequest": "שלח בקשה",
+      "dateChangeFailed": "לא ניתן היה לעדכן את תאריך האספקה. נסה שוב.",
+      "dateUpdated": "תאריך האספקה עודכן.",
+      "dateRequestSent": "בקשת שינוי התאריך נשלחה."
+    }
   },
   "productionFlow": {
     "title": "מסלול ייצור",
@@ -1520,7 +1590,8 @@
     "loading": "טוען מסלול…",
     "errorTitle": "לא ניתן לטעון מסלול",
     "errorBody": "בדקו את החיבור ונסו שוב.",
-    "retry": "נסה שוב"
+    "retry": "נסה שוב",
+    "committedDelivery": "אספקה מאושרת"
   },
   "production": {
     "title": "ייצור",
@@ -2150,5 +2221,56 @@
     "apply": "החל",
     "clearSearch": "נקה חיפוש",
     "loading": "טוען"
+  },
+  "adminScheduling": {
+    "eyebrow": "תכנון ייצור",
+    "title": "תזמון",
+    "subtitle": "לוח חודש, אישורים והזמנות בסיכון",
+    "weekStripTitle": "השבוע",
+    "monthTitle": "לוח חודש",
+    "dayOrdersTitle": "הזמנות ב־{date}",
+    "dayEmpty": "אין הזמנות מתוכננות ליום זה.",
+    "dayClosed": "המפעל סגור — אין ייצור מתוזמן.",
+    "dayCapacity": {
+      "edit": "עריכת קיבולת היום",
+      "title": "קיבולת יום · {date}",
+      "body": "פתחו יום סגור, סגרו יום עבודה או הוסיפו שעות נוספות. הזמנות פעילות מתוזמנות מחדש אוטומטית.",
+      "open": "פתח את היום",
+      "close": "סגור את היום",
+      "addOvertime": "הוסף שעות נוספות",
+      "overtimeUntil": "שעות נוספות עד (HH:MM)",
+      "clear": "נקה חריגת יום",
+      "normalShift": "משמרת רגילה {start}–{end}"
+    },
+    "approvalsTitle": "ממתינות לאישור",
+    "approvalsEmpty": "אין לוחות זמנים הממתינים לאישור.",
+    "atRiskTitle": "בסיכון",
+    "atRiskEmpty": "אין כרגע הזמנות בסיכון.",
+    "errorTitle": "טעינת התזמון נכשלה",
+    "errorBody": "בדוק את החיבור ונסה שוב.",
+    "retry": "נסה שוב",
+    "plannedFor": "מתוכנן ל-{date}",
+    "materialRisk": "סיכון בזמינות חומרים",
+    "conflict": "התנגשות",
+    "stats": {
+      "today": "היום",
+      "week": "השבוע",
+      "awaitingApproval": "ממתינות לאישור",
+      "atRisk": "בסיכון",
+      "conflicts": "התנגשויות"
+    },
+    "sheets": {
+      "approveTitle": "אישור לוח הזמנים",
+      "approveBody": "לאשר את לוח הזמנים הנוכחי להזמנה {number}?",
+      "approveConfirm": "אישור",
+      "changeDateTitle": "שינוי תאריך לוח הזמנים",
+      "reasonLabel": "סיבה (אופציונלי)",
+      "reasonPlaceholder": "מדוע משתנה התאריך?",
+      "saveDate": "שמור תאריך",
+      "recalculateTitle": "חישוב מחדש של לוח הזמנים",
+      "recalculateBody": "לחשב מחדש את לוח הזמנים לייצור עבור הזמנה {number}?",
+      "recalculateConfirm": "חשב מחדש",
+      "genericError": "משהו השתבש. נסה שוב."
+    }
   }
 }

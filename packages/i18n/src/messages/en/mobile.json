@@ -370,6 +370,8 @@
     "navUsersHint": "People & access",
     "navReturns": "Returns",
     "navReturnsHint": "Approvals & restock",
+    "navScheduling": "Scheduling",
+    "navSchedulingHint": "Approvals & at-risk orders",
     "homeDestEyebrow": "Where to",
     "homeDestTitle": "Your places",
     "homeDestHint": "Home is a doorway, not a report.",
@@ -450,6 +452,7 @@
     "activeOrders": "Active orders",
     "nearDelivery": "Near delivery",
     "nearDeliveryEmpty": "Nothing nearing delivery yet.",
+    "committedDeliveryLabel": "Confirmed {date}",
     "featuredModels": "Featured models",
     "metrics": {
       "activeOrders": "Active",
@@ -673,7 +676,10 @@
       "DESIGN_ISSUE": "Design",
       "PREVIOUS_STAGE_DEFECT": "Prior stage",
       "OTHER": "Other"
-    }
+    },
+    "cardScheduled": "Scheduled",
+    "scheduledToday": "Scheduled for today",
+    "timerScheduledStart": "Scheduled start: {date}"
   },
   "aiChat": {
     "title": "AI chatbot",
@@ -1124,7 +1130,9 @@
       "images": "Images",
       "attachments": "Attachments",
       "estimatedTotal": "Estimated total",
-      "unitPrice": "Unit price"
+      "unitPrice": "Unit price",
+      "requestedDelivery": "Requested delivery",
+      "estimatedDelivery": "Estimated delivery"
     },
     "submittedTitle": "Order placed!",
     "submittedBody": "Request {number} was submitted successfully.",
@@ -1198,7 +1206,49 @@
       "deliveryRequired": "Enter a delivery address to continue.",
       "phoneInvalid": "Enter a valid phone number, or leave it blank.",
       "saveFailed": "Couldn’t save draft. Check your connection and try again.",
-      "submitFailed": "Couldn’t submit the order. Check your connection and try again."
+      "submitFailed": "Couldn’t submit the order. Check your connection and try again.",
+      "dateInvalid": "Enter a valid date (YYYY-MM-DD), or leave it blank."
+    },
+    "delivery": {
+      "title": "Delivery window",
+      "checking": "Checking availability…",
+      "checkFailed": "Couldn’t check availability. You can still submit — we’ll confirm dates after review.",
+      "unavailable": "We can’t estimate a delivery date yet — we’ll confirm after you submit.",
+      "earliest": "Earliest available: {date}",
+      "earliestChip": "Earliest",
+      "infeasible": "That date isn’t available yet — we’ll confirm the earliest we can.",
+      "infeasibleWithSuggestion": "That date isn’t available — the earliest we can offer is {date}.",
+      "customDateLabel": "Preferred delivery date (optional)",
+      "customDateHint": "Leave blank if you have no preference — we’ll suggest the earliest date.",
+      "selectedDate": "Selected: {date}",
+      "preliminaryNote": "This is a preliminary estimate and may change once production details are confirmed."
+    }
+  },
+  "calendar": {
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "weekdays": {
+      "mo": "Mo",
+      "tu": "Tu",
+      "we": "We",
+      "th": "Th",
+      "fr": "Fr",
+      "sa": "Sa",
+      "su": "Su"
+    },
+    "legend": {
+      "empty": "Empty",
+      "light": "Light",
+      "half": "Half",
+      "busy": "Busy",
+      "closed": "Closed",
+      "dealer": {
+        "light": "Earliest",
+        "half": "Suggested",
+        "empty": "Open",
+        "busy": "Too early",
+        "closed": "Closed"
+      }
     }
   },
   "requestEdit": {
@@ -1485,13 +1535,34 @@
     "attachmentErrorBody": "Check your connection and try again.",
     "errorTitle": "Couldn’t load order",
     "errorBody": "This order may be unavailable or you don’t have access.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "schedule": {
+      "title": "Delivery schedule",
+      "committedDate": "Confirmed delivery",
+      "estimatedDate": "Estimated delivery",
+      "requestedDate": "Your requested date",
+      "noDateYet": "No delivery date yet — we’ll confirm soon.",
+      "changeDate": "Change date",
+      "requestDateChange": "Request date change",
+      "dateLocked": "Delivery date locked",
+      "changeDateTitle": "Change delivery date",
+      "changeDateBody": "Update the delivery date for this order. We’ll re-check availability.",
+      "requestDateChangeTitle": "Request a date change",
+      "requestDateChangeBody": "Your schedule has already been approved — send a request and our team will confirm.",
+      "newDateLabel": "New delivery date",
+      "saveDate": "Save date",
+      "sendRequest": "Send request",
+      "dateChangeFailed": "Couldn’t update the delivery date. Try again.",
+      "dateUpdated": "Delivery date updated.",
+      "dateRequestSent": "Date change request sent."
+    }
   },
   "productionFlow": {
     "title": "Production workflow",
     "openWorkflow": "Open workflow",
     "overallProgress": "Overall progress",
     "estimatedDelivery": "Estimated delivery",
+    "committedDelivery": "Confirmed delivery",
     "deliveryTbd": "To be confirmed",
     "stageDetails": "Stage details",
     "workers": "Workers",
@@ -2149,5 +2220,56 @@
     "apply": "Apply",
     "clearSearch": "Clear search",
     "loading": "Loading"
+  },
+  "adminScheduling": {
+    "eyebrow": "Production planning",
+    "title": "Scheduling",
+    "subtitle": "Month board, approvals, and at-risk orders",
+    "weekStripTitle": "This week",
+    "monthTitle": "Month board",
+    "dayOrdersTitle": "Orders on {date}",
+    "dayEmpty": "No orders planned for this day.",
+    "dayClosed": "Factory closed — no production scheduled.",
+    "dayCapacity": {
+      "edit": "Edit day capacity",
+      "title": "Day capacity · {date}",
+      "body": "Open a closed day, close a working day, or add overtime. Active orders replan automatically.",
+      "open": "Open this day",
+      "close": "Close this day",
+      "addOvertime": "Add overtime",
+      "overtimeUntil": "Overtime until (HH:MM)",
+      "clear": "Clear day exception",
+      "normalShift": "Normal shift {start}–{end}"
+    },
+    "approvalsTitle": "Approvals waiting",
+    "approvalsEmpty": "No schedules waiting for approval.",
+    "atRiskTitle": "At risk",
+    "atRiskEmpty": "No at-risk orders right now.",
+    "errorTitle": "Couldn’t load scheduling",
+    "errorBody": "Check your connection and try again.",
+    "retry": "Try again",
+    "plannedFor": "Planned for {date}",
+    "materialRisk": "Material risk",
+    "conflict": "Conflict",
+    "stats": {
+      "today": "Today",
+      "week": "This week",
+      "awaitingApproval": "Awaiting approval",
+      "atRisk": "At risk",
+      "conflicts": "Conflicts"
+    },
+    "sheets": {
+      "approveTitle": "Approve schedule",
+      "approveBody": "Approve the current schedule for order {number}?",
+      "approveConfirm": "Approve",
+      "changeDateTitle": "Change schedule date",
+      "reasonLabel": "Reason (optional)",
+      "reasonPlaceholder": "Why is this changing?",
+      "saveDate": "Save date",
+      "recalculateTitle": "Recalculate schedule",
+      "recalculateBody": "Recalculate the production schedule for order {number}?",
+      "recalculateConfirm": "Recalculate",
+      "genericError": "Something went wrong. Try again."
+    }
   }
 }

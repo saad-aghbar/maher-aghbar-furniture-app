@@ -160,6 +160,17 @@ export const queryKeys = {
     departments: (filters: unknown = {}) =>
       [...queryKeys.users.all, 'departments', filters] as const,
   },
+  scheduling: {
+    all: ['scheduling'] as const,
+    availability: (filters: unknown = {}) =>
+      [...queryKeys.scheduling.all, 'availability', filters] as const,
+    orderSchedule: (productionOrderId: string) =>
+      [...queryKeys.scheduling.all, 'order', productionOrderId] as const,
+    dashboard: () => [...queryKeys.scheduling.all, 'dashboard'] as const,
+    atRisk: () => [...queryKeys.scheduling.all, 'at-risk'] as const,
+    calendar: (filters: unknown = {}) =>
+      [...queryKeys.scheduling.all, 'calendar', filters] as const,
+  },
 } as const;
 
 /** Mutation → invalidate helpers (use with QueryClient). */
@@ -177,4 +188,19 @@ export const invalidateKeys = {
   },
   afterNotificationRead: () => [queryKeys.notifications.lists()],
   afterAuthChange: () => [queryKeys.auth.all],
+  afterScheduleMutation: (productionOrderId?: string): readonly (readonly unknown[])[] => {
+    const base = [
+      queryKeys.scheduling.dashboard(),
+      queryKeys.scheduling.atRisk(),
+      queryKeys.scheduling.all,
+      queryKeys.salesOrders.lists(),
+      queryKeys.production.lists(),
+      queryKeys.reports.dealerHome(),
+      queryKeys.reports.adminHome(),
+    ] as const;
+    if (productionOrderId) {
+      return [...base, queryKeys.scheduling.orderSchedule(productionOrderId)];
+    }
+    return [...base];
+  },
 };

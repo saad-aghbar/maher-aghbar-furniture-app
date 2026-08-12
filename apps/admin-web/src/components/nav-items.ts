@@ -171,6 +171,11 @@ export const nestedNavGroups: NestedNavGroup[] = [
         anyPermissions: ['production-order.read'],
       },
       {
+        href: '/production/scheduling',
+        key: 'scheduling',
+        anyPermissions: ['schedule.read'],
+      },
+      {
         href: '/production-stages',
         key: 'productionStages',
         anyPermissions: ['production-order.update'],

@@ -76,6 +76,15 @@ export const PERMISSIONS = [
   'request.read',
   'request.create',
   'request.update',
+  'schedule.read',
+  'schedule.manage',
+  'schedule.approve',
+  'schedule.override',
+  'schedule.settings.manage',
+  'schedule.capacity.read',
+  'schedule.availability.own',
+  'schedule.read.own',
+  'schedule.request-change.own',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -166,6 +175,15 @@ const p = {
   requestRead: 'request.read',
   requestCreate: 'request.create',
   requestUpdate: 'request.update',
+  scheduleRead: 'schedule.read',
+  scheduleManage: 'schedule.manage',
+  scheduleApprove: 'schedule.approve',
+  scheduleOverride: 'schedule.override',
+  scheduleSettingsManage: 'schedule.settings.manage',
+  scheduleCapacityRead: 'schedule.capacity.read',
+  scheduleAvailabilityOwn: 'schedule.availability.own',
+  scheduleReadOwn: 'schedule.read.own',
+  scheduleRequestChangeOwn: 'schedule.request-change.own',
 } as const satisfies Record<string, Permission>;
 
 /** Default permission grants per role; row-level scoping enforced at the API layer. */
@@ -192,6 +210,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     p.requestUpdate,
     p.aiIntakeManage,
     p.aiChatRead,
+    p.scheduleAvailabilityOwn,
+    p.scheduleReadOwn,
+    p.scheduleRequestChangeOwn,
   ],
 
   /** Floor worker — production tasks, quality, and delivery. */

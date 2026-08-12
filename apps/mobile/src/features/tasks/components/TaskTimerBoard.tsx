@@ -18,15 +18,18 @@ type Props = {
     openStartedAt: string | null;
     estimatedMinutes: number | null;
     plannedCompletion: string | null;
+    plannedStart?: string | null;
     elapsedMinutes: number;
   };
   formatDateTime: (v: string) => string;
+  /** True when the scheduler planned this task's work for today. */
+  isScheduledToday?: boolean;
 };
 
 /**
  * Industrial timer tray — live elapsed + estimate + due.
  */
-export function TaskTimerBoard({ timing, formatDateTime }: Props) {
+export function TaskTimerBoard({ timing, formatDateTime, isScheduledToday }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const reduce = useReducedMotion();
@@ -113,6 +116,21 @@ export function TaskTimerBoard({ timing, formatDateTime }: Props) {
                 {t('mobile.tasks.timerLive')}
               </AppText>
             </View>
+          ) : isScheduledToday && timing.status !== 'done' ? (
+            <View
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: theme.radius.full,
+                backgroundColor: colors.warningSoft,
+                borderWidth: 1,
+                borderColor: colors.warning,
+              }}
+            >
+              <AppText variant="caption" weight="semibold" style={{ color: colors.warning }}>
+                {t('mobile.tasks.scheduledToday')}
+              </AppText>
+            </View>
           ) : null}
         </View>
 
@@ -171,6 +189,13 @@ export function TaskTimerBoard({ timing, formatDateTime }: Props) {
             duration: formatMinutesDuration(elapsedMinutes, hm),
           })}
         </AppText>
+        {timing.plannedStart ? (
+          <AppText variant="caption" color="muted" align="start">
+            {t('mobile.tasks.timerScheduledStart', {
+              date: formatDateTime(timing.plannedStart),
+            })}
+          </AppText>
+        ) : null}
       </View>
     </Animated.View>
   );

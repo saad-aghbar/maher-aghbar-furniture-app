@@ -1,6 +1,7 @@
 'use client';
 
 import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
+import { AvailabilityCard } from '@/components/availability-card';
 import { DeliveryLocationMapLazy } from '@/components/delivery-location-map-lazy';
 import { useRouter } from '@/i18n/navigation';
 import {
@@ -96,6 +97,7 @@ function CreateOrderForm() {
   const [productId, setProductId] = useState(initialProductId);
   const [customProductName, setCustomProductName] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [preferredDeliveryDate, setPreferredDeliveryDate] = useState('');
   const [notes, setNotes] = useState('');
   const [fabric, setFabric] = useState('');
   const [fabricDescription, setFabricDescription] = useState('');
@@ -465,6 +467,7 @@ function CreateOrderForm() {
         body: JSON.stringify({
           source: 'PORTAL',
           externalOrderNumber: externalOrderNumber.trim() || undefined,
+          requiredDeliveryDate: preferredDeliveryDate || undefined,
           endCustomerName: resolvedName,
           endCustomerPhone: resolvedPhone,
           endCustomerFax: resolvedFax,
@@ -525,6 +528,7 @@ function CreateOrderForm() {
     setProductId('');
     setCustomProductName('');
     setQuantity('1');
+    setPreferredDeliveryDate('');
     setNotes('');
     setFabric('');
     setFabricDescription('');
@@ -650,6 +654,15 @@ function CreateOrderForm() {
             disabled={busy}
           />
 
+          <Input
+            label={tc('preferredDeliveryDate')}
+            type="date"
+            value={preferredDeliveryDate}
+            onChange={(e) => setPreferredDeliveryDate(e.target.value)}
+            dir="ltr"
+            disabled={busy}
+          />
+
           <div className="grid grid-cols-3 gap-3">
             <Input
               label={tc('width')}
@@ -735,6 +748,13 @@ function CreateOrderForm() {
           />
         </div>
       </Card>
+
+      {productId ? (
+        <AvailabilityCard
+          items={[{ productId, quantity: Number(quantity) || 0 }]}
+          requestedDeliveryDate={preferredDeliveryDate || undefined}
+        />
+      ) : null}
 
       <Card title={tc('fabricSection')} className="maher-form-section" style={{ animationDelay: '80ms' }}>
         <div className="space-y-4">

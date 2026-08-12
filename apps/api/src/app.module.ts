@@ -13,6 +13,7 @@ import { QuotationsModule } from './modules/quotations/quotations.module';
 import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module';
 import { ProductionModule } from './modules/production/production.module';
 import { TasksModule } from './modules/tasks/tasks.module';
+import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -52,6 +53,7 @@ import { SearchModule } from './modules/search/search.module';
     SalesOrdersModule,
     ProductionModule,
     TasksModule,
+    SchedulingModule,
     InventoryModule,
     InvoicesModule,
     PaymentsModule,

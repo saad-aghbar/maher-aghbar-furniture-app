@@ -17,6 +17,7 @@ const QUEUE_NAMES = [
   'reports',
   'notifications',
   'file-processing',
+  'scheduling',
 ] as const;
 
 async function main() {
@@ -53,6 +54,12 @@ async function main() {
         logger.info(`[${name}] job ${job.id} ${job.name}`, { data: job.data });
         if (name === 'emails' || name === 'sms' || name === 'whatsapp' || name === 'notifications') {
           logger.info(`[${name}:console] delivered`, job.data);
+        }
+        if (name === 'scheduling') {
+          // SCHEDULE_GENERATE / REPLAN / RISK_ANALYSIS / ESTIMATE_STATS — v1 runs
+          // scheduling synchronously inside the API request path, so this worker
+          // only logs the job for observability/audit; no action is taken here.
+          logger.info(`[scheduling:noop] acknowledged ${job.name}`, job.data);
         }
         return { ok: true, queue: name, at: new Date().toISOString() };
       },

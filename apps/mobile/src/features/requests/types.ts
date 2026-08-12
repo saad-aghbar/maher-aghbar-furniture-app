@@ -72,6 +72,8 @@ export type RequestDetail = {
   deliveryAddress?: string | null;
   endCustomerName?: string | null;
   endCustomerPhone?: string | null;
+  /** ISO date the dealer requested delivery by. */
+  requiredDeliveryDate?: string | null;
   submittedAt?: string | null;
   createdAt: string;
   imageUrl?: string | null;

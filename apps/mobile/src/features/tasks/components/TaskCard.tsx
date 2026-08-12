@@ -29,6 +29,7 @@ export function TaskCard({
         deadline: task.deadline,
         emphasize: task.emphasize,
         completed,
+        isScheduledToday: task.isScheduledToday,
       }}
     />
   );

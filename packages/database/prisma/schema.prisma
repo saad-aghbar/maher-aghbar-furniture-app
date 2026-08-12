@@ -278,6 +278,57 @@ enum Priority {
   URGENT
 }
 
+enum QuantityScalingMode {
+  LINEAR
+  FIXED
+  SETUP_PLUS_LINEAR
+  BATCH
+  PARALLEL_CAPACITY
+}
+
+enum ScheduleStatus {
+  DRAFT
+  PROPOSED
+  APPROVED
+  SUPERSEDED
+  CANCELLED
+  NEEDS_REVIEW
+  PROVISIONAL
+}
+
+enum SchedulePromiseState {
+  ESTIMATED
+  AWAITING_APPROVAL
+  CONFIRMED
+  AT_RISK
+  RESCHEDULED
+  COMPLETED
+}
+
+enum ManufacturingComplexity {
+  STANDARD
+  MODIFIED
+  CUSTOM
+}
+
+enum ScheduleResourceType {
+  EMPLOYEE
+  DEPARTMENT
+}
+
+enum EstimateReviewStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum FactoryCalendarExceptionType {
+  HOLIDAY
+  SHUTDOWN
+  EXTRA_SHIFT
+}
+
 // ─── IAM ─────────────────────────────────────────────────────────────────────
 
 model User {
@@ -322,6 +373,9 @@ model User {
   blockersReported   TaskBlocker[]          @relation("BlockerReporter")
   deliveriesAsDriver Delivery[]             @relation("DeliveryDriver")
   aiChatConversations AiChatConversation[]
+  workerSkills       WorkerSkill[]
+  scheduleAllocations ScheduleAllocation[]  @relation("AllocationEmployee")
+  schedulesApproved  ProductionSchedule[]   @relation("ScheduleApprover")
 
   @@index([customerId])
   @@index([departmentId])
@@ -415,6 +469,8 @@ model Department {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   users     User[]
+  stageEstimateOverrides ProductStageEstimate[] @relation("StageEstimateOverrideDepartment")
+  scheduleAllocations    ScheduleAllocation[]   @relation("AllocationDepartment")
 
   @@map("departments")
 }
@@ -593,6 +649,9 @@ model Product {
   productionOrders ProductionOrder[]
   dealerPrices     DealerPrice[]
   requestItems     RequestItem[]
+  productionProfile ProductProductionProfile?
+  stageEstimates    ProductStageEstimate[]
+  estimateStats     StageEstimateStat[]
 
   @@index([categoryId])
   @@map("products")
@@ -1321,6 +1380,9 @@ model ProductionStageDefinition {
 
   instances ProductionStageInstance[]
   tasks     ProductionTask[]
+  stageEstimates ProductStageEstimate[]
+  workerSkills   WorkerSkill[]
+  estimateStats  StageEstimateStat[]
 
   @@map("production_stage_definitions")
 }
@@ -1339,6 +1401,8 @@ model ProductionOrder {
   quantity              Decimal               @db.Decimal(18, 3)
   specifications        String?
   requiredDeliveryDate  DateTime?
+  /// Mirror of approved ProductionSchedule.committedDeliveryDate for list filters
+  committedDeliveryDate DateTime?
   plannedStartDate      DateTime?
   plannedCompletionDate DateTime?
   actualStartDate       DateTime?
@@ -1359,9 +1423,15 @@ model ProductionOrder {
   inspections  QualityInspection[]
   reworkRequests ReworkRequest[]
   documents    Document[]
+  schedules    ProductionSchedule[]
+  estimateProposals SchedulingEstimateProposal[]
 
   @@index([salesOrderId])
   @@index([status])
+  @@index([requiredDeliveryDate])
+  @@index([committedDeliveryDate])
+  @@index([plannedStartDate])
+  @@index([plannedCompletionDate])
   @@map("production_orders")
 }
 
@@ -1380,9 +1450,12 @@ model ProductionStageInstance {
   notes             String?
   inspectionStatus  String?
 
-  tasks ProductionTask[]
+  tasks       ProductionTask[]
+  allocations ScheduleAllocation[]
 
   @@index([productionOrderId])
+  @@index([plannedStart])
+  @@index([plannedEnd])
   @@map("production_stage_instances")
 }
 
@@ -1414,10 +1487,14 @@ model ProductionTask {
 
   timeEntries TaskTimeEntry[]
   blockers    TaskBlocker[]
+  allocations ScheduleAllocation[]
 
   @@index([productionOrderId])
   @@index([assignedEmployeeId])
   @@index([status])
+  @@index([plannedStart])
+  @@index([plannedCompletion])
+  @@index([assignedEmployeeId, plannedStart])
   @@map("production_tasks")
 }
 
@@ -1979,3 +2056,210 @@ model AiChatMessage {
   @@index([conversationId, createdAt])
   @@map("ai_chat_messages")
 }
+
+// ─── Production scheduling ────────────────────────────────────────────────────
+
+model ProductProductionProfile {
+  id                   String   @id @default(uuid())
+  productId            String   @unique
+  product              Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  totalStandardMinutes Int?
+  setupMinutes         Int      @default(0)
+  complexityFactor     Decimal  @default(1) @db.Decimal(8, 3)
+  defaultBatchSize     Int      @default(1)
+  minimumLeadTimeDays  Int?
+  bufferPercent        Int      @default(10)
+  isSchedulingEnabled  Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("product_production_profiles")
+}
+
+model ProductStageEstimate {
+  id                   String              @id @default(uuid())
+  productId            String
+  product              Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stageDefinitionId    String
+  stageDefinition      ProductionStageDefinition @relation(fields: [stageDefinitionId], references: [id])
+  setupMinutes         Int                 @default(0)
+  minutesPerUnit       Int                 @default(0)
+  fixedMinutes         Int                 @default(0)
+  quantityScalingMode  QuantityScalingMode @default(SETUP_PLUS_LINEAR)
+  batchSize            Int?
+  batchMinutes         Int?
+  maxParallelUnits     Int?
+  workerCountRequired  Int                 @default(1)
+  overrideDepartmentId String?
+  overrideDepartment   Department?         @relation("StageEstimateOverrideDepartment", fields: [overrideDepartmentId], references: [id])
+  isRequired           Boolean             @default(true)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@unique([productId, stageDefinitionId])
+  @@index([stageDefinitionId])
+  @@map("product_stage_estimates")
+}
+
+model FactoryCalendar {
+  id               String   @id @default(uuid())
+  name             String   @default("Default")
+  timezone         String   @default("Asia/Amman")
+  /// Weekday numbers 0=Sun .. 6=Sat that are working days (Fri closed by default)
+  workingWeekdays  Int[]    @default([0, 1, 2, 3, 4, 6])
+  shiftStart       String   @default("08:00")
+  shiftEnd         String   @default("16:00")
+  /// [{ start: "12:00", end: "13:00" }]
+  breaks           Json?
+  overtimeConfig   Json?
+  isDefault        Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  exceptions FactoryCalendarException[]
+
+  @@map("factory_calendars")
+}
+
+model FactoryCalendarException {
+  id         String                       @id @default(uuid())
+  calendarId String
+  calendar   FactoryCalendar              @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  date       DateTime                     @db.Date
+  type       FactoryCalendarExceptionType
+  shiftStart String?
+  shiftEnd   String?
+  note       String?
+  createdAt  DateTime                     @default(now())
+
+  @@unique([calendarId, date])
+  @@index([date])
+  @@map("factory_calendar_exceptions")
+}
+
+model ProductionSchedule {
+  id                        String               @id @default(uuid())
+  productionOrderId         String
+  productionOrder           ProductionOrder      @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  version                   Int                  @default(1)
+  status                    ScheduleStatus       @default(DRAFT)
+  promiseState              SchedulePromiseState @default(ESTIMATED)
+  requestedDeliveryDate     DateTime?
+  earliestAvailableDate     DateTime?
+  suggestedDeliveryDate     DateTime?
+  committedCompletionDate   DateTime?
+  committedDeliveryDate     DateTime?
+  calculationVersion        String               @default("v1")
+  reason                    String?
+  generatedAt               DateTime             @default(now())
+  generatedBy               String?
+  approvedAt                DateTime?
+  approvedById              String?
+  approvedBy                User?                @relation("ScheduleApprover", fields: [approvedById], references: [id])
+  materialReadyAt           DateTime?
+  materialRisk              Boolean              @default(false)
+  estimateReviewStatus      EstimateReviewStatus @default(NOT_REQUIRED)
+  estimateConfidence        String?
+  requiresAdminEstimateReview Boolean            @default(false)
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+
+  allocations ScheduleAllocation[]
+
+  @@unique([productionOrderId, version])
+  @@index([productionOrderId])
+  @@index([status])
+  @@index([promiseState])
+  @@index([committedDeliveryDate])
+  @@index([suggestedDeliveryDate])
+  @@map("production_schedules")
+}
+
+model ScheduleAllocation {
+  id                String               @id @default(uuid())
+  scheduleId        String
+  schedule          ProductionSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  productionTaskId  String?
+  productionTask    ProductionTask?      @relation(fields: [productionTaskId], references: [id], onDelete: SetNull)
+  stageInstanceId   String?
+  stageInstance     ProductionStageInstance? @relation(fields: [stageInstanceId], references: [id], onDelete: SetNull)
+  resourceType      ScheduleResourceType @default(EMPLOYEE)
+  employeeId        String?
+  employee          User?                @relation("AllocationEmployee", fields: [employeeId], references: [id])
+  departmentId      String?
+  department        Department?          @relation("AllocationDepartment", fields: [departmentId], references: [id])
+  plannedStart      DateTime
+  plannedEnd        DateTime
+  estimatedMinutes  Int
+  isPinned          Boolean              @default(false)
+  manuallyAdjusted  Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([scheduleId])
+  @@index([productionTaskId])
+  @@index([employeeId, plannedStart])
+  @@index([plannedStart, plannedEnd])
+  @@index([departmentId, plannedStart])
+  @@map("schedule_allocations")
+}
+
+model WorkerSkill {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stageDefinitionId String
+  stageDefinition   ProductionStageDefinition @relation(fields: [stageDefinitionId], references: [id], onDelete: Cascade)
+  proficiency       Int?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([userId, stageDefinitionId])
+  @@index([stageDefinitionId])
+  @@map("worker_skills")
+}
+
+model SchedulingEstimateProposal {
+  id                String                  @id @default(uuid())
+  productionOrderId String?
+  productionOrder   ProductionOrder?        @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  productId         String?
+  requestId         String?
+  complexity        ManufacturingComplexity @default(CUSTOM)
+  /// [{ stageDefinitionId|stageCode, setupMinutes, minutesPerUnit, fixedMinutes, quantityScalingMode? }]
+  stageEstimates    Json
+  confidence        String?
+  reasons           String[]                @default([])
+  status            EstimateReviewStatus    @default(PENDING)
+  reviewedAt        DateTime?
+  reviewedById      String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([productionOrderId])
+  @@index([status])
+  @@map("scheduling_estimate_proposals")
+}
+
+model StageEstimateStat {
+  id                String   @id @default(uuid())
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stageDefinitionId String
+  stageDefinition   ProductionStageDefinition @relation(fields: [stageDefinitionId], references: [id], onDelete: Cascade)
+  sampleSize        Int      @default(0)
+  avgActualMinutes  Decimal? @db.Decimal(12, 2)
+  medianActualMinutes Decimal? @db.Decimal(12, 2)
+  avgEstimatedMinutes Decimal? @db.Decimal(12, 2)
+  varianceMinutes   Decimal? @db.Decimal(12, 2)
+  suggestedMinutes  Int?
+  lastComputedAt    DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([productId, stageDefinitionId])
+  @@index([stageDefinitionId])
+  @@map("stage_estimate_stats")
+}
+

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, TaskStatus } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
@@ -19,6 +20,7 @@ import {
   TaskProgressDto,
 } from './dto/task.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SchedulingService } from '../scheduling/scheduling.service';
 import {
   buildTaskTimingSummary,
   closedSecondsFromTimeEntries,
@@ -48,7 +50,12 @@ export class TasksService {
     private readonly storage: LocalStorageService,
     private readonly idempotency: IdempotencyService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly scheduling?: SchedulingService,
   ) {}
+
+  private notifyScheduleLifecycle(taskId: string, event: 'start' | 'pause' | 'complete' | 'blocker') {
+    this.scheduling?.onTaskLifecycle(taskId, event).catch(() => undefined);
+  }
 
   async list(query: ListTasksDto, userId: string, permissions: string[]) {
     const canSeeAll = permissions.includes('production-task.update-any');
@@ -672,6 +679,9 @@ export class TasksService {
       });
       await this.pipeline.onTaskStart(task.productionOrderId, task.stageInstanceId, tx);
       return updated;
+    }).then((updated) => {
+      this.notifyScheduleLifecycle(id, 'start');
+      return updated;
     });
   }
 
@@ -691,6 +701,9 @@ export class TasksService {
         where: { id },
         data: { status: 'PAUSED' },
       });
+    }).then((updated) => {
+      this.notifyScheduleLifecycle(id, 'pause');
+      return updated;
     });
   }
 
@@ -797,6 +810,7 @@ export class TasksService {
           }
         });
 
+        this.notifyScheduleLifecycle(id, 'blocker');
         return this.getById(id, userId, permissions);
       },
     );
@@ -1014,6 +1028,8 @@ export class TasksService {
     if (poStatus === 'COMPLETED' && salesOrderId) {
       await this.invoices.ensureFromSalesOrder(salesOrderId, userId).catch(() => {});
     }
+
+    this.notifyScheduleLifecycle(id, 'complete');
 
     return updated;
   }

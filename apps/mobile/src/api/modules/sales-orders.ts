@@ -102,6 +102,7 @@ export type SalesOrderStage = {
 
 export type SalesOrderLineItem = {
   id: string;
+  productId?: string | null;
   productName: string;
   description?: string | null;
   quantity?: number | string | null;
@@ -132,6 +133,10 @@ export type SalesOrderDetail = {
   deliveryAddress: string | null;
   requiredDeliveryDate: string | null;
   requestedDeliveryDate?: string | null;
+  /** Scheduler-committed date, when a schedule has been approved. */
+  committedDeliveryDate?: string | null;
+  /** Dealer-safe commercial promise state (see @maher scheduling domain). */
+  promiseState?: string | null;
   projectName?: string | null;
   total?: number | string | null;
   progressPercent: number | null;

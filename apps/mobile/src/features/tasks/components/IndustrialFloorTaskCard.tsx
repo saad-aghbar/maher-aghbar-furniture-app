@@ -22,6 +22,8 @@ export type IndustrialFloorTaskCardModel = {
   deadline: string | null;
   emphasize?: boolean;
   completed?: boolean;
+  /** True when the scheduler has planned this task's work for today. */
+  isScheduledToday?: boolean;
 };
 
 type Props = {
@@ -418,6 +420,18 @@ export function IndustrialFloorTaskCard({
               isRTL={isRTL}
               danger={late}
             />
+            {task.isScheduledToday && !task.completed ? (
+              <>
+                <Divider compact />
+                <MetaRow
+                  iconName="today-outline"
+                  label={t('mobile.tasks.cardScheduled')}
+                  value={t('mobile.tasks.scheduledToday')}
+                  isRTL={isRTL}
+                  emphasize
+                />
+              </>
+            ) : null}
           </View>
         </View>
       </AnimatedPressable>

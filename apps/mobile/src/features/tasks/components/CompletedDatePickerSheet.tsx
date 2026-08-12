@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   useWindowDimensions,
@@ -10,10 +9,16 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import {
+  MonthCalendar,
+  initialCursorFromValue,
+  parseYmd,
+  todayYmd,
+  type CalendarCursor,
+} from '@/components/calendar';
 import { formatDate, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
-import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
   open: boolean;
@@ -23,54 +28,8 @@ type Props = {
   onConfirm: (ymd: string) => void;
 };
 
-const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] as const;
-const DAY_CELL = 40;
-
-function todayYmd(): string {
-  const d = new Date();
-  return toYmd(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-function toYmd(year: number, monthIndex: number, day: number): string {
-  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
-function parseYmd(value: string): { y: number; m: number; d: number } | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-  const dt = new Date(y, mo - 1, d);
-  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) {
-    return null;
-  }
-  return { y, m: mo - 1, d };
-}
-
-function monthLabel(year: number, monthIndex: number): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    month: 'long',
-    year: 'numeric',
-    numberingSystem: 'latn',
-  }).format(new Date(year, monthIndex, 1));
-}
-
-function buildMonthCells(year: number, monthIndex: number): Array<number | null> {
-  const first = new Date(year, monthIndex, 1);
-  /** Monday = 0 … Sunday = 6 */
-  const startPad = (first.getDay() + 6) % 7;
-  const days = new Date(year, monthIndex + 1, 0).getDate();
-  const cells: Array<number | null> = [];
-  for (let i = 0; i < startPad; i++) cells.push(null);
-  for (let d = 1; d <= days; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-  return cells;
-}
-
 /**
- * Floor-plan calendar sheet — pick a single completion day.
+ * Floor-plan calendar sheet — pick a single completion day (past only).
  */
 export function CompletedDatePickerSheet({
   open,
@@ -87,65 +46,27 @@ export function CompletedDatePickerSheet({
   const today = todayYmd();
   const sheetHeight = Math.min(Math.round(height * 0.78), 620);
 
-  const initial = parseYmd(value) ?? parseYmd(today)!;
-  const [cursor, setCursor] = useState({ y: initial.y, m: initial.m });
+  const [cursor, setCursor] = useState<CalendarCursor>(() =>
+    initialCursorFromValue(value, today),
+  );
   const [draft, setDraft] = useState(value.trim() || today);
 
   useEffect(() => {
     if (!open) return;
-    const parsed = parseYmd(value) ?? parseYmd(today)!;
-    setCursor({ y: parsed.y, m: parsed.m });
+    setCursor(initialCursorFromValue(value, today));
     setDraft(value.trim() || today);
   }, [open, today, value]);
-
-  const cells = useMemo(
-    () => buildMonthCells(cursor.y, cursor.m),
-    [cursor.m, cursor.y],
-  );
 
   const draftParsed = parseYmd(draft);
   const canApply = Boolean(draftParsed) && draft <= today;
 
-  const shiftMonth = (delta: number) => {
-    void haptics.selection();
-    setCursor((prev) => {
-      const next = new Date(prev.y, prev.m + delta, 1);
-      return { y: next.getFullYear(), m: next.getMonth() };
-    });
-  };
-
   const board = (
-    <View
-      style={{
-        borderRadius: theme.radius.xl,
-        borderWidth: 1,
-        borderColor: colors.borderStrong,
-        backgroundColor: colors.surfaceSecondary,
-        padding: theme.spacing.md,
-        gap: theme.spacing.md,
-        overflow: 'hidden',
-        ...orderBoardShadow(colorScheme),
-      }}
-    >
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
-          width: 3,
-          backgroundColor: colors.brand,
-          opacity: 0.85,
-        }}
-      />
-
+    <View style={{ gap: theme.spacing.md }}>
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'center',
           gap: theme.spacing.sm,
-          paddingLeft: isRTL ? 0 : 4,
-          paddingRight: isRTL ? 4 : 0,
         }}
       >
         <View
@@ -193,160 +114,15 @@ export function CompletedDatePickerSheet({
         </View>
       </View>
 
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: theme.spacing.sm,
-          paddingLeft: isRTL ? 0 : 4,
-          paddingRight: isRTL ? 4 : 0,
-        }}
-      >
-        <AnimatedPressable
-          variant="button"
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.tasks.completedDatePrevMonth')}
-          onPress={() => shiftMonth(-1)}
-          style={navBtnStyle(colors, theme)}
-        >
-          <Ionicons
-            name={isRTL ? 'chevron-forward' : 'chevron-back'}
-            size={18}
-            color={colors.brand}
-          />
-        </AnimatedPressable>
-
-        <AppText
-          variant="label"
-          weight={titleWeight}
-          align="center"
-          numberOfLines={1}
-          style={{ flex: 1, color: colors.textPrimary }}
-        >
-          {monthLabel(cursor.y, cursor.m)}
-        </AppText>
-
-        <AnimatedPressable
-          variant="button"
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.tasks.completedDateNextMonth')}
-          onPress={() => shiftMonth(1)}
-          style={navBtnStyle(colors, theme)}
-        >
-          <Ionicons
-            name={isRTL ? 'chevron-back' : 'chevron-forward'}
-            size={18}
-            color={colors.brand}
-          />
-        </AnimatedPressable>
-      </View>
-
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          paddingLeft: isRTL ? 0 : 4,
-          paddingRight: isRTL ? 4 : 0,
-        }}
-      >
-        {WEEKDAYS.map((day) => (
-          <View key={day} style={{ flex: 1, alignItems: 'center', paddingVertical: 2 }}>
-            <AppText
-              variant="caption"
-              weight="medium"
-              style={{
-                color: colors.textMuted,
-                fontSize: 11,
-                letterSpacing: 0.4,
-              }}
-            >
-              {day}
-            </AppText>
-          </View>
-        ))}
-      </View>
-
-      <View
-        style={{
-          gap: 6,
-          paddingLeft: isRTL ? 0 : 4,
-          paddingRight: isRTL ? 4 : 0,
-        }}
-      >
-        {chunk(cells, 7).map((row, rowIdx) => (
-          <View
-            key={`row-${rowIdx}`}
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              gap: 6,
-            }}
-          >
-            {row.map((day, colIdx) => {
-              if (day == null) {
-                return (
-                  <View
-                    key={`e-${rowIdx}-${colIdx}`}
-                    style={{ flex: 1, height: DAY_CELL }}
-                  />
-                );
-              }
-              const ymd = toYmd(cursor.y, cursor.m, day);
-              const selected = draft === ymd;
-              const isToday = ymd === today;
-              const disabled = ymd > today;
-
-              return (
-                <Pressable
-                  key={ymd}
-                  disabled={disabled}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected, disabled }}
-                  accessibilityLabel={ymd}
-                  onPress={() => {
-                    if (disabled) return;
-                    void haptics.selection();
-                    setDraft(ymd);
-                  }}
-                  style={{
-                    flex: 1,
-                    height: DAY_CELL,
-                    borderRadius: theme.radius.md,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: selected
-                      ? colors.brand
-                      : isToday
-                        ? colors.brandSoft
-                        : colors.surface,
-                    borderWidth: 1,
-                    borderColor: selected
-                      ? colors.brand
-                      : isToday
-                        ? colors.brand
-                        : colors.border,
-                    opacity: disabled ? 0.35 : 1,
-                  }}
-                >
-                  <AppText
-                    variant="label"
-                    weight={selected || isToday ? titleWeight : 'medium'}
-                    style={{
-                      color: selected
-                        ? colors.onBrand
-                        : disabled
-                          ? colors.textMuted
-                          : colors.textPrimary,
-                      fontSize: 14,
-                    }}
-                  >
-                    {String(day)}
-                  </AppText>
-                </Pressable>
-              );
-            })}
-          </View>
-        ))}
-      </View>
+      <MonthCalendar
+        value={draft}
+        onSelect={setDraft}
+        monthCursor={cursor}
+        onMonthChange={setCursor}
+        maxDate={today}
+        disableUnavailable
+        variant="default"
+      />
     </View>
   );
 
@@ -475,26 +251,4 @@ export function CompletedDatePickerSheet({
       </View>
     </BottomSheet>
   );
-}
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-function navBtnStyle(
-  colors: { surface: string; border: string },
-  theme: { radius: { full: number } },
-) {
-  return {
-    width: 40,
-    height: 40,
-    borderRadius: theme.radius.full,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  };
 }

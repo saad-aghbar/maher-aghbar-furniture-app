@@ -87,4 +87,37 @@ describe('selectTask', () => {
     expect(toPriorityLevel('NORMAL')).toBe('medium');
     expect(toPriorityLevel('URGENT')).toBe('urgent');
   });
+
+  it('surfaces the scheduler plannedStart and today flag on cards', () => {
+    const now = Date.now();
+    const card = selectTaskCard(
+      { ...openTasksFixture[0], plannedStart: new Date(now).toISOString() },
+      'en',
+    );
+    expect(card.plannedStart).toBe(new Date(now).toISOString());
+    expect(card.isScheduledToday).toBe(true);
+  });
+
+  it('falls back to timing.plannedStart when the flat field is absent', () => {
+    const now = new Date().toISOString();
+    const card = selectTaskCard(
+      { ...openTasksFixture[0], plannedStart: undefined, timing: { plannedStart: now } as any },
+      'en',
+    );
+    expect(card.plannedStart).toBe(now);
+    expect(card.isScheduledToday).toBe(true);
+  });
+
+  it('is not scheduled today when plannedStart is in the past and no fallback applies', () => {
+    const card = selectTaskCard(openTasksFixture[0], 'en');
+    expect(card.isScheduledToday).toBe(false);
+  });
+
+  it('carries plannedStart through to the detail timing view model', () => {
+    const now = new Date().toISOString();
+    const vm = selectTaskDetail({ ...taskDetailFixture, plannedStart: now }, 'en');
+    expect(vm.plannedStart).toBe(now);
+    expect(vm.timing.plannedStart).toBe(now);
+    expect(vm.isScheduledToday).toBe(true);
+  });
 });

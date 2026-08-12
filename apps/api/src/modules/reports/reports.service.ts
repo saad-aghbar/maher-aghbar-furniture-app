@@ -1104,6 +1104,11 @@ export class ReportsService {
       }),
     ]);
 
+    const [plannedVsActual, onTimeRate] = await Promise.all([
+      this.taskPlannedVsActual(filters, requiredDeliveryDate),
+      this.productionOnTimeRate(baseWhere, requiredDeliveryDate),
+    ]);
+
     const mapPo = (po: (typeof delayed)[number], opts: { late?: boolean } = {}) => {
       const due = po.requiredDeliveryDate ? new Date(po.requiredDeliveryDate).getTime() : null;
       const daysLate =
@@ -1132,6 +1137,101 @@ export class ReportsService {
       openCount: open.length,
       delayedCount: delayed.length,
       tasksByStatus: stageThroughput,
+      plannedVsActual,
+      onTimeRate,
+    };
+  }
+
+  /**
+   * Estimated vs actual minutes for completed tasks in the period — a
+   * placeholder scheduling-accuracy signal until enough production history
+   * has accumulated for richer analytics (see StageEstimateStat).
+   */
+  private async taskPlannedVsActual(
+    filters: ReportPeriodFilters,
+    completedRange?: Prisma.DateTimeFilter,
+  ) {
+    const tasks = await this.prisma.productionTask.findMany({
+      where: {
+        status: TaskStatus.COMPLETED,
+        estimatedMinutes: { not: null },
+        actualMinutes: { not: null },
+        ...(completedRange ? { actualCompletion: completedRange } : {}),
+        ...(filters.customerId
+          ? { productionOrder: { salesOrder: { customerId: filters.customerId } } }
+          : {}),
+      },
+      select: { estimatedMinutes: true, actualMinutes: true },
+      take: 5000,
+    });
+
+    if (tasks.length === 0) {
+      return {
+        sampleSize: 0,
+        avgPlannedMinutes: null,
+        avgActualMinutes: null,
+        varianceMinutes: null,
+        variancePercent: null,
+      };
+    }
+
+    const plannedTotal = tasks.reduce((sum, t) => sum + (t.estimatedMinutes ?? 0), 0);
+    const actualTotal = tasks.reduce((sum, t) => sum + (t.actualMinutes ?? 0), 0);
+    const avgPlannedMinutes = Math.round(plannedTotal / tasks.length);
+    const avgActualMinutes = Math.round(actualTotal / tasks.length);
+    const varianceMinutes = avgActualMinutes - avgPlannedMinutes;
+    const variancePercent =
+      avgPlannedMinutes > 0 ? Math.round((varianceMinutes / avgPlannedMinutes) * 1000) / 10 : null;
+
+    return {
+      sampleSize: tasks.length,
+      avgPlannedMinutes,
+      avgActualMinutes,
+      varianceMinutes,
+      variancePercent,
+    };
+  }
+
+  /**
+   * Share of completed production orders finished by their committed (or
+   * required) delivery date — a placeholder until ScheduleAllocation history
+   * is deep enough to break this down per department/stage.
+   */
+  private async productionOnTimeRate(
+    baseWhere: Prisma.ProductionOrderWhereInput,
+    completedRange?: Prisma.DateTimeFilter,
+  ) {
+    const completed = await this.prisma.productionOrder.findMany({
+      where: {
+        ...baseWhere,
+        status: ProductionOrderStatus.COMPLETED,
+        actualCompletionDate: { not: null, ...(completedRange ?? {}) },
+      },
+      select: {
+        actualCompletionDate: true,
+        committedDeliveryDate: true,
+        requiredDeliveryDate: true,
+        plannedCompletionDate: true,
+      },
+      take: 5000,
+    });
+
+    const withDueDate = completed.filter(
+      (po) => po.committedDeliveryDate || po.requiredDeliveryDate || po.plannedCompletionDate,
+    );
+    if (withDueDate.length === 0) {
+      return { sampleSize: 0, onTimeCount: 0, onTimeRate: null };
+    }
+
+    const onTimeCount = withDueDate.filter((po) => {
+      const due = po.committedDeliveryDate ?? po.requiredDeliveryDate ?? po.plannedCompletionDate;
+      return due && po.actualCompletionDate && po.actualCompletionDate.getTime() <= due.getTime();
+    }).length;
+
+    return {
+      sampleSize: withDueDate.length,
+      onTimeCount,
+      onTimeRate: Math.round((onTimeCount / withDueDate.length) * 1000) / 10,
     };
   }
 

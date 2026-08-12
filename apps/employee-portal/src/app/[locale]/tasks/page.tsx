@@ -3,8 +3,10 @@
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import {
+  Badge,
   EmptyState,
   ErrorState,
+  Ltr,
   PageHero,
   Skeleton,
   StatusBadge,
@@ -13,7 +15,9 @@ import {
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useQuery } from '@tanstack/react-query';
+import { CalendarClock } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
+import { isScheduledForToday, toDateOnly } from '@/lib/scheduling';
 
 interface Task {
   id: string;
@@ -22,6 +26,8 @@ interface Task {
   status: string;
   priority: string;
   progressPercent: number;
+  plannedStart?: string | null;
+  plannedCompletion?: string | null;
   productionOrder?: {
     number: string;
     productDescription?: string;
@@ -75,6 +81,8 @@ export default function TasksPage() {
             const waiting = task.stageDefinition?.dependsOnCodes?.length
               ? task.stageDefinition.dependsOnCodes.join(', ')
               : null;
+            const scheduledToday =
+              isScheduledForToday(task.plannedStart) || isScheduledForToday(task.plannedCompletion);
             return (
               <Link key={task.id} href={`/tasks/${task.id}`} className="block">
                 <SurfaceCard tilt className="maher-list-card maher-press p-4">
@@ -99,14 +107,37 @@ export default function TasksPage() {
                         </p>
                       ) : null}
                     </div>
-                    <StatusBadge status={task.status} />
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <StatusBadge status={task.status} />
+                      {scheduledToday ? (
+                        <Badge variant="brand">
+                          <CalendarClock className="h-3 w-3" />
+                          {t('scheduledForToday')}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </div>
                   {locked && waiting ? (
                     <p className="mt-3 text-xs text-[var(--maher-warning)]">
                       {t('waitingFor')}: {waiting}
                     </p>
                   ) : null}
-                  <p className="mt-3 text-xs text-text-secondary">
+                  {task.plannedStart || task.plannedCompletion ? (
+                    <p className="mt-3 text-xs text-text-secondary">
+                      {task.plannedStart ? (
+                        <>
+                          {t('plannedStart')}: <Ltr>{toDateOnly(task.plannedStart)}</Ltr>
+                        </>
+                      ) : null}
+                      {task.plannedStart && task.plannedCompletion ? ' · ' : ''}
+                      {task.plannedCompletion ? (
+                        <>
+                          {t('plannedCompletion')}: <Ltr>{toDateOnly(task.plannedCompletion)}</Ltr>
+                        </>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  <p className="mt-1 text-xs text-text-secondary">
                     {t('priority')}: {task.priority}
                   </p>
                 </SurfaceCard>

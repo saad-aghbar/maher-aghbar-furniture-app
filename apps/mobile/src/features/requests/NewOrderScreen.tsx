@@ -31,6 +31,8 @@ import { useLocale } from '@/i18n';
 import { FadeIn, FormShake, SlideIn, haptics } from '@/motion';
 import { dealerTokens, useTheme } from '@/theme';
 import { useBrowseProductQuery, useFavoriteProductsQuery, usePreviouslyOrderedQuery } from '@/features/catalog/query';
+import { useAvailabilityQuery } from '@/features/scheduling/query';
+import type { AvailabilityRequest } from '@/api/modules/scheduling';
 import { catalogPickForOrderHref } from '@/features/catalog/catalogPickForOrder';
 import {
   isCatalogOrderDeepLink,
@@ -42,6 +44,8 @@ import {
   DealerGlassCard,
   DealerSectionHeader,
 } from '@/features/dealer-ui';
+import { DeliveryAvailabilityCard } from './components/DeliveryAvailabilityCard';
+import { selectDeliveryAvailability } from './selectDeliveryAvailability';
 import {
   type DealerAiIntakeState,
   previewNeedsInfo,
@@ -90,6 +94,7 @@ import {
   guessCityFromAddress,
   isAddressAlreadySaved,
   isValidDeliveryAddress,
+  isValidOptionalDate,
   isValidOptionalPhone,
   isValidQuantity,
   resolveModelName,
@@ -140,6 +145,7 @@ export function NewOrderScreen() {
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [deliveryLat, setDeliveryLat] = useState<number | undefined>();
   const [deliveryLng, setDeliveryLng] = useState<number | undefined>();
+  const [requiredDeliveryDate, setRequiredDeliveryDate] = useState('');
   const [savedAddresses, setSavedAddresses] = useState<CustomerAddress[]>([]);
   const [mapOpen, setMapOpen] = useState(false);
 
@@ -208,6 +214,7 @@ export function NewOrderScreen() {
         setDeliveryNotes(local.deliveryNotes);
         setDeliveryLat(local.deliveryLat);
         setDeliveryLng(local.deliveryLng);
+        setRequiredDeliveryDate(local.requiredDeliveryDate || '');
         if (local.serverDraftId && local.serverDraftNumber) {
           setDraftSaved({ id: local.serverDraftId, number: local.serverDraftNumber });
         }
@@ -231,6 +238,7 @@ export function NewOrderScreen() {
         setDeliveryNotes(local.deliveryNotes);
         setDeliveryLat(local.deliveryLat);
         setDeliveryLng(local.deliveryLng);
+        setRequiredDeliveryDate(local.requiredDeliveryDate || '');
         if (local.serverDraftId && local.serverDraftNumber) {
           setDraftSaved({ id: local.serverDraftId, number: local.serverDraftNumber });
         }
@@ -308,6 +316,7 @@ export function NewOrderScreen() {
       deliveryNotes,
       deliveryLat,
       deliveryLng,
+      requiredDeliveryDate,
       serverDraftId: draftSaved?.id,
       serverDraftNumber: draftSaved?.number,
       updatedAt: new Date().toISOString(),
@@ -335,6 +344,7 @@ export function NewOrderScreen() {
     deliveryNotes,
     deliveryLat,
     deliveryLng,
+    requiredDeliveryDate,
     draftSaved,
     submittedNumber,
   ]);
@@ -430,6 +440,31 @@ export function NewOrderScreen() {
     unitPrice != null && Number.isFinite(qtyNum) && qtyNum > 0 ? unitPrice * qtyNum : null;
   const currency = productQuery.data?.priceCurrency || 'JOD';
 
+  const availabilityRequest: AvailabilityRequest | null =
+    productId.trim() && isValidQuantity(quantity)
+      ? {
+          items: [{ productId, quantity: clampOrderQuantity(quantity) }],
+          requestedDeliveryDate:
+            requiredDeliveryDate.trim() && isValidOptionalDate(requiredDeliveryDate)
+              ? requiredDeliveryDate.trim()
+              : undefined,
+        }
+      : null;
+  const availabilityQuery = useAvailabilityQuery(availabilityRequest);
+  const availabilityDisplay = selectDeliveryAvailability({
+    hasItems: Boolean(availabilityRequest),
+    // Cold start only — keepPreviousData must not flash the calendar to “checking”.
+    isLoading: availabilityQuery.isLoading && !availabilityQuery.data,
+    isError: availabilityQuery.isError,
+    result: availabilityQuery.data,
+    requestedDeliveryDate: requiredDeliveryDate.trim() || undefined,
+  });
+  const availabilityUpdating =
+    availabilityQuery.isFetching && Boolean(availabilityQuery.data);  const requiredDeliveryDateError =
+    requiredDeliveryDate.trim() && !isValidOptionalDate(requiredDeliveryDate)
+      ? t('mobile.newOrder.errors.dateInvalid')
+      : undefined;
+
   const overallProgress =
     attachments.length === 0
       ? 0
@@ -462,6 +497,10 @@ export function NewOrderScreen() {
     }
     if (!isValidOptionalPhone(endCustomerPhone)) {
       fail(t('mobile.newOrder.errors.phoneInvalid'));
+      return false;
+    }
+    if (!isValidOptionalDate(requiredDeliveryDate)) {
+      fail(t('mobile.newOrder.errors.dateInvalid'));
       return false;
     }
     setError(null);
@@ -669,6 +708,10 @@ export function NewOrderScreen() {
       endCustomerPhone: endCustomerPhone.trim() || undefined,
       deliveryLat,
       deliveryLng,
+      requiredDeliveryDate:
+        requiredDeliveryDate.trim() && isValidOptionalDate(requiredDeliveryDate)
+          ? requiredDeliveryDate.trim()
+          : undefined,
       items: [
         {
           productId: productId.trim() ? productId : undefined,
@@ -805,6 +848,7 @@ export function NewOrderScreen() {
     setDeliveryNotes('');
     setDeliveryLat(undefined);
     setDeliveryLng(undefined);
+    setRequiredDeliveryDate('');
     setAttachments([]);
     setAiJobId(null);
     setAiState('idle');
@@ -1244,6 +1288,15 @@ export function NewOrderScreen() {
                       onOpenMap={() => setMapOpen(true)}
                       onChangeNotes={(v) => setDeliveryNotes(clampNotes(v, NOTES_MAX))}
                     />
+
+                    <DeliveryAvailabilityCard
+                      display={availabilityDisplay}
+                      requestedDeliveryDate={requiredDeliveryDate}
+                      onChangeDate={setRequiredDeliveryDate}
+                      dateError={requiredDeliveryDateError}
+                      updating={availabilityUpdating}
+                    />
+
                     {error && step === 3 ? (
                       <AppText variant="caption" color="error">
                         {error}
@@ -1296,6 +1349,8 @@ export function NewOrderScreen() {
                         unitPrice,
                         currency,
                         estimatedTotal,
+                        requestedDeliveryDate: requiredDeliveryDate.trim() || null,
+                        estimatedDeliveryDate: availabilityDisplay.suggestedDate,
                       }}
                       attachments={attachments}
                       error={error}
@@ -1337,6 +1392,8 @@ export function NewOrderScreen() {
                       unitPrice,
                       currency,
                       estimatedTotal,
+                      requestedDeliveryDate: requiredDeliveryDate.trim() || null,
+                      estimatedDeliveryDate: availabilityDisplay.suggestedDate,
                     }}
                     attachments={attachments}
                     error={error}

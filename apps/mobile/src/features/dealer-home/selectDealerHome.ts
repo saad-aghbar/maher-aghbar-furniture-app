@@ -55,6 +55,8 @@ export type DealerHomeOrderCardModel = {
   progressPercent: number;
   progressLabel: string | null;
   deliveryDate: string | null;
+  /** True when `deliveryDate` reflects a scheduler-committed date (not just requested). */
+  isCommittedDate: boolean;
   externalOrderNumber: string | null;
   endCustomerName: string | null;
 };
@@ -76,6 +78,7 @@ function toNumber(value: number | string | null | undefined): number {
 }
 
 export function toDealerHomeOrderCard(order: DealerHomeOrder): DealerHomeOrderCardModel {
+  const committed = order.committedDeliveryDate ?? null;
   return {
     id: order.id,
     number: order.number,
@@ -84,7 +87,8 @@ export function toDealerHomeOrderCard(order: DealerHomeOrder): DealerHomeOrderCa
     imageUrl: order.imageUrl,
     progressPercent: Number(order.progressPercent ?? 0),
     progressLabel: order.progressLabel?.trim() || null,
-    deliveryDate: order.requiredDeliveryDate,
+    deliveryDate: committed ?? order.requiredDeliveryDate,
+    isCommittedDate: Boolean(committed),
     externalOrderNumber: order.externalOrderNumber,
     endCustomerName: order.endCustomerName,
   };

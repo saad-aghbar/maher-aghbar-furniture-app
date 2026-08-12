@@ -4,6 +4,11 @@ import { PageHeader } from '@/components/admin/page-header';
 import { BomMaterialPicker, type PickedMaterial } from '@/components/admin/bom-material-picker';
 import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import {
+  QUANTITY_SCALING_MODES,
+  type ProductProductionProfile,
+  type ProductStageEstimateRow,
+} from '@/lib/scheduling';
 import { localizedName } from '@maher/i18n';
 import {
   Alert,
@@ -30,6 +35,25 @@ interface Category {
   code: string;
   nameAr: string;
   nameEn: string;
+}
+
+interface StageOption {
+  id: string;
+  code: string;
+  nameAr: string;
+  nameEn: string;
+  nameHe?: string | null;
+}
+
+interface StageEstimateDraft {
+  key: string;
+  stageDefinitionId: string;
+  setupMinutes: string;
+  minutesPerUnit: string;
+  fixedMinutes: string;
+  quantityScalingMode: string;
+  workerCountRequired: string;
+  isRequired: boolean;
 }
 
 interface BomLine {
@@ -148,6 +172,17 @@ export default function ProductDetailPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerReplaceIndex, setPickerReplaceIndex] = useState<number | null>(null);
 
+  const [schedulingMode, setSchedulingMode] = useState<'basic' | 'advanced'>('basic');
+  const [isSchedulingEnabled, setIsSchedulingEnabled] = useState(true);
+  const [totalStandardMinutes, setTotalStandardMinutes] = useState('');
+  const [profileSetupMinutes, setProfileSetupMinutes] = useState('');
+  const [complexityFactor, setComplexityFactor] = useState('1');
+  const [defaultBatchSize, setDefaultBatchSize] = useState('1');
+  const [minimumLeadTimeDays, setMinimumLeadTimeDays] = useState('');
+  const [profileBufferPercent, setProfileBufferPercent] = useState('10');
+  const [stageEstimates, setStageEstimates] = useState<StageEstimateDraft[]>([]);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
   const productQuery = useQuery({
     queryKey: ['product', id],
     queryFn: () => apiFetch<ProductDetail>(`/api/v1/products/${id}`),
@@ -157,6 +192,29 @@ export default function ProductDetailPage() {
     queryKey: ['product-categories'],
     queryFn: () =>
       apiFetch<{ data: Category[] }>('/api/v1/product-categories?pageSize=100').then((r) => r.data),
+  });
+
+  const stagesQuery = useQuery({
+    queryKey: ['production-stages', 'for-product-time'],
+    queryFn: () =>
+      apiFetch<{ data: StageOption[] } | StageOption[]>('/api/v1/production-stages?pageSize=200').then(
+        (r) => (Array.isArray(r) ? r : r.data),
+      ),
+    staleTime: 60_000,
+  });
+
+  const productionProfileQuery = useQuery({
+    queryKey: ['product-production-profile', id],
+    queryFn: () =>
+      apiFetch<ProductProductionProfile>(`/api/v1/scheduling/products/${id}/production-profile`),
+    retry: false,
+  });
+
+  const stageEstimatesQuery = useQuery({
+    queryKey: ['product-stage-estimates', id],
+    queryFn: () =>
+      apiFetch<ProductStageEstimateRow[]>(`/api/v1/scheduling/products/${id}/stage-estimates`),
+    retry: false,
   });
 
   const dealerPricesQuery = useQuery({
@@ -218,6 +276,36 @@ export default function ProductDetailPage() {
         })),
     );
   }, [data]);
+
+  useEffect(() => {
+    const profile = productionProfileQuery.data;
+    if (!profile) return;
+    setIsSchedulingEnabled(profile.isSchedulingEnabled);
+    setTotalStandardMinutes(profile.totalStandardMinutes != null ? String(profile.totalStandardMinutes) : '');
+    setProfileSetupMinutes(String(profile.setupMinutes ?? 0));
+    setComplexityFactor(String(profile.complexityFactor ?? 1));
+    setDefaultBatchSize(String(profile.defaultBatchSize ?? 1));
+    setMinimumLeadTimeDays(profile.minimumLeadTimeDays != null ? String(profile.minimumLeadTimeDays) : '');
+    setProfileBufferPercent(String(profile.bufferPercent ?? 10));
+  }, [productionProfileQuery.data]);
+
+  useEffect(() => {
+    const rows = stageEstimatesQuery.data ?? [];
+    if (rows.length === 0) return;
+    setStageEstimates(
+      rows.map((row, i) => ({
+        key: row.id || `est-${i}`,
+        stageDefinitionId: row.stageDefinitionId,
+        setupMinutes: String(row.setupMinutes ?? 0),
+        minutesPerUnit: String(row.minutesPerUnit ?? 0),
+        fixedMinutes: String(row.fixedMinutes ?? 0),
+        quantityScalingMode: row.quantityScalingMode || 'SETUP_PLUS_LINEAR',
+        workerCountRequired: String(row.workerCountRequired ?? 1),
+        isRequired: row.isRequired ?? true,
+      })),
+    );
+    setSchedulingMode('advanced');
+  }, [stageEstimatesQuery.data]);
 
   const liveBomCost = useMemo(() => {
     return bomLines.reduce((sum, line) => {
@@ -308,6 +396,49 @@ export default function ProductDetailPage() {
       await qc.invalidateQueries({ queryKey: ['products'] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const saveProductionProfileMutation = useMutation({
+    mutationFn: async () => {
+      await apiFetch(`/api/v1/scheduling/products/${id}/production-profile`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          isSchedulingEnabled,
+          totalStandardMinutes: totalStandardMinutes ? Number(totalStandardMinutes) : null,
+          setupMinutes: Number(profileSetupMinutes) || 0,
+          complexityFactor: Number(complexityFactor) || 1,
+          defaultBatchSize: Number(defaultBatchSize) || 1,
+          minimumLeadTimeDays: minimumLeadTimeDays ? Number(minimumLeadTimeDays) : null,
+          bufferPercent: Number(profileBufferPercent) || 0,
+        }),
+      });
+      if (schedulingMode === 'advanced') {
+        const items = stageEstimates
+          .filter((row) => row.stageDefinitionId)
+          .map((row) => ({
+            stageDefinitionId: row.stageDefinitionId,
+            setupMinutes: Number(row.setupMinutes) || 0,
+            minutesPerUnit: Number(row.minutesPerUnit) || 0,
+            fixedMinutes: Number(row.fixedMinutes) || 0,
+            quantityScalingMode: row.quantityScalingMode,
+            workerCountRequired: Number(row.workerCountRequired) || 1,
+            isRequired: row.isRequired,
+          }));
+        if (items.length > 0) {
+          await apiFetch(`/api/v1/scheduling/products/${id}/stage-estimates`, {
+            method: 'PATCH',
+            body: JSON.stringify({ items }),
+          });
+        }
+      }
+    },
+    onSuccess: async () => {
+      setProfileError(null);
+      setBanner(t('productionProfileSaved'));
+      await qc.invalidateQueries({ queryKey: ['product-production-profile', id] });
+      await qc.invalidateQueries({ queryKey: ['product-stage-estimates', id] });
+    },
+    onError: (err) => setProfileError(mutationErrorMessage(err)),
   });
 
   if (productQuery.isLoading) return <Skeleton className="h-64 w-full" />;
@@ -584,6 +715,230 @@ export default function ProductDetailPage() {
           </MotionSection>
         </div>
       </div>
+
+      <MotionSection className="maher-form-section" as="div">
+      <Card
+        title={t('productionTime')}
+        description={t('productionTimeHint')}
+        actions={
+          <Button
+            size="sm"
+            loading={saveProductionProfileMutation.isPending}
+            onClick={() => saveProductionProfileMutation.mutate()}
+          >
+            {tCommon('save')}
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          {profileError ? <Alert variant="error">{profileError}</Alert> : null}
+          {productionProfileQuery.isError ? (
+            <p className="text-xs text-text-tertiary">{t('productionProfileUnavailableHint')}</p>
+          ) : null}
+
+          <label className="flex items-center gap-2 text-sm text-text-secondary">
+            <input
+              type="checkbox"
+              checked={isSchedulingEnabled}
+              onChange={(e) => setIsSchedulingEnabled(e.target.checked)}
+            />
+            {t('schedulingEnabled')}
+          </label>
+
+          <div className="inline-flex rounded-lg border border-border bg-surface-muted p-1">
+            <button
+              type="button"
+              onClick={() => setSchedulingMode('basic')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                schedulingMode === 'basic' ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary'
+              }`}
+            >
+              {t('productionTimeBasic')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSchedulingMode('advanced')}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                schedulingMode === 'advanced' ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary'
+              }`}
+            >
+              {t('productionTimeAdvanced')}
+            </button>
+          </div>
+
+          {schedulingMode === 'basic' ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label={t('totalStandardMinutes')}
+                type="number"
+                dir="ltr"
+                value={totalStandardMinutes}
+                onChange={(e) => setTotalStandardMinutes(e.target.value)}
+                hint={t('totalStandardMinutesHint')}
+              />
+              <Input
+                label={t('bufferPercent')}
+                type="number"
+                dir="ltr"
+                value={profileBufferPercent}
+                onChange={(e) => setProfileBufferPercent(e.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Input
+                  label={t('setupMinutes')}
+                  type="number"
+                  dir="ltr"
+                  value={profileSetupMinutes}
+                  onChange={(e) => setProfileSetupMinutes(e.target.value)}
+                />
+                <Input
+                  label={t('complexityFactor')}
+                  type="number"
+                  dir="ltr"
+                  value={complexityFactor}
+                  onChange={(e) => setComplexityFactor(e.target.value)}
+                />
+                <Input
+                  label={t('defaultBatchSize')}
+                  type="number"
+                  dir="ltr"
+                  value={defaultBatchSize}
+                  onChange={(e) => setDefaultBatchSize(e.target.value)}
+                />
+                <Input
+                  label={t('minimumLeadTimeDays')}
+                  type="number"
+                  dir="ltr"
+                  value={minimumLeadTimeDays}
+                  onChange={(e) => setMinimumLeadTimeDays(e.target.value)}
+                />
+                <Input
+                  label={t('bufferPercent')}
+                  type="number"
+                  dir="ltr"
+                  value={profileBufferPercent}
+                  onChange={(e) => setProfileBufferPercent(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-text-primary">{t('stageEstimates')}</p>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    leadingIcon={<Plus className="h-4 w-4" />}
+                    onClick={() =>
+                      setStageEstimates((prev) => [
+                        ...prev,
+                        {
+                          key: `est-${Date.now().toString(36)}-${prev.length}`,
+                          stageDefinitionId: '',
+                          setupMinutes: '0',
+                          minutesPerUnit: '0',
+                          fixedMinutes: '0',
+                          quantityScalingMode: 'SETUP_PLUS_LINEAR',
+                          workerCountRequired: '1',
+                          isRequired: true,
+                        },
+                      ])
+                    }
+                  >
+                    {t('addStageEstimate')}
+                  </Button>
+                </div>
+
+                {stageEstimates.length === 0 ? (
+                  <p className="text-sm text-text-tertiary">{t('noStageEstimates')}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {stageEstimates.map((row, index) => (
+                      <div
+                        key={row.key}
+                        className="grid gap-2 rounded-lg border border-border p-3 sm:grid-cols-6 sm:items-end"
+                      >
+                        <Select
+                          label={t('stage')}
+                          className="sm:col-span-2"
+                          value={row.stageDefinitionId}
+                          onChange={(e) =>
+                            setStageEstimates((prev) =>
+                              prev.map((r, i) =>
+                                i === index ? { ...r, stageDefinitionId: e.target.value } : r,
+                              ),
+                            )
+                          }
+                          options={[
+                            { value: '', label: t('select') },
+                            ...(stagesQuery.data ?? []).map((s) => ({
+                              value: s.id,
+                              label: localizedName(locale, s, s.code),
+                            })),
+                          ]}
+                        />
+                        <Input
+                          label={t('setupMinutes')}
+                          type="number"
+                          dir="ltr"
+                          value={row.setupMinutes}
+                          onChange={(e) =>
+                            setStageEstimates((prev) =>
+                              prev.map((r, i) => (i === index ? { ...r, setupMinutes: e.target.value } : r)),
+                            )
+                          }
+                        />
+                        <Input
+                          label={t('minutesPerUnit')}
+                          type="number"
+                          dir="ltr"
+                          value={row.minutesPerUnit}
+                          onChange={(e) =>
+                            setStageEstimates((prev) =>
+                              prev.map((r, i) =>
+                                i === index ? { ...r, minutesPerUnit: e.target.value } : r,
+                              ),
+                            )
+                          }
+                        />
+                        <Select
+                          label={t('quantityScalingMode')}
+                          value={row.quantityScalingMode}
+                          onChange={(e) =>
+                            setStageEstimates((prev) =>
+                              prev.map((r, i) =>
+                                i === index ? { ...r, quantityScalingMode: e.target.value } : r,
+                              ),
+                            )
+                          }
+                          options={QUANTITY_SCALING_MODES.map((mode) => ({
+                            value: mode,
+                            label: t(`quantityScalingModes.${mode}`),
+                          }))}
+                        />
+                        <div className="flex items-end justify-end gap-1 pb-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setStageEstimates((prev) => prev.filter((_, i) => i !== index))
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+      </MotionSection>
 
       <MotionSection className="maher-form-section" as="div">
       <Card title={t('adminNotes')}>

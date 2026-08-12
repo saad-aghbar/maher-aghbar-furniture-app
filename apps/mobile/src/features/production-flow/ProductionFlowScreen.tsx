@@ -178,7 +178,11 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
               >
                 {t('mobile.productionFlow.title')}
               </AppText>
-              <StatusBadge status={flow.status} dot />
+              {role === 'dealer' && flow.promiseState ? (
+                <StatusBadge status={flow.promiseState} dot />
+              ) : (
+                <StatusBadge status={flow.status} dot />
+              )}
             </View>
 
             <AppText variant="title" weight={titleWeight} numberOfLines={2}>
@@ -215,8 +219,12 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
                   color={late ? undefined : 'muted'}
                   style={late ? { color: colors.error } : undefined}
                 >
-                  {t('mobile.productionFlow.estimatedDelivery')}:{' '}
-                  {formatDate(flow.estimatedDelivery)}
+                  {t(
+                    flow.isCommittedDelivery
+                      ? 'mobile.productionFlow.committedDelivery'
+                      : 'mobile.productionFlow.estimatedDelivery',
+                  )}
+                  : {formatDate(flow.estimatedDelivery)}
                 </AppText>
               </View>
             ) : null}

@@ -53,6 +53,14 @@ const statusVariantMap: Record<string, BadgeVariant> = {
   PASSED: 'success',
   PASSED_WITH_NOTES: 'success',
   FAILED_REWORK_REQUIRED: 'error',
+  PROPOSED: 'info',
+  SUPERSEDED: 'default',
+  NEEDS_REVIEW: 'warning',
+  PROVISIONAL: 'warning',
+  ESTIMATED: 'default',
+  AWAITING_APPROVAL: 'warning',
+  AT_RISK: 'error',
+  RESCHEDULED: 'warning',
 };
 
 type StatusTranslator = (status: string) => string | undefined;

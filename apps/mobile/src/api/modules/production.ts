@@ -44,6 +44,10 @@ export type ProductionOrderListItem = {
   productDescription?: string | null;
   requiredDeliveryDate?: string | null;
   plannedCompletionDate?: string | null;
+  /** Scheduler-committed date, when a schedule has been approved. */
+  committedDeliveryDate?: string | null;
+  /** Dealer-safe commercial promise state (see @maher scheduling domain). */
+  promiseState?: string | null;
   imageUrl?: string | null;
   isLate?: boolean;
   customer?: ProductionCustomer | null;
@@ -95,6 +99,8 @@ export type ProductionTask = {
   } | null;
   actualCompletion?: string | null;
   plannedCompletion?: string | null;
+  /** Scheduler allocation start, when this task has been scheduled. */
+  plannedStart?: string | null;
   estimatedMinutes?: number | null;
   actualMinutes?: number | null;
   timing?: {

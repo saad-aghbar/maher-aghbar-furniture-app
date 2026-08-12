@@ -3,6 +3,7 @@ import { localizedName } from '@maher/i18n';
 import type { Locale } from '@maher/types';
 import type { TaskDetail, TaskFile, TaskListItem } from './api';
 import { buildLocalizedStageInstructions } from './buildLocalizedStageInstructions';
+import { isScheduledToday } from './isScheduledToday';
 
 const PROGRESS_LEAK = /progressPercent|progress_percent|percentComplete/i;
 
@@ -20,6 +21,10 @@ export type TaskCardModel = {
   status: string;
   deadline: string | null;
   emphasize: boolean;
+  /** Scheduler allocation start, when this task has been scheduled. */
+  plannedStart: string | null;
+  /** True when plannedStart (or, absent that, the deadline) falls today. */
+  isScheduledToday: boolean;
 };
 
 export type TaskDetailViewModel = TaskCardModel & {
@@ -44,6 +49,7 @@ export type TaskDetailViewModel = TaskCardModel & {
     openStartedAt: string | null;
     estimatedMinutes: number | null;
     plannedCompletion: string | null;
+    plannedStart: string | null;
     elapsedMinutes: number;
   };
 };
@@ -132,6 +138,7 @@ export function selectTaskCard(
 ): TaskCardModel {
   const priorityRaw = String(item.priority ?? 'NORMAL');
   const priority = toPriorityLevel(priorityRaw);
+  const plannedStart = item.plannedStart ?? item.timing?.plannedStart ?? null;
 
   const model: TaskCardModel = {
     id: item.id,
@@ -146,6 +153,8 @@ export function selectTaskCard(
     status: String(item.status ?? 'NOT_STARTED'),
     deadline: item.plannedCompletion ?? null,
     emphasize: priority === 'urgent' || priority === 'high',
+    plannedStart,
+    isScheduledToday: isScheduledToday(plannedStart ?? item.plannedCompletion ?? null),
   };
   assertNoProgressLeak(model);
   return model;
@@ -182,21 +191,24 @@ export function selectTaskDetail(
       })
     : stored || task.productionOrder?.specifications?.trim() || '';
 
-  const timing = task.timing ?? {
-    status:
-      status === 'IN_PROGRESS'
-        ? 'running'
-        : status === 'COMPLETED' || status === 'CANCELLED'
-          ? 'done'
-          : status === 'PAUSED' || status === 'BLOCKED'
-            ? 'stopped'
-            : 'idle',
-    actualMinutes: task.actualMinutes ?? 0,
-    actualSeconds: Math.max(0, Math.floor(task.actualMinutes ?? 0)) * 60,
-    openStartedAt: null,
-    estimatedMinutes: task.estimatedMinutes ?? null,
-    plannedCompletion: task.plannedCompletion ?? null,
-    elapsedMinutes: task.actualMinutes ?? 0,
+  const timing = {
+    ...(task.timing ?? {
+      status:
+        status === 'IN_PROGRESS'
+          ? 'running'
+          : status === 'COMPLETED' || status === 'CANCELLED'
+            ? 'done'
+            : status === 'PAUSED' || status === 'BLOCKED'
+              ? 'stopped'
+              : 'idle',
+      actualMinutes: task.actualMinutes ?? 0,
+      actualSeconds: Math.max(0, Math.floor(task.actualMinutes ?? 0)) * 60,
+      openStartedAt: null,
+      estimatedMinutes: task.estimatedMinutes ?? null,
+      plannedCompletion: task.plannedCompletion ?? null,
+      elapsedMinutes: task.actualMinutes ?? 0,
+    }),
+    plannedStart: task.plannedStart ?? task.timing?.plannedStart ?? null,
   };
 
   const vm: TaskDetailViewModel = {

@@ -32,6 +32,8 @@ export type CreateRequestInput = {
   endCustomerPhone?: string;
   deliveryLat?: number;
   deliveryLng?: number;
+  /** ISO date the dealer needs delivery by. */
+  requiredDeliveryDate?: string;
   items: CreateRequestItemInput[];
 };
 

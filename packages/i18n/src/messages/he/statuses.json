@@ -66,5 +66,12 @@
   "FAIL": "נכשל",
   "NOT_APPLICABLE": "לא רלוונטי",
   "IN_TRANSIT": "במעבר",
-  "POSTED": "נרשם"
+  "POSTED": "נרשם",
+  "PROPOSED": "מוצע",
+  "SUPERSEDED": "הוחלף",
+  "NEEDS_REVIEW": "דורש בדיקה",
+  "PROVISIONAL": "זמני",
+  "ESTIMATED": "משוער",
+  "AWAITING_APPROVAL": "ממתין לאישור",
+  "AT_RISK": "בסיכון"
 }

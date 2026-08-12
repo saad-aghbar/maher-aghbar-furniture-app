@@ -56,6 +56,15 @@ export const statusVariantMap: Record<string, BadgeVariant> = {
   PASSED: 'success',
   PASSED_WITH_NOTES: 'success',
   FAILED_REWORK_REQUIRED: 'error',
+  // Scheduling — dealer-safe promise states + raw schedule statuses (admin).
+  ESTIMATED: 'default',
+  AWAITING_APPROVAL: 'warning',
+  AT_RISK: 'warning',
+  RESCHEDULED: 'warning',
+  PROPOSED: 'brand',
+  SUPERSEDED: 'default',
+  PROVISIONAL: 'default',
+  NEEDS_REVIEW: 'warning',
 };
 
 export const priorityVariantMap: Record<PriorityLevel, BadgeVariant> = {

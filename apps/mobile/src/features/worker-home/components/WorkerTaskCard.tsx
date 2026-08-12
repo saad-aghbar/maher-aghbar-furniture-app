@@ -1,4 +1,5 @@
 import { IndustrialFloorTaskCard } from '@/features/tasks/components/IndustrialFloorTaskCard';
+import { isScheduledToday } from '@/features/tasks/isScheduledToday';
 import type { PriorityLevel } from '@/components/badges/badgeStyles';
 import { useLocale } from '@/i18n';
 import type { WorkerHomeTask } from '../api';
@@ -44,6 +45,7 @@ export function WorkerTaskCard({
         priority: toPriorityLevel(task.priority),
         deadline: task.deadline,
         emphasize: emphasize || toPriorityLevel(task.priority) === 'urgent',
+        isScheduledToday: isScheduledToday(task.timing?.plannedStart ?? task.deadline),
       }}
     />
   );

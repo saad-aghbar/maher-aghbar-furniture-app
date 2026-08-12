@@ -84,6 +84,23 @@ describe('dealer-safe mapping leak guards', () => {
   });
 });
 
+describe('toDealerHomeOrderCard delivery date', () => {
+  it('prefers the requested date when no schedule commitment exists', () => {
+    const card = toDealerHomeOrderCard(dealerHomeSuccessFixture.recentOrders[0]!);
+    expect(card.isCommittedDate).toBe(false);
+    expect(card.deliveryDate).toBe(dealerHomeSuccessFixture.recentOrders[0]!.requiredDeliveryDate);
+  });
+
+  it('prefers the scheduler-committed date once one exists', () => {
+    const card = toDealerHomeOrderCard({
+      ...dealerHomeSuccessFixture.recentOrders[0]!,
+      committedDeliveryDate: '2026-09-10T00:00:00.000Z',
+    });
+    expect(card.isCommittedDate).toBe(true);
+    expect(card.deliveryDate).toBe('2026-09-10T00:00:00.000Z');
+  });
+});
+
 describe('order carousels', () => {
   it('partitions active vs near-delivery from fixtures', () => {
     const cards = mapDealerHomeOrders(dealerHomeSuccessFixture.recentOrders);

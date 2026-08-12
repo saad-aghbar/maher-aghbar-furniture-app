@@ -73,6 +73,11 @@ import {
   type OrderLineItemView,
 } from './selectOrderDetail';
 import type { OrdersListVariant } from './selectOrderCard';
+import { isOwnOrderSchedule } from '@/api/modules/scheduling';
+import { useDealerDateChangeMutation, useOrderScheduleQuery } from '@/features/scheduling/query';
+import { ChangeDeliveryDateSheet } from './components/ChangeDeliveryDateSheet';
+import { OrderScheduleCard } from './components/OrderScheduleCard';
+import { selectChangeDateCta } from './selectSchedulePromise';
 
 type OrderDetailScreenProps = {
   orderId: string;
@@ -108,6 +113,8 @@ export function OrderDetailScreen({
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmKind, setConfirmKind] = useState<ConfirmKind>(null);
+  const [changeDateSheetOpen, setChangeDateSheetOpen] = useState(false);
+  const [dateChangeError, setDateChangeError] = useState<string | null>(null);
   const [galleryUris, setGalleryUris] = useState<string[]>([]);
   const scrollY = useSharedValue(0);
 
@@ -128,6 +135,14 @@ export function OrderDetailScreen({
     () => (raw ? selectOrderDetail(raw, variant, locale) : null),
     [locale, raw, variant],
   );
+
+  const scheduledProductionOrderId = vm?.productionOrders[0]?.id;
+  const showSchedule = variant === 'dealer' && Boolean(scheduledProductionOrderId) && !forceState;
+  const scheduleQuery = useOrderScheduleQuery(scheduledProductionOrderId, showSchedule);
+  const ownSchedule =
+    scheduleQuery.data && isOwnOrderSchedule(scheduleQuery.data) ? scheduleQuery.data : null;
+  const dealerDateChange = useDealerDateChangeMutation(scheduledProductionOrderId ?? '');
+  const changeDateCta = selectChangeDateCta(ownSchedule);
 
   const costSyncKey = useMemo(() => {
     if (!vm) return '';
@@ -543,6 +558,20 @@ export function OrderDetailScreen({
               </AppText>
             </OrderBoardCard>
           </ListItemEnter>
+
+          {showSchedule ? (
+            <ListItemEnter index={nextIndex()}>
+              <OrderScheduleCard
+                schedule={ownSchedule}
+                isLoading={scheduleQuery.isLoading}
+                onChangeDate={() => {
+                  setDateChangeError(null);
+                  void haptics.selection();
+                  setChangeDateSheetOpen(true);
+                }}
+              />
+            </ListItemEnter>
+          ) : null}
 
           {vm.showCosts ? (
             <ListItemEnter index={nextIndex()}>
@@ -1053,6 +1082,49 @@ export function OrderDetailScreen({
         reasonPlaceholder={t('mobile.orderDetail.reasonPlaceholder')}
         onConfirm={(reason) => runStatusAction('cancel', reason)}
       />
+
+      {showSchedule ? (
+        <ChangeDeliveryDateSheet
+          open={changeDateSheetOpen}
+          onClose={() => setChangeDateSheetOpen(false)}
+          mode={changeDateCta.mode}
+          current={ownSchedule?.requestedDeliveryDate}
+          availabilityItems={(
+            raw?.customerRequest?.items ??
+            raw?.orderedItems ??
+            []
+          )
+            .filter((item): item is typeof item & { productId: string } =>
+              Boolean(item.productId),
+            )
+            .map((item) => ({
+              productId: item.productId,
+              quantity: Number(item.quantity ?? 1) || 1,
+            }))}
+          loading={dealerDateChange.isPending}
+          errorMessage={dateChangeError}
+          onSubmit={(isoDate) => {
+            dealerDateChange.mutate(
+              { requestedDeliveryDate: isoDate },
+              {
+                onSuccess: (res) => {
+                  void haptics.confirmMedium();
+                  setChangeDateSheetOpen(false);
+                  showToast({
+                    variant: 'success',
+                    message: t(
+                      res.action === 'updated'
+                        ? 'mobile.orderDetail.schedule.dateUpdated'
+                        : 'mobile.orderDetail.schedule.dateRequestSent',
+                    ),
+                  });
+                },
+                onError: () => setDateChangeError(t('mobile.orderDetail.schedule.dateChangeFailed')),
+              },
+            );
+          }}
+        />
+      ) : null}
     </AppScreen>
   );
 }

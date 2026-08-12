@@ -34,6 +34,12 @@ export const lightColors: ThemeColors = {
   disabled: '#8A857C',
   disabledFill: '#EBE6DC',
   overlay: 'rgba(30, 26, 27, 0.40)',
+  /** Schedule load — bright empty → sand → amber → sienna → stone (readable on parchment) */
+  calendarLoadEmpty: '#FFFCF7',
+  calendarLoadLight: '#E0D2B8',
+  calendarLoadHalf: '#C9A86A',
+  calendarLoadBusy: '#A86B58',
+  calendarLoadClosed: '#9C968C',
 };
 
 /**
@@ -65,4 +71,9 @@ export const darkColors: ThemeColors = {
   disabled: '#8F8E8C',
   disabledFill: '#322C2D',
   overlay: 'rgba(0, 0, 0, 0.55)',
+  calendarLoadEmpty: '#352F30',
+  calendarLoadLight: 'rgba(168, 144, 108, 0.40)',
+  calendarLoadHalf: 'rgba(196, 160, 106, 0.55)',
+  calendarLoadBusy: 'rgba(196, 137, 122, 0.62)',
+  calendarLoadClosed: 'rgba(225, 223, 211, 0.22)',
 };

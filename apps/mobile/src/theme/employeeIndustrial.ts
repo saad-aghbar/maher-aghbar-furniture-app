@@ -31,6 +31,11 @@ export const employeeIndustrialDarkColors: ThemeColors = {
   disabled: '#6E675E',
   disabledFill: '#2C2724',
   overlay: 'rgba(0, 0, 0, 0.62)',
+  calendarLoadEmpty: '#2C2724',
+  calendarLoadLight: 'rgba(196, 160, 106, 0.40)',
+  calendarLoadHalf: 'rgba(212, 168, 106, 0.55)',
+  calendarLoadBusy: 'rgba(208, 136, 120, 0.62)',
+  calendarLoadClosed: 'rgba(247, 244, 239, 0.18)',
 };
 
 /** Light — cool workshop stone (not admin cream parchment). */
@@ -59,6 +64,11 @@ export const employeeIndustrialLightColors: ThemeColors = {
   disabled: '#8A857C',
   disabledFill: '#E7E5DF',
   overlay: 'rgba(26, 23, 20, 0.42)',
+  calendarLoadEmpty: '#FAF9F6',
+  calendarLoadLight: '#DDD2BC',
+  calendarLoadHalf: '#C9A86A',
+  calendarLoadBusy: '#A86B58',
+  calendarLoadClosed: '#9A948A',
 };
 
 /** @deprecated Use scheme-aware helpers — alias of dark for older imports. */

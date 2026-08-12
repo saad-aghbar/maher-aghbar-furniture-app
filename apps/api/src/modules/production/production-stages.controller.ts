@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -25,6 +26,7 @@ import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
+import { buildDependencyGraph, detectCycles } from '../scheduling/domain';
 import type { AuthUser } from '@maher/types';
 
 class StageDto {
@@ -76,6 +78,7 @@ export class ProductionStagesController {
   @Post()
   @RequirePermissions('production-order.update')
   async create(@Body() dto: StageDto, @CurrentUser() user: AuthUser) {
+    await this.assertNoCycle(dto.code, dto.dependsOnCodes ?? []);
     const row = await this.prisma.productionStageDefinition.create({
       data: {
         ...dto,
@@ -103,6 +106,11 @@ export class ProductionStagesController {
     @Body() dto: Partial<StageDto>,
     @CurrentUser() user: AuthUser,
   ) {
+    if (dto.code || dto.dependsOnCodes) {
+      const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
+      if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
+      await this.assertNoCycle(dto.code ?? existing.code, dto.dependsOnCodes ?? existing.dependsOnCodes, id);
+    }
     const row = await this.prisma.productionStageDefinition.update({ where: { id }, data: dto });
     await this.prisma.auditEvent.create({
       data: {
@@ -157,5 +165,25 @@ export class ProductionStagesController {
       },
     });
     return { ok: true };
+  }
+
+  /** Guards against introducing a dependency cycle across all active stage definitions. */
+  private async assertNoCycle(code: string, dependsOnCodes: string[], excludeId?: string) {
+    const existing = await this.prisma.productionStageDefinition.findMany({
+      where: { isActive: true, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { code: true, dependsOnCodes: true },
+    });
+    const nodes = [
+      ...existing.filter((s) => s.code !== code),
+      { code, dependsOnCodes },
+    ];
+    const graph = buildDependencyGraph(nodes);
+    const cycle = detectCycles(graph);
+    if (cycle.length > 0) {
+      throw new BadRequestException({
+        code: 'STAGE_CYCLE',
+        message: `Stage dependency cycle detected: ${cycle.join(' -> ')}`,
+      });
+    }
   }
 }

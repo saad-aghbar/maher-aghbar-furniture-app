@@ -38,6 +38,7 @@ export type NewOrderPersistedFields = {
   deliveryNotes: string;
   deliveryLat?: number;
   deliveryLng?: number;
+  requiredDeliveryDate: string;
 };
 
 export function pickPersistedFields<T extends NewOrderPersistedFields>(
@@ -59,5 +60,6 @@ export function pickPersistedFields<T extends NewOrderPersistedFields>(
     deliveryNotes: source.deliveryNotes,
     deliveryLat: source.deliveryLat,
     deliveryLng: source.deliveryLng,
+    requiredDeliveryDate: source.requiredDeliveryDate,
   };
 }

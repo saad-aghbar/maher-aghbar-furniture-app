@@ -2,10 +2,13 @@
 
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import type { FactoryCalendarSettings } from '@/lib/scheduling';
 import { Alert, Button, Card, ErrorState, Input, PageHero, Select, Skeleton } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
+
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 interface CompanySettings {
   nameAr: string;
@@ -72,6 +75,15 @@ export default function SettingsPage() {
   const [mfaOtpauth, setMfaOtpauth] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState('');
 
+  const [calendarTimezone, setCalendarTimezone] = useState('Asia/Amman');
+  const [workingWeekdays, setWorkingWeekdays] = useState<number[]>([0, 1, 2, 3, 4, 6]);
+  const [shiftStart, setShiftStart] = useState('08:00');
+  const [shiftEnd, setShiftEnd] = useState('16:00');
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [exceptionDate, setExceptionDate] = useState('');
+  const [exceptionAction, setExceptionAction] = useState<'open' | 'close' | 'overtime'>('open');
+  const [overtimeEnd, setOvertimeEnd] = useState('20:00');
+
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: () => apiFetch<SettingsMap>('/api/v1/settings'),
@@ -81,6 +93,12 @@ export default function SettingsPage() {
     queryKey: ['auth-me'],
     queryFn: () =>
       apiFetch<{ mfaEnabled?: boolean; mfaPending?: boolean }>('/api/v1/auth/me'),
+  });
+
+  const calendarSettingsQuery = useQuery({
+    queryKey: ['scheduling-calendar-settings'],
+    queryFn: () => apiFetch<FactoryCalendarSettings>('/api/v1/scheduling/calendar-settings'),
+    retry: false,
   });
 
   useEffect(() => {
@@ -94,6 +112,15 @@ export default function SettingsPage() {
     }
     if (settingsQuery.data?.integrations) setIntegrationsForm(settingsQuery.data.integrations);
   }, [settingsQuery.data]);
+
+  useEffect(() => {
+    const cal = calendarSettingsQuery.data;
+    if (!cal) return;
+    setCalendarTimezone(cal.timezone);
+    setWorkingWeekdays(cal.workingWeekdays ?? [0, 1, 2, 3, 4, 6]);
+    setShiftStart(cal.shiftStart);
+    setShiftEnd(cal.shiftEnd);
+  }, [calendarSettingsQuery.data]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -155,6 +182,95 @@ export default function SettingsPage() {
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
+
+  const saveCalendarMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ replanned?: number }>('/api/v1/scheduling/calendar-settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          timezone: calendarTimezone.trim() || 'Asia/Amman',
+          workingWeekdays: [...workingWeekdays].sort((a, b) => a - b),
+          shiftStart,
+          shiftEnd,
+        }),
+      }),
+    onSuccess: async (data) => {
+      setCalendarError(null);
+      const n = data.replanned ?? 0;
+      setBanner(
+        n > 0 ? tc('calendar.savedReplanned', { count: n }) : tc('calendarSaved'),
+      );
+      await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar-settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar'] });
+    },
+    onError: (err) => setCalendarError(mutationErrorMessage(err)),
+  });
+
+  const addExceptionMutation = useMutation({
+    mutationFn: async () => {
+      const date = exceptionDate.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new ApiClientError(tc('calendar.exceptions.dateInvalid'), 400);
+      }
+      const body =
+        exceptionAction === 'close'
+          ? { date, type: 'SHUTDOWN' as const, note: 'Closed by admin' }
+          : exceptionAction === 'overtime'
+            ? {
+                date,
+                type: 'EXTRA_SHIFT' as const,
+                shiftStart,
+                shiftEnd: overtimeEnd || '20:00',
+                note: 'Overtime',
+              }
+            : {
+                date,
+                type: 'EXTRA_SHIFT' as const,
+                shiftStart,
+                shiftEnd,
+                note: 'Opened by admin',
+              };
+      return apiFetch<{ replanned?: number }>('/api/v1/scheduling/calendar-settings/exceptions', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: async (data) => {
+      setCalendarError(null);
+      setExceptionDate('');
+      const n = data.replanned ?? 0;
+      setBanner(
+        n > 0 ? tc('calendar.exceptions.savedReplanned', { count: n }) : tc('calendar.exceptions.saved'),
+      );
+      await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar-settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar'] });
+    },
+    onError: (err) => setCalendarError(mutationErrorMessage(err)),
+  });
+
+  const deleteExceptionMutation = useMutation({
+    mutationFn: (date: string) =>
+      apiFetch<{ replanned?: number }>(
+        `/api/v1/scheduling/calendar-settings/exceptions/${encodeURIComponent(date.slice(0, 10))}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: async (data) => {
+      setCalendarError(null);
+      const n = data.replanned ?? 0;
+      setBanner(
+        n > 0 ? tc('calendar.exceptions.clearedReplanned', { count: n }) : tc('calendar.exceptions.cleared'),
+      );
+      await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar-settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar'] });
+    },
+    onError: (err) => setCalendarError(mutationErrorMessage(err)),
+  });
+
+  function toggleWeekday(day: number) {
+    setWorkingWeekdays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
+    );
+  }
 
   function configuredBadge(configured?: boolean) {
     return configured ? tc('integrationConfigured') : tc('integrationNotConfigured');
@@ -479,6 +595,174 @@ export default function SettingsPage() {
                 {tAuth('mfaDisable')}
               </Button>
             )}
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        title={tc('productionCalendar')}
+        description={tc('productionCalendarHint')}
+        actions={
+          <Button
+            size="sm"
+            loading={saveCalendarMutation.isPending}
+            onClick={() => saveCalendarMutation.mutate()}
+          >
+            {tCommon('save')}
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          {calendarError ? <Alert variant="error">{calendarError}</Alert> : null}
+          {calendarSettingsQuery.isError ? (
+            <p className="text-xs text-[var(--maher-text-secondary)]">
+              {tc('productionCalendarUnavailableHint')}
+            </p>
+          ) : null}
+          <div className="maher-form-section grid gap-3 sm:grid-cols-2">
+            <Input
+              label={tc('timezone')}
+              value={calendarTimezone}
+              onChange={(e) => setCalendarTimezone(e.target.value)}
+              dir="ltr"
+            />
+            <Input
+              label={tc('shiftStart')}
+              type="time"
+              dir="ltr"
+              value={shiftStart}
+              onChange={(e) => setShiftStart(e.target.value)}
+            />
+            <Input
+              label={tc('shiftEnd')}
+              type="time"
+              dir="ltr"
+              value={shiftEnd}
+              onChange={(e) => setShiftEnd(e.target.value)}
+            />
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium text-[var(--maher-text-primary)]">
+              {tc('workingWeekdays')}
+            </p>
+            <p className="mb-2 text-xs text-[var(--maher-text-secondary)]">
+              {tc('calendar.workingDaysHint')}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {WEEKDAY_KEYS.map((key, day) => {
+                const checked = workingWeekdays.includes(day);
+                return (
+                  <label
+                    key={key}
+                    className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                      checked
+                        ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
+                        : 'border-[var(--maher-border)] bg-[var(--maher-surface)] text-[var(--maher-text-secondary)]'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-[var(--maher-brand)]"
+                      checked={checked}
+                      onChange={() => toggleWeekday(day)}
+                    />
+                    {tc(`weekdayShort.${key}`)}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-3 border-t border-[var(--maher-border)] pt-4">
+            <div>
+              <p className="text-sm font-medium text-[var(--maher-text-primary)]">
+                {tc('calendar.exceptions.title')}
+              </p>
+              <p className="text-xs text-[var(--maher-text-secondary)]">
+                {tc('calendar.exceptions.hint')}
+              </p>
+            </div>
+            <div className="maher-form-section grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Input
+                label={tc('calendar.exceptions.date')}
+                type="date"
+                dir="ltr"
+                value={exceptionDate}
+                onChange={(e) => setExceptionDate(e.target.value)}
+              />
+              <Select
+                label={tc('calendar.exceptions.action')}
+                value={exceptionAction}
+                onChange={(e) =>
+                  setExceptionAction(e.target.value as 'open' | 'close' | 'overtime')
+                }
+                options={[
+                  { value: 'open', label: tc('calendar.exceptions.open') },
+                  { value: 'close', label: tc('calendar.exceptions.close') },
+                  { value: 'overtime', label: tc('calendar.exceptions.overtime') },
+                ]}
+              />
+              {exceptionAction === 'overtime' ? (
+                <Input
+                  label={tc('calendar.exceptions.overtimeUntil')}
+                  type="time"
+                  dir="ltr"
+                  value={overtimeEnd}
+                  onChange={(e) => setOvertimeEnd(e.target.value)}
+                />
+              ) : (
+                <div />
+              )}
+              <div className="flex items-end">
+                <Button
+                  size="sm"
+                  loading={addExceptionMutation.isPending}
+                  onClick={() => addExceptionMutation.mutate()}
+                >
+                  {tc('calendar.exceptions.apply')}
+                </Button>
+              </div>
+            </div>
+            <ul className="space-y-2">
+              {(calendarSettingsQuery.data?.exceptions ?? []).length === 0 ? (
+                <li className="text-xs text-[var(--maher-text-secondary)]">
+                  {tc('calendar.exceptions.empty')}
+                </li>
+              ) : (
+                (calendarSettingsQuery.data?.exceptions ?? []).map((ex) => {
+                  const date = String(ex.date).slice(0, 10);
+                  const label =
+                    ex.type === 'EXTRA_SHIFT' &&
+                    ex.shiftEnd &&
+                    ex.shiftEnd > (calendarSettingsQuery.data?.shiftEnd ?? '16:00')
+                      ? tc('calendar.exceptions.typeOvertime', {
+                          start: ex.shiftStart ?? shiftStart,
+                          end: ex.shiftEnd,
+                        })
+                      : ex.type === 'EXTRA_SHIFT'
+                        ? tc('calendar.exceptions.typeOpen')
+                        : tc('calendar.exceptions.typeClosed');
+                  return (
+                    <li
+                      key={ex.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--maher-border)] bg-[var(--maher-surface)] px-3 py-2 text-sm"
+                    >
+                      <span className="font-medium text-[var(--maher-text-primary)]" dir="ltr">
+                        {date} — {label}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={deleteExceptionMutation.isPending}
+                        onClick={() => deleteExceptionMutation.mutate(date)}
+                      >
+                        {tc('calendar.exceptions.clear')}
+                      </Button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
           </div>
         </div>
       </Card>

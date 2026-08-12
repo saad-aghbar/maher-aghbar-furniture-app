@@ -66,5 +66,12 @@
   "FAIL": "Fail",
   "NOT_APPLICABLE": "N/A",
   "IN_TRANSIT": "In transit",
-  "POSTED": "Posted"
+  "POSTED": "Posted",
+  "PROPOSED": "Proposed",
+  "SUPERSEDED": "Superseded",
+  "NEEDS_REVIEW": "Needs review",
+  "PROVISIONAL": "Provisional",
+  "ESTIMATED": "Estimated",
+  "AWAITING_APPROVAL": "Awaiting approval",
+  "AT_RISK": "At risk"
 }

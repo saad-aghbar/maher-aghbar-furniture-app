@@ -71,6 +71,17 @@ export const ADMIN_OVERFLOW_MODULES: AdminOverflowModule[] = [
     tone: 'ink',
   },
   {
+    key: 'scheduling',
+    labelKey: 'mobile.adminHome.navScheduling',
+    hintKey: 'mobile.adminHome.navSchedulingHint',
+    icon: 'calendar-outline',
+    href: '/(app)/(admin)/scheduling',
+    permissions: ['schedule.read', 'schedule.capacity.read'],
+    mode: 'any',
+    span: 'half',
+    tone: 'ink',
+  },
+  {
     key: 'returns',
     labelKey: 'mobile.adminHome.navReturns',
     hintKey: 'mobile.adminHome.navReturnsHint',

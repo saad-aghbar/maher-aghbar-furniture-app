@@ -24,6 +24,21 @@ export function isValidOptionalPhone(raw: string): boolean {
   return digits.length >= 6;
 }
 
+/** Soft check: empty is allowed (no preference); non-empty must be a real calendar date. */
+export function isValidOptionalDate(raw: string): boolean {
+  const v = raw.trim();
+  if (!v) return true;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return false;
+  const [, y, mo, d] = m;
+  const date = new Date(Number(y), Number(mo) - 1, Number(d));
+  return (
+    date.getFullYear() === Number(y) &&
+    date.getMonth() === Number(mo) - 1 &&
+    date.getDate() === Number(d)
+  );
+}
+
 export function clampNotes(raw: string, max: number): string {
   if (raw.length <= max) return raw;
   return raw.slice(0, max);

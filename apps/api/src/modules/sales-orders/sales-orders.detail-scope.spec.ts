@@ -278,6 +278,9 @@ describe('SalesOrdersService.getById ownership', () => {
         notifyCustomerUsers: jest.fn().mockResolvedValue({ ok: true }),
       } as any,
       { createAccessToken: jest.fn(() => 'tok') } as any,
+      {
+        generateForProductionOrder: jest.fn().mockResolvedValue(undefined),
+      } as any,
     );
     jest.spyOn(service, 'hydrateLineProducts').mockImplementation(async (lines) => lines as never);
     jest.spyOn(service, 'loadDealerPrices').mockResolvedValue(new Map());

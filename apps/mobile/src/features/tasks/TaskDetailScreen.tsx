@@ -742,7 +742,11 @@ export function TaskDetailScreen({
             </View>
           </View>
 
-          <TaskTimerBoard timing={vm.timing} formatDateTime={formatDateTime} />
+          <TaskTimerBoard
+            timing={vm.timing}
+            formatDateTime={formatDateTime}
+            isScheduledToday={vm.isScheduledToday}
+          />
 
           <FloorSection
             title={t('mobile.tasks.instructions')}

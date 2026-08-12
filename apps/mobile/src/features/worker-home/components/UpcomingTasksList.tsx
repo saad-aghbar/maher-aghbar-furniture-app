@@ -18,6 +18,7 @@ import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, softFadeDown, softFadeSide, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+import { isScheduledToday } from '@/features/tasks/isScheduledToday';
 import type { WorkerHomeTask } from '../api';
 import {
   localizedWorkerProductTitle,
@@ -58,6 +59,7 @@ function UpcomingQueueTicket({ task, index }: TicketProps) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const due = dueShort(task.deadline, formatDateTime, t('mobile.workerHome.noDeadline'));
+  const scheduledToday = isScheduledToday(task.timing?.plannedStart ?? task.deadline);
 
   return (
     <Animated.View
@@ -204,6 +206,21 @@ function UpcomingQueueTicket({ task, index }: TicketProps) {
             <AppText variant="caption" color="muted" numberOfLines={1} align="start">
               {due}
             </AppText>
+            {scheduledToday ? (
+              <View
+                style={{
+                  marginStart: 2,
+                  paddingHorizontal: 6,
+                  paddingVertical: 1,
+                  borderRadius: theme.radius.full,
+                  backgroundColor: colors.warningSoft,
+                }}
+              >
+                <AppText variant="caption" weight="semibold" style={{ color: colors.warning, fontSize: 9 }}>
+                  {t('mobile.tasks.scheduledToday')}
+                </AppText>
+              </View>
+            ) : null}
           </View>
         </View>
       </AnimatedPressable>

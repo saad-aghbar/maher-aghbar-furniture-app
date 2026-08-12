@@ -29,6 +29,8 @@ export type AdminHomeRecentOrder = {
   externalOrderNumber: string | null;
   endCustomerName: string | null;
   requiredDeliveryDate?: string | null;
+  /** Scheduler-committed date, when a schedule has been approved. */
+  committedDeliveryDate?: string | null;
 };
 
 export type FloorSpotlightReason = 'late' | 'nearing' | 'in_production';
@@ -77,6 +79,8 @@ export type DealerHomeOrder = {
   externalOrderNumber: string | null;
   endCustomerName: string | null;
   requiredDeliveryDate: string | null;
+  /** Scheduler-committed date, when a schedule has been approved. */
+  committedDeliveryDate?: string | null;
 };
 
 export type DealerHomeInvoice = {
@@ -132,6 +136,8 @@ export type WorkerHomeTask = {
     estimatedMinutes: number | null;
     plannedCompletion: string | null;
     elapsedMinutes: number;
+    /** Scheduler allocation start, when this task has been scheduled. */
+    plannedStart?: string | null;
   };
 };
 

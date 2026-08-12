@@ -2,7 +2,7 @@ import { Image, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton, SuccessButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
-import { useLocale } from '@/i18n';
+import { formatDate, useLocale } from '@/i18n';
 import { SuccessBurst } from '@/motion';
 import { useTheme } from '@/theme';
 import { isImageMime, type PendingAttachment } from '../pendingAttachment';
@@ -23,6 +23,10 @@ export type ReviewSummary = {
   unitPrice: number | null;
   currency: string;
   estimatedTotal: number | null;
+  /** ISO date (yyyy-mm-dd) the dealer requested, if any. */
+  requestedDeliveryDate?: string | null;
+  /** ISO date (yyyy-mm-dd) the factory can realistically deliver by. */
+  estimatedDeliveryDate?: string | null;
 };
 
 type ReviewStepProps = {
@@ -84,7 +88,7 @@ export function ReviewStep({
   onViewOrders,
   onCreateAnother,
 }: ReviewStepProps) {
-  const { t, isRTL, formatCurrency } = useLocale();
+  const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
 
   if (submittedNumber) {
@@ -175,6 +179,18 @@ export function ReviewStep({
         />
         <Row label={t('mobile.newOrder.dimensionsNotes')} value={summary.dimensionsNotes} />
         <Row label={t('mobile.newOrder.deliveryNotes')} value={summary.deliveryNotes} />
+        {summary.requestedDeliveryDate ? (
+          <Row
+            label={t('mobile.newOrder.review.requestedDelivery')}
+            value={formatDate(locale, summary.requestedDeliveryDate)}
+          />
+        ) : null}
+        {summary.estimatedDeliveryDate ? (
+          <Row
+            label={t('mobile.newOrder.review.estimatedDelivery')}
+            value={formatDate(locale, summary.estimatedDeliveryDate)}
+          />
+        ) : null}
         <Row label={t('mobile.newOrder.orderNotes')} value={summary.orderNotes} />
         {summary.estimatedTotal != null ? (
           <View style={{ paddingVertical: theme.spacing.md, gap: theme.spacing.xs }}>
