@@ -7,16 +7,23 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { createProductCategory } from '@/api/modules/catalogAdmin';
+import type { BrowseCategory } from '@/api/modules/catalog';
+import { isApiError } from '@/api/errors';
+import { queryKeys } from '@/api/queryKeys';
+import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { useToast } from '@/components/feedback/Toast';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
+import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
-import type { BrowseCategory } from '@/api/modules/catalog';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
@@ -37,6 +44,8 @@ type Props = {
    */
   requireConfirm?: boolean;
   confirmLabel?: string;
+  /** Show a create-category form (admin catalog only — not dealer filters). */
+  allowCreate?: boolean;
 };
 
 function labelFor(cat: BrowseCategory, locale: string): string {
@@ -44,6 +53,16 @@ function labelFor(cat: BrowseCategory, locale: string): string {
   if (locale === 'he') return cat.nameHe || cat.nameEn || cat.nameAr;
   return cat.nameEn || cat.nameAr;
 }
+
+function categoryCodeFromName(name: string): string {
+  return name.trim().toUpperCase().replace(/\s+/g, '_');
+}
+
+const emptyCreate = () => ({
+  nameEn: '',
+  nameAr: '',
+  nameHe: '',
+});
 
 /**
  * Floor category picker — searchable board list (production / orders aesthetic).
@@ -59,22 +78,61 @@ export function CategoryPickerSheet({
   emptySelectionLabel,
   requireConfirm = false,
   confirmLabel,
+  allowCreate = false,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * (requireConfirm ? 0.7 : 0.62)), requireConfirm ? 620 : 560);
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState(emptyCreate);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  /** Prefer i18n; fall back if Metro still has a stale @maher/i18n bundle. */
+  const label = (key: string, fallback: string) => {
+    const value = t(key);
+    return value === key ? fallback : value;
+  };
+
+  const createCategoryTitle = label(
+    'catalog.createCategory',
+    locale === 'ar' ? 'إنشاء فئة' : locale === 'he' ? 'צור קטגוריה' : 'Create category',
+  );
+  const namesRequiredMsg = label(
+    'catalog.namesRequired',
+    locale === 'ar'
+      ? 'الاسم بالإنجليزي والعربي مطلوبان.'
+      : locale === 'he'
+        ? 'שמות באנגלית ובערבית הם שדות חובה.'
+        : 'English and Arabic names are required.',
+  );
+  const categoryCreatedMsg = label(
+    'catalog.categoryCreated',
+    locale === 'ar' ? 'تم إنشاء الفئة.' : locale === 'he' ? 'הקטגוריה נוצרה.' : 'Category created.',
+  );
+  const sheetHeight = Math.min(
+    Math.round(height * (requireConfirm ? 0.7 : allowCreate ? 0.68 : 0.62)),
+    requireConfirm ? 620 : 580,
+  );
   const [query, setQuery] = useState('');
   const [draftId, setDraftId] = useState<string | null>(selectedId);
-  const sheetTitle = title ?? t('catalog.pickCategory');
-  const sheetHint = hint ?? t('catalog.pickCategoryHint');
+  const sheetTitle = creating
+    ? createCategoryTitle
+    : (title ?? t('catalog.pickCategory'));
+  const sheetHint = creating
+    ? t('catalog.pickCategoryHint')
+    : (hint ?? t('catalog.pickCategoryHint'));
   const emptyLabel = emptySelectionLabel ?? t('catalog.noCategory');
   const confirmText = confirmLabel ?? t('common.confirm');
 
   useEffect(() => {
     if (!open) {
       setQuery('');
+      setCreating(false);
+      setCreateForm(emptyCreate());
+      setCreateError(null);
       return;
     }
     setDraftId(selectedId);
@@ -124,7 +182,43 @@ export function CategoryPickerSheet({
   const enter = (index: number) =>
     reduce ? undefined : FadeInDown.delay(30 + index * 35).duration(220);
 
-  const listMax = sheetHeight - (requireConfirm ? 280 : 210);
+  const listMax = sheetHeight - (requireConfirm || allowCreate ? 300 : 210);
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      const nameEn = createForm.nameEn.trim();
+      const nameAr = createForm.nameAr.trim();
+      const code =
+        categoryCodeFromName(nameEn) || categoryCodeFromName(nameAr);
+      return createProductCategory({
+        code,
+        nameEn,
+        nameAr,
+        nameHe: createForm.nameHe.trim() || undefined,
+      });
+    },
+    onSuccess: async (row) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.catalog.productCategories() });
+      void haptics.confirmLight();
+      showToast({ variant: 'success', message: categoryCreatedMsg });
+      onSelect(row.id);
+      onClose();
+    },
+    onError: (err) => {
+      void haptics.error();
+      const msg = isApiError(err) ? toastMessageForError(err) : namesRequiredMsg;
+      setCreateError(msg);
+      showToast({ variant: 'error', message: msg });
+    },
+  });
+
+  const setCreate = <K extends keyof ReturnType<typeof emptyCreate>>(
+    key: K,
+    value: ReturnType<typeof emptyCreate>[K],
+  ) => {
+    setCreateForm((f) => ({ ...f, [key]: value }));
+    setCreateError(null);
+  };
 
   return (
     <BottomSheet
@@ -132,9 +226,10 @@ export function CategoryPickerSheet({
       onClose={dismiss}
       title={sheetTitle}
       sheetHeight={sheetHeight}
+      fitContent={creating}
       overlay
     >
-      <View style={{ gap: theme.spacing.md, flex: 1 }}>
+      <View style={{ gap: theme.spacing.md, flex: creating ? undefined : 1 }}>
         <Animated.View entering={enter(0)}>
           <AppText
             variant="caption"
@@ -149,6 +244,55 @@ export function CategoryPickerSheet({
           </AppText>
         </Animated.View>
 
+        {creating ? (
+          <Animated.View entering={enter(1)} style={{ gap: theme.spacing.md }}>
+            <TextField
+              label={t('catalog.nameEn')}
+              value={createForm.nameEn}
+              onChangeText={(v) => setCreate('nameEn', v)}
+            />
+            <TextField
+              label={t('catalog.nameAr')}
+              value={createForm.nameAr}
+              onChangeText={(v) => setCreate('nameAr', v)}
+            />
+            <TextField
+              label={t('catalog.nameHe')}
+              value={createForm.nameHe}
+              onChangeText={(v) => setCreate('nameHe', v)}
+            />
+            {createError ? (
+              <AppText variant="caption" color="error">
+                {createError}
+              </AppText>
+            ) : null}
+            <PrimaryButton
+              label={createCategoryTitle}
+              loading={createMutation.isPending}
+              disabled={createMutation.isPending}
+              onPress={() => {
+                if (!createForm.nameEn.trim() || !createForm.nameAr.trim()) {
+                  void haptics.error();
+                  showToast({ variant: 'error', message: namesRequiredMsg });
+                  setCreateError(namesRequiredMsg);
+                  return;
+                }
+                createMutation.mutate();
+              }}
+              style={{ borderRadius: theme.radius.xl }}
+            />
+            <SecondaryButton
+              label={t('common.cancel')}
+              onPress={() => {
+                setCreating(false);
+                setCreateForm(emptyCreate());
+                setCreateError(null);
+              }}
+              style={{ borderRadius: theme.radius.xl }}
+            />
+          </Animated.View>
+        ) : (
+          <>
         <Animated.View entering={enter(1)}>
           <SearchBarShell>
             <AppTextInput
@@ -233,7 +377,6 @@ export function CategoryPickerSheet({
                 <CategoryRow
                   key={cat.id}
                   label={labelFor(cat, locale)}
-                  meta={cat.code}
                   active={activeId === cat.id}
                   isRTL={isRTL}
                   onPress={() => selectRow(cat.id)}
@@ -275,6 +418,37 @@ export function CategoryPickerSheet({
           </View>
         </Animated.View>
 
+        {allowCreate ? (
+          <Animated.View entering={enter(3)}>
+            <AnimatedPressable
+              variant="button"
+              accessibilityRole="button"
+              accessibilityLabel={createCategoryTitle}
+              onPress={() => {
+                void haptics.selection();
+                setCreating(true);
+              }}
+              style={{
+                minHeight: theme.sizes.touch.min,
+                borderRadius: theme.radius.xl,
+                borderWidth: 1,
+                borderColor: colors.brand,
+                backgroundColor: colors.brandSoft,
+                paddingHorizontal: theme.spacing.md,
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <Ionicons name="add" size={18} color={colors.brand} />
+              <AppText variant="label" weight="semibold" color="brand">
+                {createCategoryTitle}
+              </AppText>
+            </AnimatedPressable>
+          </Animated.View>
+        ) : null}
+
         {requireConfirm ? (
           <Animated.View entering={enter(3)} style={{ gap: theme.spacing.sm }}>
             <PrimaryButton
@@ -289,6 +463,8 @@ export function CategoryPickerSheet({
             />
           </Animated.View>
         ) : null}
+          </>
+        )}
       </View>
     </BottomSheet>
   );

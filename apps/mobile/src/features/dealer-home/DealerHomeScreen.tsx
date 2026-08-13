@@ -12,8 +12,7 @@ import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { listBrowseProducts } from '@/features/catalog/api';
-import { DealerEmptyState, DealerHero } from '@/features/dealer-ui';
-import { DEALER_NEW_ORDER_HREF } from '@/features/dealer-ui/DealerNewOrderButton';
+import { DealerHero } from '@/features/dealer-ui';
 import { Divider } from '@/components/layout/Divider';
 import { useLocale } from '@/i18n';
 import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
@@ -26,7 +25,6 @@ import { collectionsFromProducts } from './collectionsFromProducts';
 import { pickShowcaseImages } from './pickShowcaseImages';
 import { useDealerHomeQuery } from './query';
 import {
-  isDealerHomeEmpty,
   mapDealerHomeInvoices,
   outstandingBalanceNumber,
 } from './selectDealerHome';
@@ -55,7 +53,6 @@ export function DealerHomeScreen({
   const [heroActive, setHeroActive] = useState(true);
 
   const allowed = Boolean(user?.customerId && can(user, 'sales-order.read'));
-  const canCreate = can(user, 'request.create') || Boolean(forceState);
   const canBrowseCatalog = can(user, 'catalog.read') || Boolean(forceState);
   const canStatement = can(user, 'statement.read');
   const canInvoices = can(user, 'invoice.read');
@@ -154,14 +151,12 @@ export function DealerHomeScreen({
     );
   }
 
-  const empty = forceState === 'empty' || isDealerHomeEmpty(data);
   const invoices = mapDealerHomeInvoices(data.recentInvoices);
   const latestInvoice = invoices[0];
   const balance = outstandingBalanceNumber(data);
 
   const goCatalog = () => router.push('/(app)/(customer)/(tabs)/catalog' as Href);
   const goOrders = () => router.push('/(app)/(customer)/(tabs)/orders' as Href);
-  const goNewOrder = () => router.push(DEALER_NEW_ORDER_HREF as Href);
   const goStatement = () => router.push('/(app)/(customer)/account/statement' as Href);
   const goInvoices = () => router.push('/(app)/(customer)/invoices' as Href);
   const goInvoice = (id: string) =>
@@ -252,24 +247,15 @@ export function DealerHomeScreen({
         active={heroActive}
       />
 
-      {empty ? (
-        <DealerEmptyState
-          title={t('mobile.dealerHome.emptyTitle')}
-          body={t('mobile.dealerHome.emptyBody')}
-          actionLabel={canCreate ? t('mobile.dealerHome.createOrder') : undefined}
-          onAction={canCreate ? goNewOrder : undefined}
-        />
-      ) : (
-        <View style={{ gap: theme.spacing.lg }}>
-          <DealerHomeMetrics cards={metricCards} />
-          {canBrowseCatalog ? (
-            <>
-              <Divider compact />
-              <FeaturedCollections collections={collections} />
-            </>
-          ) : null}
-        </View>
-      )}
+      <View style={{ gap: theme.spacing.lg }}>
+        <DealerHomeMetrics cards={metricCards} />
+        {canBrowseCatalog ? (
+          <>
+            <Divider compact />
+            <FeaturedCollections collections={collections} />
+          </>
+        ) : null}
+      </View>
     </ScrollableScreen>
   );
 }

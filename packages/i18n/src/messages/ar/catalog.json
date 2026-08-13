@@ -5,6 +5,8 @@
   "searchCategories": "بحث في الفئات…",
   "noCategory": "بدون فئة",
   "noCategoriesMatch": "لا توجد فئات مطابقة.",
+  "createCategory": "إنشاء فئة",
+  "categoryCreated": "تم إنشاء الفئة.",
   "sku": "رمز الموديل",
   "name": "الاسم",
   "nameEn": "الاسم (إنجليزي)",

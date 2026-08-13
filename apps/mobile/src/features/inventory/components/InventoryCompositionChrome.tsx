@@ -27,6 +27,9 @@ type Props = {
   createLabel?: string;
   onCreate?: () => void;
   canCreate?: boolean;
+  warehouseLabel?: string;
+  onCreateWarehouse?: () => void;
+  canCreateWarehouse?: boolean;
   children?: ReactNode;
 };
 
@@ -46,12 +49,18 @@ export function InventoryCompositionChrome({
   createLabel,
   onCreate,
   canCreate,
+  warehouseLabel,
+  onCreateWarehouse,
+  canCreateWarehouse,
   children,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { theme, colors } = useTheme();
   const syncVisible = section === 'items' && canSync && onSync;
   const createVisible = Boolean(canCreate && onCreate && createLabel);
+  const warehouseVisible = Boolean(
+    canCreateWarehouse && onCreateWarehouse && warehouseLabel,
+  );
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
@@ -103,6 +112,15 @@ export function InventoryCompositionChrome({
               tone="soft"
               loading={syncing}
               onPress={onSync}
+            />
+          ) : null}
+          {warehouseVisible ? (
+            <FloorActionButton
+              label={warehouseLabel!}
+              accessibilityLabel={warehouseLabel!}
+              icon="business-outline"
+              tone="soft"
+              onPress={() => onCreateWarehouse?.()}
             />
           ) : null}
           {createVisible ? (

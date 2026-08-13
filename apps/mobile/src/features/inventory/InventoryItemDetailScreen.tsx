@@ -35,6 +35,7 @@ import {
   useWarehousesQuery,
 } from './query';
 import {
+  formatInventoryMaterialType,
   selectInventoryItemDetail,
   selectInventoryTransaction,
 } from './selectInventory';
@@ -194,6 +195,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   const stockLabel = detail.isLowStock
     ? t('mobile.inventory.lowStock')
     : t('mobile.inventory.inStock');
+  const materialTypeLabel = formatInventoryMaterialType(detail.materialType, t);
 
   const HeaderShell = reduce ? View : Animated.View;
   const headerEnter = reduce
@@ -263,7 +265,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   </AppText>
                   <AppText variant="caption" color="muted" weight="regular" dir="ltr">
                     {detail.sku}
-                    {detail.materialType ? ` · ${detail.materialType}` : ''}
+                    {materialTypeLabel ? ` · ${materialTypeLabel}` : ''}
                   </AppText>
                 </View>
                 <StatusBadge

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { can } from '@maher/permissions';
+import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { CodeField } from '@/components/forms/CodeField';
 import { TextField } from '@/components/forms/TextField';
@@ -14,6 +16,7 @@ import {
   preferWarehouseForReceive,
   sortWarehousesForReceive,
 } from '../preferWarehouseForReceive';
+import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { WarehousePickList } from './WarehousePickList';
 
@@ -81,9 +84,11 @@ export function AddStockSheet({
 }: AddStockSheetProps) {
   const { t, locale } = useLocale();
   const { theme, colors } = useTheme();
+  const { user } = useAuth();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.82);
   const warehouseListHeight = Math.round(height * 0.28);
+  const canAddWarehouse = can(user, 'warehouse.manage');
 
   const [item, setItem] = useState<StockMoveItem | null>(null);
   const [scanCode, setScanCode] = useState('');
@@ -92,6 +97,7 @@ export function AddStockSheet({
   const [qty, setQty] = useState('1');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
 
   const preferredId = useMemo(() => {
     if (!item) return '';
@@ -116,7 +122,10 @@ export function AddStockSheet({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setCreateWarehouseOpen(false);
+      return;
+    }
     setItem(initialItem ?? null);
     setScanCode('');
     setLookingUp(false);
@@ -189,6 +198,7 @@ export function AddStockSheet({
     mode === 'issue' ? t('mobile.inventory.issueStock') : t('mobile.inventory.receiveStock');
 
   return (
+    <>
     <BottomSheet open={open} onClose={onClose} title={title} sheetHeight={sheetHeight}>
       <View style={{ flex: 1, gap: theme.spacing.md }}>
         {error ? (
@@ -282,6 +292,9 @@ export function AddStockSheet({
             balances={item?.balances ?? []}
             listHeight={warehouseListHeight}
             resetToken={`${open}-${mode}-${item?.id ?? 'none'}`}
+            onAddWarehouse={
+              canAddWarehouse ? () => setCreateWarehouseOpen(true) : undefined
+            }
           />
 
           <TextField
@@ -313,5 +326,15 @@ export function AddStockSheet({
         />
       </View>
     </BottomSheet>
+    <CreateWarehouseSheet
+      overlay
+      open={createWarehouseOpen}
+      onClose={() => setCreateWarehouseOpen(false)}
+      onCreated={(warehouse) => {
+        setWarehouseId(warehouse.id);
+        setError(null);
+      }}
+    />
+    </>
   );
 }

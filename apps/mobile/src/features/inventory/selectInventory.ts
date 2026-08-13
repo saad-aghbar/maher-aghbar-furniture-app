@@ -35,6 +35,7 @@ export type InventoryItemCardModel = {
   barcode: string | null;
   color: string | null;
   size: string | null;
+  customMeasurements: InventoryItem['customMeasurements'];
   imageUrl: string | null;
   isAccessory: boolean;
   minStock: number;
@@ -139,6 +140,7 @@ export function selectInventoryItemCard(
     barcode: item.barcode ?? null,
     color: item.color ?? null,
     size: item.size ?? null,
+    customMeasurements: item.customMeasurements ?? null,
     imageUrl: item.imageUrl?.trim() || null,
     isAccessory: isAccessoryCategory(item.category),
     minStock,
@@ -167,6 +169,7 @@ export function selectInventoryItemDetail(
     ...card,
     color: item.color ?? null,
     size: item.size ?? null,
+    customMeasurements: item.customMeasurements ?? null,
     description: item.description ?? null,
     minStock: toNumber(item.minStock),
   };
@@ -199,6 +202,15 @@ export function selectInventoryTransaction(
 
 export function isValidCategoryGroup(value: string): value is InventoryCategoryGroup {
   return value === 'fabric' || value === 'foam' || value === 'wood' || value === 'accessories';
+}
+
+export function formatInventoryMaterialType(
+  type: string | null | undefined,
+  t: (key: string) => string,
+): string | null {
+  if (!type) return null;
+  if (isValidCategoryGroup(type)) return t(`mobile.inventory.groups.${type}`);
+  return type;
 }
 
 function formatQty(n: number): string {

@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { can } from '@maher/permissions';
+import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import type { CreateWarehouseTransferInput, InventoryItem, Warehouse } from '../api';
+import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { InventoryItemPickPanel } from './InventoryItemPickPanel';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventorySheetSectionLabel } from './InventorySheetBody';
@@ -28,9 +31,11 @@ export function CreateTransferSheet({
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const { user } = useAuth();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.78);
   const warehouseListHeight = Math.round(height * 0.2);
+  const canAddWarehouse = can(user, 'warehouse.manage');
 
   const [fromId, setFromId] = useState('');
   const [toId, setToId] = useState('');
@@ -39,16 +44,28 @@ export function CreateTransferSheet({
   const [notes, setNotes] = useState('');
   const [pickOpen, setPickOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createWarehouseFor, setCreateWarehouseFor] = useState<'from' | 'to' | null>(
+    null,
+  );
 
   useEffect(() => {
-    if (!open) return;
-    setFromId(warehouses[0]?.id ?? '');
-    setToId(warehouses[1]?.id ?? warehouses[0]?.id ?? '');
+    if (!open) {
+      setCreateWarehouseFor(null);
+      return;
+    }
+    setFromId('');
+    setToId('');
     setItem(null);
     setQty('1');
     setNotes('');
     setError(null);
     setPickOpen(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setFromId((id) => id || warehouses[0]?.id || '');
+    setToId((id) => id || warehouses[1]?.id || warehouses[0]?.id || '');
   }, [open, warehouses]);
 
   function submit() {
@@ -71,6 +88,7 @@ export function CreateTransferSheet({
   }
 
   return (
+    <>
     <BottomSheet
       open={open}
       onClose={() => {
@@ -111,6 +129,9 @@ export function CreateTransferSheet({
               label={t('mobile.inventory.fromWarehouse')}
               listHeight={warehouseListHeight}
               resetToken={open ? 'from' : 'from-closed'}
+              onAddWarehouse={
+                canAddWarehouse ? () => setCreateWarehouseFor('from') : undefined
+              }
             />
 
             <WarehousePickList
@@ -120,6 +141,9 @@ export function CreateTransferSheet({
               label={t('mobile.inventory.toWarehouse')}
               listHeight={warehouseListHeight}
               resetToken={open ? 'to' : 'to-closed'}
+              onAddWarehouse={
+                canAddWarehouse ? () => setCreateWarehouseFor('to') : undefined
+              }
             />
 
             <InventorySheetSectionLabel label={t('mobile.inventory.item')} />
@@ -174,5 +198,16 @@ export function CreateTransferSheet({
         </View>
       )}
     </BottomSheet>
+    <CreateWarehouseSheet
+      overlay
+      open={createWarehouseFor !== null}
+      onClose={() => setCreateWarehouseFor(null)}
+      onCreated={(warehouse) => {
+        if (createWarehouseFor === 'to') setToId(warehouse.id);
+        else setFromId(warehouse.id);
+        setError(null);
+      }}
+    />
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { Image, ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInRight } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
@@ -21,8 +22,6 @@ export function AdminHomeMoments({ orders }: Props) {
   const router = useRouter();
   const reduce = useReducedMotion();
   const ordersHref = '/(app)/(admin)/(tabs)/orders' as Href;
-
-  if (orders.length === 0) return null;
 
   const Wrapper = reduce ? View : Animated.View;
   const wrapperProps = reduce
@@ -65,6 +64,37 @@ export function AdminHomeMoments({ orders }: Props) {
         </AnimatedPressable>
       </View>
 
+      {orders.length === 0 ? (
+        <View
+          style={{
+            borderRadius: theme.radius.xl,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surface,
+            paddingVertical: theme.spacing.xl,
+            paddingHorizontal: theme.spacing.lg,
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+            ...theme.elevation.raised,
+          }}
+        >
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              backgroundColor: colors.brandSoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="file-tray-outline" size={22} color={colors.brand} />
+          </View>
+          <AppText variant="label" weight="semibold">
+            {t('mobile.adminHome.homeMomentsEmpty')}
+          </AppText>
+        </View>
+      ) : (
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -129,6 +159,7 @@ export function AdminHomeMoments({ orders }: Props) {
           );
         })}
       </ScrollView>
+      )}
     </Wrapper>
   );
 }

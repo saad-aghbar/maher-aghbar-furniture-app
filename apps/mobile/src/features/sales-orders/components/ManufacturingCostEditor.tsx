@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
-import type { InventoryCategoryGroup, InventoryItem } from '@/api/modules/inventory';
+import {
+  inventoryItemUnitCost,
+  type InventoryCategoryGroup,
+  type InventoryItem,
+} from '@/api/modules/inventory';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable } from '@/motion';
@@ -173,7 +177,7 @@ export function ManufacturingCostEditor({
     const key =
       inventoryGroupToCostKey(payload.categoryGroup) ||
       categoryToKey(payload.item);
-    const unit = Number(payload.item.standardCost ?? 0) || 0;
+    const unit = inventoryItemUnitCost(payload.item);
     const addCost = payload.qty * unit;
     const qtyKey = `${key}Qty` as keyof CostBreakdownEdit;
     const costKey = `${key}Cost` as keyof CostBreakdownEdit;

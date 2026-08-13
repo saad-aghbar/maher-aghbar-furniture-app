@@ -194,7 +194,7 @@ export function BottomSheet({
       : sheetHeight;
   const resolvedAnimHeight = visibleSheetHeight;
   const bottomPad = keyboardOpen
-    ? theme.spacing.md + 44
+    ? theme.spacing.md
     : Math.max(insets.bottom, theme.spacing.md) + theme.spacing.sm;
 
   const onSheetLayout = (e: LayoutChangeEvent) => {

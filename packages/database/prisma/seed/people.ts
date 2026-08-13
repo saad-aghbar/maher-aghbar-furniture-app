@@ -4,7 +4,7 @@ import {
   CustomerStatus,
   CustomerType,
 } from '@prisma/client';
-import { COMPANY_DOMAIN, daysAgo, money } from './util';
+import { COMPANY_DOMAIN } from './util';
 import { encryptPortalPassword } from './secret-box';
 
 const DEMO_PORTAL_PASSWORD = '123';
@@ -69,14 +69,10 @@ const DEALERS: Array<{
   code: string;
   nameEn: string;
   nameAr: string;
-  city: string;
-  area: string;
-  industry: string;
-  tags: string[];
 }> = [
-  { username: 'nile', code: 'CUS-0101', nameEn: 'Nile Interiors', nameAr: 'النيل للديكور', city: 'Amman', area: 'Abdoun', industry: 'Showroom', tags: ['showroom', 'premium'] },
-  { username: 'oasis', code: 'CUS-0102', nameEn: 'Oasis Living', nameAr: 'واحة المعيشة', city: 'Amman', area: 'Sweifieh', industry: 'Showroom', tags: ['showroom'] },
-  { username: 'balqis', code: 'CUS-0103', nameEn: 'Balqis Hospitality', nameAr: 'بلقيس للضيافة', city: 'Amman', area: 'Airport Rd', industry: 'Hotel', tags: ['hotel', 'project'] },
+  { username: 'nile', code: 'CUS-0101', nameEn: 'Nile Interiors', nameAr: 'النيل للديكور' },
+  { username: 'oasis', code: 'CUS-0102', nameEn: 'Oasis Living', nameAr: 'واحة المعيشة' },
+  { username: 'balqis', code: 'CUS-0103', nameEn: 'Balqis Hospitality', nameAr: 'بلقيس للضيافة' },
 ];
 
 const WORKERS: Array<{
@@ -103,7 +99,11 @@ const WORKERS: Array<{
   { username: 'driver2', firstName: 'Anas', lastName: 'Freijat', departmentCode: 'DEL', phone: '+962790100802' },
 ];
 
-export async function seedPeople(prisma: PrismaClient, passwordHash: string) {
+export async function seedPeople(
+  prisma: PrismaClient,
+  passwordHash: string,
+  opts: { includeWorkers?: boolean } = {},
+) {
   const admin = await ensureUser(prisma, passwordHash, {
     username: 'admin',
     email: `admin@${COMPANY_DOMAIN}`,
@@ -125,46 +125,9 @@ export async function seedPeople(prisma: PrismaClient, passwordHash: string) {
         nameAr: d.nameAr,
         customerType: CustomerType.COMPANY,
         companyName: d.nameEn,
-        commercialRegNo: `CR-${4100 + i}`,
-        taxNumber: `JO-${620000000 + i}`,
-        industry: d.industry,
         preferredLanguage: Locale.ar,
-        phone: `+9626${5100000 + i}`,
-        email: `${d.username}@dealers.jo`,
         status: CustomerStatus.ACTIVE,
-        creditLimit: money(15000 + i * 2500),
-        paymentTermsDays: i % 3 === 0 ? 45 : 30,
-        tags: d.tags,
-        accountManagerId: admin.id,
         createdById: admin.id,
-        createdAt: daysAgo(240 - i * 5),
-        contacts: {
-          create: [
-            {
-              name: `${d.nameEn} Purchasing`,
-              position: 'Buyer',
-              phone: `+96279${2000000 + i}`,
-              email: `buyer@${d.username}.jo`,
-              isPrimary: true,
-              preferredLanguage: Locale.ar,
-            },
-          ],
-        },
-        addresses: {
-          create: [
-            {
-              label: 'Showroom',
-              recipient: d.nameEn,
-              phone: `+9626${5100000 + i}`,
-              country: 'JO',
-              city: d.city,
-              area: d.area,
-              street: `${10 + i} Trade Street`,
-              isDefaultBilling: true,
-              isDefaultDelivery: true,
-            },
-          ],
-        },
       },
     });
 
@@ -189,19 +152,21 @@ export async function seedPeople(prisma: PrismaClient, passwordHash: string) {
 
   const workers: StaffUser[] = [];
   const byDept: Record<string, string[]> = {};
-  for (const w of WORKERS) {
-    const user = await ensureUser(prisma, passwordHash, {
-      username: w.username,
-      email: `${w.username}@${COMPANY_DOMAIN}`,
-      firstName: w.firstName,
-      lastName: w.lastName,
-      roleCode: 'PRODUCTION_WORKER',
-      phone: w.phone,
-      departmentCode: w.departmentCode,
-    });
-    workers.push({ id: user.id, username: w.username, departmentCode: w.departmentCode });
-    byDept[w.departmentCode] = byDept[w.departmentCode] ?? [];
-    byDept[w.departmentCode]!.push(user.id);
+  if (opts.includeWorkers) {
+    for (const w of WORKERS) {
+      const user = await ensureUser(prisma, passwordHash, {
+        username: w.username,
+        email: `${w.username}@${COMPANY_DOMAIN}`,
+        firstName: w.firstName,
+        lastName: w.lastName,
+        roleCode: 'PRODUCTION_WORKER',
+        phone: w.phone,
+        departmentCode: w.departmentCode,
+      });
+      workers.push({ id: user.id, username: w.username, departmentCode: w.departmentCode });
+      byDept[w.departmentCode] = byDept[w.departmentCode] ?? [];
+      byDept[w.departmentCode]!.push(user.id);
+    }
   }
 
   /** Stage code → preferred assignee user ids */

@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -139,7 +136,6 @@ export function EditRequestScreen({
   const { user } = useAuth();
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
   const allowed = can(user, 'request.read');
@@ -551,11 +547,7 @@ export function EditRequestScreen({
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
-      >
+      <View style={{ flex: 1 }}>
         <View
           style={{
             paddingHorizontal: theme.spacing.lg,
@@ -582,6 +574,7 @@ export function EditRequestScreen({
         <ScrollView
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
           contentContainerStyle={{ paddingBottom: stickyPad }}
         >
           <ImageCarousel uris={galleryUris} height={240} />
@@ -957,7 +950,7 @@ export function EditRequestScreen({
             </View>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       <SavedAddressPickerSheet
         open={addressSheetOpen}

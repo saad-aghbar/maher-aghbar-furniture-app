@@ -131,8 +131,6 @@ export function WorkerNotificationsPreview({
   const router = useRouter();
   const reduce = useReducedMotion();
 
-  if (notifications.length === 0) return null;
-
   const href = '/(app)/(employee)/(tabs)/notifications' as Href;
   const open = () => {
     if (!canOpenNotifications) return;
@@ -225,6 +223,36 @@ export function WorkerNotificationsPreview({
             </View>
           </Animated.View>
 
+          {notifications.length === 0 ? (
+            <View
+              style={{
+                borderRadius: theme.radius.lg,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceSecondary,
+                paddingVertical: theme.spacing.xl,
+                paddingHorizontal: theme.spacing.lg,
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  backgroundColor: colors.brandSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="notifications-outline" size={22} color={colors.brand} />
+              </View>
+              <AppText variant="label" weight="semibold">
+                {t('mobile.workerHome.notificationsEmpty')}
+              </AppText>
+            </View>
+          ) : (
           <ScrollView
             style={{ maxHeight: LIST_MAX_HEIGHT }}
             contentContainerStyle={{ gap: theme.spacing.sm }}
@@ -243,6 +271,7 @@ export function WorkerNotificationsPreview({
               />
             ))}
           </ScrollView>
+          )}
         </View>
       </View>
     </Animated.View>

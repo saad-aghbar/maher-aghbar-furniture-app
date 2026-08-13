@@ -19,6 +19,7 @@ import { isApiError } from '@/api/errors';
 import { queryKeys } from '@/api/queryKeys';
 import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
@@ -33,8 +34,11 @@ import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCam
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { BomFloorRow } from './BomFloorRow';
 import { BomMaterialPickerSheet } from './BomMaterialPickerSheet';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
+import { MeasurementFloorRow, displayMeasurementUnit } from './MeasurementFloorRow';
+import { MeasurementValuePanel } from './MeasurementValueSheet';
 import { ProductGalleryBoard } from './ProductGalleryBoard';
 import { ProductPhotoSourceSheet } from './ProductPhotoSourceSheet';
 import { splitProductPhotos } from '../productPhotos';
@@ -72,7 +76,6 @@ const emptyForm = (categoryId: string | null = null) => ({
   depth: '',
   seatHeight: '',
   basePrice: '',
-  manufacturingCost: '',
   adminNotes: '',
 });
 
@@ -86,7 +89,7 @@ export function CreateProductSheet({
   initialCategoryId = null,
   onCreated,
 }: Props) {
-  const { t, isRTL, locale } = useLocale();
+  const { t, isRTL, locale, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showToast } = useToast();
   const { openAccessoryCamera } = useAccessoryCamera();
@@ -112,6 +115,8 @@ export function CreateProductSheet({
   const [categorySheet, setCategorySheet] = useState(false);
   const [materialSheet, setMaterialSheet] = useState(false);
   const [measureSheet, setMeasureSheet] = useState(false);
+  const [measureValueSheet, setMeasureValueSheet] = useState(false);
+  const [editingMeasureIndex, setEditingMeasureIndex] = useState<number | null>(null);
   const [newMeasure, setNewMeasure] = useState({
     nameEn: '',
     nameAr: '',
@@ -127,6 +132,10 @@ export function CreateProductSheet({
     setCustomMeasurements([]);
     setBomLines([]);
     setError(null);
+    setMeasureSheet(false);
+    setMeasureValueSheet(false);
+    setEditingMeasureIndex(null);
+    setNewMeasure({ nameEn: '', nameAr: '', value: '', unit: 'cm' });
   }, [open, initialCategoryId]);
 
   const categoriesQuery = useQuery({
@@ -142,6 +151,15 @@ export function CreateProductSheet({
     const cat = categories.find((c) => c.id === form.categoryId);
     return cat ? localizedName(locale, cat) : null;
   }, [form.categoryId, categories, locale]);
+
+  const manufacturingCost = useMemo(
+    () =>
+      bomLines.reduce(
+        (sum, line) => sum + Math.max(0, Number(line.qty) || 0) * (Number(line.unitCost) || 0),
+        0,
+      ),
+    [bomLines],
+  );
 
   const set = <K extends keyof ReturnType<typeof emptyForm>>(key: K, value: ReturnType<typeof emptyForm>[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -210,7 +228,6 @@ export function CreateProductSheet({
       depth: strNum(form.depth),
       seatHeight: strNum(form.seatHeight),
       basePrice: strNum(form.basePrice) ?? undefined,
-      manufacturingCost: strNum(form.manufacturingCost) ?? undefined,
       adminNotes: form.adminNotes.trim() || undefined,
       customMeasurements: customMeasurements.length ? customMeasurements : undefined,
       bomDefaults: bomLines.length
@@ -309,28 +326,38 @@ export function CreateProductSheet({
     }
   };
 
-  const addCustomMeasurement = () => {
+  const saveCustomMeasurement = () => {
     if (!newMeasure.nameEn.trim() || !newMeasure.nameAr.trim()) {
-      setError(label('catalog.measurementNamesRequired', 'English and Arabic names are required.'));
+      void haptics.error();
+      showToast({
+        variant: 'error',
+        message: label(
+          'catalog.measurementNamesRequired',
+          'English and Arabic names are required.',
+        ),
+      });
       return;
     }
-    const value = strNum(newMeasure.value);
-    setCustomMeasurements((rows) => [
-      ...rows,
-      {
-        nameEn: newMeasure.nameEn.trim(),
-        nameAr: newMeasure.nameAr.trim(),
-        value,
-        unit: newMeasure.unit.trim() || 'cm',
-      },
-    ]);
+    const next = {
+      nameEn: newMeasure.nameEn.trim(),
+      nameAr: newMeasure.nameAr.trim(),
+      value: strNum(newMeasure.value),
+      unit: newMeasure.unit.trim() || 'cm',
+    };
+    setCustomMeasurements((rows) =>
+      editingMeasureIndex != null
+        ? rows.map((row, i) => (i === editingMeasureIndex ? next : row))
+        : [...rows, next],
+    );
     setNewMeasure({ nameEn: '', nameAr: '', value: '', unit: 'cm' });
+    setEditingMeasureIndex(null);
+    setMeasureValueSheet(false);
     setMeasureSheet(false);
-    setError(null);
-    void haptics.selection();
+    void haptics.confirmLight();
   };
 
-  const sheetLocksScroll = photoSheet || categorySheet || materialSheet || measureSheet;
+  const sheetLocksScroll =
+    photoSheet || categorySheet || materialSheet || measureSheet || measureValueSheet;
 
   return (
     <>
@@ -535,6 +562,9 @@ export function CreateProductSheet({
                     accessibilityLabel={t('catalog.addMeasurement')}
                     onPress={() => {
                       void haptics.selection();
+                      setNewMeasure({ nameEn: '', nameAr: '', value: '', unit: 'cm' });
+                      setEditingMeasureIndex(null);
+                      setMeasureValueSheet(false);
                       setMeasureSheet(true);
                     }}
                     style={{
@@ -560,49 +590,38 @@ export function CreateProductSheet({
                     {t('catalog.noCustomMeasurements')}
                   </AppText>
                 ) : (
-                  customMeasurements.map((m, i) => (
-                    <View
-                      key={`${m.nameEn}-${i}`}
-                      style={{
-                        flexDirection: isRTL ? 'row-reverse' : 'row',
-                        alignItems: 'center',
-                        gap: theme.spacing.sm,
-                        paddingVertical: theme.spacing.sm,
-                        borderTopWidth: i === 0 ? 0 : 1,
-                        borderTopColor: colors.border,
-                      }}
-                    >
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <AppText
-                          variant="body"
-                          weight="medium"
-                          style={{ textAlign: isRTL ? 'right' : 'left' }}
-                        >
-                          {locale === 'ar' ? m.nameAr || m.nameEn : m.nameEn || m.nameAr}
-                        </AppText>
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          dir="ltr"
-                          style={{ textAlign: isRTL ? 'right' : 'left' }}
-                        >
-                          {m.value != null ? `${m.value} ${m.unit || 'cm'}` : '—'}
-                        </AppText>
-                      </View>
-                      <AnimatedPressable
-                        variant="button"
-                        accessibilityRole="button"
-                        accessibilityLabel={t('common.delete')}
-                        onPress={() => {
-                          void haptics.selection();
-                          setCustomMeasurements((rows) => rows.filter((_, idx) => idx !== i));
-                        }}
-                        style={{ padding: theme.spacing.sm }}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={colors.error} />
-                      </AnimatedPressable>
-                    </View>
-                  ))
+                  <View style={{ gap: theme.spacing.sm }}>
+                    {customMeasurements.map((m, i) => {
+                      const name =
+                        locale === 'ar' ? m.nameAr || m.nameEn : m.nameEn || m.nameAr;
+                      const valueLabel =
+                        m.value != null
+                          ? `${m.value} ${displayMeasurementUnit(m.unit)}`
+                          : '—';
+                      return (
+                        <MeasurementFloorRow
+                          key={`${m.nameEn}-${i}`}
+                          index={i}
+                          name={name || '—'}
+                          valueLabel={valueLabel}
+                          onEdit={() => {
+                            setNewMeasure({
+                              nameEn: m.nameEn,
+                              nameAr: m.nameAr,
+                              value: m.value != null ? String(m.value) : '',
+                              unit: displayMeasurementUnit(m.unit),
+                            });
+                            setEditingMeasureIndex(i);
+                            setMeasureValueSheet(false);
+                            setMeasureSheet(true);
+                          }}
+                          onRemove={() => {
+                            setCustomMeasurements((rows) => rows.filter((_, idx) => idx !== i));
+                          }}
+                        />
+                      );
+                    })}
+                  </View>
                 )}
               </View>
             </DealerFormSection>
@@ -661,49 +680,36 @@ export function CreateProductSheet({
                   {label('catalog.noBomLines', 'No materials yet.')}
                 </AppText>
               ) : (
-                bomLines.map((line, i) => (
-                  <View
-                    key={`${line.sku}-${i}`}
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      alignItems: 'center',
-                      gap: theme.spacing.sm,
-                      paddingVertical: theme.spacing.sm,
-                      borderTopWidth: i === 0 ? 0 : 1,
-                      borderTopColor: colors.border,
-                    }}
-                  >
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <AppText
-                        variant="body"
-                        weight="medium"
-                        style={{ textAlign: isRTL ? 'right' : 'left' }}
-                      >
-                        {locale === 'ar' ? line.nameAr || line.nameEn : line.nameEn || line.nameAr}
-                      </AppText>
-                      <AppText
-                        variant="caption"
-                        color="muted"
-                        dir="ltr"
-                        style={{ textAlign: isRTL ? 'right' : 'left' }}
-                      >
-                        {line.sku} · ×{line.qty}
-                      </AppText>
-                    </View>
-                    <AnimatedPressable
-                      variant="button"
-                      accessibilityRole="button"
-                      accessibilityLabel={t('common.delete')}
-                      onPress={() => {
-                        void haptics.selection();
-                        setBomLines((rows) => rows.filter((_, idx) => idx !== i));
-                      }}
-                      style={{ padding: theme.spacing.sm }}
-                    >
-                      <Ionicons name="trash-outline" size={18} color={colors.error} />
-                    </AnimatedPressable>
-                  </View>
-                ))
+                <View style={{ gap: theme.spacing.sm }}>
+                  {bomLines.map((line, i) => {
+                    const qtyNum = Math.max(0, Number(line.qty) || 0);
+                    const lineTotal = qtyNum * (Number(line.unitCost) || 0);
+                    return (
+                      <BomFloorRow
+                        key={`${line.sku}-${i}`}
+                        index={i}
+                        name={
+                          locale === 'ar' ? line.nameAr || line.nameEn : line.nameEn || line.nameAr
+                        }
+                        sku={line.sku}
+                        unitCostLabel={formatCurrency(line.unitCost)}
+                        lineTotalLabel={formatCurrency(lineTotal)}
+                        qty={String(line.qty)}
+                        onQtyChange={(v) => {
+                          const q = Math.max(0, Number(v) || 0);
+                          setBomLines((rows) =>
+                            rows.map((l, idx) =>
+                              idx === i ? { ...l, qty: q, lineCost: q * l.unitCost } : l,
+                            ),
+                          );
+                        }}
+                        onRemove={() => {
+                          setBomLines((rows) => rows.filter((_, idx) => idx !== i));
+                        }}
+                      />
+                    );
+                  })}
+                </View>
               )}
             </DealerFormSection>
 
@@ -725,12 +731,26 @@ export function CreateProductSheet({
               >
                 {t('catalog.basePriceHint')}
               </AppText>
-              <TextField
-                label={t('catalog.manufacturingCost')}
-                value={form.manufacturingCost}
-                onChangeText={(v) => set('manufacturingCost', v)}
-                keyboardType="decimal-pad"
-              />
+              <View
+                style={{
+                  padding: theme.spacing.md,
+                  borderRadius: theme.radius.xl,
+                  backgroundColor: colors.surfaceSecondary,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  gap: 4,
+                }}
+              >
+                <AppText variant="caption" color="muted">
+                  {t('catalog.manufacturingCost')}
+                </AppText>
+                <AppText variant="title" weight="semibold" dir="ltr">
+                  {formatCurrency(manufacturingCost)}
+                </AppText>
+                <AppText variant="caption" color="muted">
+                  {t('catalog.productionCostHint')}
+                </AppText>
+              </View>
             </DealerFormSection>
 
             <DealerFormSection
@@ -795,6 +815,7 @@ export function CreateProductSheet({
         categories={categories}
         selectedId={form.categoryId}
         onSelect={(id) => set('categoryId', id)}
+        allowCreate
       />
 
       <BomMaterialPickerSheet
@@ -808,52 +829,132 @@ export function CreateProductSheet({
 
       <BottomSheet
         open={measureSheet}
-        onClose={() => setMeasureSheet(false)}
-        title={t('catalog.addMeasurement')}
+        onClose={() => {
+          setMeasureValueSheet(false);
+          setEditingMeasureIndex(null);
+          setMeasureSheet(false);
+        }}
+        title={
+          measureValueSheet
+            ? label('catalog.pickMeasurementValue', 'Choose value')
+            : editingMeasureIndex != null
+              ? t('common.edit')
+              : t('catalog.addMeasurement')
+        }
         fitContent
-        maxHeight={520}
+        maxHeight={560}
         overlay
       >
-        <View style={{ gap: theme.spacing.md }}>
-          <TextField
-            label={t('catalog.measurementNameEn')}
-            value={newMeasure.nameEn}
-            onChangeText={(v) => setNewMeasure((m) => ({ ...m, nameEn: v }))}
-          />
-          <TextField
-            label={t('catalog.measurementNameAr')}
-            value={newMeasure.nameAr}
-            onChangeText={(v) => setNewMeasure((m) => ({ ...m, nameAr: v }))}
-          />
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              gap: theme.spacing.sm,
+        {measureValueSheet ? (
+          <MeasurementValuePanel
+            active={measureValueSheet}
+            selected={newMeasure.value}
+            unit={newMeasure.unit}
+            onBack={() => setMeasureValueSheet(false)}
+            onSelect={(value, unit) => {
+              setNewMeasure((s) => ({ ...s, value, unit }));
+              setMeasureValueSheet(false);
             }}
-          >
-            <View style={{ flex: 1 }}>
-              <TextField
-                label={t('catalog.measurementValue')}
-                value={newMeasure.value}
-                onChangeText={(v) => setNewMeasure((m) => ({ ...m, value: v }))}
-                keyboardType="decimal-pad"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <TextField
-                label={label('catalog.unit', 'Unit')}
-                value={newMeasure.unit}
-                onChangeText={(v) => setNewMeasure((m) => ({ ...m, unit: v }))}
-                autoCapitalize="none"
-              />
-            </View>
-          </View>
-          <DealerFormFooter
-            confirmLabel={t('catalog.addMeasurement')}
-            onConfirm={addCustomMeasurement}
-            onCancel={() => setMeasureSheet(false)}
           />
-        </View>
+        ) : (
+          <View style={{ gap: theme.spacing.md }}>
+            <TextField
+              label={t('catalog.measurementNameEn')}
+              value={newMeasure.nameEn}
+              onChangeText={(v) => setNewMeasure((m) => ({ ...m, nameEn: v }))}
+            />
+            <TextField
+              label={t('catalog.measurementNameAr')}
+              value={newMeasure.nameAr}
+              onChangeText={(v) => setNewMeasure((m) => ({ ...m, nameAr: v }))}
+            />
+            <View style={{ gap: theme.spacing.xs }}>
+              <AppText variant="label" color="secondary">
+                {t('catalog.measurementValue')}
+              </AppText>
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  alignItems: 'stretch',
+                  gap: theme.spacing.sm,
+                }}
+              >
+                <TextField
+                  value={newMeasure.value}
+                  onChangeText={(v) => setNewMeasure((m) => ({ ...m, value: v }))}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  containerStyle={{ flex: 1, width: undefined }}
+                />
+                <View
+                  style={{
+                    minWidth: 48,
+                    paddingHorizontal: theme.spacing.sm,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.brandSoft,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppText variant="caption" weight="semibold" style={{ color: colors.brand }} dir="ltr">
+                    {newMeasure.unit}
+                  </AppText>
+                </View>
+                <AnimatedPressable
+                  variant="button"
+                  accessibilityRole="button"
+                  accessibilityLabel={label('catalog.pickMeasurementValue', 'Choose value')}
+                  onPress={() => {
+                    void haptics.selection();
+                    setMeasureValueSheet(true);
+                  }}
+                  style={{
+                    minWidth: theme.sizes.touch.min + 8,
+                    minHeight: theme.sizes.touch.min,
+                    paddingHorizontal: theme.spacing.md,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 2,
+                    overflow: 'hidden',
+                    ...orderBoardShadow(colorScheme),
+                  }}
+                >
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      bottom: 0,
+                      ...(isRTL ? { right: 0 } : { left: 0 }),
+                      width: 3,
+                      backgroundColor: colors.brand,
+                      opacity: 0.7,
+                    }}
+                  />
+                  <Ionicons name="options-outline" size={18} color={colors.brand} />
+                  <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
+                    {label('catalog.pickValue', 'Pick')}
+                  </AppText>
+                </AnimatedPressable>
+              </View>
+            </View>
+            <PrimaryButton
+              label={
+                editingMeasureIndex != null
+                  ? t('common.save')
+                  : t('catalog.addMeasurement')
+              }
+              onPress={saveCustomMeasurement}
+              style={{ borderRadius: theme.radius.xl }}
+            />
+          </View>
+        )}
       </BottomSheet>
     </>
   );

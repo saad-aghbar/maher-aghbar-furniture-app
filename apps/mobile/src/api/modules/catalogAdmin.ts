@@ -183,6 +183,19 @@ export async function listProductCategories(
   return apiGet<PaginatedResponse<BrowseCategory>>(`/product-categories${qs}`);
 }
 
+export type ProductCategoryCreate = {
+  code: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string;
+};
+
+export async function createProductCategory(
+  body: ProductCategoryCreate,
+): Promise<BrowseCategory> {
+  return apiPost<BrowseCategory>('/product-categories', body);
+}
+
 export async function listProductDealerPrices(productId: string): Promise<ProductDealerPrice[]> {
   return apiGet<ProductDealerPrice[]>(
     `/products/${encodeURIComponent(productId)}/dealer-prices`,

@@ -67,6 +67,8 @@ pnpm db:migrate && pnpm db:seed
 pnpm dev
 ```
 
+`pnpm db:seed` creates one admin and three empty dealer accounts (`admin`, `nile`, `oasis`, `balqis`). It does **not** load demo products, orders, or invoices. Local QA with a full fake factory: `pnpm db:seed:demo`.
+
 ---
 
 ## Environment variables

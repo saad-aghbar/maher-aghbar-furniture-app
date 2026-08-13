@@ -27,6 +27,15 @@ export type InventoryBalance = {
   } | null;
 };
 
+export type InventoryCustomMeasurement = {
+  id?: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+  value?: number | null;
+  unit?: string | null;
+};
+
 export type InventoryItem = {
   id: string;
   sku: string;
@@ -38,11 +47,13 @@ export type InventoryItem = {
   materialType?: string | null;
   color?: string | null;
   size?: string | null;
+  customMeasurements?: InventoryCustomMeasurement[] | null;
   /** Optional photo (typically accessories). */
   imageUrl?: string | null;
   unit: string;
   /** Present only when caller has inventory.cost.read */
   standardCost?: number | string | null;
+  materialId?: string | null;
   minStock: number | string;
   maxStock?: number | string | null;
   isActive?: boolean;
@@ -77,6 +88,24 @@ export type Warehouse = {
   type?: string;
   isActive?: boolean;
 };
+
+export const WAREHOUSE_TYPES = ['RAW', 'SEMI', 'FINISHED'] as const;
+export type WarehouseType = (typeof WAREHOUSE_TYPES)[number];
+
+export type CreateWarehouseInput = {
+  nameEn: string;
+  nameAr: string;
+  type: WarehouseType;
+  code?: string;
+};
+
+export async function listWarehouses() {
+  return apiGet<Warehouse[]>('/inventory/warehouses');
+}
+
+export async function createWarehouse(body: CreateWarehouseInput) {
+  return apiPost<Warehouse>('/warehouses', body);
+}
 
 export type StockReceiptInput = {
   inventoryItemId: string;
@@ -137,10 +166,6 @@ export async function listInventoryTransactions(
   return apiGet<PaginatedResponse<InventoryTransaction>>(
     `/inventory/items/${id}/transactions${qs}`,
   );
-}
-
-export async function listWarehouses() {
-  return apiGet<Warehouse[]>('/inventory/warehouses');
 }
 
 export async function receiveStock(body: StockReceiptInput) {
@@ -217,7 +242,7 @@ export async function listInventoryStockCounts(params: PageParams = {}) {
 }
 
 export type CreateInventoryItemInput = {
-  sku: string;
+  sku?: string;
   nameEn: string;
   nameAr: string;
   unit?: string;
@@ -228,6 +253,7 @@ export type CreateInventoryItemInput = {
   color?: string;
   materialType?: string;
   size?: string;
+  customMeasurements?: InventoryCustomMeasurement[] | null;
   description?: string;
   imageUrl?: string | null;
 };
@@ -236,12 +262,14 @@ export type UpdateInventoryItemInput = {
   nameEn?: string;
   nameAr?: string;
   unit?: string;
+  category?: string;
   minStock?: number;
   standardCost?: number;
   barcode?: string;
   color?: string;
   materialType?: string;
   size?: string;
+  customMeasurements?: InventoryCustomMeasurement[] | null;
   description?: string;
   imageUrl?: string | null;
 };
@@ -266,6 +294,40 @@ export const INVENTORY_CATEGORY_FOR_CREATE: Record<InventoryCategoryGroup, strin
   wood: 'WOOD',
   accessories: 'METAL_ACCESSORY',
 };
+
+export const INVENTORY_CATEGORY_GROUPS: InventoryCategoryGroup[] = [
+  'fabric',
+  'foam',
+  'wood',
+  'accessories',
+];
+
+export function categoryGroupFromCategory(
+  category?: string | null,
+): InventoryCategoryGroup {
+  switch (category) {
+    case 'FOAM':
+      return 'foam';
+    case 'WOOD':
+      return 'wood';
+    case 'METAL_ACCESSORY':
+    case 'DECORATIVE_ACCESSORY':
+    case 'PACKAGING':
+      return 'accessories';
+    default:
+      return 'fabric';
+  }
+}
+
+/** Catalog unit price from inventory (`standardCost`). Treats missing/invalid as 0. */
+export function inventoryItemUnitCost(
+  item: { standardCost?: number | string | null } | null | undefined,
+): number {
+  const raw = item?.standardCost;
+  if (raw == null || raw === '') return 0;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 export async function createInventoryItem(body: CreateInventoryItemInput) {
   return apiPost<InventoryItem>('/inventory/items', body);

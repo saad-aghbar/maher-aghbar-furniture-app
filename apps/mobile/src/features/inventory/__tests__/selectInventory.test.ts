@@ -4,6 +4,7 @@ import {
   selectInventoryTransaction,
 } from '../selectInventory';
 import type { InventoryItem, InventoryTransaction } from '../api';
+import { inventoryItemUnitCost } from '@/api/modules/inventory';
 
 const baseItem: InventoryItem = {
   id: 'item-1',
@@ -108,5 +109,18 @@ describe('selectInventory cost visibility', () => {
     const row = selectInventoryTransaction(tx, 'en', 'm');
     expect(row.showCost).toBe(false);
     expect(row.costLabel).toBeNull();
+  });
+});
+
+describe('inventoryItemUnitCost', () => {
+  it('reads numeric and string standardCost', () => {
+    expect(inventoryItemUnitCost({ standardCost: 12.5 })).toBe(12.5);
+    expect(inventoryItemUnitCost({ standardCost: '8.000' })).toBe(8);
+  });
+
+  it('treats missing or zero as 0', () => {
+    expect(inventoryItemUnitCost({})).toBe(0);
+    expect(inventoryItemUnitCost({ standardCost: 0 })).toBe(0);
+    expect(inventoryItemUnitCost({ standardCost: '0' })).toBe(0);
   });
 });

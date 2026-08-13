@@ -70,43 +70,26 @@ Optional Docker infra only:
 docker compose -f infra/docker/docker-compose.yml up -d postgres redis
 ```
 
-## Demo accounts
+## Launch accounts
 
-**Local / demo only — never use these in production.**
+**Local / launch seed only — change these passwords before production.**
 
 Every account below uses password **`123`**. Sign in with **username** (not email).
 
-Still only three **types** (admin / customer / worker). Specialty floor logins are all Worker accounts — each sees **only their assigned tasks**.
+`pnpm db:seed` creates **empty** accounts: no products, inventory, orders, or invoices.
 
-| Username | Password | Type | App / specialty |
-|----------|----------|------|-----------------|
-| `admin` | `123` | Admin | Admin web — assign stages, run the factory |
-| `cutter` | `123` | Worker | Material prep (WH) |
-| `cutter2` | `123` | Worker | Material prep (WH) |
-| `carpenter` | `123` | Worker | Carpentry |
-| `carpenter2` | `123` | Worker | Carpentry (parallel lane) |
-| `carpenter3` | `123` | Worker | Carpentry |
-| `painter` | `123` | Worker | Painting |
-| `painter2` | `123` | Worker | Painting |
-| `upholsterer` | `123` | Worker | Upholstery |
-| `upholsterer2` | `123` | Worker | Upholstery |
-| `assembler` | `123` | Worker | Assembly |
-| `assembler2` | `123` | Worker | Assembly |
-| `packer` | `123` | Worker | Packaging |
-| `inspector` | `123` | Worker | Quality inspection |
-| `driver` | `123` | Worker | Delivery |
-| `driver2` | `123` | Worker | Delivery |
+| Username | Password | Type | App |
+|----------|----------|------|-----|
+| `admin` | `123` | Admin | Admin web |
 | `nile` | `123` | Customer | Customer portal — Nile Interiors |
 | `oasis` | `123` | Customer | Customer portal — Oasis Living |
 | `balqis` | `123` | Customer | Customer portal — Balqis Hospitality |
 
-Quick smoke logins: **`admin`**, **`nile`**, **`carpenter`** — same password.
-
-**Workflow:** Admin opens a production order and assigns a worker per stage (filtered by department). When a worker completes their stage, the pipeline unlocks the next ready stages (e.g. carpentry done → upholstery / assembly can proceed; packaging done → delivery). Workers never see each other’s tasks.
-
-Demo data (`pnpm db:seed`) builds an Amman factory baseline: **1 admin**, **3 dealers** (`nile`, `oasis`, `balqis`), **15 workers**, full product catalog, inventory, multi-month purchasing/AP, and **~2 weeks of realistic dealer sales orders** (RFQ → quote → SO → production orders with workflow snapshots, stage tasks, and proposed schedules). Each dealer has its own customer portal account.
+Worker accounts are not seeded. Create them in Admin when you staff the floor.
 
 Legacy email addresses (e.g. `admin@maher-aghbar.jo`) still exist on user records but login accepts **username only**.
+
+Full catalog/orders demo (local QA only): `pnpm db:seed:demo`.
 
 Login URLs:
 
@@ -126,7 +109,8 @@ Login URLs:
 | `pnpm smoke:scope` | Multi-customer + multi-worker isolation smoke |
 | `pnpm typecheck` | TypeScript across packages |
 | `pnpm build` | Production builds |
-| `pnpm db:seed` | Re-seed demo data |
+| `pnpm db:seed` | Launch seed: admin + 3 empty dealers |
+| `pnpm db:seed:demo` | Full demo catalog, orders, inventory (local QA) |
 
 Logs: `logs/*.log` · PIDs: `.run/*.pid`
 

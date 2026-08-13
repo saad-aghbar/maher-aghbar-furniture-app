@@ -19,6 +19,7 @@
     "db:migrate": "pnpm --filter @maher/database migrate:dev",
     "db:push": "pnpm --filter @maher/database push",
     "db:seed": "pnpm --filter @maher/database seed",
+    "db:seed:demo": "pnpm --filter @maher/database seed:demo",
     "db:studio": "pnpm --filter @maher/database studio",
     "prepare:launch": "bash scripts/prepare-launch.sh",
     "launch": "bash scripts/launch.sh",

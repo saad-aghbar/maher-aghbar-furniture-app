@@ -33,7 +33,9 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListActiveQueryDto, ListQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
 import {
+  buildMaterialCostMap,
   productionUnitCost,
+  resolveBomLineUnitCost,
   type BomDefaults,
   type MaterialCostMap,
 } from '../../common/helpers/order-costing.util';
@@ -540,12 +542,13 @@ export class CatalogController {
     const bomLines = (bom?.materials ?? []).map((line) => {
       const mat = line.sku ? bySku.get(line.sku) : undefined;
       const qty = Number(line.qty) || 0;
-      const unitCost =
+      const unitCost = resolveBomLineUnitCost(
+        line.sku,
         line.unitCost != null && Number.isFinite(Number(line.unitCost))
           ? Number(line.unitCost)
-          : line.sku && materialCosts.has(line.sku)
-            ? materialCosts.get(line.sku)!
-            : 0;
+          : undefined,
+        materialCosts,
+      );
       return {
         sku: line.sku ?? '',
         qty,
@@ -1144,28 +1147,30 @@ export class CatalogController {
   }
 
   private async loadMaterialCosts(): Promise<MaterialCostMap> {
-    const txs = await this.prisma.inventoryTransaction.findMany({
-      where: { unitCost: { not: null } },
-      orderBy: [{ type: 'asc' }, { createdAt: 'desc' }],
-      select: {
-        type: true,
-        unitCost: true,
-        inventoryItem: { select: { sku: true } },
-      },
-      take: 800,
+    const [items, txs] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where: { archivedAt: null, standardCost: { gt: 0 } },
+        select: { sku: true, standardCost: true },
+      }),
+      this.prisma.inventoryTransaction.findMany({
+        where: { unitCost: { not: null } },
+        orderBy: [{ type: 'asc' }, { createdAt: 'desc' }],
+        select: {
+          type: true,
+          unitCost: true,
+          inventoryItem: { select: { sku: true } },
+        },
+        take: 800,
+      }),
+    ]);
+    return buildMaterialCostMap({
+      standardCosts: items,
+      transactions: txs.map((tx) => ({
+        sku: tx.inventoryItem.sku,
+        unitCost: tx.unitCost,
+        type: tx.type,
+      })),
     });
-    const map: MaterialCostMap = new Map();
-    const ranked = [...txs].sort((a, b) => {
-      const rank = (t: string) => (t === 'PURCHASE_RECEIPT' ? 0 : 1);
-      return rank(a.type) - rank(b.type);
-    });
-    for (const tx of ranked) {
-      const sku = tx.inventoryItem.sku;
-      if (!map.has(sku) && tx.unitCost != null) {
-        map.set(sku, Number(tx.unitCost));
-      }
-    }
-    return map;
   }
 
   /** Prefer BOM-derived cost when materials exist; else explicit manufacturingCost. */

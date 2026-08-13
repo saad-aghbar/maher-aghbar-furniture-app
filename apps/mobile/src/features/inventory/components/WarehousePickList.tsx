@@ -29,6 +29,8 @@ type WarehousePickListProps = {
   /** Optional first row that clears selection (`onSelect('')`). */
   allowNone?: boolean;
   noneLabel?: string;
+  /** Opens a sibling create-warehouse overlay — never nest that sheet here. */
+  onAddWarehouse?: () => void;
 };
 
 function matchesQuery(wh: Warehouse, q: string, locale: string): boolean {
@@ -51,6 +53,7 @@ export function WarehousePickList({
   resetToken,
   allowNone = false,
   noneLabel,
+  onAddWarehouse,
 }: WarehousePickListProps) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
@@ -202,6 +205,34 @@ export function WarehousePickList({
             flexGrow: empty ? 1 : undefined,
           }}
         >
+          {onAddWarehouse ? (
+            <Pressable
+              onPress={() => {
+                void haptics.selection();
+                onAddWarehouse();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.inventory.newWarehouse')}
+              style={{
+                minHeight: theme.sizes.touch.min,
+                borderWidth: 1,
+                borderColor: colors.brand,
+                backgroundColor: colors.brandSoft,
+                borderRadius: theme.radius.xl,
+                paddingHorizontal: theme.spacing.md,
+                paddingVertical: theme.spacing.sm,
+                justifyContent: 'center',
+              }}
+            >
+              <AppText
+                weight="semibold"
+                color="brand"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                + {t('mobile.inventory.newWarehouse')}
+              </AppText>
+            </Pressable>
+          ) : null}
           {empty ? (
             <AppText
               variant="caption"

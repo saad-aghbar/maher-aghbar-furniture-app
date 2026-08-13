@@ -522,7 +522,7 @@ async function main() {
     });
   }
 
-  // Refresh operational demo (keeps foundation tables above).
+  // Wipe operational rows (keeps foundation tables above).
   console.log('Wiping operational data…');
   await wipeOperationalData(prisma);
 
@@ -538,15 +538,12 @@ async function main() {
   await seedDemoWorld(prisma, passwordHash);
 
   console.log('Seed complete.');
-  console.log('Account types: admin | customer | worker');
-  console.log('Demo logins (password: 123):');
-  console.log('  admin');
-  console.log(
-    '  cutter | cutter2 | carpenter | carpenter2 | carpenter3 | painter | painter2 | upholsterer | upholsterer2 | assembler | assembler2 | packer | inspector | driver | driver2',
-  );
-  console.log(
-    '  nile | oasis | balqis',
-  );
+  if (process.env.SEED_FULL_DEMO === '1') {
+    console.log('Full demo logins (password: 123): admin | nile | oasis | balqis | cutter | carpenter | …');
+  } else {
+    console.log('Launch logins (password: 123): admin | nile | oasis | balqis');
+    console.log('  Empty catalog, inventory, orders, and invoices. Full demo: pnpm db:seed:demo');
+  }
 }
 
 main()

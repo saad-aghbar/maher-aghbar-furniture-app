@@ -6,19 +6,16 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { FadeIn } from '@/motion';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { TodayProgressCard } from './components/TodayProgressCard';
 import { UpcomingTasksList } from './components/UpcomingTasksList';
-import { WorkerCurrentTaskHero } from './components/WorkerCurrentTaskHero';
+import { WorkerCurrentTaskHero, WorkerCurrentTaskIdle } from './components/WorkerCurrentTaskHero';
 import { WorkerHomeHeader } from './components/WorkerHomeHeader';
 import { WorkerHomeSkeleton } from './components/WorkerHomeSkeleton';
 import { WorkerNotificationsPreview } from './components/WorkerNotificationsPreview';
 import { useWorkerHomeQuery } from './query';
 import {
-  hasOpenTasks,
-  isWorkerHomeEmpty,
   selectCurrentTask,
   selectTodayProgress,
   selectUpcomingTasks,
@@ -100,7 +97,6 @@ export function WorkerHomeScreen({ forceState, fixture }: WorkerHomeScreenProps 
     );
   }
 
-  const empty = forceState === 'empty' || isWorkerHomeEmpty(data);
   const currentTask = selectCurrentTask(data);
   const upcoming = selectUpcomingTasks(data);
   const progress = selectTodayProgress(data);
@@ -123,30 +119,19 @@ export function WorkerHomeScreen({ forceState, fixture }: WorkerHomeScreenProps 
         unreadNotifications={data.unreadNotifications}
         canOpenNotifications={canNotify || Boolean(forceState)}
       />
-      {empty ? (
-        <FadeIn>
-          <EmptyState
-            title={t('mobile.workerHome.emptyTitle')}
-            description={t('mobile.workerHome.emptyBody')}
-          />
-        </FadeIn>
-      ) : (
-        <View>
-          {currentTask ? <WorkerCurrentTaskHero task={currentTask} /> : null}
-          {!currentTask && !hasOpenTasks(data) ? (
-            <EmptyState
-              title={t('mobile.workerHome.emptyTitle')}
-              description={t('mobile.workerHome.emptyBody')}
-            />
-          ) : null}
-          <UpcomingTasksList tasks={upcoming} />
-          <TodayProgressCard progress={progress} />
-          <WorkerNotificationsPreview
-            notifications={data.notifications}
-            canOpenNotifications={canNotify || Boolean(forceState)}
-          />
-        </View>
-      )}
+      <View>
+        {currentTask ? (
+          <WorkerCurrentTaskHero task={currentTask} />
+        ) : (
+          <WorkerCurrentTaskIdle />
+        )}
+        <UpcomingTasksList tasks={upcoming} />
+        <TodayProgressCard progress={progress} />
+        <WorkerNotificationsPreview
+          notifications={data.notifications}
+          canOpenNotifications={canNotify || Boolean(forceState)}
+        />
+      </View>
     </ScrollableScreen>
   );
 }

@@ -5,6 +5,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryItemCardModel } from '../selectInventory';
+import { formatInventoryMaterialType } from '../selectInventory';
 
 type Props = {
   item: InventoryItemCardModel;
@@ -49,7 +50,8 @@ export function InventoryMaterialRow({
       (canLabelPdf && onLabelPdf),
   );
   const nameWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const meta = [item.sku, item.materialType, item.color].filter(Boolean).join(' · ');
+  const materialTypeLabel = formatInventoryMaterialType(item.materialType, t);
+  const meta = [item.sku, materialTypeLabel, item.color].filter(Boolean).join(' · ');
   const showPhoto = item.isAccessory;
   const accent = item.isLowStock ? colors.warning : colors.brand;
 

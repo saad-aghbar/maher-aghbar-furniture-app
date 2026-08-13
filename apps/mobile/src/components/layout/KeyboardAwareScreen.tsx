@@ -19,9 +19,9 @@ type KeyboardAwareScreenProps = {
   contentContainerStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
   /**
-   * `padding` — shrink the screen (default).
-   * `insets` — keep the screen full-bleed; ScrollView insets around the keyboard.
-   *            Use on login so the canvas isn’t replaced by a hole above the keys.
+   * `insets` — keep the screen full-bleed; ScrollView insets around the keyboard (default).
+   *            Avoids a solid canvas hole above the keys.
+   * `padding` — shrink the screen with KeyboardAvoidingView.
    */
   keyboardMode?: 'padding' | 'insets';
 };
@@ -33,7 +33,7 @@ export function KeyboardAwareScreen({
   padding = 'lg',
   contentContainerStyle,
   style,
-  keyboardMode = 'padding',
+  keyboardMode = 'insets',
 }: KeyboardAwareScreenProps) {
   const insets = useSafeAreaInsets();
   const { colors, theme } = useTheme();

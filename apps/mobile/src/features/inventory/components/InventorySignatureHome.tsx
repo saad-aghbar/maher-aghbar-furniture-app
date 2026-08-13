@@ -35,6 +35,7 @@ import { InventoryCompositionChrome } from './InventoryCompositionChrome';
 import { CreateInventoryItemSheet } from './CreateInventoryItemSheet';
 import { CreateStockCountSheet } from './CreateStockCountSheet';
 import { CreateTransferSheet } from './CreateTransferSheet';
+import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { EditInventoryItemSheet } from './EditInventoryItemSheet';
 import { InventoryLowStockFocus } from './InventoryLowStockFocus';
 import { InventoryMaterialRow } from './InventoryMaterialRow';
@@ -95,10 +96,12 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   const canEdit = can(user, 'inventory.adjust');
   const canLabelPdf = can(user, 'inventory.read');
   const canEditCost = can(user, 'inventory.cost.read');
+  const canCreateWarehouse = can(user, 'warehouse.manage');
 
   const [section, setSection] = useState<InventoryHomeSection>('items');
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createOpsOpen, setCreateOpsOpen] = useState(false);
+  const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
   const [editItem, setEditItem] = useState<InventoryItemCardModel | null>(null);
   const [move, setMove] = useState<MoveTarget | null>(null);
   const [categoryGroup, setCategoryGroup] = useState<InventoryCategoryGroup>(
@@ -308,6 +311,9 @@ export function InventorySignatureHome({ initialGroup }: Props) {
         }
         canCreate={canCreate}
         createLabel={createLabel}
+        canCreateWarehouse={canCreateWarehouse}
+        warehouseLabel={t('mobile.inventory.newWarehouse')}
+        onCreateWarehouse={() => setCreateWarehouseOpen(true)}
         onCreate={() => {
           if (section === 'items') setCreateItemOpen(true);
           else setCreateOpsOpen(true);
@@ -466,6 +472,12 @@ export function InventorySignatureHome({ initialGroup }: Props) {
             />
           )
         }
+      />
+
+      <CreateWarehouseSheet
+        open={createWarehouseOpen}
+        onClose={() => setCreateWarehouseOpen(false)}
+        onCreated={() => setCreateWarehouseOpen(false)}
       />
 
       <CreateInventoryItemSheet

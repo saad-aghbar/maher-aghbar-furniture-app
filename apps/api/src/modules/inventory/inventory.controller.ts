@@ -9,6 +9,7 @@ import {
   IsUUID,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -28,10 +29,40 @@ class ListInventoryItemsDto extends PaginationDto {
   categoryGroup?: string;
 }
 
-class CreateInventoryItemDto {
+class CustomMeasurementDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
   @IsString()
   @MinLength(1)
-  sku!: string;
+  nameEn!: string;
+
+  @IsString()
+  @MinLength(1)
+  nameAr!: string;
+
+  @IsOptional()
+  @IsString()
+  nameHe?: string;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && v !== '')
+  @Type(() => Number)
+  @IsNumber()
+  value?: number | null;
+
+  @IsOptional()
+  @IsString()
+  unit?: string | null;
+}
+
+class CreateInventoryItemDto {
+  /** Optional — auto-generated as FAB-0001 / FOAM-0001 / WOOD-0001 / ACC-0001. */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  sku?: string;
 
   @IsString()
   @MinLength(1)
@@ -86,6 +117,12 @@ class CreateInventoryItemDto {
   @IsOptional()
   @IsString()
   size?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomMeasurementDto)
+  customMeasurements?: CustomMeasurementDto[] | null;
 
   @IsOptional()
   @IsUUID()
@@ -154,6 +191,12 @@ class UpdateInventoryItemDto {
   @IsOptional()
   @IsString()
   size?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomMeasurementDto)
+  customMeasurements?: CustomMeasurementDto[] | null;
 
   @IsOptional()
   @IsUUID()

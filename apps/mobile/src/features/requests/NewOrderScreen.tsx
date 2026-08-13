@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Keyboard, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -163,6 +163,7 @@ export function NewOrderScreen() {
   const [draftSaved, setDraftSaved] = useState<{ id: string; number: string } | null>(null);
   const [submittedNumber, setSubmittedNumber] = useState<string | null>(null);
   const [successKey, setSuccessKey] = useState(0);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
 
   const productQuery = useBrowseProductQuery(productId || undefined, Boolean(productId));
   const favorites = useDealerFavorites(user?.id);
@@ -181,6 +182,21 @@ export function NewOrderScreen() {
 
   const dimensionsNotes = formatDimensionsNotes(dimensions);
   const appliedDimsProduct = useRef<string>('');
+
+  useEffect(() => {
+    const onShow = () => setKeyboardOpen(true);
+    const onHide = () => setKeyboardOpen(false);
+    const willShow = Keyboard.addListener('keyboardWillShow', onShow);
+    const didShow = Keyboard.addListener('keyboardDidShow', onShow);
+    const willHide = Keyboard.addListener('keyboardWillHide', onHide);
+    const didHide = Keyboard.addListener('keyboardDidHide', onHide);
+    return () => {
+      willShow.remove();
+      didShow.remove();
+      willHide.remove();
+      didHide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -904,7 +920,11 @@ export function NewOrderScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAwareScreen
         contentContainerStyle={{
-          paddingBottom: submittedNumber ? theme.spacing['3xl'] : scrollPad,
+          paddingBottom: keyboardOpen
+            ? theme.spacing.md
+            : submittedNumber
+              ? theme.spacing['3xl']
+              : scrollPad,
         }}
         header={
           <View style={{ gap: theme.spacing.md }}>
@@ -1526,15 +1546,17 @@ export function NewOrderScreen() {
         />
       </KeyboardAwareScreen>
 
-      <NewOrderFloatingDock
-        mode={dockMode}
-        disabled={dockDisabled}
-        primaryLoading={busy && dockMode === 'submit'}
-        draftLoading={busy && dockMode === 'submit'}
-        onBack={goBack}
-        onPrimary={onDockPrimary}
-        onSaveDraft={() => void persistDraft()}
-      />
+      {keyboardOpen ? null : (
+        <NewOrderFloatingDock
+          mode={dockMode}
+          disabled={dockDisabled}
+          primaryLoading={busy && dockMode === 'submit'}
+          draftLoading={busy && dockMode === 'submit'}
+          onBack={goBack}
+          onPrimary={onDockPrimary}
+          onSaveDraft={() => void persistDraft()}
+        />
+      )}
     </View>
   );
 }

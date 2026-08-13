@@ -48,9 +48,11 @@ import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCam
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import { resolveAppFontStyle, useTheme } from '@/theme';
+import { useTheme } from '@/theme';
 import { CategoryPickerSheet } from './components/CategoryPickerSheet';
+import { BomFloorRow } from './components/BomFloorRow';
 import { BomMaterialPickerSheet } from './components/BomMaterialPickerSheet';
+import { MeasurementFloorRow, displayMeasurementUnit } from './components/MeasurementFloorRow';
 import { MeasurementValuePanel } from './components/MeasurementValueSheet';
 import { ProductGalleryBoard } from './components/ProductGalleryBoard';
 import { ProductPhotoSourceSheet } from './components/ProductPhotoSourceSheet';
@@ -62,12 +64,6 @@ import {
   uploadProductImage,
   uploadProductPhotoUri,
 } from './productPhotoUpload';
-import { AppTextInput } from '@/components/forms/AppTextInput';
-
-function displayUnit(unit?: string | null): string {
-  const u = String(unit ?? 'cm').trim();
-  return u || 'cm';
-}
 
 function num(v: number | string | null | undefined): number | null {
   if (v == null || v === '') return null;
@@ -154,6 +150,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [measureValueSheet, setMeasureValueSheet] = useState(false);
+  const [editingMeasureIndex, setEditingMeasureIndex] = useState<number | null>(null);
   const [sellerCustomerId, setSellerCustomerId] = useState<string | null>(null);
   const [sellerPrice, setSellerPrice] = useState('');
   const [sellerQ, setSellerQ] = useState('');
@@ -623,6 +620,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
             actionLabel={t('catalog.addMeasurement')}
             onAction={() => {
               setNewMeasure({ nameEn: '', nameAr: '', value: '', unit: 'cm' });
+              setEditingMeasureIndex(null);
               setMeasureValueSheet(false);
               setMeasureSheet(true);
             }}
@@ -687,7 +685,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
                           ? m.nameAr
                           : null;
                     const valueLabel =
-                      m.value != null ? `${m.value} ${displayUnit(m.unit)}` : '—';
+                      m.value != null ? `${m.value} ${displayMeasurementUnit(m.unit)}` : '—';
                     return (
                       <MeasurementFloorRow
                         key={`${m.nameEn}-${idx}`}
@@ -695,6 +693,17 @@ export function AdminProductDetailScreen({ productId }: Props) {
                         name={name || '—'}
                         secondary={secondary}
                         valueLabel={valueLabel}
+                        onEdit={() => {
+                          setNewMeasure({
+                            nameEn: m.nameEn,
+                            nameAr: m.nameAr,
+                            value: m.value != null ? String(m.value) : '',
+                            unit: displayMeasurementUnit(m.unit),
+                          });
+                          setEditingMeasureIndex(idx);
+                          setMeasureValueSheet(false);
+                          setMeasureSheet(true);
+                        }}
                         onRemove={() => {
                           set(
                             'customMeasurements',
@@ -1048,6 +1057,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
         categories={categories}
         selectedId={draft.categoryId}
         onSelect={(id) => set('categoryId', id)}
+        allowCreate
       />
 
       <ProductPhotoSourceSheet
@@ -1203,12 +1213,15 @@ export function AdminProductDetailScreen({ productId }: Props) {
         open={measureSheet}
         onClose={() => {
           setMeasureValueSheet(false);
+          setEditingMeasureIndex(null);
           setMeasureSheet(false);
         }}
         title={
           measureValueSheet
             ? t('catalog.pickMeasurementValue')
-            : t('catalog.addMeasurement')
+            : editingMeasureIndex != null
+              ? t('common.edit')
+              : t('catalog.addMeasurement')
         }
         fitContent
         maxHeight={560}
@@ -1313,20 +1326,35 @@ export function AdminProductDetailScreen({ productId }: Props) {
               </View>
             </View>
             <PrimaryButton
-              label={t('catalog.addMeasurement')}
-              disabled={!newMeasure.nameEn.trim() || !newMeasure.nameAr.trim()}
+              label={
+                editingMeasureIndex != null ? t('common.save') : t('catalog.addMeasurement')
+              }
               onPress={() => {
+                if (!newMeasure.nameEn.trim() || !newMeasure.nameAr.trim()) {
+                  void haptics.error();
+                  showToast({
+                    variant: 'error',
+                    message: t('catalog.measurementNamesRequired'),
+                  });
+                  return;
+                }
                 void haptics.confirmLight();
-                set('customMeasurements', [
-                  ...draft.customMeasurements,
-                  {
-                    nameEn: newMeasure.nameEn.trim(),
-                    nameAr: newMeasure.nameAr.trim(),
-                    value: strNum(newMeasure.value),
-                    unit: newMeasure.unit,
-                  },
-                ]);
+                const next = {
+                  nameEn: newMeasure.nameEn.trim(),
+                  nameAr: newMeasure.nameAr.trim(),
+                  value: strNum(newMeasure.value),
+                  unit: newMeasure.unit,
+                };
+                set(
+                  'customMeasurements',
+                  editingMeasureIndex != null
+                    ? draft.customMeasurements.map((row, i) =>
+                        i === editingMeasureIndex ? next : row,
+                      )
+                    : [...draft.customMeasurements, next],
+                );
                 setNewMeasure({ nameEn: '', nameAr: '', value: '', unit: 'cm' });
+                setEditingMeasureIndex(null);
                 setMeasureValueSheet(false);
                 setMeasureSheet(false);
               }}
@@ -1339,341 +1367,8 @@ export function AdminProductDetailScreen({ productId }: Props) {
   );
 }
 
-function BomFloorRow({
-  index,
-  name,
-  sku,
-  unitCostLabel,
-  lineTotalLabel,
-  qty,
-  onQtyChange,
-  onRemove,
-}: {
-  index: number;
-  name: string;
-  sku: string;
-  unitCostLabel: string;
-  lineTotalLabel: string;
-  qty: string;
-  onQtyChange: (v: string) => void;
-  onRemove: () => void;
-}) {
-  const { colors, theme, colorScheme } = useTheme();
-  const { isRTL, locale, t } = useLocale();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const chipStyle = {
-    flexShrink: 0 as const,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.radius.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  };
 
-  return (
-    <ListItemEnter index={index}>
-      <View
-        style={{
-          borderRadius: theme.radius.xl,
-          borderWidth: 1,
-          borderColor: colors.borderStrong,
-          backgroundColor: colors.surfaceSecondary,
-          overflow: 'hidden',
-          ...orderBoardShadow(colorScheme),
-        }}
-      >
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
-            width: 3,
-            backgroundColor: colors.brand,
-            opacity: 0.75,
-          }}
-        />
-        <View
-          style={{
-            gap: theme.spacing.sm,
-            paddingVertical: theme.spacing.md,
-            paddingHorizontal: theme.spacing.md,
-            ...(isRTL
-              ? { paddingRight: theme.spacing.md + 4 }
-              : { paddingLeft: theme.spacing.md + 4 }),
-          }}
-        >
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'flex-start',
-              gap: theme.spacing.md,
-            }}
-          >
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.brandSoft,
-                borderWidth: 1,
-                borderColor: colors.border,
-                marginTop: 2,
-              }}
-            >
-              <Ionicons name="cube-outline" size={18} color={colors.brand} />
-            </View>
-
-            <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-              <AppText
-                variant="label"
-                weight={titleWeight}
-                style={{ textAlign: isRTL ? 'right' : 'left' }}
-              >
-                {name}
-              </AppText>
-              {sku ? (
-                <AppText
-                  variant="caption"
-                  color="muted"
-                  dir="ltr"
-                  style={{ textAlign: isRTL ? 'right' : 'left' }}
-                >
-                  {sku}
-                </AppText>
-              ) : null}
-              <AppText
-                variant="caption"
-                color="muted"
-                dir="ltr"
-                style={{ textAlign: isRTL ? 'right' : 'left' }}
-              >
-                {t('catalog.unitCost')}: {unitCostLabel}
-              </AppText>
-            </View>
-          </View>
-
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: theme.spacing.sm,
-            }}
-          >
-            <View style={[chipStyle, { minWidth: 72 }]}>
-              <AppTextInput
-                value={qty}
-                onChangeText={onQtyChange}
-                keyboardType="decimal-pad"
-                accessibilityLabel={t('catalog.qty')}
-                placeholder="0"
-                placeholderTextColor={colors.textMuted}
-                style={{
-                  minWidth: 40,
-                  padding: 0,
-                  margin: 0,
-                  fontSize: theme.typography.variants.label.fontSize,
-                  lineHeight: theme.typography.variants.label.lineHeight,
-                  color: colors.brand,
-                  textAlign: 'center',
-                  ...resolveAppFontStyle(locale, {
-                    variant: 'label',
-                    weight: titleWeight,
-                  }),
-                }}
-              />
-            </View>
-
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                gap: theme.spacing.sm,
-              }}
-            >
-              <View style={chipStyle}>
-                <AppText
-                  variant="label"
-                  weight={titleWeight}
-                  dir="ltr"
-                  style={{ color: colors.brand }}
-                >
-                  {lineTotalLabel}
-                </AppText>
-              </View>
-
-              <AnimatedPressable
-                variant="button"
-                accessibilityRole="button"
-                accessibilityLabel={t('common.delete')}
-                onPress={() => {
-                  void haptics.selection();
-                  onRemove();
-                }}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.errorSoft,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                }}
-              >
-                <Ionicons name="trash-outline" size={16} color={colors.error} />
-              </AnimatedPressable>
-            </View>
-          </View>
-        </View>
-      </View>
-    </ListItemEnter>
-  );
-}
-
-function MeasurementFloorRow({
-  index,
-  name,
-  secondary,
-  valueLabel,
-  onRemove,
-}: {
-  index: number;
-  name: string;
-  secondary?: string | null;
-  valueLabel: string;
-  onRemove: () => void;
-}) {
-  const { colors, theme, colorScheme } = useTheme();
-  const { isRTL, locale, t } = useLocale();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-
-  return (
-    <ListItemEnter index={index}>
-      <View
-        style={{
-          borderRadius: theme.radius.xl,
-          borderWidth: 1,
-          borderColor: colors.borderStrong,
-          backgroundColor: colors.surfaceSecondary,
-          overflow: 'hidden',
-          ...orderBoardShadow(colorScheme),
-        }}
-      >
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
-            width: 3,
-            backgroundColor: colors.brand,
-            opacity: 0.75,
-          }}
-        />
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            gap: theme.spacing.md,
-            paddingVertical: theme.spacing.md,
-            paddingHorizontal: theme.spacing.md,
-            ...(isRTL
-              ? { paddingRight: theme.spacing.md + 4 }
-              : { paddingLeft: theme.spacing.md + 4 }),
-          }}
-        >
-          <View
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.brandSoft,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <Ionicons name="resize-outline" size={18} color={colors.brand} />
-          </View>
-
-          <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-            <AppText
-              variant="label"
-              weight={titleWeight}
-              numberOfLines={1}
-              style={{ textAlign: isRTL ? 'right' : 'left' }}
-            >
-              {name}
-            </AppText>
-            {secondary ? (
-              <AppText
-                variant="caption"
-                color="muted"
-                numberOfLines={1}
-                style={{ textAlign: isRTL ? 'right' : 'left' }}
-              >
-                {secondary}
-              </AppText>
-            ) : null}
-          </View>
-
-          <View
-            style={{
-              paddingHorizontal: theme.spacing.md,
-              paddingVertical: theme.spacing.sm,
-              borderRadius: theme.radius.lg,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-            }}
-          >
-            <AppText
-              variant="label"
-              weight={titleWeight}
-              dir="ltr"
-              style={{ color: colors.brand }}
-            >
-              {valueLabel}
-            </AppText>
-          </View>
-
-          <AnimatedPressable
-            variant="button"
-            accessibilityRole="button"
-            accessibilityLabel={t('common.delete')}
-            onPress={() => {
-              void haptics.selection();
-              onRemove();
-            }}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.errorSoft,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <Ionicons name="trash-outline" size={16} color={colors.error} />
-          </AnimatedPressable>
-        </View>
-      </View>
-    </ListItemEnter>
-  );
-}
 
 function SellerPriceFloorRow({
   index,

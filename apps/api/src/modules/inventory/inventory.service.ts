@@ -12,6 +12,9 @@ import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
 import {
   INVENTORY_CATEGORY_GROUPS,
   categoriesForGroup,
+  nextSkuFromExisting,
+  skuPrefixForCategory,
+  summarizeInventoryMeasurements,
   type InventoryCategoryGroup,
 } from '../../common/helpers/inventory-category.util';
 import { roundMoney } from '../../common/helpers/money.util';
@@ -161,7 +164,7 @@ export class InventoryService {
 
   async createItem(
     dto: {
-      sku: string;
+      sku?: string;
       nameAr: string;
       nameEn: string;
       unit?: string;
@@ -174,32 +177,63 @@ export class InventoryService {
       color?: string;
       materialType?: string;
       size?: string;
+      customMeasurements?: Array<{
+        id?: string;
+        nameEn: string;
+        nameAr: string;
+        nameHe?: string;
+        value?: number | null;
+        unit?: string | null;
+      }> | null;
       preferredSupplierId?: string;
       description?: string;
       imageUrl?: string | null;
     },
     userId: string,
   ) {
-    const item = await this.prisma.inventoryItem.create({
-      data: {
-        sku: dto.sku.trim(),
-        nameAr: dto.nameAr.trim(),
-        nameEn: dto.nameEn.trim(),
-        unit: dto.unit?.trim() || 'pcs',
-        category: (dto.category as never) || undefined,
-        minStock: roundMoney(dto.minStock ?? 0),
-        maxStock: dto.maxStock != null ? roundMoney(dto.maxStock) : undefined,
-        standardCost: roundMoney(dto.standardCost ?? 0),
-        barcode: dto.barcode?.trim() || undefined,
-        materialId: dto.materialId,
-        color: dto.color?.trim() || undefined,
-        materialType: dto.materialType?.trim() || undefined,
-        size: dto.size?.trim() || undefined,
-        preferredSupplierId: dto.preferredSupplierId || undefined,
-        description: dto.description,
-        imageUrl: dto.imageUrl?.trim() || undefined,
-      },
-    });
+    const customMeasurements = this.normalizeCustomMeasurements(dto.customMeasurements);
+    const size =
+      customMeasurements != null
+        ? summarizeInventoryMeasurements(customMeasurements)
+        : dto.size?.trim() || undefined;
+    const providedSku = dto.sku?.trim();
+    const sku = providedSku || (await this.nextInventorySku(dto.category));
+
+    const data = {
+      sku,
+      nameAr: dto.nameAr.trim(),
+      nameEn: dto.nameEn.trim(),
+      unit: dto.unit?.trim() || 'pcs',
+      category: (dto.category as never) || undefined,
+      minStock: roundMoney(dto.minStock ?? 0),
+      maxStock: dto.maxStock != null ? roundMoney(dto.maxStock) : undefined,
+      standardCost: roundMoney(dto.standardCost ?? 0),
+      barcode: dto.barcode?.trim() || undefined,
+      materialId: dto.materialId,
+      color: dto.color?.trim() || undefined,
+      materialType: dto.materialType?.trim() || undefined,
+      size: size || undefined,
+      customMeasurements:
+        customMeasurements != null
+          ? (customMeasurements as Prisma.InputJsonValue)
+          : undefined,
+      preferredSupplierId: dto.preferredSupplierId || undefined,
+      description: dto.description,
+      imageUrl: dto.imageUrl?.trim() || undefined,
+    };
+
+    let item;
+    try {
+      item = await this.prisma.inventoryItem.create({ data });
+    } catch (err) {
+      if (!providedSku && this.isSkuConflict(err)) {
+        data.sku = await this.nextInventorySku(dto.category);
+        item = await this.prisma.inventoryItem.create({ data });
+      } else {
+        throw err;
+      }
+    }
+
     await this.prisma.auditEvent.create({
       data: {
         userId,
@@ -227,6 +261,14 @@ export class InventoryService {
       color: string;
       materialType: string;
       size: string;
+      customMeasurements: Array<{
+        id?: string;
+        nameEn: string;
+        nameAr: string;
+        nameHe?: string;
+        value?: number | null;
+        unit?: string | null;
+      }> | null;
       preferredSupplierId: string | null;
       description: string;
       imageUrl: string | null;
@@ -234,6 +276,14 @@ export class InventoryService {
     userId: string,
   ) {
     await this.prisma.inventoryItem.findFirstOrThrow({ where: { id, archivedAt: null } });
+    const customMeasurements =
+      dto.customMeasurements !== undefined
+        ? this.normalizeCustomMeasurements(dto.customMeasurements)
+        : undefined;
+    const sizeFromMeasurements =
+      customMeasurements !== undefined
+        ? summarizeInventoryMeasurements(customMeasurements)
+        : undefined;
     const item = await this.prisma.inventoryItem.update({
       where: { id },
       data: {
@@ -252,7 +302,15 @@ export class InventoryService {
         ...(dto.materialType !== undefined
           ? { materialType: dto.materialType.trim() || null }
           : {}),
-        ...(dto.size !== undefined ? { size: dto.size.trim() || null } : {}),
+        ...(customMeasurements !== undefined
+          ? {
+              customMeasurements: (customMeasurements ??
+                Prisma.JsonNull) as Prisma.InputJsonValue,
+              size: sizeFromMeasurements,
+            }
+          : dto.size !== undefined
+            ? { size: dto.size.trim() || null }
+            : {}),
         ...(dto.preferredSupplierId !== undefined
           ? { preferredSupplierId: dto.preferredSupplierId || null }
           : {}),
@@ -680,5 +738,59 @@ export class InventoryService {
         .filter((item) => item.availableQty <= Number(item.minStock)),
       permissions,
     );
+  }
+
+  private async nextInventorySku(category?: string): Promise<string> {
+    const prefix = skuPrefixForCategory(category);
+    const rows = await this.prisma.inventoryItem.findMany({
+      where: { sku: { startsWith: `${prefix}-` } },
+      select: { sku: true },
+    });
+    return nextSkuFromExisting(
+      prefix,
+      rows.map((row) => row.sku),
+    );
+  }
+
+  private isSkuConflict(err: unknown): boolean {
+    return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+  }
+
+  private normalizeCustomMeasurements(
+    rows:
+      | Array<{
+          id?: string;
+          nameEn: string;
+          nameAr: string;
+          nameHe?: string;
+          value?: number | null;
+          unit?: string | null;
+        }>
+      | null
+      | undefined,
+  ): Array<{
+    id: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string;
+    value: number | null;
+    unit?: string;
+  }> | null {
+    if (rows == null) return null;
+    return rows
+      .filter((r) => r && String(r.nameEn ?? '').trim() && String(r.nameAr ?? '').trim())
+      .map((r, index) => {
+        const unitRaw = String(r.unit ?? 'cm').trim().slice(0, 24);
+        const unit = unitRaw || 'cm';
+        return {
+          id: String(r.id || '').trim() || `m-${Date.now().toString(36)}-${index}`,
+          nameEn: String(r.nameEn).trim(),
+          nameAr: String(r.nameAr).trim(),
+          ...(r.nameHe?.trim() ? { nameHe: r.nameHe.trim() } : {}),
+          value:
+            r.value != null && Number.isFinite(Number(r.value)) ? Number(r.value) : null,
+          unit,
+        };
+      });
   }
 }

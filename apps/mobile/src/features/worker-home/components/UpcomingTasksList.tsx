@@ -379,8 +379,32 @@ export function UpcomingTasksList({ tasks }: UpcomingTasksListProps) {
           </Animated.View>
 
           {tasks.length === 0 ? (
-            <View style={{ paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.xs }}>
-              <AppText variant="bodySecondary" color="secondary" align="start">
+            <View
+              style={{
+                marginHorizontal: theme.spacing.md,
+                borderRadius: theme.radius.lg,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceSecondary,
+                paddingVertical: theme.spacing.xl,
+                paddingHorizontal: theme.spacing.lg,
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  backgroundColor: colors.brandSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="file-tray-outline" size={22} color={colors.brand} />
+              </View>
+              <AppText variant="label" weight="semibold">
                 {t('mobile.workerHome.noMoreTasks')}
               </AppText>
             </View>

@@ -5,6 +5,8 @@
   "searchCategories": "Search categories…",
   "noCategory": "No category",
   "noCategoriesMatch": "No categories match.",
+  "createCategory": "Create category",
+  "categoryCreated": "Category created.",
   "sku": "SKU",
   "name": "Name",
   "nameEn": "Name (EN)",

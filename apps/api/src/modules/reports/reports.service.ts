@@ -10,7 +10,7 @@ import {
 import { hasPermission, type Permission } from '@maher/permissions';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
-import { calculateOrderCosts } from '../../common/helpers/order-costing.util';
+import { calculateOrderCosts, buildMaterialCostMap } from '../../common/helpers/order-costing.util';
 import { mapProgressForDealer } from '../../common/helpers/dealer-progress.util';
 import { roundMoney } from '../../common/helpers/money.util';
 import { buildTaskTimingSummary } from '../../common/helpers/task-timing.util';
@@ -1258,27 +1258,30 @@ export class ReportsService {
       take: 200,
     });
 
-    const materialRows = await this.prisma.inventoryTransaction.findMany({
-      where: { unitCost: { not: null } },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        unitCost: true,
-        type: true,
-        inventoryItem: { select: { sku: true } },
-      },
-      take: 800,
+    const [items, materialRows] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where: { archivedAt: null, standardCost: { gt: 0 } },
+        select: { sku: true, standardCost: true },
+      }),
+      this.prisma.inventoryTransaction.findMany({
+        where: { unitCost: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          unitCost: true,
+          type: true,
+          inventoryItem: { select: { sku: true } },
+        },
+        take: 800,
+      }),
+    ]);
+    const materialCosts = buildMaterialCostMap({
+      standardCosts: items,
+      transactions: materialRows.map((tx) => ({
+        sku: tx.inventoryItem.sku,
+        unitCost: tx.unitCost,
+        type: tx.type,
+      })),
     });
-    const materialCosts = new Map<string, number>();
-    const ranked = [...materialRows].sort((a, b) => {
-      const rank = (t: string) => (t === 'PURCHASE_RECEIPT' ? 0 : 1);
-      return rank(a.type) - rank(b.type);
-    });
-    for (const tx of ranked) {
-      const sku = tx.inventoryItem.sku;
-      if (!materialCosts.has(sku) && tx.unitCost != null) {
-        materialCosts.set(sku, Number(tx.unitCost));
-      }
-    }
 
     const customerIds = [...new Set(orders.map((o) => o.customerId))];
     const dealerPriceRows = await this.prisma.dealerPrice.findMany({

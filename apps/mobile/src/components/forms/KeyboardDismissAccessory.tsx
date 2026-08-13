@@ -15,9 +15,6 @@ import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { Locale } from '@maher/types';
 
-/** Kept so AppTextInput can attach a native accessory if the OS supports it. */
-export const KEYBOARD_DISMISS_NATIVE_ID = 'maher.keyboard.done';
-
 const PILL_HEIGHT = 36;
 const KEYBOARD_GAP = 8;
 const EDGE_INSET = 12;
@@ -118,6 +115,7 @@ function OverlayHost({
 /**
  * Compact Done control just above the software keyboard.
  * Native stack screens draw above RN siblings, so iOS uses FullWindowOverlay.
+ * Do not attach a native inputAccessoryViewID — that reserves a blank beige bar.
  */
 export function KeyboardDismissAccessory({ inModal = false }: Props) {
   const [keyboardHeight, setKeyboardHeight] = useState(0);

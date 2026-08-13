@@ -16,6 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import {
   listInventoryItems,
+  inventoryItemUnitCost,
   type InventoryCategoryGroup,
   type InventoryItem,
 } from '@/api/modules/inventory';
@@ -192,7 +193,7 @@ export function MaterialPickerSheet({
 
   const unitCost = useMemo(() => {
     if (!selected) return 0;
-    return Number(selected.standardCost ?? 0) || 0;
+    return inventoryItemUnitCost(selected);
   }, [selected]);
 
   const qtyNum = Number(qty);
@@ -450,7 +451,7 @@ export function MaterialPickerSheet({
               }}
               renderItem={({ item, index }) => {
                 const active = selected?.id === item.id;
-                const cost = Number(item.standardCost ?? 0) || 0;
+                const cost = inventoryItemUnitCost(item);
                 return (
                   <ListItemEnter index={index}>
                     <AnimatedPressable

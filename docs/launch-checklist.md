@@ -30,17 +30,18 @@ pnpm launch
 | API health | http://localhost:4000/api/v1/health |
 | Swagger | http://localhost:4000/api/docs |
 
-## Demo accounts
+## Launch accounts
 
-Password: **`123`** — **local/demo only, never production**
+Password: **`123`** — **local/launch only, never production**
 
 Sign in with **username** (login forms no longer accept email):
 
 | Username | Role / portal |
 |----------|----------------|
 | `admin` | Admin web |
-| `nile` / `oasis` / `balqis` / `jerash` / … | Customer portal |
-| `carpenter` / `painter` / `cutter` / … | Employee portal |
+| `nile` / `oasis` / `balqis` | Customer portal |
+
+No worker accounts, products, orders, or invoices. Create workers in Admin. Full demo seed: `pnpm db:seed:demo`.
 
 ## Smoke checks
 

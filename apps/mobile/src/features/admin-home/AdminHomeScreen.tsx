@@ -21,7 +21,6 @@ import { AdminHomeSkeleton } from './components/AdminHomeSkeleton';
 import { ADMIN_HOME_COMPOSITION } from './homeComposition';
 import { homeAttentionCount, pickHomeFocus } from './pickHomeFocus';
 import { useAdminHomeQuery } from './query';
-import { isAdminHomeEmpty } from './selectUrgentAlert';
 import type { AdminHomePayload } from './api';
 
 type AdminHomeScreenProps = {
@@ -158,7 +157,6 @@ function AdminHomeScreenInner({ forceState, fixture }: AdminHomeScreenProps) {
     );
   }
 
-  const empty = forceState === 'empty' || isAdminHomeEmpty(data);
   const attention = homeAttentionCount(data);
   const focus = pickHomeFocus(data);
 
@@ -184,12 +182,7 @@ function AdminHomeScreenInner({ forceState, fixture }: AdminHomeScreenProps) {
           attention={attention}
         />
       )}
-      {empty ? (
-        <EmptyState
-          title={t('mobile.adminHome.emptyTitle')}
-          description={t('mobile.adminHome.emptyBody')}
-        />
-      ) : composition === 'signature' ? (
+      {composition === 'signature' ? (
         <AdminHomeSignatureHome data={data} />
       ) : composition === 'living' ? (
         <AdminHomeLivingHome data={data} />

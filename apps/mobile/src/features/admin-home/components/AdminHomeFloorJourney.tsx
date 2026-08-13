@@ -175,7 +175,7 @@ export function AdminHomeFloorJourney({ data }: Props) {
           ]}
         >
           {total === 0 ? (
-            <View style={{ flex: 1, backgroundColor: colors.border, borderRadius: 5 }} />
+            <View style={{ flex: 1, backgroundColor: colors.brandSoft, borderRadius: 5 }} />
           ) : (
             filled.map((stage) => {
               const tint = stageBarColor(colors, stage.key);

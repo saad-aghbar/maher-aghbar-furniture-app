@@ -34,7 +34,39 @@ export function FeaturedCollections({ collections = [] }: Props) {
   const dark = colorScheme === 'dark';
   const goCatalog = () => router.push('/(app)/(customer)/(tabs)/catalog' as Href);
 
-  if (collections.length === 0) return null;
+  if (collections.length === 0) {
+    return (
+      <View style={{ overflow: 'visible', gap: theme.spacing.md }}>
+        <DealerSectionHeader compact title={t('mobile.dealerHome.featuredCollections')} />
+        <DealerGlassCard
+          intensity="soft"
+          elevated
+          contentStyle={{
+            paddingVertical: theme.spacing.xl,
+            paddingHorizontal: theme.spacing.lg,
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              backgroundColor: colors.brandSoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="images-outline" size={22} color={colors.brand} />
+          </View>
+          <AppText variant="label" weight={titleWeight}>
+            {t('mobile.dealerHome.collectionsEmpty')}
+          </AppText>
+        </DealerGlassCard>
+      </View>
+    );
+  }
 
   // Shadow on a non-transformed shell — AnimatedPressable scale would clip it.
   const cardLift = {

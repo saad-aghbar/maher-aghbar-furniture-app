@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { can } from '@maher/permissions';
+import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
@@ -7,6 +9,7 @@ import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { CreateInventoryStockCountInput, InventoryItem, Warehouse } from '../api';
+import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { InventoryItemPickPanel } from './InventoryItemPickPanel';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventorySheetSectionLabel } from './InventorySheetBody';
@@ -29,9 +32,11 @@ export function CreateStockCountSheet({
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const { user } = useAuth();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.78);
   const warehouseListHeight = Math.round(height * 0.28);
+  const canAddWarehouse = can(user, 'warehouse.manage');
 
   const [warehouseId, setWarehouseId] = useState('');
   const [kind, setKind] = useState<'PERIODIC' | 'SURPRISE'>('PERIODIC');
@@ -40,16 +45,25 @@ export function CreateStockCountSheet({
   const [notes, setNotes] = useState('');
   const [pickOpen, setPickOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    setWarehouseId(warehouses[0]?.id ?? '');
+    if (!open) {
+      setCreateWarehouseOpen(false);
+      return;
+    }
+    setWarehouseId('');
     setKind('PERIODIC');
     setItem(null);
     setQty('');
     setNotes('');
     setError(null);
     setPickOpen(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setWarehouseId((id) => id || warehouses[0]?.id || '');
   }, [open, warehouses]);
 
   function submit() {
@@ -68,6 +82,7 @@ export function CreateStockCountSheet({
   }
 
   return (
+    <>
     <BottomSheet
       open={open}
       onClose={() => {
@@ -144,6 +159,9 @@ export function CreateStockCountSheet({
               label={t('mobile.inventory.warehouse')}
               listHeight={warehouseListHeight}
               resetToken={open}
+              onAddWarehouse={
+                canAddWarehouse ? () => setCreateWarehouseOpen(true) : undefined
+              }
             />
 
             <InventorySheetSectionLabel label={t('mobile.inventory.item')} />
@@ -198,5 +216,15 @@ export function CreateStockCountSheet({
         </View>
       )}
     </BottomSheet>
+    <CreateWarehouseSheet
+      overlay
+      open={createWarehouseOpen}
+      onClose={() => setCreateWarehouseOpen(false)}
+      onCreated={(warehouse) => {
+        setWarehouseId(warehouse.id);
+        setError(null);
+      }}
+    />
+    </>
   );
 }

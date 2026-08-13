@@ -427,3 +427,69 @@ export function WorkerCurrentTaskHero({ task }: Props) {
     </Animated.View>
   );
 }
+
+/** Idle bench card when the worker has no current assignment. */
+export function WorkerCurrentTaskIdle() {
+  const { t, isRTL, locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const reduce = useReducedMotion();
+
+  return (
+    <Animated.View
+      entering={reduce ? undefined : softFadeDown(40)}
+      style={{ marginBottom: theme.spacing.xl, gap: theme.spacing.sm }}
+    >
+      <AppText
+        variant="caption"
+        weight="semibold"
+        style={{
+          color: colors.textMuted,
+          letterSpacing: locale === 'ar' ? 0 : 1.4,
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          textAlign: isRTL ? 'right' : 'left',
+        }}
+      >
+        {t('mobile.workerHome.currentTaskSection')}
+      </AppText>
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderRadius: theme.radius.xl,
+          borderWidth: 1,
+          borderColor: colors.borderStrong,
+          overflow: 'hidden',
+          ...theme.elevation.card,
+        }}
+      >
+        <View style={{ height: 3, backgroundColor: colors.brand, opacity: 0.35 }} />
+        <View
+          style={{
+            paddingVertical: theme.spacing.xl,
+            paddingHorizontal: theme.spacing.lg,
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              backgroundColor: colors.successSoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="checkmark-circle" size={24} color={colors.success} />
+          </View>
+          <AppText variant="heading" weight="semibold">
+            {t('mobile.workerHome.currentTaskClear')}
+          </AppText>
+          <AppText variant="caption" color="secondary" style={{ textAlign: 'center' }}>
+            {t('mobile.workerHome.currentTaskClearBody')}
+          </AppText>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}

@@ -14,6 +14,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsBoolean,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -25,13 +26,29 @@ import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListActiveQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
+import {
+  nextWarehouseCode,
+  slugFromWarehouseName,
+} from '../../common/helpers/warehouse-code.util';
 import type { AuthUser } from '@maher/types';
 
 class WarehouseDto {
-  @IsString() @MinLength(1) code!: string;
-  @IsString() @MinLength(1) nameAr!: string;
-  @IsString() @MinLength(1) nameEn!: string;
-  @IsString() @MinLength(1) type!: string;
+  /** Optional — auto-generated from the English name when omitted. */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  code?: string;
+
+  @IsString()
+  @MinLength(1)
+  nameAr!: string;
+
+  @IsString()
+  @MinLength(1)
+  nameEn!: string;
+
+  @IsIn(['RAW', 'SEMI', 'FINISHED'])
+  type!: string;
   @IsOptional() @IsUUID() branchId?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
@@ -79,15 +96,28 @@ export class WarehousesController {
   @Post()
   @RequirePermissions('warehouse.manage')
   async create(@Body() dto: WarehouseDto, @CurrentUser() user: AuthUser) {
-    const clash = await this.prisma.warehouse.findUnique({ where: { code: dto.code } });
+    const provided = dto.code?.trim();
+    const existing = provided
+      ? []
+      : await this.prisma.warehouse.findMany({ select: { code: true } });
+    const code =
+      provided ||
+      nextWarehouseCode(
+        slugFromWarehouseName(dto.nameEn),
+        existing.map((row) => row.code),
+      );
+    const clash = await this.prisma.warehouse.findUnique({ where: { code } });
     if (clash) {
-      throw new ConflictException({ code: 'DUPLICATE_CODE', message: 'Warehouse code already exists.' });
+      throw new ConflictException({
+        code: 'DUPLICATE_CODE',
+        message: 'Warehouse code already exists.',
+      });
     }
     const row = await this.prisma.warehouse.create({
       data: {
-        code: dto.code,
-        nameAr: dto.nameAr,
-        nameEn: dto.nameEn,
+        code,
+        nameAr: dto.nameAr.trim(),
+        nameEn: dto.nameEn.trim(),
         type: dto.type,
         branchId: dto.branchId,
         isActive: dto.isActive ?? true,

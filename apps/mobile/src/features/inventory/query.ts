@@ -7,6 +7,7 @@ import {
 import {
   createInventoryItem,
   createInventoryStockCount,
+  createWarehouse,
   createWarehouseTransfer,
   getInventoryItem,
   issueStock,
@@ -21,6 +22,7 @@ import {
   updateInventoryItem,
   type CreateInventoryItemInput,
   type CreateInventoryStockCountInput,
+  type CreateWarehouseInput,
   type CreateWarehouseTransferInput,
   type InventoryCategoryGroup,
   type StockIssueInput,
@@ -188,6 +190,16 @@ export function flattenInventoryStockCountPages(
   data: ReturnType<typeof useInventoryStockCountsInfiniteQuery>['data'],
 ) {
   return flattenPaginatedPages(data?.pages);
+}
+
+export function useCreateWarehouseMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateWarehouseInput) => createWarehouse(body),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.inventory.warehouses() });
+    },
+  });
 }
 
 export function useCreateInventoryItemMutation() {

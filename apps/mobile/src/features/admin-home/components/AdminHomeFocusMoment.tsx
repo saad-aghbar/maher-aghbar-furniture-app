@@ -109,14 +109,26 @@ export function AdminHomeFocusMoment({ focus }: Props) {
           borderRadius: theme.radius.xl,
           borderWidth: 1,
           borderColor: colors.border,
-          backgroundColor: colors.successSoft,
+          backgroundColor: colors.surface,
           padding: theme.spacing.lg,
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'center',
           gap: theme.spacing.md,
+          ...theme.elevation.raised,
         }}
       >
-        <Ionicons name="checkmark-circle" size={26} color={colors.success} />
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 14,
+            backgroundColor: colors.successSoft,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons name="checkmark-circle" size={26} color={colors.success} />
+        </View>
         <View style={{ flex: 1, gap: 4 }}>
           <AppText
             variant="caption"

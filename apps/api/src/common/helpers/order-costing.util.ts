@@ -63,14 +63,47 @@ function asBom(value: unknown): BomDefaults | null {
 /** Latest inventory unit cost by SKU (from material purchases / stock). */
 export type MaterialCostMap = Map<string, number>;
 
-function materialUnitCost(
+/**
+ * Prefer an explicit BOM unit cost when it is a positive number.
+ * Otherwise use inventory catalog / purchase cost for that SKU.
+ * Stored `0` is treated as unset so product/order costing can pick up
+ * InventoryItem.standardCost after materials were added without a price.
+ */
+export function resolveBomLineUnitCost(
   sku: string | undefined,
   explicitUnitCost: number | undefined,
   materialCosts: MaterialCostMap,
 ): number {
-  if (explicitUnitCost != null && Number.isFinite(explicitUnitCost)) return explicitUnitCost;
+  if (explicitUnitCost != null && Number.isFinite(explicitUnitCost) && explicitUnitCost > 0) {
+    return explicitUnitCost;
+  }
   if (sku && materialCosts.has(sku)) return materialCosts.get(sku)!;
   return 0;
+}
+
+/** Catalog unit price first; latest purchase-receipt (then other costed txs) wins. */
+export function buildMaterialCostMap(input: {
+  standardCosts?: Array<{ sku: string; standardCost?: unknown }>;
+  transactions?: Array<{ sku: string; unitCost?: unknown; type?: string }>;
+}): MaterialCostMap {
+  const map: MaterialCostMap = new Map();
+  for (const item of input.standardCosts ?? []) {
+    const n = Number(item.standardCost);
+    if (item.sku && Number.isFinite(n) && n > 0) map.set(item.sku, n);
+  }
+  const txs = [...(input.transactions ?? [])].sort((a, b) => {
+    const rank = (t: string | undefined) => (t === 'PURCHASE_RECEIPT' ? 0 : 1);
+    return rank(a.type) - rank(b.type);
+  });
+  const seen = new Set<string>();
+  for (const tx of txs) {
+    if (!tx.sku || seen.has(tx.sku)) continue;
+    const n = Number(tx.unitCost);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    seen.add(tx.sku);
+    map.set(tx.sku, n);
+  }
+  return map;
 }
 
 function categoryBucket(category?: string): keyof OrderCostResult['costBreakdown'] | null {
@@ -102,7 +135,7 @@ export function productionUnitCost(
   if (bom?.materials?.length) {
     for (const m of bom.materials) {
       const qty = num(m.qty);
-      const unit = materialUnitCost(m.sku, m.unitCost, materialCosts);
+      const unit = resolveBomLineUnitCost(m.sku, m.unitCost, materialCosts);
       const lineCost = qty * unit;
       const bucket = categoryBucket(m.category) ?? categoryBucket(m.sku);
       if (bucket === 'fabricCost') {
@@ -127,15 +160,15 @@ export function productionUnitCost(
     const fabric =
       bom.fabricCost != null
         ? num(bom.fabricCost)
-        : fabricQty * materialUnitCost('FAB-ROLL', undefined, materialCosts);
+        : fabricQty * resolveBomLineUnitCost('FAB-ROLL', undefined, materialCosts);
     const wood =
       bom.woodCost != null
         ? num(bom.woodCost)
-        : woodQty * materialUnitCost('WOOD-BEECH', undefined, materialCosts);
+        : woodQty * resolveBomLineUnitCost('WOOD-BEECH', undefined, materialCosts);
     const foam =
       bom.foamCost != null
         ? num(bom.foamCost)
-        : foamQty * materialUnitCost('FOAM-HD', undefined, materialCosts);
+        : foamQty * resolveBomLineUnitCost('FOAM-HD', undefined, materialCosts);
     const accessories = num(bom.accessoriesCost);
     breakdown.fabricQty = fabricQty;
     breakdown.fabricCost = fabric;

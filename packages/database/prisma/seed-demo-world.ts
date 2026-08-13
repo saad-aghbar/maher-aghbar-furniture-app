@@ -1,9 +1,10 @@
 /**
- * Catalog + accounts demo world for Maher Al-Aghbar & Sons (Amman).
- * Seeds people, products, inventory, purchasing, and ~2 weeks of realistic dealer orders
- * (workflow snapshots + schedules). Foundation (roles, permissions, warehouses,
- * departments, stage defs, QC FINAL_QC, notification templates, base settings)
- * is seeded by seed.ts first.
+ * Launch vs full-demo operational seed.
+ * Foundation (roles, permissions, warehouses, departments, stage defs,
+ * QC FINAL_QC, notification templates, base settings) is seeded by seed.ts first.
+ *
+ * Default (`pnpm db:seed`): admin + 3 empty dealers. No catalog, stock, orders, invoices.
+ * Opt-in (`SEED_FULL_DEMO=1` / `pnpm db:seed:demo`): old catalog + orders + finance world.
  */
 import type { PrismaClient } from '@prisma/client';
 import { wipeOperationalData } from './seed/wipe';
@@ -20,44 +21,85 @@ import { seedDealerFinance } from './seed/dealer-finance';
 
 export { wipeOperationalData };
 
-export async function seedDemoWorld(prisma: PrismaClient, passwordHash: string): Promise<void> {
-  console.log('Seeding catalog + accounts world…');
-
-  // Company extras on settings
+async function upsertCompany(
+  prisma: PrismaClient,
+  seededWorld: 'launch-v1' | 'catalog-v1',
+) {
   const companyExisting = await prisma.systemSetting.findUnique({ where: { key: 'company' } });
   const companyBase =
     companyExisting?.value && typeof companyExisting.value === 'object'
       ? (companyExisting.value as Record<string, unknown>)
       : {};
+  const value = {
+    ...companyBase,
+    nameEn: 'Maher Al-Aghbar & Sons Furniture',
+    nameAr: 'مفروشات ماهر الأغبر وأولاده',
+    city: 'Amman',
+    country: 'JO',
+    currency: 'ILS',
+    phone: '+96265550000',
+    seededWorld,
+  };
   await prisma.systemSetting.upsert({
     where: { key: 'company' },
-    update: {
-      value: {
-        ...companyBase,
-        nameEn: 'Maher Al-Aghbar & Sons Furniture',
-        nameAr: 'مفروشات ماهر الأغبر وأولاده',
-        city: 'Amman',
-        country: 'JO',
-        currency: 'ILS',
-        phone: '+96265550000',
-        seededWorld: 'catalog-v1',
-      },
-    },
-    create: {
-      key: 'company',
-      value: {
-        nameEn: 'Maher Al-Aghbar & Sons Furniture',
-        nameAr: 'مفروشات ماهر الأغبر وأولاده',
-        city: 'Amman',
-        country: 'JO',
-        currency: 'ILS',
-        phone: '+96265550000',
-        seededWorld: 'catalog-v1',
-      },
-    },
+    update: { value },
+    create: { key: 'company', value },
   });
+}
 
-  const { admin, dealers, workers, stageAssignees } = await seedPeople(prisma, passwordHash);
+async function logCounts(prisma: PrismaClient) {
+  const counts = {
+    customers: await prisma.customer.count(),
+    users: await prisma.user.count(),
+    products: await prisma.product.count(),
+    salesOrders: await prisma.salesOrder.count(),
+    productionOrders: await prisma.productionOrder.count(),
+    productionTasks: await prisma.productionTask.count(),
+    workflowSnapshots: await prisma.productionOrderWorkflowSnapshot.count(),
+    schedules: await prisma.productionSchedule.count(),
+    invoices: await prisma.invoice.count(),
+    payments: await prisma.payment.count(),
+    deliveries: await prisma.delivery.count(),
+    rfqs: await prisma.requestForQuotation.count(),
+    quotations: await prisma.quotation.count(),
+    inventoryItems: await prisma.inventoryItem.count(),
+    suppliers: await prisma.supplier.count(),
+    purchaseOrders: await prisma.purchaseOrder.count(),
+    returns: await prisma.returnRequest.count(),
+    notifications: await prisma.notification.count(),
+  };
+  console.log('  counts:', counts);
+}
+
+/** Empty launch accounts: admin + nile / oasis / balqis. No business records. */
+export async function seedLaunchWorld(
+  prisma: PrismaClient,
+  passwordHash: string,
+): Promise<void> {
+  console.log('Seeding launch accounts (empty operational data)…');
+  await upsertCompany(prisma, 'launch-v1');
+
+  const { dealers } = await seedPeople(prisma, passwordHash, { includeWorkers: false });
+  console.log(`  people: admin + ${dealers.length} dealers (no workers)`);
+
+  await seedSequences(prisma);
+
+  await logCounts(prisma);
+  console.log('Launch accounts ready.');
+  console.log('  Logins (password 123): admin | nile | oasis | balqis');
+}
+
+/** Full demo catalog, inventory, orders, and finance — local QA only. */
+export async function seedFullDemoWorld(
+  prisma: PrismaClient,
+  passwordHash: string,
+): Promise<void> {
+  console.log('Seeding full demo world…');
+  await upsertCompany(prisma, 'catalog-v1');
+
+  const { admin, dealers, workers, stageAssignees } = await seedPeople(prisma, passwordHash, {
+    includeWorkers: true,
+  });
   console.log(`  people: admin + ${dealers.length} dealers + ${workers.length} workers`);
 
   const { products } = await seedCatalog(prisma, dealers);
@@ -108,27 +150,17 @@ export async function seedDemoWorld(prisma: PrismaClient, passwordHash: string):
     `  dealer finance: ${finance.invoices} invoices · ${finance.payments} payments · ${finance.returns} returns`,
   );
 
-  const counts = {
-    customers: await prisma.customer.count(),
-    users: await prisma.user.count(),
-    products: await prisma.product.count(),
-    salesOrders: await prisma.salesOrder.count(),
-    productionOrders: await prisma.productionOrder.count(),
-    productionTasks: await prisma.productionTask.count(),
-    workflowSnapshots: await prisma.productionOrderWorkflowSnapshot.count(),
-    schedules: await prisma.productionSchedule.count(),
-    invoices: await prisma.invoice.count(),
-    payments: await prisma.payment.count(),
-    deliveries: await prisma.delivery.count(),
-    rfqs: await prisma.requestForQuotation.count(),
-    quotations: await prisma.quotation.count(),
-    inventoryItems: await prisma.inventoryItem.count(),
-    suppliers: await prisma.supplier.count(),
-    purchaseOrders: await prisma.purchaseOrder.count(),
-    returns: await prisma.returnRequest.count(),
-    notifications: await prisma.notification.count(),
-  };
-  console.log('  counts:', counts);
-  console.log('Catalog + accounts world ready.');
-  console.log('  Demo logins (password 123): admin, nile, oasis, balqis, carpenter, cutter, inspector, …');
+  await logCounts(prisma);
+  console.log('Full demo world ready.');
+  console.log(
+    '  Demo logins (password 123): admin, nile, oasis, balqis, carpenter, cutter, inspector, …',
+  );
+}
+
+export async function seedDemoWorld(prisma: PrismaClient, passwordHash: string): Promise<void> {
+  if (process.env.SEED_FULL_DEMO === '1') {
+    await seedFullDemoWorld(prisma, passwordHash);
+    return;
+  }
+  await seedLaunchWorld(prisma, passwordHash);
 }

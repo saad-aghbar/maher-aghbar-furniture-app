@@ -17,6 +17,7 @@ import {
   sanitizeWorkflowStageForDealer,
 } from '../../common/helpers/production-workflow-stages.util';
 import {
+  buildMaterialCostMap,
   calculateOrderCosts,
   type CostLine,
   type MaterialCostMap,
@@ -218,31 +219,32 @@ export class SalesOrdersService {
     return `/api/v1/uploads/download?token=${token}`;
   }
 
-  /** Latest purchase/stock unit cost per material SKU (inventory stays in sync with order costing). */
+  /** Catalog unit price, overlaid by latest purchase/stock unit cost per SKU. */
   async loadMaterialCosts(): Promise<MaterialCostMap> {
-    const txs = await this.prisma.inventoryTransaction.findMany({
-      where: { unitCost: { not: null } },
-      orderBy: [{ type: 'asc' }, { createdAt: 'desc' }],
-      select: {
-        type: true,
-        unitCost: true,
-        inventoryItem: { select: { sku: true } },
-      },
-      take: 800,
+    const [items, txs] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where: { archivedAt: null, standardCost: { gt: 0 } },
+        select: { sku: true, standardCost: true },
+      }),
+      this.prisma.inventoryTransaction.findMany({
+        where: { unitCost: { not: null } },
+        orderBy: [{ type: 'asc' }, { createdAt: 'desc' }],
+        select: {
+          type: true,
+          unitCost: true,
+          inventoryItem: { select: { sku: true } },
+        },
+        take: 800,
+      }),
+    ]);
+    return buildMaterialCostMap({
+      standardCosts: items,
+      transactions: txs.map((tx) => ({
+        sku: tx.inventoryItem.sku,
+        unitCost: tx.unitCost,
+        type: tx.type,
+      })),
     });
-    const map: MaterialCostMap = new Map();
-    // Prefer purchase receipts, then any later costed movement
-    const ranked = [...txs].sort((a, b) => {
-      const rank = (t: string) => (t === 'PURCHASE_RECEIPT' ? 0 : 1);
-      return rank(a.type) - rank(b.type);
-    });
-    for (const tx of ranked) {
-      const sku = tx.inventoryItem.sku;
-      if (!map.has(sku) && tx.unitCost != null) {
-        map.set(sku, Number(tx.unitCost));
-      }
-    }
-    return map;
   }
 
   async loadDealerPrices(customerId: string): Promise<Map<string, number>> {

@@ -15,17 +15,17 @@ import Animated, {
 import { GestureDetector, Pressable } from 'react-native-gesture-handler';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  listMaterials,
-  type AdminBomLine,
-  type MaterialListItem,
-} from '@/api/modules/catalogAdmin';
+import { listMaterials, type AdminBomLine } from '@/api/modules/catalogAdmin';
 import {
   INVENTORY_CATEGORY_FOR_CREATE,
+  inventoryItemUnitCost,
+  listInventoryItems,
   type InventoryCategoryGroup,
 } from '@/api/modules/inventory';
 import { queryKeys } from '@/api/queryKeys';
 import { AppText } from '@/components/AppText';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
@@ -66,6 +66,16 @@ const BORDER_DARK = ['#A8906C', '#B5A48C', '#9AAA7A', '#C4897A'] as const;
 
 type ChipLayout = { x: number; width: number };
 
+type PickerRow = {
+  id: string;
+  sku: string;
+  nameEn: string;
+  nameAr: string;
+  category?: string | null;
+  unitCost: number;
+  materialId?: string | null;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -78,7 +88,7 @@ type Props = {
  * accessories) with a drag-scrub Fabric bubble, section search, and floor rows.
  */
 export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: Props) {
-  const { t, isRTL, locale } = useLocale();
+  const { t, isRTL, locale, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const { height } = useWindowDimensions();
@@ -87,6 +97,8 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
   const [category, setCategory] = useState<InventoryCategoryGroup>('fabric');
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
+  const [selected, setSelected] = useState<PickerRow | null>(null);
+  const [qty, setQty] = useState('1');
   const [layouts, setLayouts] = useState<Partial<Record<InventoryCategoryGroup, ChipLayout>>>(
     {},
   );
@@ -102,6 +114,8 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
       setCategory('fabric');
       setQ('');
       setDebouncedQ('');
+      setSelected(null);
+      setQty('1');
     }
   }, [open]);
 
@@ -124,6 +138,8 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
       setCategory(next);
       setQ('');
       setDebouncedQ('');
+      setSelected(null);
+      setQty('1');
     },
     [category],
   );
@@ -158,38 +174,85 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
 
   const materialsQuery = useQuery({
     queryKey: queryKeys.catalog.materials({ q: debouncedQ, categoryGroup: category }),
-    queryFn: () =>
-      listMaterials({
+    queryFn: async (): Promise<PickerRow[]> => {
+      const inv = await listInventoryItems({
         page: 1,
         pageSize: 80,
         q: debouncedQ || undefined,
         categoryGroup: category,
-      }),
+      });
+      if (inv.data?.length) {
+        return inv.data.map((row) => ({
+          id: row.id,
+          sku: row.sku,
+          nameEn: row.nameEn,
+          nameAr: row.nameAr,
+          category: row.category,
+          unitCost: inventoryItemUnitCost(row),
+          materialId: row.materialId ?? null,
+        }));
+      }
+      const mats = await listMaterials({
+        page: 1,
+        pageSize: 80,
+        q: debouncedQ || undefined,
+        categoryGroup: category,
+      });
+      return (mats.data ?? []).map((m) => ({
+        id: m.id,
+        sku: m.sku,
+        nameEn: m.nameEn,
+        nameAr: m.nameAr,
+        category: m.category,
+        unitCost: 0,
+        materialId: m.id,
+      }));
+    },
     enabled: open,
     staleTime: 15_000,
   });
 
-  const rows = materialsQuery.data?.data ?? [];
+  const rows = materialsQuery.data ?? [];
   const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
 
   const enter = (index: number) =>
     reduce ? undefined : FadeInDown.delay(30 + index * 35).duration(220);
 
-  const pick = (m: MaterialListItem) => {
+  const pick = (m: PickerRow) => {
     if (existingSkus.includes(m.sku)) return;
+    void haptics.selection();
+    setSelected(m);
+    setQty('1');
+  };
+
+  const qtyNum = Number(qty);
+  const lineTotal =
+    selected && Number.isFinite(qtyNum) && qtyNum > 0 ? qtyNum * selected.unitCost : 0;
+
+  function bumpQty(delta: number) {
+    void haptics.selection();
+    const cur = Number(qty);
+    const next = Math.max(0.01, (Number.isFinite(cur) ? cur : 1) + delta);
+    setQty(String(Number(next.toFixed(2))));
+  }
+
+  function confirmAdd() {
+    if (!selected) return;
+    const n = Number(qty);
+    if (!Number.isFinite(n) || n <= 0) return;
     void haptics.confirmLight();
     onPick({
-      sku: m.sku,
-      qty: 1,
-      category: m.category ?? INVENTORY_CATEGORY_FOR_CREATE[category],
-      unitCost: 0,
-      lineCost: 0,
-      nameEn: m.nameEn,
-      nameAr: m.nameAr,
-      materialId: m.id,
+      sku: selected.sku,
+      qty: n,
+      category: selected.category ?? INVENTORY_CATEGORY_FOR_CREATE[category],
+      unitCost: selected.unitCost,
+      lineCost: n * selected.unitCost,
+      nameEn: selected.nameEn,
+      nameAr: selected.nameAr,
+      materialId: selected.materialId ?? selected.id,
     });
     onClose();
-  };
+  }
 
   return (
     <BottomSheet
@@ -268,6 +331,8 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
                       setCategory(key);
                       setQ('');
                       setDebouncedQ('');
+                      setSelected(null);
+                      setQty('1');
                     }}
                     style={{
                       flex: 1,
@@ -386,6 +451,7 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
               >
                 {rows.map((m, index) => {
                   const already = existingSkus.includes(m.sku);
+                  const active = selected?.id === m.id;
                   const name =
                     locale === 'ar' ? m.nameAr || m.nameEn : m.nameEn || m.nameAr;
                   return (
@@ -393,15 +459,18 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
                       <AnimatedPressable
                         variant="button"
                         accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
                         disabled={already}
                         onPress={() => pick(m)}
                         style={{
                           borderRadius: theme.radius.xl,
-                          borderWidth: 1,
-                          borderColor: already ? colors.border : colors.borderStrong,
-                          backgroundColor: already
-                            ? colors.surfaceSecondary
-                            : colors.surfaceSecondary,
+                          borderWidth: active ? 1.5 : 1,
+                          borderColor: already
+                            ? colors.border
+                            : active
+                              ? colors.brand
+                              : colors.borderStrong,
+                          backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
                           overflow: 'hidden',
                           opacity: already ? 0.55 : 1,
                           ...orderBoardShadow(colorScheme),
@@ -466,7 +535,11 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
                               style={{ textAlign: isRTL ? 'right' : 'left' }}
                             >
                               {m.sku}
-                              {already ? ` · ${t('catalog.materialAlreadyOnBom')}` : ''}
+                              {already
+                                ? ` · ${t('catalog.materialAlreadyOnBom')}`
+                                : m.unitCost > 0
+                                  ? ` · ${formatCurrency(m.unitCost)}`
+                                  : ''}
                             </AppText>
                           </View>
                           {!already ? (
@@ -477,12 +550,16 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
                                 borderRadius: 14,
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                backgroundColor: colors.surface,
+                                backgroundColor: active ? colors.brand : colors.surface,
                                 borderWidth: 1,
-                                borderColor: colors.borderStrong,
+                                borderColor: active ? colors.brand : colors.borderStrong,
                               }}
                             >
-                              <Ionicons name="add" size={16} color={colors.brand} />
+                              <Ionicons
+                                name={active ? 'checkmark' : 'add'}
+                                size={16}
+                                color={active ? colors.onBrand : colors.brand}
+                              />
                             </View>
                           ) : (
                             <Ionicons name="checkmark" size={18} color={colors.textMuted} />
@@ -526,6 +603,116 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
             )}
           </View>
         </Animated.View>
+
+        {selected ? (
+          <View
+            style={{
+              gap: theme.spacing.sm,
+              paddingTop: theme.spacing.sm,
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderTopColor: colors.border,
+            }}
+          >
+            <AppText variant="caption" color="secondary" numberOfLines={1}>
+              {locale === 'ar'
+                ? selected.nameAr || selected.nameEn
+                : selected.nameEn || selected.nameAr}
+              {selected.unitCost > 0 ? ` · ${formatCurrency(selected.unitCost)}` : ''}
+            </AppText>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                  borderRadius: theme.radius.xl,
+                  backgroundColor: colors.surfaceSecondary,
+                  overflow: 'hidden',
+                  ...orderBoardShadow(colorScheme),
+                }}
+              >
+                <AnimatedPressable
+                  variant="button"
+                  onPress={() => bumpQty(-1)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('catalog.qty')}
+                  style={{
+                    minWidth: theme.sizes.touch.min,
+                    minHeight: theme.sizes.touch.min,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppText variant="title" weight="semibold">
+                    −
+                  </AppText>
+                </AnimatedPressable>
+                <AppTextInput
+                  value={qty}
+                  onChangeText={setQty}
+                  keyboardType="decimal-pad"
+                  selectTextOnFocus
+                  style={{
+                    minWidth: 56,
+                    textAlign: 'center',
+                    color: colors.textPrimary,
+                    fontSize: 16,
+                    paddingVertical: theme.spacing.sm,
+                    ...resolveAppFontStyle(locale, { variant: 'body', weight: 'semibold' }),
+                  }}
+                />
+                <AnimatedPressable
+                  variant="button"
+                  onPress={() => bumpQty(1)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('catalog.qty')}
+                  style={{
+                    minWidth: theme.sizes.touch.min,
+                    minHeight: theme.sizes.touch.min,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppText variant="title" weight="semibold">
+                    +
+                  </AppText>
+                </AnimatedPressable>
+              </View>
+              <View style={{ flex: 1, alignItems: isRTL ? 'flex-start' : 'flex-end' }}>
+                <AppText variant="caption" color="muted">
+                  {t('catalog.lineTotal')}
+                </AppText>
+                <AppText variant="label" weight="semibold">
+                  {formatCurrency(lineTotal)}
+                </AppText>
+              </View>
+            </View>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <SecondaryButton
+                label={t('common.cancel')}
+                onPress={onClose}
+                style={{ flex: 1, borderRadius: theme.radius.xl }}
+              />
+              <PrimaryButton
+                label={t('catalog.addMaterial')}
+                onPress={confirmAdd}
+                style={{ flex: 1.4, borderRadius: theme.radius.xl }}
+              />
+            </View>
+          </View>
+        ) : null}
       </View>
     </BottomSheet>
   );

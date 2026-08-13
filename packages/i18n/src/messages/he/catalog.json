@@ -5,6 +5,8 @@
   "searchCategories": "חיפוש קטגוריות…",
   "noCategory": "ללא קטגוריה",
   "noCategoriesMatch": "אין קטגוריות תואמות.",
+  "createCategory": "צור קטגוריה",
+  "categoryCreated": "הקטגוריה נוצרה.",
   "sku": "מק\"ט",
   "name": "שם",
   "nameEn": "שם (EN)",

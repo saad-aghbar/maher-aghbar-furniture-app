@@ -993,6 +993,8 @@ model InventoryItem {
   materialType String?
   color       String?
   size        String?
+  /// Extra named measurements: [{ id, nameEn, nameAr, nameHe?, value, unit }]
+  customMeasurements Json?
   /// Optional photo URL (accessories) — durable /uploads download link
   imageUrl    String?
   unit        String            @default("pcs")
