@@ -22,6 +22,7 @@ import { DealerHomeHeader } from './components/DealerHomeHeader';
 import { DealerHomeMetrics } from './components/DealerHomeMetrics';
 import { DealerHomeSkeleton } from './components/DealerHomeSkeleton';
 import { FeaturedCollections } from './components/FeaturedCollections';
+import { collectionsFromProducts } from './collectionsFromProducts';
 import { pickShowcaseImages } from './pickShowcaseImages';
 import { useDealerHomeQuery } from './query';
 import {
@@ -30,17 +31,23 @@ import {
   outstandingBalanceNumber,
 } from './selectDealerHome';
 import type { DealerHomePayload } from './api';
+import type { DealerHomeCollection } from './dealerHomeImagery';
 
 const HERO_PAUSE_Y = 280;
 
 type DealerHomeScreenProps = {
   forceState?: 'loading' | 'error' | 'empty' | 'offline' | 'success';
   fixture?: DealerHomePayload;
+  fixtureCollections?: DealerHomeCollection[];
 };
 
-export function DealerHomeScreen({ forceState, fixture }: DealerHomeScreenProps = {}) {
+export function DealerHomeScreen({
+  forceState,
+  fixture,
+  fixtureCollections,
+}: DealerHomeScreenProps = {}) {
   const { user } = useAuth();
-  const { t, formatCurrency, formatDate } = useLocale();
+  const { t, tPlural, formatCurrency, formatDate, locale } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
@@ -68,6 +75,15 @@ export function DealerHomeScreen({ forceState, fixture }: DealerHomeScreenProps 
     const products = showcaseQuery.data?.data ?? [];
     setShowcaseUris(pickShowcaseImages(products, { min: 5, max: 10 }));
   }, [showcaseQuery.dataUpdatedAt]);
+
+  const liveCollections = useMemo(
+    () => collectionsFromProducts(showcaseQuery.data?.data ?? [], locale),
+    [showcaseQuery.data?.data, locale],
+  );
+  const collections =
+    forceState === 'success' || forceState === 'offline'
+      ? (fixtureCollections ?? [])
+      : liveCollections;
 
   const rawName = (user?.name ?? t('mobile.dealerHome.fallbackName')).trim();
   const displayName = rawName.replace(/\s+portal$/i, '').trim() || rawName;
@@ -172,9 +188,16 @@ export function DealerHomeScreen({ forceState, fixture }: DealerHomeScreenProps 
       id: 'balance',
       title: t('mobile.dealerHome.outstandingBalance'),
       value: formatCurrency(balance),
-      actionLabel: canStatement
-        ? t('mobile.dealerHome.viewStatement')
-        : t('mobile.dealerHome.viewAll'),
+      actionLabel:
+        balance === 0
+          ? t('mobile.dealerHome.paidUp')
+          : data.balanceDueInDays != null
+            ? data.balanceDueInDays >= 0
+              ? tPlural('mobile.dealerHome.dueInDays', data.balanceDueInDays)
+              : tPlural('mobile.dealerHome.overdueDays', Math.abs(data.balanceDueInDays))
+            : canStatement
+              ? t('mobile.dealerHome.viewStatement')
+              : t('mobile.dealerHome.viewAll'),
       onPress: canStatement ? goStatement : goOrders,
       icon: 'wallet-outline' as const,
     },
@@ -242,7 +265,7 @@ export function DealerHomeScreen({ forceState, fixture }: DealerHomeScreenProps 
           {canBrowseCatalog ? (
             <>
               <Divider compact />
-              <FeaturedCollections />
+              <FeaturedCollections collections={collections} />
             </>
           ) : null}
         </View>

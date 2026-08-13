@@ -390,12 +390,12 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
 
             {data.timing ? (
               <div className="rounded-xl border border-[var(--maher-border)] bg-[var(--maher-surface-secondary)] p-3">
-                <p className="text-xs text-text-tertiary">Work timer</p>
+                <p className="text-xs text-text-tertiary">{t('timerLabel')}</p>
                 <p className="mt-1 text-2xl font-semibold tabular-nums" dir="ltr">
                   {Math.floor((data.timing.elapsedMinutes ?? 0) / 60)}h{' '}
                   {(data.timing.elapsedMinutes ?? 0) % 60}m
                   {data.timing.status === 'running' ? (
-                    <span className="ms-2 text-sm text-[var(--maher-brand)]">Live</span>
+                    <span className="ms-2 text-sm text-[var(--maher-brand)]">{t('timerLive')}</span>
                   ) : null}
                 </p>
               </div>
@@ -409,7 +409,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
                   onClick={() => void runAction('start')}
                   loading={loading}
                 >
-                  Start
+                  {t('startTask')}
                 </Button>
               ) : null}
               {canStop ? (
@@ -420,7 +420,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
                   onClick={() => void runAction('pause')}
                   loading={loading}
                 >
-                  Stop timer
+                  {t('stopTimer')}
                 </Button>
               ) : null}
               {canResume ? (
@@ -430,7 +430,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
                   onClick={() => void runAction('resume')}
                   loading={loading}
                 >
-                  Resume
+                  {t('resumeTask')}
                 </Button>
               ) : null}
               <Button

@@ -1,6 +1,9 @@
+'use client';
+
 import type { ReactNode } from 'react';
 import { cn } from './cn';
 import { Button } from './Button';
+import { useUiCopy } from './UiCopy';
 
 export interface ErrorStateProps {
   title: string;
@@ -15,10 +18,12 @@ export function ErrorState({
   title,
   description,
   onRetry,
-  retryLabel = 'Retry',
+  retryLabel,
   action,
   className,
 }: ErrorStateProps) {
+  const copy = useUiCopy();
+  const resolvedRetry = retryLabel ?? copy.retry;
   return (
     <div
       className={cn(
@@ -49,7 +54,7 @@ export function ErrorState({
         <div className="mt-5 flex gap-2">
           {onRetry ? (
             <Button variant="secondary" onClick={onRetry}>
-              {retryLabel}
+              {resolvedRetry}
             </Button>
           ) : null}
           {action}

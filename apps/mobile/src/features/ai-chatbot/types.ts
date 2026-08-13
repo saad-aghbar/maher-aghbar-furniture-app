@@ -1,6 +1,5 @@
 /**
- * AI chatbot message model — UI-ready shapes for future API wiring.
- * No network calls yet; screens render these locally / from demo seeds.
+ * AI chatbot message model — UI-ready shapes returned by `/ai-chat`.
  */
 
 export type ChatRole = 'user' | 'assistant' | 'system';

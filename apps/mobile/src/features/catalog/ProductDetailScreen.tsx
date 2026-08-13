@@ -29,7 +29,6 @@ import type { BrowseProduct } from './api';
 import { ProductDetailSkeleton } from './components/ProductDetailSkeleton';
 import { ProductImageCarousel } from './components/ProductImageCarousel';
 import { RelatedProductsRail } from './components/RelatedProductsRail';
-import { catalogProductsFixture } from './fixtures';
 import { navigateToNewOrderWithProduct } from './newOrderDeepLink';
 import { useBrowseProductQuery, usePreviouslyOrderedQuery } from './query';
 import {
@@ -90,11 +89,7 @@ export function ProductDetailScreen({
     isDealer && (orderedQuery.data ?? []).some((p) => p.id === productId);
 
   const raw: BrowseProduct | undefined =
-    forceState === 'success' || forceState === 'offline'
-      ? (fixture ??
-        catalogProductsFixture.find((p) => p.id === productId) ??
-        catalogProductsFixture[0])
-      : query.data;
+    forceState === 'success' || forceState === 'offline' ? fixture : query.data;
 
   const vm = raw ? selectProductDetail(raw, locale) : null;
 

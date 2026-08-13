@@ -51,5 +51,6 @@ describe('selectProductDetail', () => {
   it('uses Arabic name for ar locale', () => {
     const vm = selectProductDetail(catalogProductsFixture[0]!, 'ar');
     expect(vm.name).toBe('كنبة عصرية');
+    expect(vm.dimensions.find((d) => d.kind === 'w')?.label).toBe('العرض');
   });
 });

@@ -163,5 +163,14 @@
   "jofotaraStatus": "סטטוס אישור",
   "jofotaraClearedAt": "אושר ב־",
   "jofotaraNotCleared": "לא נשלח ל-JoFotara",
-  "jofotaraNotClearedHint": "אישור JoFotara מתבצע בעת יצירת החשבונית מהזמנת מכירה."
+  "jofotaraNotClearedHint": "אישור JoFotara מתבצע בעת יצירת החשבונית מהזמנת מכירה.",
+  "statementEmpty": "אין תנועות בחשבון",
+  "statementEmptyHint": "חשבוניות ותשלומים יופיעו כאן.",
+  "closingAsOf": "יתרת סגירה ל־{date}: {balance} {currency}",
+  "colDate": "תאריך",
+  "colRef": "אסמכתא",
+  "colDescription": "תיאור",
+  "colDebit": "חובה",
+  "colCredit": "זכות",
+  "colBalance": "יתרה"
 }

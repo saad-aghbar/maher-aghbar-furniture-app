@@ -163,5 +163,14 @@
   "jofotaraStatus": "Clearance status",
   "jofotaraClearedAt": "Cleared at",
   "jofotaraNotCleared": "Not submitted to JoFotara",
-  "jofotaraNotClearedHint": "JoFotara clearance is applied when the invoice is created from a sales order."
+  "jofotaraNotClearedHint": "JoFotara clearance is applied when the invoice is created from a sales order.",
+  "statementEmpty": "No ledger entries",
+  "statementEmptyHint": "Invoices and payments will appear here.",
+  "closingAsOf": "Closing balance as of {date}: {balance} {currency}",
+  "colDate": "Date",
+  "colRef": "Ref",
+  "colDescription": "Description",
+  "colDebit": "Debit",
+  "colCredit": "Credit",
+  "colBalance": "Balance"
 }

@@ -439,7 +439,63 @@
     "ticketsEyebrow": "כרטיסי עובדים",
     "trackingEyebrow": "זרקור רצפה",
     "actionInventory": "מלאי",
-    "actionInvoices": "חשבוניות"
+    "actionInvoices": "חשבוניות",
+    "activityVerb": {
+      "create": "נוצר",
+      "update": "עודכן",
+      "updated": "עודכן",
+      "delete": "נמחק",
+      "hold": "בהמתנה",
+      "approve": "אושר",
+      "submit": "נשלח",
+      "login": "התחברות",
+      "logout": "התנתקות",
+      "activate": "הופעל",
+      "deactivate": "הושבת",
+      "assign": "הוקצה",
+      "complete": "הושלם",
+      "record": "נרשם",
+      "send": "נשלח",
+      "convert": "הומר",
+      "status": "הסטטוס השתנה",
+      "skipped": "דולג",
+      "patch": "עודכן",
+      "upsert": "נשמר",
+      "invite": "הוזמן",
+      "offer": "הצעה נשלחה",
+      "fallback": "עדכון"
+    },
+    "activityEntity": {
+      "SalesOrder": "הזמנה",
+      "Customer": "סוחר",
+      "User": "משתמש",
+      "Invoice": "חשבונית",
+      "Payment": "תשלום",
+      "ProductionOrder": "הזמנת ייצור",
+      "PurchaseOrder": "הזמנת רכש",
+      "PurchaseRequest": "בקשת רכש",
+      "Supplier": "ספק",
+      "SupplierInvoice": "חשבונית ספק",
+      "InventoryItem": "פריט מלאי",
+      "Warehouse": "מחסן",
+      "Delivery": "משלוח",
+      "Quotation": "הצעת מחיר",
+      "RequestForQuotation": "בקשת הצעה",
+      "ReturnRequest": "החזרה",
+      "Department": "מחלקה",
+      "Role": "תפקיד",
+      "Contract": "חוזה",
+      "GoodsReceipt": "קבלת סחורה",
+      "QualityInspection": "בקרת איכות",
+      "ReworkRequest": "תיקון",
+      "AIExtractionJob": "קליטת הזמנה",
+      "SystemSetting": "הגדרה",
+      "DealerPrice": "מחיר סוחר",
+      "ProductionStageDefinition": "שלב",
+      "QualityChecklistTemplate": "תבנית בדיקה",
+      "SupplierPayment": "תשלום לספק",
+      "Notification": "התראה"
+    }
   },
   "dealerHome": {
     "greeting": "שלום, {name}",
@@ -490,7 +546,22 @@
       "classic": "נוחות קלאסית",
       "dining": "קולקציית פינת אוכל",
       "bedroom": "יוקרת חדרי שינה"
-    }
+    },
+    "dueInDaysZero": "אין יתרה לתשלום",
+    "dueInDaysOne": "לתשלום תוך יום",
+    "dueInDaysTwo": "לתשלום תוך {n} ימים",
+    "dueInDaysFew": "לתשלום תוך {n} ימים",
+    "dueInDaysMany": "לתשלום תוך {n} ימים",
+    "overdueDaysZero": "לא באיחור",
+    "overdueDaysOne": "באיחור של יום",
+    "overdueDaysTwo": "באיחור של {n} ימים",
+    "overdueDaysFew": "באיחור של {n} ימים",
+    "overdueDaysMany": "באיחור של {n} ימים",
+    "collectionItemsZero": "אין פריטים",
+    "collectionItemsOne": "פריט אחד",
+    "collectionItemsTwo": "{n} פריטים",
+    "collectionItemsFew": "{n} פריטים",
+    "collectionItemsMany": "{n} פריטים"
   },
   "workerHome": {
     "greeting": {
@@ -2067,7 +2138,8 @@
       "FINISHED_GOODS_RECEIPT": "מוצרים גמורים",
       "DELIVERY_ISSUE": "ניפוק למשלוח",
       "DAMAGE": "נזק",
-      "SCRAP": "גרוטאות"
+      "SCRAP": "גרוטאות",
+      "OTHER": "תנועת מלאי"
     }
   },
   "adminSettings": {
@@ -2387,7 +2459,12 @@
     "unread": "לא נקרא",
     "read": "נקרא",
     "openHint": "פתיחה",
-    "loading": "טוען…"
+    "loading": "טוען…",
+    "unreadCountZero": "אין שלא נקראו",
+    "unreadCountOne": "אחת שלא נקראה",
+    "unreadCountTwo": "{count} שלא נקראו",
+    "unreadCountFew": "{count} שלא נקראו",
+    "unreadCountMany": "{count} שלא נקראו"
   },
   "search": {
     "title": "חיפוש",

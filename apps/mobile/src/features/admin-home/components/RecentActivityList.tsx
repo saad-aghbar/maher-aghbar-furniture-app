@@ -6,6 +6,7 @@ import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import type { AdminHomeActivity } from '../api';
+import { activityLabel } from '../activityLabel';
 
 type RecentActivityListProps = {
   activity: AdminHomeActivity[] | null;
@@ -30,7 +31,7 @@ export function RecentActivityList({ activity }: RecentActivityListProps) {
             <SurfaceCard>
               <View style={{ gap: theme.spacing.xs }}>
                 <AppText variant="label" weight="medium" numberOfLines={2}>
-                  {row.action.replace(/_/g, ' ')} · {row.entityType}
+                  {activityLabel(t, row.action, row.entityType)}
                 </AppText>
                 <AppText variant="caption" color="secondary">
                   {row.actorName ? `${row.actorName} · ` : ''}

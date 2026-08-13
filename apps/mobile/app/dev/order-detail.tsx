@@ -3,6 +3,10 @@ import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { OrderDetailScreen } from '@/features/sales-orders/OrderDetailScreen';
+import {
+  adminOrderDetailFixture,
+  dealerOrderDetailFixture,
+} from '@/features/sales-orders/detailFixtures';
 import type { OrdersListVariant } from '@/features/sales-orders/selectOrderCard';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -20,6 +24,9 @@ export default function OrderDetailGalleryScreen() {
   const [variant, setVariant] = useState<OrdersListVariant>('admin');
   const { theme, colors } = useTheme();
   const { setLocale, locale } = useLocale();
+
+  const fixture =
+    variant === 'admin' ? adminOrderDetailFixture : dealerOrderDetailFixture;
 
   return (
     <View style={{ flex: 1 }}>
@@ -58,6 +65,7 @@ export default function OrderDetailGalleryScreen() {
         orderId="so1"
         variant={variant}
         forceState={state}
+        fixture={state === 'success' || state === 'offline' ? fixture : undefined}
       />
     </View>
   );

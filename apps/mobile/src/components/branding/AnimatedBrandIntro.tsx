@@ -6,6 +6,7 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import type { BrandIntroState } from '@/hooks/useBrandIntroState';
+import { useLocale } from '@/i18n';
 import { brandIntroTimeline as T } from '@/theme/brandIntroMotion';
 
 const bodyLight = require('../../../assets/brand/lockup-body-on-light.png');
@@ -31,6 +32,7 @@ export function AnimatedBrandIntro({
   darkArtwork = false,
   testID = 'brand-intro',
 }: Props) {
+  const { t } = useLocale();
   const { width: winW, height: winH } = useWindowDimensions();
   const frameW = useRef(0);
   const frameH = useRef(0);
@@ -123,7 +125,7 @@ export function AnimatedBrandIntro({
       {mode === 'full' ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Skip intro"
+          accessibilityLabel={t('common.skipIntro')}
           onPress={() => {
             if (canSkip) skip();
           }}

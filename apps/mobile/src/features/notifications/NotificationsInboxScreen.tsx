@@ -121,7 +121,7 @@ export function NotificationsInboxScreen({
   embeddedInTabs = false,
 }: NotificationsInboxScreenProps = {}) {
   const { user } = useAuth();
-  const { t, locale, isRTL, formatDate } = useLocale();
+  const { t, tPlural, locale, isRTL, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
@@ -203,7 +203,7 @@ export function NotificationsInboxScreen({
 
   const statusLine =
     unreadTotal > 0
-      ? t('mobile.notifications.unreadCount', { count: unreadTotal })
+      ? tPlural('mobile.notifications.unreadCount', unreadTotal)
       : t('mobile.notifications.subtitle');
 
   return (

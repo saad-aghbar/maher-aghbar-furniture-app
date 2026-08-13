@@ -4,6 +4,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import type { AuthUser } from '@maher/types';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { rolesLabel } from '@/i18n/roleLabel';
 import { useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './MoreBoard';
@@ -20,9 +21,7 @@ export function MoreIdentityBoard({ user }: Props) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const first = user.name.trim().split(/\s+/)[0] || user.name;
   const roles =
-    user.roles.length > 0
-      ? user.roles.map((r) => r.replace(/_/g, ' ')).join(' · ')
-      : t('mobile.more.roleFallback');
+    user.roles.length > 0 ? rolesLabel(t, user.roles) : t('mobile.more.roleFallback');
 
   const Shell = reduce ? View : Animated.View;
   const shellProps = reduce

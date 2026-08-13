@@ -1,5 +1,7 @@
 import type { BrowseProduct } from './api';
 import { resolveDealerBrowsePrice } from './selectProductCard';
+import { translate } from '@/i18n/translate';
+import type { Locale } from '@maher/types';
 
 export type ProductDetailDimension = {
   label: string;
@@ -39,6 +41,10 @@ function formatCm(value: number | string | null | undefined): string | null {
   return `${n} cm`;
 }
 
+function asLocale(locale: string): Locale {
+  return locale === 'he' ? 'he' : locale === 'ar' ? 'ar' : 'en';
+}
+
 function localizedCategoryName(
   product: BrowseProduct,
   locale: string,
@@ -54,6 +60,7 @@ export function selectProductDetail(
   product: BrowseProduct,
   locale: string,
 ): ProductDetailViewModel {
+  const loc = asLocale(locale);
   const name =
     locale === 'ar'
       ? product.nameAr || product.nameEn
@@ -67,12 +74,13 @@ export function selectProductDetail(
     if (g && !uris.includes(g)) uris.push(g);
   }
 
-  const dimLabels =
-    locale === 'ar'
-      ? { w: 'العرض', h: 'الارتفاع', d: 'العمق', seat: 'ارتفاع المقعد', empty: '—' }
-      : locale === 'he'
-        ? { w: 'רוחב', h: 'גובה', d: 'עומק', seat: 'גובה מושב', empty: '—' }
-        : { w: 'Width', h: 'Height', d: 'Depth', seat: 'Seat height', empty: '—' };
+  const empty = translate(loc, 'catalog.emptyValue');
+  const dimLabels = {
+    w: translate(loc, 'catalog.dimWidth'),
+    h: translate(loc, 'catalog.dimHeight'),
+    d: translate(loc, 'catalog.dimDepth'),
+    seat: translate(loc, 'catalog.dimSeatHeight'),
+  };
 
   const wN = toNumber(product.width);
   const hN = toNumber(product.height);
@@ -81,12 +89,12 @@ export function selectProductDetail(
 
   // Always surface the four standard dealer measurement slots.
   const dimensions: ProductDetailDimension[] = [
-    { label: dimLabels.w, value: formatCm(product.width) ?? dimLabels.empty, kind: 'w' },
-    { label: dimLabels.h, value: formatCm(product.height) ?? dimLabels.empty, kind: 'h' },
-    { label: dimLabels.d, value: formatCm(product.depth) ?? dimLabels.empty, kind: 'd' },
+    { label: dimLabels.w, value: formatCm(product.width) ?? empty, kind: 'w' },
+    { label: dimLabels.h, value: formatCm(product.height) ?? empty, kind: 'h' },
+    { label: dimLabels.d, value: formatCm(product.depth) ?? empty, kind: 'd' },
     {
       label: dimLabels.seat,
-      value: formatCm(product.seatHeight) ?? dimLabels.empty,
+      value: formatCm(product.seatHeight) ?? empty,
       kind: 'seat',
     },
   ];
@@ -96,7 +104,7 @@ export function selectProductDetail(
     coreParts.length >= 2
       ? `${coreParts.join(' × ')} cm`
       : seatN != null
-        ? `Seat ${seatN} cm`
+        ? translate(loc, 'catalog.dimensionSummarySeat', { n: seatN })
         : null;
 
   const notes: string[] = [];
@@ -126,7 +134,7 @@ export function selectProductDetail(
 
   return {
     id: product.id,
-    name: name || product.nameEn || product.nameAr || '—',
+    name: name || product.nameEn || product.nameAr || empty,
     sku,
     unit,
     description: product.description?.trim() || null,

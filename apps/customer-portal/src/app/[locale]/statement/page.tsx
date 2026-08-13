@@ -37,6 +37,7 @@ interface Statement {
 export default function StatementPage() {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
+  const tAcc = useTranslations('accounting');
 
   const { data: me, isLoading: meLoading, isError: meError } = useQuery({
     queryKey: ['me'],
@@ -88,28 +89,32 @@ export default function StatementPage() {
       {!data?.entries?.length ? (
         <MotionSection>
           <EmptyState
-            title="No ledger entries"
-            description="Invoices and payments will appear here."
+            title={tAcc('statementEmpty')}
+            description={tAcc('statementEmptyHint')}
           />
         </MotionSection>
       ) : (
         <>
           <MotionSection delayMs={40}>
             <Alert variant="info">
-              Closing balance as of {data.asOf.slice(0, 10)}: {data.closingBalance} {data.currency}
+              {tAcc('closingAsOf', {
+                date: data.asOf.slice(0, 10),
+                balance: String(data.closingBalance),
+                currency: data.currency,
+              })}
             </Alert>
           </MotionSection>
           <MotionSection delayMs={80}>
-            <Card title="Statement of account" padded={false} className="maher-form-section">
+            <Card title={t('statement')} padded={false} className="maher-form-section">
               <Table>
                 <TableHead>
                   <TableRow>
-                    <TableHeaderCell>Date</TableHeaderCell>
-                    <TableHeaderCell>Ref</TableHeaderCell>
-                    <TableHeaderCell>Description</TableHeaderCell>
-                    <TableHeaderCell>Debit</TableHeaderCell>
-                    <TableHeaderCell>Credit</TableHeaderCell>
-                    <TableHeaderCell>Balance</TableHeaderCell>
+                    <TableHeaderCell>{tAcc('colDate')}</TableHeaderCell>
+                    <TableHeaderCell>{tAcc('colRef')}</TableHeaderCell>
+                    <TableHeaderCell>{tAcc('colDescription')}</TableHeaderCell>
+                    <TableHeaderCell>{tAcc('colDebit')}</TableHeaderCell>
+                    <TableHeaderCell>{tAcc('colCredit')}</TableHeaderCell>
+                    <TableHeaderCell>{tAcc('colBalance')}</TableHeaderCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>

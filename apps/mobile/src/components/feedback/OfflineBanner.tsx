@@ -1,15 +1,18 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 type OfflineBannerProps = {
   message?: string;
 };
 
-export function OfflineBanner({ message = 'You are offline' }: OfflineBannerProps) {
+export function OfflineBanner({ message }: OfflineBannerProps) {
+  const { t } = useLocale();
   const { showOfflineBanner } = useNetwork();
   const { colors, theme } = useTheme();
+  const text = message ?? t('common.offline');
 
   if (!showOfflineBanner) return null;
 
@@ -28,7 +31,7 @@ export function OfflineBanner({ message = 'You are offline' }: OfflineBannerProp
       }}
     >
       <AppText variant="caption" style={{ color: colors.warning }} align="center">
-        {message}
+        {text}
       </AppText>
     </View>
   );

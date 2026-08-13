@@ -5,6 +5,7 @@ import {
   dealerHomeEmptyFixture,
   dealerHomeSuccessFixture,
 } from '@/features/dealer-home/fixtures';
+import { DEALER_HOME_COLLECTIONS } from '@/features/dealer-home/dealerHomeImagery';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useLocale } from '@/i18n';
@@ -58,6 +59,11 @@ export default function DealerHomeGalleryScreen() {
       <DealerHomeScreen
         forceState={state}
         fixture={state === 'error' || state === 'loading' ? undefined : fixture}
+        fixtureCollections={
+          state === 'success' || state === 'offline'
+            ? DEALER_HOME_COLLECTIONS
+            : undefined
+        }
       />
     </View>
   );

@@ -11,6 +11,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useLocale } from '@/i18n';
 import {
@@ -20,7 +21,7 @@ import {
 } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
-import { thinkingMessage, userTextMessage } from './demoConversation';
+import { thinkingMessage, userTextMessage } from './chatMessageFactories';
 import { ChatComposer } from './components/ChatComposer';
 import { ChatMessageBubble } from './components/ChatMessageBubble';
 import type { ChatAction, ChatMessage } from './types';
@@ -220,6 +221,7 @@ export function AiChatbotScreen({ backFallback }: Props) {
       <View style={{ paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md }}>
         <ChatScreenTitle titleWeight={titleWeight} backFallback={backFallback} />
       </View>
+      <OfflineBanner />
 
       {bootError ? (
         <View style={{ padding: theme.spacing.lg }}>

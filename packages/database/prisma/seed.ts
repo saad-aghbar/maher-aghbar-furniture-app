@@ -21,7 +21,7 @@ async function main() {
   }
 
   const roleMeta: Record<string, { nameAr: string; nameEn: string }> = {
-    CUSTOMER: { nameAr: 'عميل', nameEn: 'Customer' },
+    CUSTOMER: { nameAr: 'تاجر', nameEn: 'Customer' },
     PRODUCTION_WORKER: { nameAr: 'عامل', nameEn: 'Worker' },
     SYSTEM_ADMINISTRATOR: { nameAr: 'مسؤول النظام', nameEn: 'Admin' },
   };
@@ -144,7 +144,7 @@ async function main() {
     },
     {
       code: 'INSPECTION',
-      nameAr: 'الفحص',
+      nameAr: 'فحص الجودة',
       nameEn: 'Inspection',
       sortOrder: 6,
       requiresInspection: true,
@@ -280,10 +280,10 @@ async function main() {
     {
       code: 'ORDER_CONFIRMED',
       channel: 'EMAIL',
-      subjectAr: 'تأكيد أمر البيع',
+      subjectAr: 'تأكيد الطلبية',
       subjectEn: 'Sales order confirmed',
       subjectHe: 'הזמנה אושרה',
-      bodyAr: 'تم تأكيد أمر البيع {{number}}.',
+      bodyAr: 'تم تأكيد الطلبية {{number}}.',
       bodyEn: 'Sales order {{number}} is confirmed.',
       bodyHe: 'הזמנת מכירה {{number}} אושרה.',
     },
@@ -466,10 +466,10 @@ async function main() {
     {
       code: 'SCHEDULE_AT_RISK',
       channel: 'IN_APP',
-      subjectAr: 'جدول إنتاج معرض للخطر',
+      subjectAr: 'جدول إنتاج معرّض للتأخير',
       subjectEn: 'Production schedule at risk',
       subjectHe: 'לוח ייצור בסיכון',
-      bodyAr: 'جدول أمر الإنتاج {{orderNumber}} معرض لخطر التأخير. السبب: {{reason}}.',
+      bodyAr: 'جدول أمر الإنتاج {{orderNumber}} معرّض للتأخير. السبب: {{reason}}.',
       bodyEn: 'The production schedule for order {{orderNumber}} is at risk of delay. Reason: {{reason}}.',
       bodyHe: 'לוח הייצור להזמנה {{orderNumber}} בסיכון לעיכוב. סיבה: {{reason}}.',
     },

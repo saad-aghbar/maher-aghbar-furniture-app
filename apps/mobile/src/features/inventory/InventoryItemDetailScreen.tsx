@@ -483,7 +483,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
           const typeKey = `mobile.inventory.txType.${item.type}`;
           const typeLabel = t(typeKey);
           const resolvedType =
-            typeLabel === typeKey ? item.type.replace(/_/g, ' ') : typeLabel;
+            typeLabel === typeKey ? t('mobile.inventory.txType.OTHER') : typeLabel;
           const qtyPositive = item.quantityLabel.trim().startsWith('+');
           const qtyNegative = item.quantityLabel.trim().startsWith('-');
 

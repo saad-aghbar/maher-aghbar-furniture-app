@@ -168,10 +168,10 @@ export function localizedName(
     return (
       row.nameAr ||
       row.titleAr ||
-      row.name ||
-      fallback ||
       row.nameEn ||
       row.titleEn ||
+      row.name ||
+      fallback ||
       row.nameHe ||
       row.titleHe ||
       '—'
@@ -181,10 +181,10 @@ export function localizedName(
     return (
       row.nameHe ||
       row.titleHe ||
-      row.name ||
-      fallback ||
       row.nameEn ||
       row.titleEn ||
+      row.name ||
+      fallback ||
       row.nameAr ||
       row.titleAr ||
       '—'
@@ -310,6 +310,14 @@ let runtimeUiLocale: Locale | null = null;
 export function setRuntimeUiLocale(locale: Locale) {
   runtimeUiLocale = locale;
 }
+
+export { allLeafKeys, flattenLeaves, flattenNamespace } from './flatten';
+export {
+  arabicPluralCategory,
+  pickPluralKey,
+  pluralAr,
+  type ArabicPluralForms,
+} from './plural';
 
 export function detectUiLocale(preferred?: string | null): Locale {
   if (preferred && isValidLocale(preferred)) return preferred;

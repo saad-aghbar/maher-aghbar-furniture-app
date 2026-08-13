@@ -5,6 +5,8 @@ import {
   QueryCache,
   QueryClient,
 } from '@tanstack/react-query';
+import { translateApiError, translateErrorCode } from '@maher/i18n';
+import { getActiveLocale } from '@/i18n/LocaleProvider';
 import { isApiError } from './errors';
 import { shouldRetryQuery } from './retry';
 import { createSafeAsyncStorage } from './safeAsyncStorage';
@@ -65,11 +67,12 @@ export function shouldToastApiError(error: unknown): boolean {
   );
 }
 
-export function toastMessageForError(error: unknown): string {
+export function toastMessageForError(error: unknown, _t?: unknown): string {
+  const locale = getActiveLocale();
   if (isApiError(error)) {
-    if (error.isOffline) return 'You are offline';
-    return error.message;
+    if (error.isOffline) return translateErrorCode(locale, 'OFFLINE');
+    return translateApiError(locale, error);
   }
-  if (error instanceof Error) return error.message;
-  return 'Something went wrong';
+  if (error instanceof Error) return translateApiError(locale, error);
+  return translateErrorCode(locale, 'REQUEST_FAILED');
 }

@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 type ErrorStateProps = {
@@ -13,10 +14,12 @@ type ErrorStateProps = {
 export function ErrorState({
   title,
   description,
-  retryLabel = 'Try again',
+  retryLabel,
   onRetry,
 }: ErrorStateProps) {
+  const { t } = useLocale();
   const { theme, colors } = useTheme();
+  const resolvedRetry = retryLabel ?? t('common.retry');
 
   return (
     <View
@@ -39,7 +42,7 @@ export function ErrorState({
       ) : null}
       {onRetry ? (
         <SecondaryButton
-          label={retryLabel}
+          label={resolvedRetry}
           onPress={onRetry}
           style={{ marginTop: theme.spacing.sm }}
         />

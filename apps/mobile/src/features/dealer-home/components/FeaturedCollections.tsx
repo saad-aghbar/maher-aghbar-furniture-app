@@ -7,10 +7,7 @@ import { DealerSectionHeader } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import {
-  DEALER_HOME_COLLECTIONS,
-  type DealerHomeCollection,
-} from '../dealerHomeImagery';
+import type { DealerHomeCollection } from '../dealerHomeImagery';
 
 type Props = {
   collections?: DealerHomeCollection[];
@@ -29,13 +26,15 @@ const SHADOW_GUTTER_X = 8;
 /**
  * Featured collections — photo-led tiles with balanced proportions (no dark overlays).
  */
-export function FeaturedCollections({ collections = DEALER_HOME_COLLECTIONS }: Props) {
-  const { t, isRTL, locale } = useLocale();
+export function FeaturedCollections({ collections = [] }: Props) {
+  const { t, tPlural, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dark = colorScheme === 'dark';
   const goCatalog = () => router.push('/(app)/(customer)/(tabs)/catalog' as Href);
+
+  if (collections.length === 0) return null;
 
   // Shadow on a non-transformed shell — AnimatedPressable scale would clip it.
   const cardLift = {
@@ -107,7 +106,9 @@ export function FeaturedCollections({ collections = DEALER_HOME_COLLECTIONS }: P
                 goCatalog();
               }}
               accessibilityRole="button"
-              accessibilityLabel={t(`mobile.dealerHome.collections.${item.titleKey}`)}
+              accessibilityLabel={
+                item.title ?? t(`mobile.dealerHome.collections.${item.titleKey}`)
+              }
               style={{ width: CARD_W, borderRadius: theme.radius.xl }}
             >
               <DealerGlassCard
@@ -149,7 +150,7 @@ export function FeaturedCollections({ collections = DEALER_HOME_COLLECTIONS }: P
                     }}
                     numberOfLines={1}
                   >
-                    {t(`mobile.dealerHome.collections.${item.titleKey}`)}
+                    {item.title ?? t(`mobile.dealerHome.collections.${item.titleKey}`)}
                   </AppText>
                   <AppText
                     variant="caption"
@@ -161,7 +162,7 @@ export function FeaturedCollections({ collections = DEALER_HOME_COLLECTIONS }: P
                     }}
                     numberOfLines={1}
                   >
-                    {t('mobile.dealerHome.collectionItems', { n: item.itemCount })}
+                    {tPlural('mobile.dealerHome.collectionItems', item.itemCount)}
                   </AppText>
                 </View>
               </DealerGlassCard>

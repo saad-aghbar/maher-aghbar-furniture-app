@@ -58,7 +58,7 @@ export async function seedStandardFurnitureWorkflow(prisma: PrismaClient): Promi
   const workflow = await prisma.productionWorkflow.upsert({
     where: { code: STANDARD_FURNITURE_WORKFLOW_CODE },
     update: {
-      nameAr: 'سير عمل الأثاث القياسي',
+      nameAr: 'سير إنتاج الأثاث القياسي',
       nameEn: 'Standard furniture workflow',
       nameHe: 'תהליך ריהוט סטנדרטי',
       descriptionAr: 'مسار الإنتاج الافتراضي — من تجهيز المواد إلى التسليم.',
@@ -69,7 +69,7 @@ export async function seedStandardFurnitureWorkflow(prisma: PrismaClient): Promi
     },
     create: {
       code: STANDARD_FURNITURE_WORKFLOW_CODE,
-      nameAr: 'سير عمل الأثاث القياسي',
+      nameAr: 'سير إنتاج الأثاث القياسي',
       nameEn: 'Standard furniture workflow',
       nameHe: 'תהליך ריהוט סטנדרטי',
       descriptionAr: 'مسار الإنتاج الافتراضي — من تجهيز المواد إلى التسليم.',

@@ -62,6 +62,7 @@ export function QueryProvider({ children }: { children: ReactNode }) {
       client,
       persistOptions: {
         persister,
+        buster: 'no-mobile-fixtures-v1',
         dehydrateOptions: {
           shouldDehydrateQuery,
         },

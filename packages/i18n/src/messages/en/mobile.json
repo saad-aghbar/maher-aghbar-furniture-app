@@ -439,7 +439,63 @@
     "ticketsEyebrow": "Worker tickets",
     "trackingEyebrow": "Floor spotlight",
     "actionInventory": "Inventory",
-    "actionInvoices": "Invoices"
+    "actionInvoices": "Invoices",
+    "activityVerb": {
+      "create": "Created",
+      "update": "Updated",
+      "updated": "Updated",
+      "delete": "Deleted",
+      "hold": "On hold",
+      "approve": "Approved",
+      "submit": "Submitted",
+      "login": "Signed in",
+      "logout": "Signed out",
+      "activate": "Activated",
+      "deactivate": "Deactivated",
+      "assign": "Assigned",
+      "complete": "Completed",
+      "record": "Recorded",
+      "send": "Sent",
+      "convert": "Converted",
+      "status": "Status changed",
+      "skipped": "Skipped",
+      "patch": "Updated",
+      "upsert": "Saved",
+      "invite": "Invited",
+      "offer": "Offer sent",
+      "fallback": "Update"
+    },
+    "activityEntity": {
+      "SalesOrder": "Sales order",
+      "Customer": "Dealer",
+      "User": "User",
+      "Invoice": "Invoice",
+      "Payment": "Payment",
+      "ProductionOrder": "Production order",
+      "PurchaseOrder": "Purchase order",
+      "PurchaseRequest": "Purchase request",
+      "Supplier": "Supplier",
+      "SupplierInvoice": "Supplier invoice",
+      "InventoryItem": "Inventory item",
+      "Warehouse": "Warehouse",
+      "Delivery": "Delivery",
+      "Quotation": "Quotation",
+      "RequestForQuotation": "Quote request",
+      "ReturnRequest": "Return",
+      "Department": "Department",
+      "Role": "Role",
+      "Contract": "Contract",
+      "GoodsReceipt": "Goods receipt",
+      "QualityInspection": "Quality inspection",
+      "ReworkRequest": "Rework",
+      "AIExtractionJob": "AI intake",
+      "SystemSetting": "Setting",
+      "DealerPrice": "Dealer price",
+      "ProductionStageDefinition": "Stage",
+      "QualityChecklistTemplate": "Quality template",
+      "SupplierPayment": "Supplier payment",
+      "Notification": "Notification"
+    }
   },
   "dealerHome": {
     "greeting": "Hello, {name}",
@@ -490,7 +546,22 @@
       "classic": "Classic comfort",
       "dining": "Dining collection",
       "bedroom": "Bedroom luxury"
-    }
+    },
+    "dueInDaysZero": "No amount due",
+    "dueInDaysOne": "Due in {n} day",
+    "dueInDaysTwo": "Due in {n} days",
+    "dueInDaysFew": "Due in {n} days",
+    "dueInDaysMany": "Due in {n} days",
+    "overdueDaysZero": "Not overdue",
+    "overdueDaysOne": "Overdue by {n} day",
+    "overdueDaysTwo": "Overdue by {n} days",
+    "overdueDaysFew": "Overdue by {n} days",
+    "overdueDaysMany": "Overdue by {n} days",
+    "collectionItemsZero": "No items",
+    "collectionItemsOne": "{n} item",
+    "collectionItemsTwo": "{n} items",
+    "collectionItemsFew": "{n} items",
+    "collectionItemsMany": "{n} items"
   },
   "workerHome": {
     "greeting": {
@@ -1004,7 +1075,8 @@
     "emptyBody": "Try a different search or category.",
     "errorTitle": "Couldn’t load catalog",
     "errorBody": "Check your connection and try again.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "priceLabel": "Dealer price"
   },
   "newOrder": {
     "title": "New Order",
@@ -2066,7 +2138,8 @@
       "FINISHED_GOODS_RECEIPT": "Finished goods",
       "DELIVERY_ISSUE": "Delivery issue",
       "DAMAGE": "Damage",
-      "SCRAP": "Scrap"
+      "SCRAP": "Scrap",
+      "OTHER": "Movement"
     }
   },
   "dealers": {
@@ -2386,7 +2459,12 @@
     "unread": "Unread",
     "read": "Read",
     "openHint": "Open",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "unreadCountZero": "No unread",
+    "unreadCountOne": "{count} unread",
+    "unreadCountTwo": "{count} unread",
+    "unreadCountFew": "{count} unread",
+    "unreadCountMany": "{count} unread"
   },
   "search": {
     "title": "Search",

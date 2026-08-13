@@ -46,7 +46,6 @@ import { OrdersListSkeleton } from './components/OrdersListSkeleton';
 import { OrdersPipelineHome } from './components/OrdersPipelineHome';
 import { OrdersSignatureHome } from './components/OrdersSignatureHome';
 import { OrdersWorkbenchHome } from './components/OrdersWorkbenchHome';
-import { adminOrdersFixture, dealerOrdersFixture } from './fixtures';
 import { matchOrdersSearch } from './matchOrdersSearch';
 import { ORDERS_COMPOSITION } from './ordersComposition';
 import { flattenOrdersPages, useOrdersInfiniteQuery } from './query';
@@ -147,7 +146,7 @@ export function OrdersListScreen({
     }));
     const orders = (
       forceState === 'success' || forceState === 'offline'
-        ? (fixture ?? dealerOrdersFixture)
+        ? (fixture ?? [])
         : forceState === 'empty'
           ? []
           : liveItems
@@ -174,8 +173,7 @@ export function OrdersListScreen({
 
   const items: SalesOrderListItem[] =
     forceState === 'success' || forceState === 'offline'
-      ? (fixture ??
-        (variant === 'admin' ? adminOrdersFixture : dealerOrdersFixture))
+      ? (fixture ?? [])
       : forceState === 'empty'
         ? []
         : liveItems;

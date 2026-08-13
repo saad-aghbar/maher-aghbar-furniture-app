@@ -21,6 +21,7 @@ import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { useLocale } from '@/i18n';
+import { rolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -94,7 +95,7 @@ export function WorkerProfileScreen() {
   const first = displayName.trim().split(/\s+/)[0] || displayName;
   const roles =
     user.roles.length > 0
-      ? user.roles.map((r) => r.replace(/_/g, ' ')).join(' · ')
+      ? rolesLabel(t, user.roles)
       : t('mobile.persona.production_worker');
 
   const enter = (delay: number) =>

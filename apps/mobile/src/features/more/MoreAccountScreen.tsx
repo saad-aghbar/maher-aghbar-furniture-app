@@ -27,6 +27,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
+import { rolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './components/MoreBoard';
@@ -258,9 +259,7 @@ export function MoreAccountScreen({
   if (!user) return null;
 
   const roles =
-    user.roles.length > 0
-      ? user.roles.map((r) => r.replace(/_/g, ' ')).join(' · ')
-      : t('mobile.more.roleFallback');
+    user.roles.length > 0 ? rolesLabel(t, user.roles) : t('mobile.more.roleFallback');
 
   const enter = (delay: number) =>
     reduce ? undefined : FadeInDown.delay(delay).duration(360).damping(22);

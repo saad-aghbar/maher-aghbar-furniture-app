@@ -1,22 +1,25 @@
 'use client';
 
-import { StatusLabelProvider } from '@maher/ui';
+import { StatusLabelProvider, UiCopyProvider } from '@maher/ui';
 import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 
 export function StatusI18nProvider({ children }: { children: ReactNode }) {
   const t = useTranslations('statuses');
+  const tCommon = useTranslations('common');
   return (
-    <StatusLabelProvider
-      translate={(status) => {
-        try {
-          return t(status as never);
-        } catch {
-          return undefined;
-        }
-      }}
-    >
-      {children}
-    </StatusLabelProvider>
+    <UiCopyProvider retry={tCommon('retry')} loading={tCommon('loading')}>
+      <StatusLabelProvider
+        translate={(status) => {
+          try {
+            return t(status as never);
+          } catch {
+            return undefined;
+          }
+        }}
+      >
+        {children}
+      </StatusLabelProvider>
+    </UiCopyProvider>
   );
 }

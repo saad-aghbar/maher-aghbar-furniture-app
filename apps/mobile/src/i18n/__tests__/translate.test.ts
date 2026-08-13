@@ -53,7 +53,7 @@ describe('translate', () => {
     expect(translate('en', 'mobile.purchasing.searchOrders')).toBe('Search orders');
     expect(translate('en', 'mobile.purchasing.actionNewOrder')).toBe('New order');
     expect(translate('en', 'mobile.purchasing.filterApply')).toBe('Apply');
-    expect(translate('ar', 'mobile.purchasing.searchOrders')).toBe('بحث الأوامر');
+    expect(translate('ar', 'mobile.purchasing.searchOrders')).toMatch(/أوامر الشراء/);
   });
 
   it('resolves returns and SO detail keys used by overhaul', () => {

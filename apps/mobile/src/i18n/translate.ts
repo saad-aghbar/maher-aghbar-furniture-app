@@ -1,6 +1,7 @@
 import {
   defaultLocale,
   getMessages,
+  pickPluralKey,
   type MessageNamespace,
   type MessageValue,
 } from '@maher/i18n';
@@ -46,4 +47,21 @@ export function translate(locale: Locale, key: string, vars?: Record<string, str
   return raw.replace(/\{(\w+)\}/g, (_, name: string) =>
     vars[name] != null ? String(vars[name]) : `{${name}}`,
   );
+}
+
+/**
+ * Count-aware lookup: tries `baseKeyZero|One|Two|Few|Many`, then `baseKey`.
+ * `countVar` is interpolated as both `{n}` and `{count}` when present.
+ */
+export function translatePlural(
+  locale: Locale,
+  baseKey: string,
+  count: number,
+  extra?: Record<string, string | number>,
+): string {
+  const vars = { n: count, count, ...extra };
+  const specificKey = pickPluralKey(baseKey, count);
+  const specific = translate(locale, specificKey, vars);
+  if (specific !== specificKey) return specific;
+  return translate(locale, baseKey, vars);
 }

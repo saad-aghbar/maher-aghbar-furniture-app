@@ -29,6 +29,7 @@ export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { ErrorState, type ErrorStateProps } from './ErrorState';
 export { Skeleton, TableSkeleton, type SkeletonProps, type TableSkeletonProps } from './Skeleton';
 export { LoadingOverlay, type LoadingOverlayProps } from './LoadingOverlay';
+export { UiCopyProvider, useUiCopy } from './UiCopy';
 export { Alert, type AlertProps, type AlertVariant } from './Alert';
 export { Tabs, TabList, Tab, TabPanel, type TabsProps } from './Tabs';
 export {

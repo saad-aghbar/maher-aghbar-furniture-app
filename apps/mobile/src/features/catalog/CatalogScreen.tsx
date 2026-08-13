@@ -42,10 +42,6 @@ import { DealerCatalogChrome } from './components/DealerCatalogChrome';
 import { DealerCatalogGridSkeleton } from './components/DealerCatalogGridSkeleton';
 import { ProductCard } from './components/ProductCard';
 import {
-  catalogCategoriesFixture,
-  catalogProductsFixture,
-} from './fixtures';
-import {
   flattenCatalogPages,
   useBrowseCategoriesQuery,
   useCatalogInfiniteQuery,
@@ -165,7 +161,7 @@ export function CatalogScreen({
   const cards = useMemo(() => {
     let products: BrowseProduct[] =
       forceState === 'success' || forceState === 'offline'
-        ? (fixtureProducts ?? catalogProductsFixture)
+        ? (fixtureProducts ?? [])
         : forceState === 'empty'
           ? []
           : browseMode === 'ordered' && isDealer
@@ -194,10 +190,14 @@ export function CatalogScreen({
     browseMode,
     isDealer,
     q,
-  ]);  const categories: BrowseCategory[] =
-    forceState === 'success' || forceState === 'offline' || forceState === 'empty'
-      ? (fixtureCategories ?? catalogCategoriesFixture)
-      : (categoriesQuery.data ?? []);
+  ]);
+
+  const categories: BrowseCategory[] =
+    forceState === 'success' || forceState === 'offline'
+      ? (fixtureCategories ?? [])
+      : forceState === 'empty'
+        ? []
+        : (categoriesQuery.data ?? []);
 
   const screenW = Dimensions.get('window').width;
   const pad = theme.spacing.lg;

@@ -71,7 +71,6 @@ import {
 } from './components/OrderBoardCard';
 import { LinkedTablePanel } from './components/LinkedTablePanel';
 import { OrderDetailSkeleton } from './components/OrderDetailSkeleton';
-import { adminOrderDetailFixture, dealerOrderDetailFixture } from './detailFixtures';
 import { orderBoardShadow } from './components/orderFloorStyle';
 import { useSalesOrderActions, useSalesOrderQuery } from './query';
 import {
@@ -135,10 +134,7 @@ export function OrderDetailScreen({
   const [savedAddresses, setSavedAddresses] = useState<CustomerAddress[]>([]);
 
   const raw: SalesOrderDetail | undefined =
-    forceState === 'success' || forceState === 'offline'
-      ? (fixture ??
-        (variant === 'admin' ? adminOrderDetailFixture : dealerOrderDetailFixture))
-      : query.data;
+    forceState === 'success' || forceState === 'offline' ? fixture : query.data;
 
   const addressCustomerId = user?.customerId ?? raw?.customer?.id ?? null;
   const canReadAddresses = Boolean(

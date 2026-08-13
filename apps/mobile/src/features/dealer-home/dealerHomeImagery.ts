@@ -1,12 +1,14 @@
 /**
- * Curated furniture photography for dealer home collections.
- * Decorative only — metrics still come from live APIs.
+ * Curated furniture photography for /dev dealer-home galleries only.
+ * Production dealer home builds tiles from live catalog products.
  */
 
 export type DealerHomeCollection = {
   id: string;
-  /** i18n key under mobile.dealerHome.collections.* */
+  /** i18n key under mobile.dealerHome.collections.* — used by /dev galleries. */
   titleKey: string;
+  /** Live category name from the API; preferred over titleKey when set. */
+  title?: string;
   imageUrl: string;
   itemCount: number;
 };

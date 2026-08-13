@@ -43,7 +43,6 @@ export function PurchasingHeroActions({
         <HeroTile
           icon="flash-outline"
           labelKey="mobile.purchasing.actionLowStock"
-          fallback="Low stock"
           a11yKey="catalog.fromLowStock"
           tone="soft"
           loading={fromLowStockLoading}
@@ -54,7 +53,6 @@ export function PurchasingHeroActions({
         <HeroTile
           icon="document-text-outline"
           labelKey="mobile.purchasing.actionNewRequest"
-          fallback="New request"
           a11yKey="catalog.newPurchaseRequest"
           tone="soft"
           onPress={onNewRequest}
@@ -64,7 +62,6 @@ export function PurchasingHeroActions({
         <HeroTile
           icon="cart-outline"
           labelKey="mobile.purchasing.actionNewOrder"
-          fallback="New order"
           a11yKey="catalog.newPurchaseOrder"
           tone="solid"
           onPress={onNewOrder}
@@ -77,7 +74,6 @@ export function PurchasingHeroActions({
 function HeroTile({
   icon,
   labelKey,
-  fallback,
   a11yKey,
   tone,
   loading,
@@ -85,7 +81,6 @@ function HeroTile({
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: string;
-  fallback: string;
   a11yKey: string;
   tone: 'soft' | 'solid';
   loading?: boolean;
@@ -96,8 +91,7 @@ function HeroTile({
   const solid = tone === 'solid';
   const ink = solid ? colors.onBrand : colors.brand;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const raw = t(labelKey);
-  const label = raw === labelKey ? fallback : raw;
+  const label = t(labelKey);
 
   return (
     <AnimatedPressable

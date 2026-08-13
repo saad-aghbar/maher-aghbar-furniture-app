@@ -54,7 +54,6 @@ import { TaskDetailSkeleton } from './components/TasksListSkeleton';
 import { TaskFilePreview } from './components/TaskFilePreview';
 import { TaskTimerBoard } from './components/TaskTimerBoard';
 import { flushTaskOutbox } from './flushOutbox';
-import { taskDetailFixture } from './fixtures';
 import { enqueueTaskPhoto, listTaskOutbox, type TaskOutboxItem } from './outbox';
 import {
   useBlockTaskMutation,
@@ -139,9 +138,7 @@ export function TaskDetailScreen({
   const completeKeyRef = useRef(`complete-${createRequestId()}`);
 
   const raw: TaskDetail | undefined =
-    forceState === 'success' || forceState === 'offline'
-      ? (fixture ?? taskDetailFixture)
-      : query.data;
+    forceState === 'success' || forceState === 'offline' ? fixture : query.data;
 
   const vm = raw ? selectTaskDetail(raw, locale) : null;
   const refreshing = query.isRefetching && !query.isLoading;
@@ -539,7 +536,10 @@ export function TaskDetailScreen({
   if (!vm) {
     return (
       <AppScreen backFallback={TASKS_FALLBACK}>
-        <TaskDetailSkeleton />
+        <EmptyState
+          title={t('mobile.tasks.detailErrorTitle')}
+          description={t('mobile.tasks.errorBody')}
+        />
       </AppScreen>
     );
   }

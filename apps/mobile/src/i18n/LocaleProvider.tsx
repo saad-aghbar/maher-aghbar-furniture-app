@@ -19,11 +19,16 @@ import {
 } from '@maher/i18n';
 import type { Direction, Locale } from '@maher/types';
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from './format';
-import { translate } from './translate';
+import { translate, translatePlural } from './translate';
 
 export const LOCALE_STORAGE_KEY = 'maher.locale';
 
 type TranslateFn = (key: string, vars?: Record<string, string | number>) => string;
+type TranslatePluralFn = (
+  baseKey: string,
+  count: number,
+  extra?: Record<string, string | number>,
+) => string;
 
 export type LocaleContextValue = {
   locale: Locale;
@@ -31,6 +36,7 @@ export type LocaleContextValue = {
   isRTL: boolean;
   setLocale: (locale: Locale) => Promise<void>;
   t: TranslateFn;
+  tPlural: TranslatePluralFn;
   formatDate: (value: Date | string | number) => string;
   formatDateTime: (value: Date | string | number) => string;
   formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string;
@@ -102,6 +108,7 @@ export function LocaleProvider({
       isRTL,
       setLocale,
       t: (key, vars) => translate(locale, key, vars),
+      tPlural: (baseKey, count, extra) => translatePlural(locale, baseKey, count, extra),
       formatDate: (v) => formatDate(locale, v),
       formatDateTime: (v) => formatDateTime(locale, v),
       formatNumber: (v, opts) => formatNumber(locale, v, opts),

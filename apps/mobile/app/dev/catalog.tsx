@@ -3,6 +3,10 @@ import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { CatalogScreen } from '@/features/catalog/CatalogScreen';
+import {
+  catalogCategoriesFixture,
+  catalogProductsFixture,
+} from '@/features/catalog/fixtures';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
@@ -18,6 +22,8 @@ export default function CatalogGalleryScreen() {
   const [state, setState] = useState<GalleryState>('success');
   const { theme, colors } = useTheme();
   const { setLocale, locale } = useLocale();
+
+  const inject = state === 'success' || state === 'offline';
 
   return (
     <View style={{ flex: 1 }}>
@@ -48,7 +54,11 @@ export default function CatalogGalleryScreen() {
           />
         </View>
       </View>
-      <CatalogScreen forceState={state} />
+      <CatalogScreen
+        forceState={state}
+        fixtureProducts={inject ? catalogProductsFixture : undefined}
+        fixtureCategories={inject ? catalogCategoriesFixture : undefined}
+      />
     </View>
   );
 }

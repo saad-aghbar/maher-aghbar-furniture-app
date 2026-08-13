@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { ProductDetailScreen } from '@/features/catalog/ProductDetailScreen';
+import { catalogProductsFixture } from '@/features/catalog/fixtures';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
@@ -18,6 +19,8 @@ export default function ProductDetailGalleryScreen() {
   const [state, setState] = useState<GalleryState>('success');
   const { theme, colors } = useTheme();
   const { setLocale, locale } = useLocale();
+
+  const product = catalogProductsFixture[0]!;
 
   return (
     <View style={{ flex: 1 }}>
@@ -48,7 +51,11 @@ export default function ProductDetailGalleryScreen() {
           />
         </View>
       </View>
-      <ProductDetailScreen productId="p1" forceState={state} />
+      <ProductDetailScreen
+        productId={product.id}
+        forceState={state}
+        fixture={state === 'success' || state === 'offline' ? product : undefined}
+      />
     </View>
   );
 }

@@ -37,7 +37,7 @@ function methodLabel(
 ): string {
   const key = `mobile.account.method.${method.toUpperCase()}`;
   const translated = t(key);
-  return translated === key ? method.replace(/_/g, ' ') : translated;
+  return translated === key ? t('mobile.account.method.OTHER') : translated;
 }
 
 /**

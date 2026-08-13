@@ -22,6 +22,8 @@
   "all": "All",
   "none": "None",
   "retry": "Retry",
+  "skipIntro": "Skip intro",
+  "unknown": "Unknown",
   "offline": "You are offline",
   "signOut": "Sign out",
   "home": "Home",

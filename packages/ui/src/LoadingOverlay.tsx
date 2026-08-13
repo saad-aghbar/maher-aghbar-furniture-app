@@ -1,12 +1,17 @@
+'use client';
+
 import { cn } from './cn';
 import { Spinner } from './Spinner';
+import { useUiCopy } from './UiCopy';
 
 export interface LoadingOverlayProps {
   label?: string;
   className?: string;
 }
 
-export function LoadingOverlay({ label = 'Loading…', className }: LoadingOverlayProps) {
+export function LoadingOverlay({ label, className }: LoadingOverlayProps) {
+  const copy = useUiCopy();
+  const resolved = label ?? copy.loading;
   return (
     <div
       className={cn(
@@ -18,7 +23,7 @@ export function LoadingOverlay({ label = 'Loading…', className }: LoadingOverl
     >
       <div className="maher-animate-pop flex flex-col items-center gap-3">
         <Spinner className="h-7 w-7 text-[var(--maher-brand)]" />
-        <span className="text-sm text-[var(--maher-text-secondary)]">{label}</span>
+        <span className="text-sm text-[var(--maher-text-secondary)]">{resolved}</span>
       </div>
     </div>
   );

@@ -29,7 +29,7 @@ import {
   type TasksSegment,
 } from './components/TasksSegmentRail';
 import { TasksListSkeleton } from './components/TasksListSkeleton';
-import { completedTasksFixture, openTasksFixture } from './fixtures';
+import type { TaskListItem } from './api';
 import {
   flattenTasksPages,
   useCompletedDealersQuery,
@@ -43,6 +43,7 @@ export type TasksListVariant = 'open' | 'completed';
 type TasksListScreenProps = {
   variant: TasksListVariant;
   forceState?: 'loading' | 'error' | 'empty' | 'offline' | 'success';
+  fixture?: TaskListItem[];
 };
 
 const INITIAL_COMPLETED_FILTERS: CompletedFiltersState = {
@@ -68,7 +69,7 @@ function filtersForSegment(segment: TasksSegment): TasksListQueryFilters {
 /**
  * Worker floor queue — bubble filters on My Tasks; Completed tab is separate.
  */
-export function TasksListScreen({ variant, forceState }: TasksListScreenProps) {
+export function TasksListScreen({ variant, forceState, fixture }: TasksListScreenProps) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -130,9 +131,7 @@ export function TasksListScreen({ variant, forceState }: TasksListScreenProps) {
   const liveItems = flattenTasksPages(query.data).map((item) =>
     selectTaskCard(item, locale),
   );
-  const fixtureItems = (
-    isCompleted ? completedTasksFixture : openTasksFixture
-  ).map((item) => selectTaskCard(item, locale));
+  const fixtureItems = (fixture ?? []).map((item) => selectTaskCard(item, locale));
 
   const items =
     forceState === 'success' || forceState === 'empty' || forceState === 'offline'

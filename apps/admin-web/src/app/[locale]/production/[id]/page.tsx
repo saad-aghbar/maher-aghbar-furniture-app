@@ -345,7 +345,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
       if (args.action === 'block') {
         return apiFetch(`/api/v1/tasks/${args.taskId}/block`, {
           method: 'POST',
-          body: JSON.stringify({ category: 'OTHER', reason: args.reason ?? 'On hold' }),
+          body: JSON.stringify({ category: 'OTHER', reason: args.reason ?? tp('holdReasonDefault') }),
         });
       }
       return apiFetch(`/api/v1/tasks/${args.taskId}/pause`, { method: 'POST' });
@@ -855,7 +855,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                         type="number"
                         min={0}
                         className="maher-input text-xs"
-                        placeholder="Est h"
+                        placeholder={tp('estHoursPlaceholder')}
                         value={draft.estHours}
                         onChange={(e) =>
                           setDrafts((prev) => ({
@@ -869,7 +869,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
                         min={0}
                         max={59}
                         className="maher-input text-xs"
-                        placeholder="Est m"
+                        placeholder={tp('estMinutesPlaceholder')}
                         value={draft.estMinutes}
                         onChange={(e) =>
                           setDrafts((prev) => ({
