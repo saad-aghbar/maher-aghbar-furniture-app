@@ -23,6 +23,7 @@
   "invoices": "الفواتير",
   "documents": "المستندات",
   "aiIntake": "قراءة الطلبيات",
+  "aiChat": "المساعد الذكي",
   "rfqRequests": "طلبات الأسعار",
   "contracts": "العقود",
   "payments": "الدفعات",
@@ -70,5 +71,6 @@
   "groupMain": "الرئيسية",
   "catalog": "الكتالوج",
   "profile": "الملف الشخصي",
-  "factoryLabel": "المصنع"
+  "factoryLabel": "المصنع",
+  "home": "الرئيسية"
 }

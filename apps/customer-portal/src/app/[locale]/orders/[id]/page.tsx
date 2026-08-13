@@ -375,6 +375,7 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
                 <DealerOrderWorkflowGraph
                   productionOrderId={po.id}
                   fallbackStages={po.stages}
+                  photos={po.photos}
                 />
                 {(po.photos ?? []).length > 0 ? (
                   <div className="mt-4">

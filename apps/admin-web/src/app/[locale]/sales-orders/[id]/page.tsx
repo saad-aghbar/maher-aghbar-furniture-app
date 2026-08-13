@@ -2,6 +2,7 @@
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
 import { PageHeader } from '@/components/admin/page-header';
+import { OrderWorkflowSection } from '@/components/workflow/order-workflow-section';
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
@@ -503,6 +504,12 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         </div>
       </Card>
       </MotionSection>
+
+      {(order.productionOrders ?? []).map((po) => (
+        <MotionSection key={po.id} className="maher-form-section" as="div">
+          <OrderWorkflowSection productionOrderId={po.id} title={po.number} />
+        </MotionSection>
+      ))}
 
       <LinkedSection
         title={tSales('linkedProduction')}

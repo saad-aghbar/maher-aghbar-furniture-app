@@ -106,6 +106,43 @@ export interface SchedulingDashboard {
   weekCount: number;
   approvalsWaiting: number;
   alerts: number;
+  awaitingApproval?: number;
+  needsReview?: number;
+  approvedActive?: number;
+  atRisk?: number;
+  conflicts?: number;
+}
+
+export interface CalendarDay {
+  date: string;
+  isWorking: boolean;
+  intervals: Array<{ start: string; end: string }>;
+}
+
+export interface CalendarResponse {
+  calendar?: FactoryCalendarSettings | null;
+  days: CalendarDay[];
+  orders: ScheduleOrderCard[];
+}
+
+export interface AtRiskOrder {
+  productionOrderId: string;
+  number: string;
+  status: string;
+  priority: string;
+  scheduleStatus: string;
+  reason: string | null;
+  materialRisk: boolean;
+  requiresAdminEstimateReview: boolean;
+  requiredDeliveryDate: string | null;
+  suggestedDeliveryDate: string | null;
+  productName?: string | null;
+  productNameAr?: string | null;
+  productNameHe?: string | null;
+  imageUrl?: string | null;
+  dealerName?: string | null;
+  dealerNameAr?: string | null;
+  dealerNameHe?: string | null;
 }
 
 export interface ProductStageEstimateRow {

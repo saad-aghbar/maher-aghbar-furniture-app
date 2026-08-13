@@ -73,5 +73,7 @@
   "PROVISIONAL": "זמני",
   "ESTIMATED": "משוער",
   "AWAITING_APPROVAL": "ממתין לאישור",
-  "AT_RISK": "עלול לאחר"
+  "AT_RISK": "עלול לאחר",
+  "PUBLISHED": "פורסם",
+  "ARCHIVED": "בארכיון"
 }

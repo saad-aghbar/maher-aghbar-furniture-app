@@ -13,6 +13,12 @@ import {
   type CompilerOrderOverride,
   type CompilerProductOverride,
 } from './domain';
+import {
+  cartesianReconnect,
+  nextNodeSortOrder,
+  resolveGeneratedCode,
+  resolveNodeKey,
+} from './domain/technical-id';
 
 type Tx = Prisma.TransactionClient;
 
@@ -57,7 +63,7 @@ export class WorkflowVersionService {
   }
 
   async createWorkflow(input: {
-    code: string;
+    code?: string;
     nameAr: string;
     nameEn: string;
     nameHe?: string;
@@ -67,9 +73,15 @@ export class WorkflowVersionService {
     createdById?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.productionWorkflow.findMany({ select: { code: true } });
+      const code = resolveGeneratedCode(
+        input.code,
+        input.nameEn,
+        existing.map((row) => row.code),
+      );
       const workflow = await tx.productionWorkflow.create({
         data: {
-          code: input.code,
+          code,
           nameAr: input.nameAr,
           nameEn: input.nameEn,
           nameHe: input.nameHe,
@@ -235,7 +247,7 @@ export class WorkflowVersionService {
     versionId: string,
     data: {
       stageDefinitionId: string;
-      nodeKey: string;
+      nodeKey?: string;
       sortOrder?: number;
       displayX?: number;
       displayY?: number;
@@ -253,12 +265,28 @@ export class WorkflowVersionService {
     return this.prisma.$transaction(async (tx) => {
       await this.assertDraftMutable(versionId, tx);
       await this.bumpRevision(versionId, data.expectedRevision, tx);
+      const stage = await tx.productionStageDefinition.findUnique({
+        where: { id: data.stageDefinitionId },
+      });
+      if (!stage) {
+        throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
+      }
+      const existingNodes = await tx.productionWorkflowNode.findMany({
+        where: { workflowVersionId: versionId },
+        select: { nodeKey: true, sortOrder: true },
+      });
+      const nodeKey = resolveNodeKey(
+        data.nodeKey,
+        stage.code,
+        existingNodes.map((n) => n.nodeKey),
+      );
+      const maxSort = existingNodes.reduce((m, n) => Math.max(m, n.sortOrder), -1);
       const node = await tx.productionWorkflowNode.create({
         data: {
           workflowVersionId: versionId,
           stageDefinitionId: data.stageDefinitionId,
-          nodeKey: data.nodeKey,
-          sortOrder: data.sortOrder ?? 0,
+          nodeKey,
+          sortOrder: data.sortOrder ?? nextNodeSortOrder(maxSort),
           displayX: data.displayX,
           displayY: data.displayY,
           isRequiredByDefault: data.isRequiredByDefault ?? true,
@@ -337,25 +365,27 @@ export class WorkflowVersionService {
         where: { workflowVersionId: versionId, fromNodeId: nodeId },
       });
       if (options.reconnect !== false) {
-        for (const pred of incoming) {
-          for (const succ of outgoing) {
-            await tx.productionWorkflowEdge.upsert({
-              where: {
-                workflowVersionId_fromNodeId_toNodeId: {
-                  workflowVersionId: versionId,
-                  fromNodeId: pred.fromNodeId,
-                  toNodeId: succ.toNodeId,
-                },
-              },
-              create: {
+        const pairs = cartesianReconnect(
+          incoming.map((e) => e.fromNodeId),
+          outgoing.map((e) => e.toNodeId),
+        );
+        for (const pair of pairs) {
+          await tx.productionWorkflowEdge.upsert({
+            where: {
+              workflowVersionId_fromNodeId_toNodeId: {
                 workflowVersionId: versionId,
-                fromNodeId: pred.fromNodeId,
-                toNodeId: succ.toNodeId,
-                dependencyType: 'HARD',
+                fromNodeId: pair.fromNodeId,
+                toNodeId: pair.toNodeId,
               },
-              update: {},
-            });
-          }
+            },
+            create: {
+              workflowVersionId: versionId,
+              fromNodeId: pair.fromNodeId,
+              toNodeId: pair.toNodeId,
+              dependencyType: 'HARD',
+            },
+            update: {},
+          });
         }
       }
       await tx.productionWorkflowEdge.deleteMany({

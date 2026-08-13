@@ -619,4 +619,137 @@ a {
   }
 }
 
+/* Header search trigger — same chrome as theme/language, icon keeps idle motion */
+@keyframes maher-search-nudge {
+  0%,
+  88%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  90% {
+    transform: rotate(-14deg) scale(1.12);
+  }
+  93% {
+    transform: rotate(10deg) scale(1.08);
+  }
+  96% {
+    transform: rotate(-6deg) scale(1.05);
+  }
+}
+
+.maher-search-trigger {
+  transition:
+    transform 200ms ease,
+    background-color 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    color 200ms ease;
+}
+
+.maher-search-trigger__icon {
+  animation: maher-search-nudge 4.2s ease-in-out infinite;
+  transform-origin: 45% 45%;
+}
+
+.maher-search-trigger:hover .maher-search-trigger__icon {
+  animation: maher-icon-spring 560ms var(--maher-ease-spring, cubic-bezier(0.34, 1.4, 0.64, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .maher-search-trigger__icon,
+  .maher-search-trigger:hover .maher-search-trigger__icon {
+    animation: none !important;
+  }
+}
+
+/* Scheduling month board — same load steps as mobile (sand → gold → terracotta → stone) */
+:root {
+  --maher-sched-empty: #fffcf7;
+  --maher-sched-empty-border: var(--maher-border-strong);
+  --maher-sched-empty-ink: var(--maher-text-primary);
+  --maher-sched-light: #e0d2b8;
+  --maher-sched-light-border: #776245;
+  --maher-sched-light-ink: #1e1a1b;
+  --maher-sched-half: #c9a86a;
+  --maher-sched-half-border: #8b7049;
+  --maher-sched-half-ink: #1e1a1b;
+  --maher-sched-busy: #a86b58;
+  --maher-sched-busy-border: #7a4538;
+  --maher-sched-busy-ink: #fffaf4;
+  --maher-sched-closed: #9c968c;
+  --maher-sched-closed-border: #6f6a62;
+  --maher-sched-closed-ink: #fffaf4;
+}
+
+:root[data-theme='dark'] {
+  --maher-sched-empty: #352f30;
+  --maher-sched-empty-border: rgba(225, 223, 211, 0.2);
+  --maher-sched-empty-ink: #e1dfd3;
+  --maher-sched-light: rgba(168, 144, 108, 0.4);
+  --maher-sched-light-border: #a8906c;
+  --maher-sched-light-ink: #e1dfd3;
+  --maher-sched-half: rgba(196, 160, 106, 0.55);
+  --maher-sched-half-border: #c4a06a;
+  --maher-sched-half-ink: #e1dfd3;
+  --maher-sched-busy: rgba(196, 137, 122, 0.62);
+  --maher-sched-busy-border: #c4897a;
+  --maher-sched-busy-ink: #fffaf4;
+  --maher-sched-closed: rgba(225, 223, 211, 0.22);
+  --maher-sched-closed-border: rgba(225, 223, 211, 0.28);
+  --maher-sched-closed-ink: #cacbcc;
+}
+
+.maher-sched-day {
+  border-width: 1px;
+  border-style: solid;
+}
+
+.maher-sched-day--empty {
+  background: var(--maher-sched-empty);
+  border-color: var(--maher-sched-empty-border);
+  color: var(--maher-sched-empty-ink);
+}
+
+.maher-sched-day--light {
+  background: var(--maher-sched-light);
+  border-color: var(--maher-sched-light-border);
+  color: var(--maher-sched-light-ink);
+}
+
+.maher-sched-day--half {
+  background: var(--maher-sched-half);
+  border-color: var(--maher-sched-half-border);
+  color: var(--maher-sched-half-ink);
+}
+
+.maher-sched-day--busy {
+  background: var(--maher-sched-busy);
+  border-color: var(--maher-sched-busy-border);
+  color: var(--maher-sched-busy-ink);
+}
+
+.maher-sched-day--closed {
+  background: var(--maher-sched-closed);
+  border-color: var(--maher-sched-closed-border);
+  color: var(--maher-sched-closed-ink);
+}
+
+.maher-sched-swatch {
+  box-shadow: inset 0 0 0 1px rgba(30, 26, 27, 0.06);
+}
+
+.workflow-flow-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 280ms ease, opacity 280ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-flow-node {
+    transition: none;
+  }
+}
+
+
+
 

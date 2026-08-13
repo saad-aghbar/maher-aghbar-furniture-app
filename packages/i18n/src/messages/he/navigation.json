@@ -23,6 +23,7 @@
   "invoices": "חשבוניות",
   "documents": "מסמכים",
   "aiIntake": "קליטה חכמה",
+  "aiChat": "צ'אטבוט",
   "rfqRequests": "בקשות הצעת מחיר",
   "contracts": "חוזים",
   "payments": "תשלומים",
@@ -70,5 +71,6 @@
   "groupMain": "ראשי",
   "catalog": "קטלוג",
   "profile": "פרופיל",
-  "factoryLabel": "מפעל"
+  "factoryLabel": "מפעל",
+  "home": "בית"
 }

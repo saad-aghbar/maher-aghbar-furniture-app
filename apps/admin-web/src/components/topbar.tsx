@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Bell, ChevronDown, LogOut, Menu, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { GlobalSearch } from './global-search';
 import { LanguageSwitcher } from './language-switcher';
 import { allNavItems, navFooterItems, navGroups } from './nav-items';
 import { AppThemeToggle } from './theme-toggle';
@@ -138,19 +139,21 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
         )}
       </div>
 
-      <AppThemeToggle className="hidden sm:inline-flex" inverted={overDark} />
-      <LanguageSwitcher className="hidden sm:block" inverted={overDark} />
+      <div className="ms-auto flex shrink-0 items-center gap-2 sm:gap-3">
+        <GlobalSearch inverted={overDark} />
+        <AppThemeToggle className="hidden sm:inline-flex" inverted={overDark} />
+        <LanguageSwitcher className="hidden sm:block" inverted={overDark} />
 
-      <Link
-        href="/notifications"
-        aria-label={t('notifications')}
-        className={cn(
-          'maher-header-icon-btn maher-press group relative flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)]',
-          overDark
-            ? 'text-white hover:bg-white/10 hover:text-white'
-            : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
-        )}
-      >
+        <Link
+          href="/notifications"
+          aria-label={t('notifications')}
+          className={cn(
+            'maher-header-icon-btn maher-press group relative flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)]',
+            overDark
+              ? 'text-white hover:bg-white/10 hover:text-white'
+              : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+          )}
+        >
         <Bell className="h-[18px] w-[18px] transition-transform duration-500 ease-out group-hover:animate-[maher-shake_600ms_ease-in-out]" />
         {unread > 0 ? (
           <span className="maher-animate-bounce-in absolute -top-0.5 end-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
@@ -226,6 +229,7 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
             </button>
           </div>
         ) : null}
+      </div>
       </div>
     </header>
   );

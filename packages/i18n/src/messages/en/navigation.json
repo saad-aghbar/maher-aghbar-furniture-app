@@ -23,6 +23,7 @@
   "invoices": "Invoices",
   "documents": "Documents",
   "aiIntake": "AI intake",
+  "aiChat": "AI chatbot",
   "rfqRequests": "RFQs",
   "contracts": "Contracts",
   "payments": "Payments",
@@ -70,5 +71,6 @@
   "groupMain": "Main",
   "catalog": "Catalog",
   "profile": "Profile",
-  "factoryLabel": "Factory"
+  "factoryLabel": "Factory",
+  "home": "Home"
 }

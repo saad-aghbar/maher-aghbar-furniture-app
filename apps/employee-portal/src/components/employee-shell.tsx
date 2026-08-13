@@ -5,13 +5,14 @@ import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
 import { BrandMark, cn, isNavItemActive, useHeaderOverDark } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, ChevronDown, ClipboardList, LogOut, User } from 'lucide-react';
+import { CheckCircle2, Bell, ChevronDown, ClipboardList, Home, LogOut, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanguageSwitcher } from './language-switcher';
 import { AppThemeToggle } from './theme-toggle';
 
 const navItems = [
+  { href: '/dashboard', key: 'home', icon: Home },
   { href: '/tasks', key: 'myOrders', icon: ClipboardList },
   { href: '/tasks/completed', key: 'completeTask', icon: CheckCircle2 },
 ] as const;
@@ -33,6 +34,15 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
+
+  const notifications = useQuery({
+    queryKey: ['notifications-inbox'],
+    queryFn: () => apiFetch<Array<{ id: string; readAt?: string | null }>>('/api/v1/notifications'),
+    retry: false,
+    refetchInterval: 60_000,
+  });
+
+  const unread = (notifications.data ?? []).filter((n) => !n.readAt).length;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -101,6 +111,24 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
             <AppThemeToggle inverted={overDark} />
             <LanguageSwitcher inverted={overDark} />
 
+            <Link
+              href="/notifications"
+              aria-label={t('notifications')}
+              className={cn(
+                'maher-header-icon-btn maher-press group relative flex h-9 w-9 items-center justify-center rounded-[var(--maher-radius-md)]',
+                overDark
+                  ? 'text-white hover:bg-white/10 hover:text-white'
+                  : 'text-text-secondary hover:bg-surface-muted hover:text-text-primary',
+              )}
+            >
+              <Bell className="h-[18px] w-[18px] transition-transform duration-500 ease-out group-hover:animate-[maher-shake_600ms_ease-in-out]" />
+              {unread > 0 ? (
+                <span className="maher-animate-bounce-in absolute -top-0.5 end-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold text-white">
+                  <span className="relative">{unread > 9 ? '9+' : unread}</span>
+                </span>
+              ) : null}
+            </Link>
+
             <div className="relative" ref={menuRef}>
               <button
                 type="button"
@@ -144,6 +172,15 @@ export function EmployeeShell({ children }: { children: ReactNode }) {
                       </p>
                     ) : null}
                   </div>
+                  <Link
+                    href="/profile"
+                    role="menuitem"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+                  >
+                    <User className="h-4 w-4" />
+                    {t('profile')}
+                  </Link>
                   <button
                     type="button"
                     role="menuitem"

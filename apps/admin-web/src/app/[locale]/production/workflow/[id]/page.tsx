@@ -1,101 +1,53 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
-import { Link } from '@/i18n/navigation';
-import { apiFetch, ApiClientError } from '@/lib/api-client';
+import { AddWorkflowStageDrawer } from '@/components/workflow/add-workflow-stage-drawer';
+import { WorkflowEmptyState } from '@/components/workflow/workflow-empty-state';
+import { WorkflowGraphCanvas } from '@/components/workflow/workflow-graph-canvas';
+import { WorkflowHeader } from '@/components/workflow/workflow-header';
+import { WorkflowSkeleton } from '@/components/workflow/workflow-skeleton';
+import { WorkflowStageDrawer } from '@/components/workflow/workflow-stage-drawer';
+import { WorkflowStageList } from '@/components/workflow/workflow-stage-list';
+import type {
+  StageDefinition,
+  WorkflowDetail,
+  WorkflowNode,
+  WorkflowVersion,
+} from '@/components/workflow/workflow-types';
+import { WorkflowValidationPanel } from '@/components/workflow/workflow-validation-panel';
+import { WorkflowVersionDrawer } from '@/components/workflow/workflow-version-drawer';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
+import { workflowVersionToFlowStages } from '@/lib/workflow-labels';
 import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  Input,
-  Modal,
-  Select,
-  Skeleton,
-  StatusBadge,
-} from '@maher/ui';
+  editConnectionPatches,
+  resolveSortOrderForInsert,
+  spliceSuccessorPreds,
+} from '@/lib/workflow-rewire';
+import { Alert, Button, Card, EmptyState, ErrorState } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
-
-interface StageDefinition {
-  id: string;
-  code: string;
-  nameAr: string;
-  nameEn: string;
-  nameHe?: string | null;
-  sortOrder: number;
-  isActive: boolean;
-}
-
-interface WorkflowNode {
-  id: string;
-  nodeKey: string;
-  sortOrder: number;
-  isRequiredByDefault: boolean;
-  canBeSkipped: boolean;
-  stageDefinition: StageDefinition;
-  incomingEdges?: { fromNodeId: string }[];
-}
-
-interface WorkflowEdge {
-  id: string;
-  fromNodeId: string;
-  toNodeId: string;
-}
-
-interface WorkflowVersion {
-  id: string;
-  versionNumber: number;
-  status: string;
-  revision: number;
-  nodes: WorkflowNode[];
-  edges: WorkflowEdge[];
-}
-
-interface WorkflowDetail {
-  id: string;
-  code: string;
-  nameAr: string;
-  nameEn: string;
-  nameHe?: string | null;
-  status: string;
-  activeVersion?: WorkflowVersion | null;
-  versions: Array<{ id: string; versionNumber: number; status: string }>;
-}
-
-function nodeLabel(node: WorkflowNode, locale: string) {
-  return localizedName(locale, node.stageDefinition, node.stageDefinition.code);
-}
+import type { CreateStageValues } from '@/components/workflow/create-stage-form';
 
 export default function WorkflowBuilderPage({ params }: { params: { id: string } }) {
   const workflowId = params.id;
   const t = useTranslations('production');
-  const tc = useTranslations('catalog');
-  const tCommon = useTranslations('common');
   const locale = useLocale();
+  const rtl = locale === 'ar' || locale === 'he';
   const qc = useQueryClient();
 
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [viewingVersionId, setViewingVersionId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [validationIssues, setValidationIssues] = useState<Array<{ code: string; message: string }>>(
     [],
   );
-
-  const [pickStageId, setPickStageId] = useState('');
-  const [newStageCode, setNewStageCode] = useState('');
-  const [newStageEn, setNewStageEn] = useState('');
-  const [newStageAr, setNewStageAr] = useState('');
-  const [createNewStage, setCreateNewStage] = useState(false);
-  const [required, setRequired] = useState(true);
-  const [runsAfter, setRunsAfter] = useState<string[]>([]);
 
   const workflowQuery = useQuery({
     queryKey: ['production-workflow', workflowId],
@@ -105,17 +57,16 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
   const draftVersionId = useMemo(() => {
     const wf = workflowQuery.data;
     if (!wf) return null;
-    const draft = wf.versions.find((v) => v.status === 'DRAFT');
-    return draft?.id ?? null;
+    return wf.versions.find((v) => v.status === 'DRAFT')?.id ?? null;
   }, [workflowQuery.data]);
 
+  const versionId = viewingVersionId ?? draftVersionId ?? workflowQuery.data?.activeVersion?.id ?? null;
+
   const versionQuery = useQuery({
-    queryKey: ['production-workflow-version', workflowId, draftVersionId],
-    enabled: Boolean(draftVersionId),
+    queryKey: ['production-workflow-version', workflowId, versionId],
+    enabled: Boolean(versionId),
     queryFn: () =>
-      apiFetch<WorkflowVersion>(
-        `/api/v1/production-workflows/${workflowId}/versions/${draftVersionId}`,
-      ),
+      apiFetch<WorkflowVersion>(`/api/v1/production-workflows/${workflowId}/versions/${versionId}`),
   });
 
   const stageLibraryQuery = useQuery({
@@ -124,90 +75,153 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
     staleTime: 60_000,
   });
 
+  const invalidate = async () => {
+    await qc.invalidateQueries({ queryKey: ['production-workflow', workflowId] });
+    await qc.invalidateQueries({ queryKey: ['production-workflow-version', workflowId] });
+  };
+
   const createDraftMutation = useMutation({
     mutationFn: (fromVersionId?: string) =>
       apiFetch<WorkflowVersion>(`/api/v1/production-workflows/${workflowId}/versions`, {
         method: 'POST',
         body: JSON.stringify(fromVersionId ? { fromVersionId } : {}),
       }),
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       setBanner(t('workflow.createDraft'));
-      await qc.invalidateQueries({ queryKey: ['production-workflow', workflowId] });
+      setViewingVersionId(created.id);
+      setVersionsOpen(false);
+      await invalidate();
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
-  const addNodeMutation = useMutation({
-    mutationFn: async () => {
-      let stageId = pickStageId;
-      if (createNewStage) {
+  const patchNode = (
+    nodeId: string,
+    body: Record<string, unknown>,
+    expectedRevision?: number,
+  ) => {
+    const version = versionQuery.data!;
+    return apiFetch(
+      `/api/v1/production-workflows/${workflowId}/versions/${version.id}/nodes/${nodeId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...body,
+          ...(expectedRevision != null ? { expectedRevision } : {}),
+        }),
+      },
+    );
+  };
+
+  const addMutation = useMutation({
+    mutationFn: async (args: {
+      stageId?: string;
+      create?: CreateStageValues;
+      required: boolean;
+      runsAfterNodeIds: string[];
+      leadsIntoNodeIds: string[];
+    }) => {
+      let stageId = args.stageId;
+      if (args.create) {
+        const hours = args.create.hours.trim() ? Number(args.create.hours) : undefined;
         const created = await apiFetch<StageDefinition>('/api/v1/production-stage-library', {
           method: 'POST',
           body: JSON.stringify({
-            code: newStageCode.trim(),
-            nameEn: newStageEn.trim(),
-            nameAr: newStageAr.trim(),
-            sortOrder: (stageLibraryQuery.data?.length ?? 0) + 1,
+            nameEn: args.create.nameEn.trim(),
+            nameAr: args.create.nameAr.trim(),
+            nameHe: args.create.nameHe.trim() || undefined,
+            responsibleDepartment: args.create.departmentCode || undefined,
+            estimatedHours: Number.isFinite(hours) ? hours : undefined,
+            requiresInspection: args.create.requiresInspection,
+            requiresPhotos: args.create.requiresPhotos,
           }),
         });
         stageId = created.id;
       }
+      if (!stageId) throw new Error(t('workflow.pickStageFirst'));
       const version = versionQuery.data!;
-      const stage = (stageLibraryQuery.data ?? []).find((s) => s.id === stageId);
-      const nodeKey = stage?.code ?? newStageCode.trim();
-      return apiFetch(`/api/v1/production-workflows/${workflowId}/versions/${version.id}/nodes`, {
-        method: 'POST',
-        body: JSON.stringify({
-          stageDefinitionId: stageId,
-          nodeKey,
-          sortOrder: version.nodes.length,
-          isRequiredByDefault: required,
-          canBeSkipped: !required,
-          runsAfterNodeIds: runsAfter,
-          expectedRevision: version.revision,
-        }),
-      });
-    },
-    onSuccess: async () => {
-      setAddOpen(false);
-      setPickStageId('');
-      setRunsAfter([]);
-      setCreateNewStage(false);
-      setError(null);
-      await qc.invalidateQueries({ queryKey: ['production-workflow-version', workflowId] });
-      await qc.invalidateQueries({ queryKey: ['production-workflow', workflowId] });
-      await stageLibraryQuery.refetch();
-    },
-    onError: (err) => setError(mutationErrorMessage(err)),
-  });
-
-  const updateNodeMutation = useMutation({
-    mutationFn: (args: {
-      nodeId: string;
-      runsAfterNodeIds: string[];
-      isRequiredByDefault: boolean;
-    }) => {
-      const version = versionQuery.data!;
-      return apiFetch(
-        `/api/v1/production-workflows/${workflowId}/versions/${version.id}/nodes/${args.nodeId}`,
+      const sortOrder = resolveSortOrderForInsert(
+        version.nodes.map((n) => ({ id: n.id, sortOrder: n.sortOrder })),
+        args.runsAfterNodeIds,
+        args.leadsIntoNodeIds,
+      );
+      const createdNode = await apiFetch<WorkflowNode>(
+        `/api/v1/production-workflows/${workflowId}/versions/${version.id}/nodes`,
         {
-          method: 'PATCH',
+          method: 'POST',
           body: JSON.stringify({
-            isRequiredByDefault: args.isRequiredByDefault,
-            canBeSkipped: !args.isRequiredByDefault,
+            stageDefinitionId: stageId,
+            sortOrder,
+            isRequiredByDefault: args.required,
+            canBeSkipped: !args.required,
+            defaultEstimatedMinutes: args.create?.hours.trim()
+              ? Math.round(Number(args.create.hours) * 60)
+              : undefined,
+            responsibleDepartmentId: args.create?.departmentId || undefined,
             runsAfterNodeIds: args.runsAfterNodeIds,
             expectedRevision: version.revision,
           }),
         },
       );
+      const successorPatches = spliceSuccessorPreds(
+        version.edges,
+        createdNode.id,
+        args.runsAfterNodeIds,
+        args.leadsIntoNodeIds,
+      );
+      for (const patch of successorPatches) {
+        await patchNode(patch.nodeId, { runsAfterNodeIds: patch.runsAfterNodeIds });
+      }
+      return createdNode;
     },
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['production-workflow-version', workflowId] });
+      setAddOpen(false);
+      setError(null);
+      setBanner(t('workflow.stageAdded'));
+      await invalidate();
+      await stageLibraryQuery.refetch();
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
-  const removeNodeMutation = useMutation({
+  const saveNodeMutation = useMutation({
+    mutationFn: async (args: {
+      nodeId: string;
+      runsAfterNodeIds: string[];
+      leadsIntoNodeIds: string[];
+      isRequiredByDefault: boolean;
+      defaultEstimatedMinutes?: number | null;
+    }) => {
+      const version = versionQuery.data!;
+      const { successorUpdates } = editConnectionPatches(
+        version.edges,
+        args.nodeId,
+        args.runsAfterNodeIds,
+        args.leadsIntoNodeIds,
+      );
+      await patchNode(
+        args.nodeId,
+        {
+          runsAfterNodeIds: args.runsAfterNodeIds,
+          isRequiredByDefault: args.isRequiredByDefault,
+          canBeSkipped: !args.isRequiredByDefault,
+          defaultEstimatedMinutes: args.defaultEstimatedMinutes,
+        },
+        version.revision,
+      );
+      for (const patch of successorUpdates) {
+        await patchNode(patch.nodeId, { runsAfterNodeIds: patch.runsAfterNodeIds });
+      }
+    },
+    onSuccess: async () => {
+      setSelectedId(null);
+      setBanner(t('workflow.stageUpdated'));
+      await invalidate();
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const removeMutation = useMutation({
     mutationFn: (nodeId: string) => {
       const version = versionQuery.data!;
       return apiFetch(
@@ -216,7 +230,9 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       );
     },
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['production-workflow-version', workflowId] });
+      setSelectedId(null);
+      setBanner(t('workflow.stageRemoved'));
+      await invalidate();
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -258,9 +274,8 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
     },
     onSuccess: async () => {
       setPublishOpen(false);
-      setBanner(t('workflow.publish'));
-      await qc.invalidateQueries({ queryKey: ['production-workflow', workflowId] });
-      await qc.invalidateQueries({ queryKey: ['production-workflow-version', workflowId] });
+      setBanner(t('workflow.published'));
+      await invalidate();
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -268,32 +283,15 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
   const wf = workflowQuery.data;
   const version = versionQuery.data;
   const isDraft = version?.status === 'DRAFT';
-  const nodes = version?.nodes ?? [];
-  const edges = version?.edges ?? [];
-
-  const incomingByNode = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const edge of edges) {
-      const list = map.get(edge.toNodeId) ?? [];
-      list.push(edge.fromNodeId);
-      map.set(edge.toNodeId, list);
-    }
-    return map;
-  }, [edges]);
-
-  const sortedNodes = useMemo(
-    () => [...nodes].sort((a, b) => a.sortOrder - b.sortOrder || a.nodeKey.localeCompare(b.nodeKey)),
-    [nodes],
+  const nodes = useMemo(() => version?.nodes ?? [], [version?.nodes]);
+  const edges = useMemo(() => version?.edges ?? [], [version?.edges]);
+  const stages = useMemo(
+    () => workflowVersionToFlowStages(nodes, edges, locale),
+    [edges, locale, nodes],
   );
+  const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
-  if (workflowQuery.isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-96 rounded-xl" />
-      </div>
-    );
-  }
+  if (workflowQuery.isLoading) return <WorkflowSkeleton />;
 
   if (workflowQuery.isError || !wf) {
     return (
@@ -306,70 +304,28 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
     );
   }
 
-  const title = localizedName(locale, wf, wf.code);
+  const title = localizedName(locale, wf);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link href="/production/workflow" className="text-sm text-text-secondary hover:text-brand">
-            ← {t('workflow.title')}
-          </Link>
-          <h1 className="mt-2 text-2xl font-bold text-text-primary">{title}</h1>
-          <p className="mt-1 text-sm text-text-secondary" dir="ltr">
-            {wf.code}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {!draftVersionId ? (
-            <Button
-              variant="secondary"
-              loading={createDraftMutation.isPending}
-              onClick={() =>
-                createDraftMutation.mutate(wf.activeVersion?.id ?? wf.versions[0]?.id)
-              }
-            >
-              {t('workflow.createDraft')}
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="secondary"
-                loading={validateMutation.isPending}
-                onClick={() => validateMutation.mutate()}
-              >
-                {t('workflow.preview')}
-              </Button>
-              <Button
-                loading={publishMutation.isPending}
-                onClick={() => setPublishOpen(true)}
-                disabled={!isDraft}
-              >
-                {t('workflow.publish')}
-              </Button>
-            </>
-          )}
-          <Link href="/production/workflow/stages">
-            <Button variant="ghost">{t('workflow.stageLibrary')}</Button>
-          </Link>
-        </div>
-      </div>
+      <WorkflowHeader
+        title={title}
+        isDraft={Boolean(isDraft)}
+        versionNumber={version?.versionNumber}
+        onAddStage={isDraft ? () => setAddOpen(true) : undefined}
+        onPublish={isDraft ? () => setPublishOpen(true) : undefined}
+        onVersions={() => setVersionsOpen(true)}
+        onValidate={versionId ? () => validateMutation.mutate() : undefined}
+        publishDisabled={!isDraft}
+        validatePending={validateMutation.isPending}
+        publishPending={publishMutation.isPending}
+      />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
-      {validationIssues.length ? (
-        <Alert variant="warning">
-          <ul className="list-disc ps-4">
-            {validationIssues.map((issue) => (
-              <li key={issue.code}>
-                {t(`workflow.errors.${issue.code}` as never, { default: issue.message })}
-              </li>
-            ))}
-          </ul>
-        </Alert>
-      ) : null}
+      <WorkflowValidationPanel issues={validationIssues} />
 
-      {!draftVersionId ? (
+      {!versionId ? (
         <Card>
           <EmptyState
             title={t('workflow.draftVersion')}
@@ -377,9 +333,7 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
             action={
               <Button
                 loading={createDraftMutation.isPending}
-                onClick={() =>
-                  createDraftMutation.mutate(wf.activeVersion?.id ?? wf.versions[0]?.id)
-                }
+                onClick={() => createDraftMutation.mutate(wf.activeVersion?.id ?? wf.versions[0]?.id)}
               >
                 {t('workflow.createDraft')}
               </Button>
@@ -387,243 +341,67 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
           />
         </Card>
       ) : versionQuery.isLoading ? (
-        <Skeleton className="h-96 rounded-xl" />
+        <WorkflowSkeleton />
       ) : (
-        <Card
-          title={`${t('workflow.draftVersion')} v${version?.versionNumber ?? '—'}`}
-          actions={
-            isDraft ? (
-              <Button
-                size="sm"
-                leadingIcon={<Plus className="h-4 w-4" />}
-                onClick={() => setAddOpen(true)}
-              >
-                {t('workflow.addStage')}
-              </Button>
-            ) : null
-          }
-        >
-          {sortedNodes.length === 0 ? (
-            <EmptyState title={t('workflow.emptyStages')} description={t('workflow.runsAfterHint')} />
+        <>
+          {!isDraft ? (
+            <Alert variant="info">{t('workflow.publishedReadOnly')}</Alert>
+          ) : null}
+          {stages.length === 0 ? (
+            <WorkflowEmptyState onAdd={isDraft ? () => setAddOpen(true) : undefined} />
           ) : (
-            <div className="space-y-4">
-              {sortedNodes.map((node, index) => {
-                const predecessors = incomingByNode.get(node.id) ?? [];
-                const otherNodes = sortedNodes.filter((n) => n.id !== node.id);
-                return (
-                  <div
-                    key={node.id}
-                    className="rounded-xl border border-border bg-surface-muted/40 p-4"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand">
-                            {index + 1}
-                          </span>
-                          <p className="font-semibold text-text-primary">
-                            {nodeLabel(node, locale)}
-                          </p>
-                          <Badge variant={node.isRequiredByDefault ? 'default' : 'warning'}>
-                            {node.isRequiredByDefault ? t('workflow.required') : t('workflow.optional')}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-xs text-text-tertiary" dir="ltr">
-                          {node.nodeKey}
-                        </p>
-                      </div>
-                      {isDraft ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          leadingIcon={<Trash2 className="h-4 w-4" />}
-                          onClick={() => removeNodeMutation.mutate(node.id)}
-                          loading={removeNodeMutation.isPending}
-                        >
-                          {t('workflow.removeStage')}
-                        </Button>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                      <div>
-                        <p className="mb-2 text-xs font-medium text-text-secondary">
-                          {t('workflow.runsAfter')}
-                        </p>
-                        <p className="mb-2 text-[11px] text-text-tertiary">{t('workflow.runsAfterHint')}</p>
-                        {isDraft ? (
-                          <div className="flex flex-wrap gap-2">
-                            {otherNodes.map((candidate) => {
-                              const checked = predecessors.includes(candidate.id);
-                              return (
-                                <label
-                                  key={candidate.id}
-                                  className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={(e) => {
-                                      const next = e.target.checked
-                                        ? [...predecessors, candidate.id]
-                                        : predecessors.filter((id) => id !== candidate.id);
-                                      updateNodeMutation.mutate({
-                                        nodeId: node.id,
-                                        runsAfterNodeIds: next,
-                                        isRequiredByDefault: node.isRequiredByDefault,
-                                      });
-                                    }}
-                                  />
-                                  {nodeLabel(candidate, locale)}
-                                </label>
-                              );
-                            })}
-                            {otherNodes.length === 0 ? (
-                              <span className="text-xs text-text-tertiary">—</span>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {predecessors.length === 0 ? (
-                              <Badge variant="success">{t('workflow.parallel')}</Badge>
-                            ) : (
-                              predecessors.map((pid) => {
-                                const pred = sortedNodes.find((n) => n.id === pid);
-                                return pred ? (
-                                  <Badge key={pid}>{nodeLabel(pred, locale)}</Badge>
-                                ) : null;
-                              })
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {isDraft ? (
-                        <div>
-                          <p className="mb-2 text-xs font-medium text-text-secondary">
-                            {t('workflow.required')} / {t('workflow.optional')}
-                          </p>
-                          <Select
-                            value={node.isRequiredByDefault ? 'required' : 'optional'}
-                            onChange={(e) =>
-                              updateNodeMutation.mutate({
-                                nodeId: node.id,
-                                runsAfterNodeIds: predecessors,
-                                isRequiredByDefault: e.target.value === 'required',
-                              })
-                            }
-                            options={[
-                              { value: 'required', label: t('workflow.required') },
-                              { value: 'optional', label: t('workflow.optional') },
-                            ]}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+              <WorkflowGraphCanvas
+                stages={stages}
+                selectedId={selectedId}
+                onStageClick={(stage) => setSelectedId(stage.id)}
+                rtl={rtl}
+              />
+              <WorkflowStageList
+                stages={stages}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
             </div>
           )}
-        </Card>
+        </>
       )}
 
-      {wf.activeVersion ? (
-        <Card title={t('workflow.activeVersion')}>
-          <div className="flex items-center gap-2 text-sm">
-            <CheckCircle2 className="h-4 w-4 text-success" />
-            <span>
-              v{wf.activeVersion.versionNumber} · {wf.activeVersion.nodes?.length ?? 0}{' '}
-              {t('workflow.stageName').toLowerCase()}
-            </span>
-            <StatusBadge status={wf.activeVersion.status} />
-          </div>
-        </Card>
-      ) : null}
+      <WorkflowStageDrawer
+        open={Boolean(selected)}
+        node={selected}
+        nodes={nodes}
+        edges={edges}
+        readOnly={!isDraft}
+        saving={saveNodeMutation.isPending}
+        removing={removeMutation.isPending}
+        onClose={() => setSelectedId(null)}
+        onSave={(args) => saveNodeMutation.mutate(args)}
+        onRemove={(id) => removeMutation.mutate(id)}
+      />
 
-      <Modal
+      <AddWorkflowStageDrawer
         open={addOpen}
+        nodes={nodes}
+        edges={edges}
+        library={stageLibraryQuery.data ?? []}
+        saving={addMutation.isPending}
         onClose={() => setAddOpen(false)}
-        title={t('workflow.addStage')}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setAddOpen(false)}>
-              {tCommon('cancel')}
-            </Button>
-            <Button
-              loading={addNodeMutation.isPending}
-              disabled={!createNewStage ? !pickStageId : !newStageCode.trim() || !newStageEn.trim()}
-              onClick={() => addNodeMutation.mutate()}
-            >
-              {t('workflow.addStage')}
-            </Button>
-          </>
-        }
-      >
-        <div className="grid gap-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={createNewStage}
-              onChange={(e) => setCreateNewStage(e.target.checked)}
-            />
-            {t('workflow.createStage')}
-          </label>
-          {createNewStage ? (
-            <>
-              <Input label="Code" value={newStageCode} onChange={(e) => setNewStageCode(e.target.value)} dir="ltr" />
-              <Input label={tc('nameEn')} value={newStageEn} onChange={(e) => setNewStageEn(e.target.value)} />
-              <Input label={tc('nameAr')} value={newStageAr} onChange={(e) => setNewStageAr(e.target.value)} />
-            </>
-          ) : (
-            <Select
-              label={t('workflow.stageName')}
-              value={pickStageId}
-              onChange={(e) => setPickStageId(e.target.value)}
-              options={[
-                { value: '', label: '—' },
-                ...(stageLibraryQuery.data ?? [])
-                  .filter((s) => s.isActive)
-                  .map((s) => ({
-                    value: s.id,
-                    label: `${localizedName(locale, s)} (${s.code})`,
-                  })),
-              ]}
-            />
-          )}
-          <Select
-            label={t('workflow.required')}
-            value={required ? 'required' : 'optional'}
-            onChange={(e) => setRequired(e.target.value === 'required')}
-            options={[
-              { value: 'required', label: t('workflow.required') },
-              { value: 'optional', label: t('workflow.optional') },
-            ]}
-          />
-          <div>
-            <p className="mb-2 text-sm font-medium text-text-secondary">{t('workflow.runsAfter')}</p>
-            <div className="flex flex-wrap gap-2">
-              {sortedNodes.map((n) => (
-                <label
-                  key={n.id}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border px-2 py-1 text-xs"
-                >
-                  <input
-                    type="checkbox"
-                    checked={runsAfter.includes(n.id)}
-                    onChange={(e) =>
-                      setRunsAfter((prev) =>
-                        e.target.checked ? [...prev, n.id] : prev.filter((id) => id !== n.id),
-                      )
-                    }
-                  />
-                  {nodeLabel(n, locale)}
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Modal>
+        onAdd={(args) => addMutation.mutate(args)}
+      />
+
+      <WorkflowVersionDrawer
+        open={versionsOpen}
+        versions={wf.versions}
+        currentId={versionId}
+        onClose={() => setVersionsOpen(false)}
+        onView={(id) => {
+          setViewingVersionId(id);
+          setVersionsOpen(false);
+        }}
+        onCreateDraft={(id) => createDraftMutation.mutate(id)}
+        createPending={createDraftMutation.isPending}
+      />
 
       <ConfirmDialog
         open={publishOpen}

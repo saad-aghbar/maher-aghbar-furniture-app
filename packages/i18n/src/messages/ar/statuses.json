@@ -73,5 +73,7 @@
   "PROVISIONAL": "مبدئي",
   "ESTIMATED": "مُقدّر",
   "AWAITING_APPROVAL": "بانتظار الموافقة",
-  "AT_RISK": "معرّضة للتأخير"
+  "AT_RISK": "معرّضة للتأخير",
+  "PUBLISHED": "معتمد",
+  "ARCHIVED": "مؤرشف"
 }

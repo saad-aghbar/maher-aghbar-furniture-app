@@ -30,20 +30,65 @@ import { OrderWorkflowGraphService } from './order-workflow-graph.service';
 import { WorkflowSnapshotService } from './workflow-snapshot.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { Prisma } from '@maher/database';
+import {
+  nextLibrarySortOrder,
+  pickStagePatch,
+  resolveGeneratedCode,
+} from './domain/technical-id';
 
-class CreateWorkflowDto {
-  @ApiProperty() @IsString() @MinLength(1) code!: string;
-  @ApiProperty() @IsString() nameAr!: string;
-  @ApiProperty() @IsString() nameEn!: string;
+export class CreateWorkflowDto {
+  @ApiPropertyOptional({
+    description: 'Optional technical identifier. Generated from nameEn when omitted.',
+  })
+  @IsOptional()
+  @IsString()
+  code?: string;
+  @ApiProperty() @IsString() @MinLength(1) nameAr!: string;
+  @ApiProperty() @IsString() @MinLength(1) nameEn!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() nameHe?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() descriptionAr?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() descriptionEn?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() descriptionHe?: string;
 }
 
-class AddNodeDto {
+export class CreateStageDto {
+  @ApiPropertyOptional({
+    description: 'Optional technical identifier. Generated from nameEn when omitted.',
+  })
+  @IsOptional()
+  @IsString()
+  code?: string;
+  @ApiProperty() @IsString() @MinLength(1) nameAr!: string;
+  @ApiProperty() @IsString() @MinLength(1) nameEn!: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() nameHe?: string;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() estimatedHours?: number;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() requiresInspection?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() requiresPhotos?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsString() responsibleDepartment?: string;
+  @ApiPropertyOptional() @IsOptional() @IsArray() @IsString({ each: true }) workerIds?: string[];
+}
+
+export class UpdateStageDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() nameAr?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() nameEn?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() nameHe?: string;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() estimatedHours?: number;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() requiresInspection?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() requiresPhotos?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsString() responsibleDepartment?: string;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+}
+
+export class AddNodeDto {
   @ApiProperty() @IsString() stageDefinitionId!: string;
-  @ApiProperty() @IsString() nodeKey!: string;
+  @ApiPropertyOptional({
+    description: 'Optional node key. Defaults to the stage code, unique within the version.',
+  })
+  @IsOptional()
+  @IsString()
+  nodeKey?: string;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() sortOrder?: number;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() displayX?: number;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() displayY?: number;
@@ -249,32 +294,25 @@ export class WorkflowController {
 
   @Post('production-stage-library')
   @RequireAnyPermissions('production.workflow.stage.manage', 'production.workflow.manage')
-  async createStage(
-    @Body()
-    dto: {
-      code: string;
-      nameAr: string;
-      nameEn: string;
-      nameHe?: string;
-      sortOrder?: number;
-      estimatedHours?: number;
-      requiresInspection?: boolean;
-      requiresPhotos?: boolean;
-      responsibleDepartment?: string;
-      workerIds?: string[];
-    },
-    @CurrentUser() user: AuthUser,
-  ) {
+  async createStage(@Body() dto: CreateStageDto, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.productionStageDefinition.findMany({
+      select: { code: true },
+    });
+    const code = resolveGeneratedCode(
+      dto.code,
+      dto.nameEn,
+      existing.map((row) => row.code),
+    );
     const maxSort = await this.prisma.productionStageDefinition.aggregate({
       _max: { sortOrder: true },
     });
     const row = await this.prisma.productionStageDefinition.create({
       data: {
-        code: dto.code.trim().toUpperCase().replace(/\s+/g, '_'),
+        code,
         nameAr: dto.nameAr,
         nameEn: dto.nameEn,
         nameHe: dto.nameHe,
-        sortOrder: dto.sortOrder ?? (maxSort._max.sortOrder ?? 0) + 10,
+        sortOrder: dto.sortOrder ?? nextLibrarySortOrder(maxSort._max.sortOrder),
         estimatedHours: dto.estimatedHours,
         requiresInspection: dto.requiresInspection ?? false,
         requiresPhotos: dto.requiresPhotos ?? false,
@@ -393,23 +431,12 @@ export class WorkflowController {
   @RequirePermissions('production.workflow.stage.manage')
   async updateStage(
     @Param('id') id: string,
-    @Body()
-    dto: Partial<{
-      nameAr: string;
-      nameEn: string;
-      nameHe: string;
-      sortOrder: number;
-      estimatedHours: number;
-      requiresInspection: boolean;
-      requiresPhotos: boolean;
-      responsibleDepartment: string;
-      isActive: boolean;
-    }>,
+    @Body() dto: UpdateStageDto,
     @CurrentUser() user: AuthUser,
   ) {
     const row = await this.prisma.productionStageDefinition.update({
       where: { id },
-      data: dto,
+      data: pickStagePatch(dto as unknown as Record<string, unknown>) as Prisma.ProductionStageDefinitionUpdateInput,
     });
     await this.prisma.auditEvent.create({
       data: {

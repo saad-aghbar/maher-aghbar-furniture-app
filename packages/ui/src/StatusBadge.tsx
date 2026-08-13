@@ -61,6 +61,8 @@ const statusVariantMap: Record<string, BadgeVariant> = {
   AWAITING_APPROVAL: 'warning',
   AT_RISK: 'error',
   RESCHEDULED: 'warning',
+  PUBLISHED: 'success',
+  ARCHIVED: 'default',
 };
 
 type StatusTranslator = (status: string) => string | undefined;

@@ -4,8 +4,11 @@ import {
   Banknote,
   Bell,
   Boxes,
+  CalendarDays,
   Factory,
+  GitBranch,
   LayoutDashboard,
+  MessageSquare,
   Receipt,
   RotateCcw,
   Settings,
@@ -65,6 +68,24 @@ export const navItems: NavItem[] = [
     key: 'production',
     icon: Factory,
     anyPermissions: ['production-order.read'],
+  },
+  {
+    href: '/production/scheduling',
+    key: 'scheduling',
+    icon: CalendarDays,
+    anyPermissions: ['schedule.read'],
+  },
+  {
+    href: '/production/workflow',
+    key: 'workflow',
+    icon: GitBranch,
+    anyPermissions: ['production.workflow.read'],
+  },
+  {
+    href: '/ai-chat',
+    key: 'aiChat',
+    icon: MessageSquare,
+    anyPermissions: ['ai-chat.read'],
   },
   {
     href: '/inventory',
@@ -179,11 +200,6 @@ export const nestedNavGroups: NestedNavGroup[] = [
         href: '/production/workflow',
         key: 'workflow',
         anyPermissions: ['production.workflow.read'],
-      },
-      {
-        href: '/production-stages',
-        key: 'productionStages',
-        anyPermissions: ['production-order.update'],
       },
       {
         href: '/quality',

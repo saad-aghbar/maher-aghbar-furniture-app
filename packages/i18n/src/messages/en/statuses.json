@@ -73,5 +73,7 @@
   "PROVISIONAL": "Provisional",
   "ESTIMATED": "Estimated",
   "AWAITING_APPROVAL": "Awaiting approval",
-  "AT_RISK": "May be late"
+  "AT_RISK": "May be late",
+  "PUBLISHED": "Published",
+  "ARCHIVED": "Archived"
 }

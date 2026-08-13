@@ -2,6 +2,7 @@
 
 import { PageHeader } from '@/components/admin/page-header';
 import { BomMaterialPicker, type PickedMaterial } from '@/components/admin/bom-material-picker';
+import { ProductWorkflowTimes } from '@/components/workflow/product-workflow-times';
 import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
@@ -1166,6 +1167,12 @@ export default function ProductDetailPage() {
         </div>
       </Card>
       </MotionSection>
+
+      {workflowId ? (
+        <MotionSection className="maher-form-section" as="div">
+          <ProductWorkflowTimes productId={id} workflowId={workflowId} />
+        </MotionSection>
+      ) : null}
 
       <MotionSection className="maher-form-section" as="div">
       <Card title={t('adminNotes')}>

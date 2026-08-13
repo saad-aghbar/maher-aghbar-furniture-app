@@ -19,3 +19,15 @@ export {
 } from './workflow-compiler';
 
 export { calculateWorkflowProgress, type ProgressNodeInput } from './workflow-progress';
+
+export {
+  normalizeExplicitCode,
+  slugFromEnglishName,
+  nextUniqueCode,
+  resolveGeneratedCode,
+  resolveNodeKey,
+  nextLibrarySortOrder,
+  nextNodeSortOrder,
+  cartesianReconnect,
+  pickStagePatch,
+} from './technical-id';
