@@ -87,6 +87,7 @@ describe('TasksService assignment isolation', () => {
     const service = new TasksService(
       prisma as unknown as PrismaService,
       {} as StagePipelineService,
+      { onStageTaskComplete: jest.fn(), assertStageInventoryReady: jest.fn() } as any,
       {} as InvoicesService,
       storage as unknown as LocalStorageService,
       mockIdempotency(),

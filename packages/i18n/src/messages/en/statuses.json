@@ -75,5 +75,15 @@
   "AWAITING_APPROVAL": "Awaiting approval",
   "AT_RISK": "May be late",
   "PUBLISHED": "Published",
-  "ARCHIVED": "Archived"
+  "ARCHIVED": "Archived",
+  "AVAILABLE": "Available",
+  "RESERVED": "Reserved",
+  "QUARANTINED": "Quarantined",
+  "CONSUMED": "Consumed",
+  "DAMAGED": "Damaged",
+  "SCRAPPED": "Scrapped",
+  "REQUIRES_REVIEW": "Needs review",
+  "RETURN_TO_STOCK": "Returned to stock",
+  "REWORK": "Rework",
+  "SCRAP": "Scrap"
 }

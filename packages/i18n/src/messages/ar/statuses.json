@@ -75,5 +75,15 @@
   "AWAITING_APPROVAL": "بانتظار الموافقة",
   "AT_RISK": "معرّضة للتأخير",
   "PUBLISHED": "معتمد",
-  "ARCHIVED": "مؤرشف"
+  "ARCHIVED": "مؤرشف",
+  "AVAILABLE": "متاح",
+  "RESERVED": "محجوز",
+  "QUARANTINED": "قيد الحجر",
+  "CONSUMED": "مستهلك",
+  "DAMAGED": "تالف",
+  "SCRAPPED": "خردة",
+  "REQUIRES_REVIEW": "يحتاج مراجعة",
+  "RETURN_TO_STOCK": "أُعيد للمخزون",
+  "REWORK": "إعادة تصنيع",
+  "SCRAP": "خردة"
 }

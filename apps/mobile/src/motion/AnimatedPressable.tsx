@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ComponentType, type ReactNode } from 'react';
 import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -10,7 +10,13 @@ import { durations, pressScale, springs, withMotionDuration } from './presets';
 import type { PressVariant } from './types';
 import { useReducedMotion } from './useReducedMotion';
 
-const AnimatedPressableBase = Animated.createAnimatedComponent(Pressable);
+type AnimatedPressableComponent = ComponentType<
+  PressableProps & { style?: StyleProp<ViewStyle> }
+>;
+
+const AnimatedPressableBase = Animated.createAnimatedComponent(
+  Pressable as never,
+) as unknown as AnimatedPressableComponent;
 
 type Props = Omit<PressableProps, 'style'> & {
   variant?: PressVariant;

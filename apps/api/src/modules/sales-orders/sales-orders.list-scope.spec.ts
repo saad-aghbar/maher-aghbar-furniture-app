@@ -74,6 +74,8 @@ describe('SalesOrdersService.list scope', () => {
       { createAccessToken: jest.fn(() => 'tok') } as any,
       { generateForProductionOrder: jest.fn().mockResolvedValue(undefined) } as any,
       { createSnapshotForProductionOrder: jest.fn() } as any,
+      { tryReserveForSalesOrder: jest.fn(), releaseForSalesOrder: jest.fn() } as any,
+      { onProductionOrdersCancelled: jest.fn() } as any,
     );
 
     // Avoid hydrate / catalog side effects

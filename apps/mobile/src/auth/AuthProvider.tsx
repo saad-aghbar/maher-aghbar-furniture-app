@@ -15,6 +15,7 @@ import { queryKeys } from '@/api/queryKeys';
 import { onSessionExpired, clearSession } from '@/auth/session';
 import { mapLoginError, type AuthStatus, type LoginUiError } from '@/auth/mapAuthError';
 import { restoreSession } from '@/auth/sessionRestore';
+import { resetQueryClientOnLogout } from '@/auth/resetQueryClientOnLogout';
 import {
   clearBiometricCredentials,
   isBiometricUnlockEnabled,
@@ -76,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void bootstrap();
     return onSessionExpired(() => {
       setUser(null);
-      queryClient.removeQueries({ queryKey: queryKeys.auth.all });
+      void resetQueryClientOnLogout(queryClient);
       setStatus('session_expired');
     });
   }, [bootstrap, queryClient]);
@@ -130,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const failBiometricToPassword = useCallback(async () => {
     await clearSession();
     setUser(null);
-    queryClient.removeQueries({ queryKey: queryKeys.auth.all });
+    await resetQueryClientOnLogout(queryClient);
     setStatus('unauthenticated');
   }, [queryClient]);
 
@@ -141,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await clearSession();
     }
     setUser(null);
-    queryClient.removeQueries({ queryKey: queryKeys.auth.all });
+    await resetQueryClientOnLogout(queryClient);
     setStatus('unauthenticated');
     const bioOn = await isBiometricUnlockEnabled();
     if (!bioOn) await clearBiometricCredentials();

@@ -5,7 +5,8 @@ import { cn, isNavItemActive } from '@maher/ui';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 import { BrandMark } from './brand-mark';
-import { allNavItems, navFooterItems, navGroups, type NavItem } from './nav-items';
+import { allNavItems, canSeeNav, navFooterItems, navGroups, type NavItem } from './nav-items';
+import { useAuthMe } from '@/hooks/use-auth-me';
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -61,7 +62,21 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const pathname = usePathname();
+  const me = useAuthMe();
+  const permissions = me.data?.permissions ?? [];
   const allHrefs = useMemo(() => allNavItems.map((item) => item.href), []);
+  const groups = useMemo(
+    () =>
+      navGroups.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => canSeeNav(item, permissions)),
+      })),
+    [permissions],
+  );
+  const footer = useMemo(
+    () => navFooterItems.filter((item) => canSeeNav(item, permissions)),
+    [permissions],
+  );
 
   return (
     <div className="flex h-full flex-col bg-surface">
@@ -80,7 +95,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex flex-1 flex-col overflow-y-auto px-3 py-4">
-        {navGroups.map((group, groupIndex) => (
+        {groups.map((group, groupIndex) => (
           <div
             key={group.key}
             className="maher-animate-in-start mb-5 last:mb-0"
@@ -103,7 +118,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         ))}
 
         <ul className="mt-auto space-y-0.5 border-t border-border pt-3">
-          {navFooterItems.map((item) => (
+          {footer.map((item) => (
             <li key={item.href}>
               <NavLink
                 item={item}

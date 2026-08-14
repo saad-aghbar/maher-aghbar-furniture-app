@@ -18,12 +18,15 @@ export type InventoryBalance = {
   id: string;
   availableQty: number | string;
   reservedQty?: number | string;
+  onHandQty?: number | string;
+  freeQty?: number | string;
   warehouseId: string;
   warehouse?: {
     id: string;
     code: string;
     nameEn: string;
     nameAr: string;
+    type?: string;
   } | null;
 };
 
@@ -42,6 +45,7 @@ export type InventoryItem = {
   barcode?: string | null;
   nameAr: string;
   nameEn: string;
+  nameHe?: string | null;
   description?: string | null;
   category: string;
   materialType?: string | null;
@@ -57,7 +61,20 @@ export type InventoryItem = {
   minStock: number | string;
   maxStock?: number | string | null;
   isActive?: boolean;
+  /** Lifecycle class from the API: RAW_MATERIAL | SEMI_FINISHED_GOOD | FINISHED_GOOD */
+  itemClass?: string | null;
+  onHandQty?: number | string;
+  reservedQty?: number | string;
+  freeQty?: number | string;
+  product?: {
+    id: string;
+    sku?: string | null;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+  } | null;
   balances?: InventoryBalance[];
+  quarantinedQty?: number | string;
 };
 
 export type InventoryTransaction = {
@@ -87,9 +104,10 @@ export type Warehouse = {
   nameAr: string;
   type?: string;
   isActive?: boolean;
+  isDefault?: boolean;
 };
 
-export const WAREHOUSE_TYPES = ['RAW', 'SEMI', 'FINISHED'] as const;
+export const WAREHOUSE_TYPES = ['RAW_MATERIALS', 'SEMI_FINISHED', 'FINISHED_GOODS'] as const;
 export type WarehouseType = (typeof WAREHOUSE_TYPES)[number];
 
 export type CreateWarehouseInput = {
@@ -97,6 +115,7 @@ export type CreateWarehouseInput = {
   nameAr: string;
   type: WarehouseType;
   code?: string;
+  isDefault?: boolean;
 };
 
 export async function listWarehouses() {
@@ -132,7 +151,12 @@ export async function listInventoryItems(
   params: PageParams & {
     categoryGroup?: InventoryCategoryGroup | string;
     category?: string;
+    itemClass?: string;
+    materialGroup?: string;
+    warehouseType?: string;
+    warehouseId?: string;
     q?: string;
+    isPurchasable?: string;
   } = {},
 ) {
   const qs = toSearchParams({
@@ -140,7 +164,12 @@ export async function listInventoryItems(
     pageSize: params.pageSize,
     categoryGroup: params.categoryGroup,
     category: params.category,
+    itemClass: params.itemClass,
+    materialGroup: params.materialGroup,
+    warehouseType: params.warehouseType,
+    warehouseId: params.warehouseId,
     q: params.q,
+    isPurchasable: params.isPurchasable,
   });
   return apiGet<PaginatedResponse<InventoryItem>>(`/inventory/items${qs}`);
 }
@@ -185,6 +214,7 @@ export type WarehouseRef = {
   code: string;
   nameEn: string;
   nameAr: string;
+  type?: string;
 };
 
 export type WarehouseTransferLine = {
@@ -225,18 +255,24 @@ export type InventoryStockCount = {
   lines: InventoryCountLine[];
 };
 
-export async function listWarehouseTransfers(params: PageParams = {}) {
+export async function listWarehouseTransfers(
+  params: PageParams & { warehouseType?: string } = {},
+) {
   const qs = toSearchParams({
     page: params.page,
     pageSize: params.pageSize,
+    warehouseType: params.warehouseType,
   });
   return apiGet<PaginatedResponse<WarehouseTransfer>>(`/inventory/transfers${qs}`);
 }
 
-export async function listInventoryStockCounts(params: PageParams = {}) {
+export async function listInventoryStockCounts(
+  params: PageParams & { warehouseType?: string } = {},
+) {
   const qs = toSearchParams({
     page: params.page,
     pageSize: params.pageSize,
+    warehouseType: params.warehouseType,
   });
   return apiGet<PaginatedResponse<InventoryStockCount>>(`/inventory/counts${qs}`);
 }
@@ -354,6 +390,96 @@ export async function createWarehouseTransfer(body: CreateWarehouseTransferInput
   return apiPost<WarehouseTransfer>('/inventory/transfers', body);
 }
 
+export async function completeWarehouseTransfer(id: string) {
+  return apiPost<WarehouseTransfer>(`/inventory/transfers/${encodeURIComponent(id)}/complete`, {});
+}
+
 export async function createInventoryStockCount(body: CreateInventoryStockCountInput) {
   return apiPost<InventoryStockCount>('/inventory/counts', body);
+}
+
+export async function postInventoryStockCount(id: string) {
+  return apiPost<InventoryStockCount>(`/inventory/counts/${encodeURIComponent(id)}/post`, {});
+}
+
+export type InventoryOverview = {
+  rawMaterials: {
+    itemCount: number;
+    lowStockCount: number;
+    groups: Record<string, InventoryGroupSummary>;
+  };
+  semiFinished: { itemCount: number; totalQty: number; waitingCount: number };
+  finishedGoods: {
+    itemCount: number;
+    availableQty: number;
+    reservedQty: number;
+    readyForDeliveryQty: number;
+  };
+};
+
+export async function getInventoryOverview() {
+  return apiGet<InventoryOverview>('/inventory/overview');
+}
+
+export type SemiFinishedLot = {
+  id: string;
+  quantity: number | string;
+  producedAt: string;
+  status: string;
+  inventoryItem: {
+    id: string;
+    sku: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    product?: {
+      id: string;
+      nameEn: string;
+      nameAr: string;
+      nameHe?: string | null;
+      imageUrl?: string | null;
+    } | null;
+  };
+  warehouse: { id: string; code: string; nameEn: string; nameAr: string };
+  productionOrder?: { id: string; number: string; productDescription: string } | null;
+  stageInstance?: {
+    stageDefinition?: { code: string; nameEn: string; nameAr: string; nameHe?: string | null } | null;
+  } | null;
+  productNameEn?: string | null;
+  productNameAr?: string | null;
+  productionOrderNumber?: string | null;
+  producingStageNameEn?: string | null;
+  producingStageNameAr?: string | null;
+  laterMovements?: Array<{
+    type: string;
+    quantity: number;
+    createdAt: string;
+    warehouseNameEn: string;
+    warehouseNameAr: string;
+  }>;
+};
+
+export async function listSemiFinishedLots(params: PageParams & { q?: string } = {}) {
+  const qs = toSearchParams({
+    page: params.page,
+    pageSize: params.pageSize,
+    q: params.q,
+  });
+  return apiGet<PaginatedResponse<SemiFinishedLot>>(`/inventory/semi-finished${qs}`);
+}
+
+export async function getInventoryLot(id: string) {
+  return apiGet<SemiFinishedLot>(`/inventory/lots/${encodeURIComponent(id)}`);
+}
+
+export async function listFinishedGoodsItems(
+  params: PageParams & { q?: string } = {},
+) {
+  const qs = toSearchParams({
+    page: params.page,
+    pageSize: params.pageSize,
+    q: params.q,
+    itemClass: 'FINISHED_GOOD',
+  });
+  return apiGet<PaginatedResponse<InventoryItem>>(`/inventory/finished-goods${qs}`);
 }

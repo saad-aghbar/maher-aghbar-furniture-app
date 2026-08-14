@@ -25,6 +25,7 @@ import {
   validRunsAfterCandidates,
   wouldCreateCycle,
 } from '../rewireWorkflowEdges';
+import { stageNodeLabel } from '../stageNodeLabel';
 import { nameFieldOrder, slugFromEnglishName, type TrilingualNames } from '../trilingualNames';
 import { WorkflowCompactPickRow, WorkflowFloorBoard } from './WorkflowFloorList';
 
@@ -98,7 +99,7 @@ export function AddStageSheet({ open, onClose, workflowId, version, onDirty }: P
   };
 
   const usedCodes = useMemo(
-    () => new Set(version.nodes.map((n) => n.stageDefinition.code)),
+    () => new Set(version.nodes.map((n) => n.stageDefinition?.code).filter((c): c is string => Boolean(c))),
     [version.nodes],
   );
 
@@ -179,9 +180,7 @@ export function AddStageSheet({ open, onClose, workflowId, version, onDirty }: P
   );
 
   const sinkNode = sinkId ? sortedNodes.find((n) => n.id === sinkId) : undefined;
-  const sinkName = sinkNode
-    ? localizedName(locale, sinkNode.stageDefinition, sinkNode.stageDefinition.code)
-    : '';
+  const sinkName = sinkNode ? stageNodeLabel(locale, sinkNode.stageDefinition) : '';
 
   const becomingNewLast =
     Boolean(sinkId) &&
@@ -455,11 +454,7 @@ export function AddStageSheet({ open, onClose, workflowId, version, onDirty }: P
                 {runsAfterOptions.map((node) => (
                   <WorkflowCompactPickRow
                     key={`p-${node.id}`}
-                    label={localizedName(
-                      locale,
-                      node.stageDefinition,
-                      node.stageDefinition.code,
-                    )}
+                    label={stageNodeLabel(locale, node.stageDefinition)}
                     active={runsAfterIds.includes(node.id)}
                     onPress={() => {
                       void haptics.selection();
@@ -481,11 +476,7 @@ export function AddStageSheet({ open, onClose, workflowId, version, onDirty }: P
                 {leadsIntoOptions.map((node) => (
                   <WorkflowCompactPickRow
                     key={`s-${node.id}`}
-                    label={localizedName(
-                      locale,
-                      node.stageDefinition,
-                      node.stageDefinition.code,
-                    )}
+                    label={stageNodeLabel(locale, node.stageDefinition)}
                     active={leadsIntoIds.includes(node.id)}
                     onPress={() => {
                       void haptics.selection();

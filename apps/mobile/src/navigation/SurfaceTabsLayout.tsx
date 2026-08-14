@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import type { AppSurface } from '@maher/permissions';
-import { useAuth } from '@/auth/AuthProvider';
-import { visibleTabsForUser, type TabName } from '@/navigation/tabConfig';
+import { useStableVisibleTabs } from '@/navigation/useStableVisibleTabs';
+import { type TabName } from '@/navigation/tabConfig';
 import { useTheme } from '@/theme';
 
 type SurfaceTabsProps = {
@@ -10,9 +10,9 @@ type SurfaceTabsProps = {
 };
 
 export function SurfaceTabsLayout({ surface, screens }: SurfaceTabsProps) {
-  const { user } = useAuth();
+  const { tabs } = useStableVisibleTabs(surface);
   const { colors } = useTheme();
-  const allowed = new Set(user ? visibleTabsForUser(surface, user).map((t) => t.name) : []);
+  const allowed = new Set(tabs.map((t) => t.name));
 
   return (
     <Tabs

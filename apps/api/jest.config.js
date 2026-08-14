@@ -5,4 +5,5 @@ module.exports = {
   roots: ['<rootDir>/src'],
   testMatch: ['**/*.spec.ts', '**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js'],
+  maxWorkers: '50%',
 };

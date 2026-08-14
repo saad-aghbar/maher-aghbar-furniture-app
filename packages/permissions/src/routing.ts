@@ -26,6 +26,53 @@ function canAny(user: AuthUser, permissions: readonly Permission[]): boolean {
   return permissions.some((p) => can(user, p));
 }
 
+/** Inventory ops that compose a warehouse home — not a staff-type name. */
+export const WAREHOUSE_HOME_PERMISSIONS: readonly Permission[] = [
+  'inventory.read',
+  'inventory.receive',
+  'inventory.issue',
+  'inventory.transfer',
+  'inventory.count',
+];
+
+const BACK_OFFICE_HOME_PERMISSIONS: readonly Permission[] = [
+  'quotation.create',
+  'customer.create',
+  'sales-order.create',
+  'sales-order.read',
+  'purchase-order.create',
+  'purchase-order.read',
+  'supplier.manage',
+  'invoice.create',
+  'payment.record',
+  'catalog.manage',
+  'catalog.read',
+  'production-order.read',
+  'user.manage',
+  'role.manage',
+  'report.production.read',
+  'report.financial.read',
+];
+
+export type ComposedHomeKind = 'sales' | 'warehouse' | 'backoffice' | 'personal';
+
+/**
+ * Which Home body to mount from current effective permissions.
+ * Never use a staff-type code here.
+ */
+export function resolveComposedHomeKind(user: AuthUser | null | undefined): ComposedHomeKind {
+  if (!user) return 'personal';
+  if (can(user, 'report.sales.read')) return 'sales';
+  if (canAny(user, WAREHOUSE_HOME_PERMISSIONS)) return 'warehouse';
+  if (canAny(user, BACK_OFFICE_HOME_PERMISSIONS)) return 'backoffice';
+  return 'personal';
+}
+
+export function shouldFetchSalesAdminHome(user: AuthUser | null | undefined): boolean {
+  if (!user) return false;
+  return can(user, 'report.sales.read');
+}
+
 /**
  * Which web portal this user should land on after a shared login.
  * Based on effective permissions + customer linkage — not only role name.
@@ -90,7 +137,7 @@ export function resolveHomePersona(user: AuthUser | null | undefined): HomePerso
   if (canAny(user, ['production-task.update-own', 'production-task.complete'])) {
     return 'production_worker';
   }
-  if (canAny(user, ['inventory.receive', 'inventory.issue', 'inventory.transfer', 'inventory.count'])) {
+  if (canAny(user, WAREHOUSE_HOME_PERMISSIONS)) {
     return 'warehouse';
   }
   if (canAny(user, ['purchase-order.create', 'purchase-request.create', 'supplier.manage'])) {

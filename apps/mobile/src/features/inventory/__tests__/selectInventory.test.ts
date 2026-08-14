@@ -96,6 +96,30 @@ describe('selectInventory cost visibility', () => {
     expect(card.onHand).toBe(13);
   });
 
+  it('aggregates reserved and free quantity from balances', () => {
+    const item: InventoryItem = {
+      ...baseItem,
+      minStock: 0,
+      quarantinedQty: 1,
+      balances: [
+        {
+          id: 'b1',
+          availableQty: 36,
+          reservedQty: 26,
+          warehouseId: 'wh-1',
+          warehouse: { id: 'wh-1', code: 'FG', nameEn: 'Finished Goods', nameAr: 'تامة' },
+        },
+      ],
+    };
+    const card = selectInventoryItemCard(item, 'en');
+    expect(card.onHand).toBe(36);
+    expect(card.reservedQty).toBe(26);
+    expect(card.freeQty).toBe(10);
+    expect(card.quarantined).toBe(true);
+    expect(card.balances[0]?.reservedQty).toBe(26);
+    expect(card.balances[0]?.freeQty).toBe(10);
+  });
+
   it('hides transaction unitCost when omitted', () => {
     const tx: InventoryTransaction = {
       id: 'tx-1',

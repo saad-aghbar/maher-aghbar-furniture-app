@@ -10,6 +10,15 @@ export function assertCannotDeactivateSelf(actorId: string, targetId: string) {
   }
 }
 
+export function assertCannotDeleteSelf(actorId: string, targetId: string) {
+  if (actorId === targetId) {
+    throw new ForbiddenException({
+      code: 'CANNOT_DELETE_SELF',
+      message: 'You cannot delete your own account.',
+    });
+  }
+}
+
 export function assertCannotRemoveOwnAdmin(
   actorId: string,
   targetId: string,
@@ -28,7 +37,7 @@ export function assertNotLastActiveAdmin(otherActiveAdminCount: number) {
   if (otherActiveAdminCount === 0) {
     throw new BadRequestException({
       code: 'LAST_ADMIN',
-      message: 'Cannot deactivate the last active system administrator.',
+      message: 'There must be at least one active system administrator.',
     });
   }
 }

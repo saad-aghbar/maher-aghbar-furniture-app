@@ -3,6 +3,7 @@
 import { PageHeader } from '@/components/admin/page-header';
 import { BomMaterialPicker, type PickedMaterial } from '@/components/admin/bom-material-picker';
 import { ProductWorkflowTimes } from '@/components/workflow/product-workflow-times';
+import { ProductProductionSetup } from '@/components/catalog/product-production-setup';
 import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
@@ -469,6 +470,8 @@ export default function ProductDetailPage() {
       setError(null);
       await qc.invalidateQueries({ queryKey: ['product', id] });
       await qc.invalidateQueries({ queryKey: ['products'] });
+      await qc.invalidateQueries({ queryKey: ['product-production-setup', id] });
+      await qc.invalidateQueries({ queryKey: ['product-production-setup-preview', id] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -1175,6 +1178,10 @@ export default function ProductDetailPage() {
       ) : null}
 
       <MotionSection className="maher-form-section" as="div">
+        <ProductProductionSetup productId={id} />
+      </MotionSection>
+
+      <MotionSection className="maher-form-section" as="div">
       <Card title={t('adminNotes')}>
         <p className="mb-2 text-sm text-text-secondary">{t('adminNotesHint')}</p>
         <TextArea
@@ -1350,6 +1357,7 @@ export default function ProductDetailPage() {
 
       <MotionSection enter="rise" className="maher-form-section" as="div">
       <Card
+        id="product-bom"
         title={t('bomMaterials')}
         actions={
           <Button

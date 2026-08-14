@@ -105,7 +105,7 @@ function OverlayHost({
   if (!inModal && Platform.OS === 'ios') {
     return (
       <FullWindowOverlay unstable_accessibilityContainerViewIsModal={false}>
-        {children}
+        <View>{children}</View>
       </FullWindowOverlay>
     );
   }

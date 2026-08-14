@@ -39,6 +39,14 @@ export type Currency = 'ILS';
 
 export const DEFAULT_CURRENCY: Currency = 'ILS';
 
+export interface AuthRoleDetail {
+  code: string;
+  kind: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+}
+
 export interface AuthUser {
   id: string;
   /** Login identifier — required for all active users. */
@@ -49,6 +57,8 @@ export interface AuthUser {
   lastName?: string;
   name: string;
   roles: string[];
+  /** Display names for assigned roles / staff types (optional on older sessions). */
+  rolesDetailed?: AuthRoleDetail[];
   /** Permission codes from `@maher/permissions` (e.g. `catalog.read`). */
   permissions: string[];
   preferredLanguage: Locale;
@@ -111,11 +121,20 @@ export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'VO
 export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'CHEQUE' | 'CARD';
 
 export type InventoryTransactionType =
-  | 'RECEIPT'
-  | 'ISSUE'
-  | 'TRANSFER'
-  | 'ADJUST'
-  | 'COUNT';
+  | 'PURCHASE_RECEIPT'
+  | 'PRODUCTION_ISSUE'
+  | 'PRODUCTION_RETURN'
+  | 'WAREHOUSE_TRANSFER'
+  | 'INVENTORY_ADJUSTMENT'
+  | 'CUSTOMER_RETURN'
+  | 'FINISHED_GOODS_RECEIPT'
+  | 'DELIVERY_ISSUE'
+  | 'DELIVERY_RESTORE'
+  | 'DAMAGE'
+  | 'SCRAP'
+  | 'SEMI_FINISHED_RECEIPT'
+  | 'SEMI_FINISHED_ISSUE'
+  | 'OPENING_BALANCE';
 
 export type AiExtractionJobStatus =
   | 'QUEUED'

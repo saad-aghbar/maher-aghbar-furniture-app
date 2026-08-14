@@ -2,7 +2,7 @@ import type { AuthUser } from '@maher/types';
 import {
   DEALER_NEW_ORDER_A11Y_KEY,
   DEALER_NEW_ORDER_HREF,
-} from '@/features/dealer-ui/DealerNewOrderButton';
+} from '@/features/dealer-ui/dealerFabConstants';
 import { customerNewOrderTab, visibleTabsForUser } from '../tabConfig';
 
 const base: AuthUser = {

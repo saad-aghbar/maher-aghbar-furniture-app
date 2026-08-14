@@ -15,6 +15,7 @@ import { ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -98,6 +99,17 @@ export class AddNodeDto {
   @ApiPropertyOptional() @IsOptional() @IsString() responsibleDepartmentId?: string;
   @ApiPropertyOptional() @IsOptional() @IsArray() @IsString({ each: true }) runsAfterNodeIds?: string[];
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() expectedRevision?: number;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsIn(['NONE', 'PRODUCES_SEMI_FINISHED', 'PRODUCES_FINISHED'])
+  inventoryTracking?: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() consumesRawMaterials?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() consumesSemiFinished?: boolean;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() outputQtyPerUnit?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() outputNameAr?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() outputNameEn?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() outputNameHe?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() defaultWarehouseId?: string;
 }
 
 /** PATCH body — connection / flag updates only (no required stageDefinitionId/nodeKey). */
@@ -111,6 +123,17 @@ export class UpdateNodeDto {
   @ApiPropertyOptional() @IsOptional() @IsString() responsibleDepartmentId?: string;
   @ApiPropertyOptional() @IsOptional() @IsArray() @IsString({ each: true }) runsAfterNodeIds?: string[];
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() expectedRevision?: number;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsIn(['NONE', 'PRODUCES_SEMI_FINISHED', 'PRODUCES_FINISHED'])
+  inventoryTracking?: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() consumesRawMaterials?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() consumesSemiFinished?: boolean;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() outputQtyPerUnit?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() outputNameAr?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() outputNameEn?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() outputNameHe?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() defaultWarehouseId?: string;
 }
 
 class PublishDto {

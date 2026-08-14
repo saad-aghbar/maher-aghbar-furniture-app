@@ -10,11 +10,10 @@ import { getActiveLocale } from '@/i18n/LocaleProvider';
 import { isApiError } from './errors';
 import { shouldRetryQuery } from './retry';
 import { createSafeAsyncStorage } from './safeAsyncStorage';
+import { QUERY_PERSIST_KEY } from './queryPersist';
 
 export { createSafeAsyncStorage } from './safeAsyncStorage';
-export { shouldDehydrateQuery } from './queryPersist';
-
-export const QUERY_PERSIST_KEY = 'maher.rq.cache';
+export { shouldDehydrateQuery, QUERY_PERSIST_KEY } from './queryPersist';
 
 export type QueryClientHooks = {
   onError?: (error: unknown) => void;

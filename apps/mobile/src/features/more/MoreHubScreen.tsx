@@ -10,7 +10,8 @@ import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { Divider } from '@/components/layout/Divider';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { useAdminHomeQuery } from '@/features/admin-home/query';
+import { useNotificationsQuery } from '@/features/notifications/query';
+import { normalizeNotificationList, unreadCount } from '@/features/notifications/selectNotification';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
@@ -28,8 +29,8 @@ export function MoreHubScreen() {
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const canNotify = can(user, 'notification.read');
-  const homeQuery = useAdminHomeQuery(Boolean(user) && canNotify);
-  const unread = homeQuery.data?.unreadNotifications ?? 0;
+  const notificationsQuery = useNotificationsQuery(Boolean(user) && canNotify);
+  const unread = unreadCount(normalizeNotificationList(notificationsQuery.data));
 
   if (!user) return null;
 

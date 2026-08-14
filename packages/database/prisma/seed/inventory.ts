@@ -97,6 +97,23 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
         materialId: material.id,
         imageUrl: m.imageUrl,
         isActive: true,
+        isPurchasable: m.category !== InventoryCategory.FINISHED && m.category !== InventoryCategory.SEMI_FINISHED,
+        itemClass:
+          m.category === InventoryCategory.FINISHED
+            ? 'FINISHED_GOOD'
+            : m.category === InventoryCategory.SEMI_FINISHED
+              ? 'SEMI_FINISHED_GOOD'
+              : 'RAW_MATERIAL',
+        materialGroup:
+          m.category === InventoryCategory.WOOD
+            ? 'WOOD'
+            : m.category === InventoryCategory.FABRIC
+              ? 'FABRIC'
+              : m.category === InventoryCategory.FOAM
+                ? 'FOAM'
+                : m.category === InventoryCategory.FINISHED || m.category === InventoryCategory.SEMI_FINISHED
+                  ? null
+                  : 'ACCESSORIES',
       },
     });
     items.push({ id: item.id, sku: m.sku, nameEn: m.nameEn, category: m.category });
@@ -114,7 +131,7 @@ export async function seedInventory(prisma: PrismaClient, adminId: string) {
     await prisma.inventoryTransaction.create({
       data: {
         number: `ITX-OPEN-${String(txSeq).padStart(4, '0')}`,
-        type: InventoryTxType.INVENTORY_ADJUSTMENT,
+        type: InventoryTxType.OPENING_BALANCE,
         inventoryItemId: item.id,
         warehouseId: wh.id,
         quantity: money(m.opening),

@@ -90,6 +90,11 @@ export const queryKeys = {
     counts: () => [...queryKeys.inventory.all, 'counts'] as const,
     countsList: (filters: unknown = {}) =>
       [...queryKeys.inventory.counts(), filters] as const,
+    overview: () => [...queryKeys.inventory.all, 'overview'] as const,
+    semiFinished: (filters: unknown = {}) =>
+      [...queryKeys.inventory.all, 'semi-finished', filters] as const,
+    finishedGoods: (filters: unknown = {}) =>
+      [...queryKeys.inventory.all, 'finished-goods', filters] as const,
   },
   production: {
     all: ['production'] as const,
@@ -158,6 +163,10 @@ export const queryKeys = {
     details: () => [...queryKeys.users.all, 'detail'] as const,
     detail: (id: string) => [...queryKeys.users.details(), id] as const,
     roles: () => [...queryKeys.users.all, 'roles'] as const,
+    staffTypes: (filters: unknown = {}) =>
+      [...queryKeys.users.all, 'staffTypes', filters] as const,
+    staffType: (id: string) => [...queryKeys.users.all, 'staffType', id] as const,
+    permissionCatalog: () => [...queryKeys.users.all, 'permissionCatalog'] as const,
     departments: (filters: unknown = {}) =>
       [...queryKeys.users.all, 'departments', filters] as const,
   },
@@ -188,6 +197,10 @@ export const queryKeys = {
       [...queryKeys.workflow.all, 'order', productionOrderId] as const,
     productConfig: (productId: string) =>
       [...queryKeys.workflow.all, 'product-config', productId] as const,
+    productionSetup: (productId: string) =>
+      [...queryKeys.workflow.all, 'production-setup', productId] as const,
+    productionSetupPreview: (productId: string) =>
+      [...queryKeys.workflow.all, 'production-setup-preview', productId] as const,
   },
 } as const;
 

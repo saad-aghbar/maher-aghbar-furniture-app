@@ -9,9 +9,9 @@ import { useTheme } from '@/theme';
 import { WAREHOUSE_TYPES, type WarehouseType } from '../api';
 
 const TYPE_ICON: Record<WarehouseType, keyof typeof Ionicons.glyphMap> = {
-  RAW: 'cube-outline',
-  SEMI: 'layers-outline',
-  FINISHED: 'checkmark-done-outline',
+  RAW_MATERIALS: 'cube-outline',
+  SEMI_FINISHED: 'layers-outline',
+  FINISHED_GOODS: 'checkmark-done-outline',
 };
 
 type Props = {

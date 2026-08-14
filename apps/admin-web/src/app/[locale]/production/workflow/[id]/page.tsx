@@ -191,6 +191,9 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
       leadsIntoNodeIds: string[];
       isRequiredByDefault: boolean;
       defaultEstimatedMinutes?: number | null;
+      inventoryTracking: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
+      consumesRawMaterials: boolean;
+      consumesSemiFinished: boolean;
     }) => {
       const version = versionQuery.data!;
       const { successorUpdates } = editConnectionPatches(
@@ -206,6 +209,9 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
           isRequiredByDefault: args.isRequiredByDefault,
           canBeSkipped: !args.isRequiredByDefault,
           defaultEstimatedMinutes: args.defaultEstimatedMinutes,
+          inventoryTracking: args.inventoryTracking,
+          consumesRawMaterials: args.consumesRawMaterials,
+          consumesSemiFinished: args.consumesSemiFinished,
         },
         version.revision,
       );

@@ -1,7 +1,9 @@
 import {
   namesFromUsername,
   roleCodeForSegment,
-  SEGMENT_ROLE_CODE,
+  roleKindForSegment,
+  identityFromSegment,
+  SEGMENT_ROLE_KIND,
 } from '../segment';
 import {
   isCustomerUser,
@@ -14,11 +16,27 @@ import {
 import type { UserRow } from '@/api/modules/users';
 
 describe('users segment helpers', () => {
-  it('maps segments to role codes like admin-web', () => {
-    expect(roleCodeForSegment('staff')).toBe(SEGMENT_ROLE_CODE.staff);
+  it('maps worker/staff segments to role kinds', () => {
+    expect(roleKindForSegment('workers')).toBe(SEGMENT_ROLE_KIND.workers);
+    expect(roleKindForSegment('staff')).toBe(SEGMENT_ROLE_KIND.staff);
+    expect(roleKindForSegment('customers')).toBe('CUSTOMER');
+    expect(roleKindForSegment('admins')).toBe('ADMIN');
+    expect(roleKindForSegment('all')).toBeUndefined();
+  });
+
+  it('keeps customer/admin identity codes for chips', () => {
+    expect(roleCodeForSegment('staff')).toBeUndefined();
+    expect(roleCodeForSegment('workers')).toBeUndefined();
     expect(roleCodeForSegment('customers')).toBe('CUSTOMER');
     expect(roleCodeForSegment('admins')).toBe('SYSTEM_ADMINISTRATOR');
     expect(roleCodeForSegment('all')).toBeUndefined();
+  });
+
+  it('prefills identity from the list segment', () => {
+    expect(identityFromSegment('workers').employeeType).toBe('WORKER');
+    expect(identityFromSegment('staff').employeeType).toBe('STAFF');
+    expect(identityFromSegment('customers').identityRoleCode).toBe('CUSTOMER');
+    expect(identityFromSegment('admins').identityRoleCode).toBe('SYSTEM_ADMINISTRATOR');
   });
 
   it('derives first/last name from username', () => {
@@ -58,6 +76,7 @@ describe('users display helpers', () => {
           code: 'PRODUCTION_WORKER',
           nameEn: 'Worker',
           nameAr: 'عامل',
+          kind: 'PRODUCTION_WORKER',
         },
       },
     ],
@@ -74,12 +93,12 @@ describe('users display helpers', () => {
   it('detects customer role', () => {
     const customer: UserRow = {
       ...base,
-      roles: [{ role: { id: 'c', code: 'CUSTOMER', nameEn: 'Customer', nameAr: 'عميل' } }],
+      roles: [{ role: { id: 'c', code: 'CUSTOMER', nameEn: 'Customer', nameAr: 'عميل', kind: 'CUSTOMER' } }],
     };
     expect(isCustomerUser(customer)).toBe(true);
   });
 
-  it('hides department for worker and admin roles', () => {
+  it('hides department for worker, staff, and admin roles', () => {
     expect(userShowsDepartment(base)).toBe(false);
     const admin: UserRow = {
       ...base,
@@ -90,13 +109,30 @@ describe('users display helpers', () => {
             code: 'SYSTEM_ADMINISTRATOR',
             nameEn: 'Admin',
             nameAr: 'مسؤول',
+            kind: 'ADMIN',
           },
         },
       ],
     };
     expect(userShowsDepartment(admin)).toBe(false);
+    const staff: UserRow = {
+      ...base,
+      roles: [
+        {
+          role: {
+            id: 'w',
+            code: 'WAREHOUSE_MANAGEMENT',
+            nameEn: 'Warehouse Management',
+            nameAr: 'إدارة المستودعات',
+            kind: 'STAFF',
+          },
+        },
+      ],
+    };
+    expect(userShowsDepartment(staff)).toBe(false);
     expect(roleUsesDepartment('PRODUCTION_WORKER')).toBe(false);
     expect(roleUsesDepartment('SYSTEM_ADMINISTRATOR')).toBe(false);
     expect(roleUsesDepartment('CUSTOMER')).toBe(false);
+    expect(roleUsesDepartment('WAREHOUSE_MANAGEMENT', 'STAFF')).toBe(false);
   });
 });

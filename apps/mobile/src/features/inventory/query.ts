@@ -9,14 +9,19 @@ import {
   createInventoryStockCount,
   createWarehouse,
   createWarehouseTransfer,
+  completeWarehouseTransfer,
   getInventoryItem,
+  getInventoryOverview,
   issueStock,
+  listFinishedGoodsItems,
   listInventoryGroups,
   listInventoryItems,
   listInventoryStockCounts,
   listInventoryTransactions,
+  listSemiFinishedLots,
   listWarehouseTransfers,
   listWarehouses,
+  postInventoryStockCount,
   receiveStock,
   syncInventoryFromMaterials,
   updateInventoryItem,
@@ -154,11 +159,18 @@ export function useSyncInventoryFromMaterialsMutation() {
   });
 }
 
-export function useWarehouseTransfersInfiniteQuery(enabled: boolean) {
+export function useWarehouseTransfersInfiniteQuery(
+  enabled: boolean,
+  warehouseType?: string,
+) {
   return useInfiniteQuery({
-    queryKey: queryKeys.inventory.transfersList({}),
+    queryKey: queryKeys.inventory.transfersList({ warehouseType }),
     queryFn: ({ pageParam }) =>
-      listWarehouseTransfers({ page: pageParam, pageSize: 20 }),
+      listWarehouseTransfers({
+        page: pageParam,
+        pageSize: 20,
+        warehouseType,
+      }),
     initialPageParam: 1,
     getNextPageParam: getNextPageParamFromMeta,
     enabled,
@@ -173,11 +185,18 @@ export function flattenWarehouseTransferPages(
   return flattenPaginatedPages(data?.pages);
 }
 
-export function useInventoryStockCountsInfiniteQuery(enabled: boolean) {
+export function useInventoryStockCountsInfiniteQuery(
+  enabled: boolean,
+  warehouseType?: string,
+) {
   return useInfiniteQuery({
-    queryKey: queryKeys.inventory.countsList({}),
+    queryKey: queryKeys.inventory.countsList({ warehouseType }),
     queryFn: ({ pageParam }) =>
-      listInventoryStockCounts({ page: pageParam, pageSize: 20 }),
+      listInventoryStockCounts({
+        page: pageParam,
+        pageSize: 20,
+        warehouseType,
+      }),
     initialPageParam: 1,
     getNextPageParam: getNextPageParamFromMeta,
     enabled,
@@ -248,4 +267,81 @@ export function useCreateInventoryStockCountMutation() {
       await qc.invalidateQueries({ queryKey: queryKeys.inventory.counts() });
     },
   });
+}
+
+export function useCompleteWarehouseTransferMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => completeWarehouseTransfer(id),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.transfers() }),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.lists() }),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.groups() }),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.overview() }),
+      ]);
+    },
+  });
+}
+
+export function usePostInventoryStockCountMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => postInventoryStockCount(id),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.counts() }),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.lists() }),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.groups() }),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.overview() }),
+      ]);
+    },
+  });
+}
+
+export function useInventoryOverviewQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.inventory.overview(),
+    queryFn: getInventoryOverview,
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useSemiFinishedLotsInfiniteQuery(filters: { q?: string }, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.inventory.semiFinished(filters),
+    queryFn: ({ pageParam }) =>
+      listSemiFinishedLots({ page: pageParam, pageSize: 20, q: filters.q }),
+    initialPageParam: 1,
+    getNextPageParam: getNextPageParamFromMeta,
+    enabled,
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function flattenSemiFinishedPages(
+  data: ReturnType<typeof useSemiFinishedLotsInfiniteQuery>['data'],
+) {
+  return flattenPaginatedPages(data?.pages);
+}
+
+export function useFinishedGoodsInfiniteQuery(filters: { q?: string }, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.inventory.finishedGoods(filters),
+    queryFn: ({ pageParam }) =>
+      listFinishedGoodsItems({ page: pageParam, pageSize: 20, q: filters.q }),
+    initialPageParam: 1,
+    getNextPageParam: getNextPageParamFromMeta,
+    enabled,
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function flattenFinishedGoodsPages(
+  data: ReturnType<typeof useFinishedGoodsInfiniteQuery>['data'],
+) {
+  return flattenPaginatedPages(data?.pages);
 }

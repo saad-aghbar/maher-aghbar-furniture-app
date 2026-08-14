@@ -35,6 +35,14 @@ export type CompilerNode = {
   responsibleDepartmentId?: string | null;
   requiresInspectionOverride?: boolean | null;
   requiresPhotosOverride?: boolean | null;
+  inventoryTracking?: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED' | null;
+  consumesRawMaterials?: boolean | null;
+  consumesSemiFinished?: boolean | null;
+  outputQtyPerUnit?: number | null;
+  outputNameAr?: string | null;
+  outputNameEn?: string | null;
+  outputNameHe?: string | null;
+  defaultWarehouseId?: string | null;
   metadata?: unknown;
   stage: CompilerStageDef;
 };
@@ -79,6 +87,14 @@ export type CompiledNode = {
   responsibleDepartmentCode: string | null;
   requiresInspection: boolean;
   requiresPhotos: boolean;
+  inventoryTracking: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
+  consumesRawMaterials: boolean;
+  consumesSemiFinished: boolean;
+  outputQtyPerUnit: number | null;
+  outputNameAr: string | null;
+  outputNameEn: string | null;
+  outputNameHe: string | null;
+  defaultWarehouseId: string | null;
   sortOrder: number;
   displayX: number | null;
   displayY: number | null;
@@ -190,6 +206,14 @@ export function compileWorkflow(input: {
       requiresInspection:
         node.requiresInspectionOverride ?? node.stage.requiresInspection,
       requiresPhotos: node.requiresPhotosOverride ?? node.stage.requiresPhotos,
+      inventoryTracking: node.inventoryTracking ?? 'NONE',
+      consumesRawMaterials: Boolean(node.consumesRawMaterials),
+      consumesSemiFinished: Boolean(node.consumesSemiFinished),
+      outputQtyPerUnit: node.outputQtyPerUnit ?? null,
+      outputNameAr: node.outputNameAr ?? null,
+      outputNameEn: node.outputNameEn ?? null,
+      outputNameHe: node.outputNameHe ?? null,
+      defaultWarehouseId: node.defaultWarehouseId ?? null,
       sortOrder: node.sortOrder,
       displayX: node.displayX ?? null,
       displayY: node.displayY ?? null,

@@ -17,6 +17,55 @@ import { Badge, Button, Input, Select } from '@maher/ui';
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
+type StageBehavior =
+  | 'NONE'
+  | 'USES_MATERIALS'
+  | 'PRODUCES_SEMI_FINISHED'
+  | 'USES_SEMI_FINISHED'
+  | 'USES_AND_PRODUCES'
+  | 'PRODUCES_FINISHED';
+
+function behaviorFromNode(node: WorkflowNode): StageBehavior {
+  const tracking = node.inventoryTracking ?? 'NONE';
+  const raw = Boolean(node.consumesRawMaterials);
+  const semi = Boolean(node.consumesSemiFinished);
+  if (tracking === 'PRODUCES_FINISHED') return 'PRODUCES_FINISHED';
+  if (tracking === 'PRODUCES_SEMI_FINISHED' && semi) return 'USES_AND_PRODUCES';
+  if (tracking === 'PRODUCES_SEMI_FINISHED') return 'PRODUCES_SEMI_FINISHED';
+  if (semi) return 'USES_SEMI_FINISHED';
+  if (raw) return 'USES_MATERIALS';
+  return 'NONE';
+}
+
+function flagsFromBehavior(behavior: StageBehavior, consumeRaw: boolean, consumeSemi: boolean) {
+  switch (behavior) {
+    case 'USES_MATERIALS':
+      return { inventoryTracking: 'NONE' as const, consumesRawMaterials: true, consumesSemiFinished: false };
+    case 'PRODUCES_SEMI_FINISHED':
+      return {
+        inventoryTracking: 'PRODUCES_SEMI_FINISHED' as const,
+        consumesRawMaterials: consumeRaw,
+        consumesSemiFinished: false,
+      };
+    case 'USES_SEMI_FINISHED':
+      return { inventoryTracking: 'NONE' as const, consumesRawMaterials: false, consumesSemiFinished: true };
+    case 'USES_AND_PRODUCES':
+      return {
+        inventoryTracking: 'PRODUCES_SEMI_FINISHED' as const,
+        consumesRawMaterials: consumeRaw,
+        consumesSemiFinished: true,
+      };
+    case 'PRODUCES_FINISHED':
+      return {
+        inventoryTracking: 'PRODUCES_FINISHED' as const,
+        consumesRawMaterials: consumeRaw,
+        consumesSemiFinished: consumeSemi,
+      };
+    default:
+      return { inventoryTracking: 'NONE' as const, consumesRawMaterials: false, consumesSemiFinished: false };
+  }
+}
+
 type Props = {
   open: boolean;
   node: WorkflowNode | null;
@@ -32,6 +81,9 @@ type Props = {
     leadsIntoNodeIds: string[];
     isRequiredByDefault: boolean;
     defaultEstimatedMinutes?: number | null;
+    inventoryTracking: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
+    consumesRawMaterials: boolean;
+    consumesSemiFinished: boolean;
   }) => void;
   onRemove: (nodeId: string) => void;
 };
@@ -56,6 +108,9 @@ export function WorkflowStageDrawer({
   const [runsAfter, setRunsAfter] = useState<string[]>([]);
   const [leadsInto, setLeadsInto] = useState<string[]>([]);
   const [hours, setHours] = useState('');
+  const [behavior, setBehavior] = useState<StageBehavior>('NONE');
+  const [consumeRaw, setConsumeRaw] = useState(false);
+  const [consumeSemi, setConsumeSemi] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
@@ -70,6 +125,9 @@ export function WorkflowStageDrawer({
           ? String(node.stageDefinition.estimatedHours)
           : '',
     );
+    setBehavior(behaviorFromNode(node));
+    setConsumeRaw(Boolean(node.consumesRawMaterials));
+    setConsumeSemi(Boolean(node.consumesSemiFinished));
     setConfirmRemove(false);
   }, [node, edges]);
 
@@ -158,6 +216,7 @@ export function WorkflowStageDrawer({
                     defaultEstimatedMinutes: Number.isFinite(hoursNum)
                       ? Math.round(hoursNum * 60)
                       : undefined,
+                    ...flagsFromBehavior(behavior, consumeRaw, consumeSemi),
                   })
                 }
               >
@@ -198,6 +257,46 @@ export function WorkflowStageDrawer({
             disabled={readOnly}
             onChange={(e) => setHours(e.target.value)}
           />
+
+          <Select
+            label={t('setup.stageBehavior')}
+            value={behavior}
+            disabled={readOnly}
+            onChange={(e) => setBehavior(e.target.value as StageBehavior)}
+            options={[
+              { value: 'NONE', label: t('setup.behaviorNone') },
+              { value: 'USES_MATERIALS', label: t('setup.behaviorUsesMaterials') },
+              { value: 'PRODUCES_SEMI_FINISHED', label: t('setup.behaviorProducesSemi') },
+              { value: 'USES_SEMI_FINISHED', label: t('setup.behaviorUsesSemi') },
+              { value: 'USES_AND_PRODUCES', label: t('setup.behaviorUsesAndProduces') },
+              { value: 'PRODUCES_FINISHED', label: t('setup.behaviorProducesFinished') },
+            ]}
+          />
+          {!readOnly &&
+          (behavior === 'PRODUCES_SEMI_FINISHED' ||
+            behavior === 'USES_AND_PRODUCES' ||
+            behavior === 'PRODUCES_FINISHED') ? (
+            <div className="grid gap-2 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={consumeRaw}
+                  onChange={(e) => setConsumeRaw(e.target.checked)}
+                />
+                {t('setup.alsoUsesMaterials')}
+              </label>
+              {behavior === 'PRODUCES_FINISHED' ? (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={consumeSemi}
+                    onChange={(e) => setConsumeSemi(e.target.checked)}
+                  />
+                  {t('setup.alsoUsesSemi')}
+                </label>
+              ) : null}
+            </div>
+          ) : null}
 
           <WorkflowConnectionPicker
             label={t('workflow.runsAfter')}

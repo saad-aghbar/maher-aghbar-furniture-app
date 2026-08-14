@@ -35,6 +35,7 @@ import {
   PrioritySheet,
 } from './components/PriorityDeliverySheets';
 import { ProductionListSkeleton } from './components/ProductionSkeleton';
+import { ProductionMaterialsCard } from './components/ProductionMaterialsCard';
 import { ProductionTaskCard } from './components/ProductionTaskCard';
 import { ProductionTaskSheet } from './components/ProductionTaskSheet';
 import {
@@ -43,6 +44,8 @@ import {
   useBlockTaskMutation,
   usePauseTaskMutation,
   useProductionOrderQuery,
+  useProductionMaterialsQuery,
+  useReturnUnusedMaterialMutation,
   useUnblockTaskMutation,
   useUpdateProductionMutation,
   useUpdateTaskNotesMutation,
@@ -90,6 +93,8 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
   const [viewCompleted, setViewCompleted] = useState(false);
 
   const query = useProductionOrderQuery(orderId, canRead);
+  const materialsQuery = useProductionMaterialsQuery(orderId, canRead && canUpdate);
+  const returnMaterialMutation = useReturnUnusedMaterialMutation(orderId);
   const workersQuery = useAssignableWorkersQuery(canAssign);
   const assignMutation = useAssignTaskMutation(orderId);
   const updateMutation = useUpdateProductionMutation(orderId);
@@ -499,6 +504,41 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
                       })}
                     </View>
                   </View>
+                ) : null}
+
+                {canUpdate && (materialsQuery.data?.materials?.length ?? 0) > 0 ? (
+                  <ProductionMaterialsCard
+                    materials={materialsQuery.data?.materials ?? []}
+                    returningItemId={
+                      returnMaterialMutation.isPending
+                        ? returnMaterialMutation.variables?.inventoryItemId
+                        : null
+                    }
+                    onReturn={(row) => {
+                      returnMaterialMutation.mutate(
+                        {
+                          inventoryItemId: row.inventoryItem.id,
+                          quantity: row.returnableQty,
+                          idempotencyKey: `prod-return:${orderId}:${row.inventoryItem.id}:${row.returnableQty}`,
+                        },
+                        {
+                          onSuccess: () => {
+                            showToast({
+                              variant: 'success',
+                              message: t('mobile.production.materialReturned'),
+                            });
+                            void materialsQuery.refetch();
+                          },
+                          onError: () => {
+                            showToast({
+                              variant: 'error',
+                              message: t('mobile.production.materialsNotReady'),
+                            });
+                          },
+                        },
+                      );
+                    }}
+                  />
                 ) : null}
 
                 {/* Task list filter — toggle, not a navigation row */}

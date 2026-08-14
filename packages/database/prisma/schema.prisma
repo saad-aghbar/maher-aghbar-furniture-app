@@ -221,7 +221,60 @@ enum InventoryTxType {
   CUSTOMER_RETURN
   FINISHED_GOODS_RECEIPT
   DELIVERY_ISSUE
+  DELIVERY_RESTORE
   DAMAGE
+  SCRAP
+  SEMI_FINISHED_RECEIPT
+  SEMI_FINISHED_ISSUE
+  OPENING_BALANCE
+}
+
+enum WarehouseType {
+  RAW_MATERIALS
+  SEMI_FINISHED
+  FINISHED_GOODS
+}
+
+enum InventoryItemClass {
+  RAW_MATERIAL
+  SEMI_FINISHED_GOOD
+  FINISHED_GOOD
+}
+
+enum RawMaterialGroup {
+  WOOD
+  FABRIC
+  FOAM
+  ACCESSORIES
+}
+
+enum InventoryLotStatus {
+  AVAILABLE
+  RESERVED
+  QUARANTINED
+  DAMAGED
+  SCRAPPED
+  CONSUMED
+  DELIVERED
+  REQUIRES_REVIEW
+}
+
+enum InventoryAllocationMode {
+  GENERAL_STOCK
+  ORDER_ALLOCATED
+}
+
+enum InventoryTracking {
+  NONE
+  PRODUCES_SEMI_FINISHED
+  PRODUCES_FINISHED
+}
+
+enum ReturnInventoryFate {
+  PENDING
+  RETURN_TO_STOCK
+  REWORK
+  DAMAGED
   SCRAP
 }
 
@@ -353,6 +406,13 @@ enum StageApplicability {
   EXCLUDED
 }
 
+enum RoleKind {
+  CUSTOMER
+  PRODUCTION_WORKER
+  STAFF
+  ADMIN
+}
+
 // ─── IAM ─────────────────────────────────────────────────────────────────────
 
 model User {
@@ -409,17 +469,25 @@ model User {
 }
 
 model Role {
-  id          String           @id @default(uuid())
-  code        String           @unique
-  nameAr      String
-  nameEn      String
-  nameHe      String?
-  description String?
-  permissions RolePermission[]
-  users       UserRole[]
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id            String           @id @default(uuid())
+  code          String           @unique
+  nameAr        String
+  nameEn        String
+  nameHe        String?
+  description   String?
+  kind          RoleKind         @default(STAFF)
+  isSystem      Boolean          @default(false)
+  isActive      Boolean          @default(true)
+  iconKey       String?
+  descriptionEn String?
+  descriptionAr String?
+  descriptionHe String?
+  permissions   RolePermission[]
+  users         UserRole[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
+  @@index([kind, isActive])
   @@map("roles")
 }
 
@@ -679,6 +747,9 @@ model Product {
   stageEstimates    ProductStageEstimate[]
   estimateStats     StageEstimateStat[]
   workflowConfiguration ProductWorkflowConfiguration?
+  inventoryItems        InventoryItem[]
+  stageInventoryOutputs ProductStageInventoryOutput[]
+  stageInventoryInputs  ProductStageInventoryInput[]
 
   @@index([categoryId])
   @@map("products")
@@ -945,16 +1016,19 @@ model GoodsReceiptLine {
 // ─── Inventory ───────────────────────────────────────────────────────────────
 
 model Warehouse {
-  id          String    @id @default(uuid())
-  code        String    @unique
+  id          String        @id @default(uuid())
+  code        String        @unique
   nameAr      String
   nameEn      String
-  type        String
+  nameHe      String?
+  type        WarehouseType
   branchId    String?
-  branch      Branch?   @relation(fields: [branchId], references: [id])
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  branch      Branch?       @relation(fields: [branchId], references: [id])
+  isActive    Boolean       @default(true)
+  isDefault   Boolean       @default(false)
+  classificationReviewRequired Boolean @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   locations        WarehouseLocation[]
   balances         InventoryBalance[]
@@ -963,7 +1037,13 @@ model Warehouse {
   goodsReceipts    GoodsReceipt[]
   transfersFrom    WarehouseTransfer[] @relation("TransferFrom")
   transfersTo      WarehouseTransfer[] @relation("TransferTo")
+  lots             InventoryLot[]
+  transactions     InventoryTransaction[]
+  stageOutputs     ProductStageInventoryOutput[] @relation("OutputDefaultWarehouse")
+  workflowNodes    ProductionWorkflowNode[] @relation("NodeDefaultWarehouse")
+  snapshotNodes    ProductionOrderWorkflowSnapshotNode[] @relation("SnapshotNodeDefaultWarehouse")
 
+  @@index([type])
   @@map("warehouses")
 }
 
@@ -976,6 +1056,7 @@ model WarehouseLocation {
   createdAt   DateTime  @default(now())
 
   balances InventoryBalance[]
+  lots     InventoryLot[]
 
   @@unique([warehouseId, code])
   @@map("warehouse_locations")
@@ -988,8 +1069,11 @@ model InventoryItem {
   qrCode      String?           @unique
   nameAr      String
   nameEn      String
+  nameHe      String?
   description String?
   category    InventoryCategory @default(OTHER)
+  itemClass   InventoryItemClass @default(RAW_MATERIAL)
+  materialGroup RawMaterialGroup?
   materialType String?
   color       String?
   size        String?
@@ -1002,13 +1086,17 @@ model InventoryItem {
   standardCost Decimal          @default(0) @db.Decimal(18, 3)
   materialId  String?           @unique
   material    Material?         @relation(fields: [materialId], references: [id])
+  productId   String?
+  product     Product?          @relation(fields: [productId], references: [id])
   preferredSupplierId String?
   preferredSupplier   Supplier? @relation(fields: [preferredSupplierId], references: [id])
   minStock     Decimal           @default(0) @db.Decimal(18, 3)
   maxStock     Decimal?          @db.Decimal(18, 3)
   reorderQty   Decimal?          @db.Decimal(18, 3)
   lastAutoPrAt DateTime?
+  isPurchasable Boolean          @default(true)
   isActive     Boolean           @default(true)
+  classificationReviewRequired Boolean @default(false)
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
   archivedAt   DateTime?
@@ -1020,8 +1108,14 @@ model InventoryItem {
   goodsReceiptLines    GoodsReceiptLine[]
   countLines           InventoryCountLine[]
   transferLines        WarehouseTransferLine[]
+  lots                 InventoryLot[]
+  stageOutputs         ProductStageInventoryOutput[]
+  snapshotOutputNodes  ProductionOrderWorkflowSnapshotNode[] @relation("SnapshotOutputItem")
 
   @@index([category])
+  @@index([itemClass])
+  @@index([materialGroup])
+  @@index([productId])
   @@map("inventory_items")
 }
 
@@ -1051,6 +1145,8 @@ model InventoryTransaction {
   inventoryItemId String
   inventoryItem   InventoryItem  @relation(fields: [inventoryItemId], references: [id])
   warehouseId     String
+  warehouse       Warehouse      @relation(fields: [warehouseId], references: [id])
+  locationId      String?
   quantity        Decimal        @db.Decimal(18, 3)
   unitCost        Decimal?       @db.Decimal(18, 3)
   referenceType   String?
@@ -1063,6 +1159,7 @@ model InventoryTransaction {
   @@index([inventoryItemId])
   @@index([warehouseId])
   @@index([createdAt])
+  @@index([type])
   @@map("inventory_transactions")
 }
 
@@ -1122,6 +1219,87 @@ model WarehouseTransferLine {
 
   @@index([transferId])
   @@map("warehouse_transfer_lines")
+}
+
+model InventoryLot {
+  id                String                  @id @default(uuid())
+  inventoryItemId   String
+  inventoryItem     InventoryItem           @relation(fields: [inventoryItemId], references: [id])
+  warehouseId       String
+  warehouse         Warehouse               @relation(fields: [warehouseId], references: [id])
+  locationId        String?
+  location          WarehouseLocation?      @relation(fields: [locationId], references: [id])
+  productionOrderId String?
+  productionOrder   ProductionOrder?        @relation(fields: [productionOrderId], references: [id])
+  salesOrderId      String?
+  salesOrder        SalesOrder?             @relation(fields: [salesOrderId], references: [id])
+  salesOrderLineId  String?
+  salesOrderLine    SalesOrderLine?         @relation(fields: [salesOrderLineId], references: [id])
+  stageInstanceId   String?
+  stageInstance     ProductionStageInstance? @relation(fields: [stageInstanceId], references: [id])
+  outputDefinitionId String?
+  quantity          Decimal                 @db.Decimal(18, 3)
+  producedAt        DateTime                @default(now())
+  status            InventoryLotStatus      @default(AVAILABLE)
+  allocationMode    InventoryAllocationMode @default(GENERAL_STOCK)
+  sourceKey         String?                 @unique
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([inventoryItemId])
+  @@index([warehouseId])
+  @@index([productionOrderId])
+  @@index([salesOrderId])
+  @@index([status])
+  @@map("inventory_lots")
+}
+
+model ProductStageInventoryOutput {
+  id                   String             @id @default(uuid())
+  productId            String
+  product              Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  workflowNodeId       String?
+  stageDefinitionId    String?
+  itemClass            InventoryItemClass
+  inventoryTracking    InventoryTracking  @default(NONE)
+  consumesRawMaterials Boolean            @default(false)
+  consumesSemiFinished Boolean            @default(false)
+  outputNameAr         String
+  outputNameEn         String
+  outputNameHe         String?
+  outputQtyPerUnit     Decimal            @default(1) @db.Decimal(18, 3)
+  unit                 String             @default("pcs")
+  defaultWarehouseId   String?
+  defaultWarehouse     Warehouse?         @relation("OutputDefaultWarehouse", fields: [defaultWarehouseId], references: [id])
+  inventoryItemId      String?
+  inventoryItem        InventoryItem?     @relation(fields: [inventoryItemId], references: [id])
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  consumedBy ProductStageInventoryInput[]
+
+  @@unique([productId, workflowNodeId])
+  @@index([productId])
+  @@index([workflowNodeId])
+  @@index([stageDefinitionId])
+  @@map("product_stage_inventory_outputs")
+}
+
+model ProductStageInventoryInput {
+  id                String                      @id @default(uuid())
+  productId         String
+  product           Product                     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  workflowNodeId    String?
+  stageDefinitionId String?
+  outputId          String
+  output            ProductStageInventoryOutput @relation(fields: [outputId], references: [id], onDelete: Cascade)
+  qtyPerUnit        Decimal                     @default(1) @db.Decimal(18, 3)
+  createdAt         DateTime                    @default(now())
+
+  @@unique([productId, workflowNodeId, outputId])
+  @@index([productId])
+  @@index([outputId])
+  @@map("product_stage_inventory_inputs")
 }
 
 // ─── RFQ & Quotations ────────────────────────────────────────────────────────
@@ -1334,6 +1512,7 @@ model SalesOrder {
   invoices         Invoice[]
   returns          ReturnRequest[]
   documents        Document[]
+  inventoryLots    InventoryLot[]
 
   @@index([customerId])
   @@index([status])
@@ -1358,6 +1537,7 @@ model SalesOrderLine {
   sortOrder          Int        @default(0)
 
   productionOrders ProductionOrder[]
+  inventoryLots    InventoryLot[]
 
   @@index([salesOrderId])
   @@map("sales_order_lines")
@@ -1458,6 +1638,7 @@ model ProductionOrder {
   schedules    ProductionSchedule[]
   estimateProposals SchedulingEstimateProposal[]
   workflowSnapshot ProductionOrderWorkflowSnapshot?
+  inventoryLots InventoryLot[]
 
   @@index([salesOrderId])
   @@index([status])
@@ -1485,6 +1666,8 @@ model ProductionStageInstance {
 
   tasks       ProductionTask[]
   allocations ScheduleAllocation[]
+  inventoryLots InventoryLot[]
+  reworkRequests ReworkRequest[]
 
   @@index([productionOrderId])
   @@index([plannedStart])
@@ -1515,6 +1698,9 @@ model ProductionTask {
   estimatedMinutes    Int?
   actualMinutes       Int?
   notes               String?
+  isRework            Boolean                    @default(false)
+  reworkRequestId     String?
+  reworkRequest       ReworkRequest?             @relation(fields: [reworkRequestId], references: [id])
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
 
@@ -1528,6 +1714,7 @@ model ProductionTask {
   @@index([plannedStart])
   @@index([plannedCompletion])
   @@index([assignedEmployeeId, plannedStart])
+  @@index([reworkRequestId])
   @@map("production_tasks")
 }
 
@@ -1639,19 +1826,28 @@ model QualityDefect {
 }
 
 model ReworkRequest {
-  id                String             @id @default(uuid())
-  number            String             @unique
-  productionOrderId String
-  productionOrder   ProductionOrder    @relation(fields: [productionOrderId], references: [id])
-  inspectionId      String?
-  inspection        QualityInspection? @relation(fields: [inspectionId], references: [id])
-  description       String
-  assignedToId      String?
-  status            String             @default("OPEN")
-  createdAt         DateTime           @default(now())
-  completedAt       DateTime?
+  id                     String             @id @default(uuid())
+  number                 String             @unique
+  productionOrderId      String
+  productionOrder        ProductionOrder    @relation(fields: [productionOrderId], references: [id])
+  inspectionId           String?
+  inspection             QualityInspection? @relation(fields: [inspectionId], references: [id])
+  returnRequestId        String?
+  returnRequest          ReturnRequest?     @relation(fields: [returnRequestId], references: [id])
+  description            String
+  notes                  String?
+  assignedToId           String?
+  status                 String             @default("AWAITING_STAGE")
+  reentryStageInstanceId String?
+  reentryStageInstance   ProductionStageInstance? @relation(fields: [reentryStageInstanceId], references: [id])
+  createdAt              DateTime           @default(now())
+  completedAt            DateTime?
+
+  tasks ProductionTask[]
 
   @@index([productionOrderId])
+  @@index([reentryStageInstanceId])
+  @@index([returnRequestId])
   @@map("rework_requests")
 }
 
@@ -1878,8 +2074,11 @@ model ReturnRequest {
   issuePhotoKey  String?
   approvalStatus String            @default("PENDING")
   resolution     ReturnResolution?
+  inventoryFate  ReturnInventoryFate @default(PENDING)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+
+  reworkRequests ReworkRequest[]
 
   @@index([customerId])
   @@map("return_requests")
@@ -2366,6 +2565,15 @@ model ProductionWorkflowNode {
   responsibleDepartmentId      String?
   requiresInspectionOverride   Boolean?
   requiresPhotosOverride       Boolean?
+  inventoryTracking            InventoryTracking @default(NONE)
+  consumesRawMaterials         Boolean           @default(false)
+  consumesSemiFinished         Boolean           @default(false)
+  outputQtyPerUnit             Decimal?          @db.Decimal(18, 3)
+  outputNameAr                 String?
+  outputNameEn                 String?
+  outputNameHe                 String?
+  defaultWarehouseId           String?
+  defaultWarehouse             Warehouse?        @relation("NodeDefaultWarehouse", fields: [defaultWarehouseId], references: [id])
   metadata                     Json?
   createdAt                    DateTime                 @default(now())
   updatedAt                    DateTime                 @updatedAt
@@ -2477,6 +2685,21 @@ model ProductionOrderWorkflowSnapshotNode {
   estimateReviewRequired Boolean @default(false)
   requiresInspection    Boolean  @default(false)
   requiresPhotos        Boolean  @default(false)
+  inventoryTracking     InventoryTracking @default(NONE)
+  consumesRawMaterials  Boolean  @default(false)
+  consumesSemiFinished  Boolean  @default(false)
+  outputQtyPerUnit      Decimal? @db.Decimal(18, 3)
+  outputNameAr          String?
+  outputNameEn          String?
+  outputNameHe          String?
+  outputUnit            String?
+  outputDefinitionId    String?
+  outputInventoryItemId String?
+  outputInventoryItem   InventoryItem? @relation("SnapshotOutputItem", fields: [outputInventoryItemId], references: [id])
+  consumeInventoryItemIds Json?
+  consumeOutputDefinitionIds Json?
+  defaultWarehouseId    String?
+  defaultWarehouse      Warehouse? @relation("SnapshotNodeDefaultWarehouse", fields: [defaultWarehouseId], references: [id])
   sortOrder             Int      @default(0)
   displayX              Float?
   displayY              Float?

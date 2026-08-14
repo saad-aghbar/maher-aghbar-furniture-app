@@ -53,6 +53,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           'Allow Maher Al-Aghbar Furniture to use your location for delivery pins on new orders.',
         NSFaceIDUsageDescription:
           'Allow Maher Al-Aghbar Furniture to unlock the app with Face ID.',
+        NSLocalNetworkUsageDescription:
+          'Allow Maher Al-Aghbar Furniture to reach the factory API on your local network.',
+        NSAppTransportSecurity: {
+          NSAllowsLocalNetworking: true,
+        },
         UIBackgroundModes: ['remote-notification'],
       },
       ...(associatedDomain

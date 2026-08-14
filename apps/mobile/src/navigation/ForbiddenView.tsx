@@ -18,10 +18,10 @@ export function ForbiddenView() {
     <AppScreen>
       <View style={{ flex: 1, justifyContent: 'center', gap: theme.spacing.xl }}>
         <AppText variant="heading" align="center">
-          {t('mobile.noModules')}
+          {t('mobile.forbiddenArea')}
         </AppText>
         <AppText variant="bodySecondary" color="secondary" align="center">
-          {t('mobile.noModulesHint')}
+          {t('mobile.forbiddenAreaHint')}
         </AppText>
         <PrimaryButton
           label={t('mobile.tabs.home')}

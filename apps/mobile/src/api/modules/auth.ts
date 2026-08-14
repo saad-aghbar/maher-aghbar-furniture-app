@@ -13,7 +13,7 @@ export type LoginInput = {
 export type MeResponse = AuthUser & {
   mfaEnabled: boolean;
   mfaPending: boolean;
-  /** Dealer portal password (assigned by admin). Omitted for staff. */
+  /** Assigned password for dealers, staff, and workers (not self-serve admins). */
   portalPassword?: string | null;
 };
 

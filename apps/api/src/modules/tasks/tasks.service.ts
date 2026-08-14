@@ -12,6 +12,7 @@ import { IdempotencyService } from '../../common/idempotency.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
+import { ProductionInventoryService } from '../production/production-inventory.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import {
   AssignTaskDto,
@@ -46,6 +47,7 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pipeline: StagePipelineService,
+    private readonly productionInventory: ProductionInventoryService,
     private readonly invoices: InvoicesService,
     private readonly storage: LocalStorageService,
     private readonly idempotency: IdempotencyService,
@@ -675,6 +677,11 @@ export class TasksService {
       throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Stage already completed.' });
     }
 
+    await this.productionInventory.assertStageInventoryReady({
+      productionOrderId: task.productionOrderId,
+      stageInstanceId: task.stageInstanceId,
+    });
+
     return this.prisma.$transaction(async (tx) => {
       await tx.taskTimeEntry.create({
         data: {
@@ -1016,6 +1023,12 @@ export class TasksService {
 
       // Completes stage when all tasks done, unlocks next READY stages, rolls up PO %.
       await this.pipeline.onTaskComplete(task.productionOrderId, task.stageInstanceId, tx);
+      await this.productionInventory.onStageTaskComplete({
+        productionOrderId: task.productionOrderId,
+        stageInstanceId: task.stageInstanceId,
+        userId,
+        tx,
+      });
 
       const po = await tx.productionOrder.findUnique({
         where: { id: task.productionOrderId },

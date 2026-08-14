@@ -8,15 +8,24 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import type { CreateWarehouseTransferInput, InventoryItem, Warehouse } from '../api';
+import type { InventoryLifecycle } from '../preferWarehouseForReceive';
 import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { InventoryItemPickPanel } from './InventoryItemPickPanel';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventorySheetSectionLabel } from './InventorySheetBody';
 import { WarehousePickList } from './WarehousePickList';
+import { warehouseTypeForLifecycle } from '../preferWarehouseForReceive';
+import {
+  formatPickQty,
+  inventoryPickCopyKey,
+  selectInventoryPickRow,
+  warehouseScopedQty,
+} from '../selectInventoryPick';
 
 type Props = {
   open: boolean;
   onClose: () => void;
+  lifecycle: InventoryLifecycle;
   warehouses: Warehouse[];
   loading?: boolean;
   onSubmit: (body: CreateWarehouseTransferInput) => void;
@@ -25,6 +34,7 @@ type Props = {
 export function CreateTransferSheet({
   open,
   onClose,
+  lifecycle,
   warehouses,
   loading,
   onSubmit,
@@ -36,6 +46,8 @@ export function CreateTransferSheet({
   const sheetHeight = Math.round(height * 0.78);
   const warehouseListHeight = Math.round(height * 0.2);
   const canAddWarehouse = can(user, 'warehouse.manage');
+  const copy = inventoryPickCopyKey(lifecycle);
+  const defaultWarehouseType = warehouseTypeForLifecycle(lifecycle);
 
   const [fromId, setFromId] = useState('');
   const [toId, setToId] = useState('');
@@ -60,22 +72,36 @@ export function CreateTransferSheet({
     setNotes('');
     setError(null);
     setPickOpen(false);
-  }, [open]);
+  }, [open, lifecycle]);
 
   useEffect(() => {
     if (!open) return;
-    setFromId((id) => id || warehouses[0]?.id || '');
-    setToId((id) => id || warehouses[1]?.id || warehouses[0]?.id || '');
+    const source = warehouses[0]?.id || '';
+    const dest = warehouses.find((wh) => wh.id !== source)?.id || '';
+    setFromId((id) => (id && warehouses.some((wh) => wh.id === id) ? id : source));
+    setToId((id) =>
+      id && warehouses.some((wh) => wh.id === id) && id !== source ? id : dest,
+    );
   }, [open, warehouses]);
 
   function submit() {
     const quantity = Number(qty);
     if (!fromId || !toId || !item || !Number.isFinite(quantity) || quantity <= 0) {
-      setError(t('mobile.inventory.transferRequired'));
+      setError(t(copy.transferRequired));
       return;
     }
     if (fromId === toId) {
       setError(t('mobile.inventory.transferSameWarehouse'));
+      return;
+    }
+    const available = warehouseScopedQty(item, fromId).freeQty;
+    if (quantity > available) {
+      setError(
+        t('mobile.inventory.transferQtyExceeds', {
+          qty: formatPickQty(available),
+          unit: item.unit || 'pcs',
+        }),
+      );
       return;
     }
     setError(null);
@@ -86,6 +112,8 @@ export function CreateTransferSheet({
       lines: [{ inventoryItemId: item.id, quantity }],
     });
   }
+
+  const selected = item ? selectInventoryPickRow(item, fromId, locale) : null;
 
   return (
     <>
@@ -103,6 +131,10 @@ export function CreateTransferSheet({
     >
       {pickOpen ? (
         <InventoryItemPickPanel
+          key={`${lifecycle}:${fromId}`}
+          lifecycle={lifecycle}
+          warehouseId={fromId}
+          mode="transfer"
           onPick={(picked) => {
             setItem(picked);
             setPickOpen(false);
@@ -125,10 +157,13 @@ export function CreateTransferSheet({
             <WarehousePickList
               warehouses={warehouses}
               selectedId={fromId}
-              onSelect={setFromId}
+              onSelect={(id) => {
+                if (id !== fromId) setItem(null);
+                setFromId(id);
+              }}
               label={t('mobile.inventory.fromWarehouse')}
               listHeight={warehouseListHeight}
-              resetToken={open ? 'from' : 'from-closed'}
+              resetToken={open ? `from-${lifecycle}` : 'from-closed'}
               onAddWarehouse={
                 canAddWarehouse ? () => setCreateWarehouseFor('from') : undefined
               }
@@ -140,13 +175,13 @@ export function CreateTransferSheet({
               onSelect={setToId}
               label={t('mobile.inventory.toWarehouse')}
               listHeight={warehouseListHeight}
-              resetToken={open ? 'to' : 'to-closed'}
+              resetToken={open ? `to-${lifecycle}` : 'to-closed'}
               onAddWarehouse={
                 canAddWarehouse ? () => setCreateWarehouseFor('to') : undefined
               }
             />
 
-            <InventorySheetSectionLabel label={t('mobile.inventory.item')} />
+            <InventorySheetSectionLabel label={t(copy.item)} />
             <Pressable
               accessibilityRole="button"
               onPress={() => setPickOpen(true)}
@@ -167,11 +202,7 @@ export function CreateTransferSheet({
                 color={item ? 'primary' : 'brand'}
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
-                {item
-                  ? `${item.sku} — ${
-                      locale === 'ar' ? item.nameAr || item.nameEn : item.nameEn || item.nameAr
-                    }`
-                  : t('mobile.inventory.pickItem')}
+                {selected ? `${selected.sku} — ${selected.name}` : t(copy.pickItem)}
               </AppText>
             </Pressable>
 
@@ -202,9 +233,13 @@ export function CreateTransferSheet({
       overlay
       open={createWarehouseFor !== null}
       onClose={() => setCreateWarehouseFor(null)}
+      defaultType={defaultWarehouseType}
       onCreated={(warehouse) => {
         if (createWarehouseFor === 'to') setToId(warehouse.id);
-        else setFromId(warehouse.id);
+        else {
+          setFromId(warehouse.id);
+          setItem(null);
+        }
         setError(null);
       }}
     />

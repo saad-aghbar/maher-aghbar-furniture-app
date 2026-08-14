@@ -58,6 +58,7 @@ export class PurchasingService {
     const itemWhere: Prisma.InventoryItemWhereInput = {
       archivedAt: null,
       isActive: true,
+      isPurchasable: true,
       ...(opts.inventoryItemIds?.length
         ? { id: { in: opts.inventoryItemIds } }
         : {}),
@@ -166,7 +167,7 @@ export class PurchasingService {
         where: { id: inventoryItemId, archivedAt: null },
         include: { balances: true },
       });
-      if (!item) return;
+      if (!item || !item.isPurchasable) return;
       const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
       const isLow = available <= Number(item.minStock);
       if (!isLow) return;

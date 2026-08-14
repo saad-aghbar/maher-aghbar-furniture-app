@@ -31,6 +31,7 @@ export type InventoryItemCardModel = {
   nameAr: string;
   sku: string;
   category: string;
+  itemClass?: string | null;
   materialType: string | null;
   barcode: string | null;
   color: string | null;
@@ -42,6 +43,10 @@ export type InventoryItemCardModel = {
   standardCost: number | null;
   quantityLabel: string;
   onHand: number;
+  reservedQty: number;
+  freeQty: number;
+  quarantinedQty: number;
+  quarantined: boolean;
   unit: string;
   isLowStock: boolean;
   stockStatus: 'IN_STOCK' | 'LOW_STOCK';
@@ -51,6 +56,8 @@ export type InventoryItemCardModel = {
     warehouseId: string;
     warehouseName: string;
     availableQty: number;
+    reservedQty: number;
+    freeQty: number;
     quantityLabel: string;
   }>;
 };
@@ -96,23 +103,32 @@ function collapseBalancesByWarehouse(
 ): InventoryItemCardModel['balances'] {
   const byWh = new Map<
     string,
-    { warehouseId: string; warehouseName: string; availableQty: number }
+    {
+      warehouseId: string;
+      warehouseName: string;
+      availableQty: number;
+      reservedQty: number;
+    }
   >();
   for (const b of balances) {
     const qty = toNumber(b.availableQty);
+    const reserved = toNumber(b.reservedQty);
     const existing = byWh.get(b.warehouseId);
     if (existing) {
       existing.availableQty += qty;
+      existing.reservedQty += reserved;
       continue;
     }
     byWh.set(b.warehouseId, {
       warehouseId: b.warehouseId,
       warehouseName: warehouseLabel(b, locale),
       availableQty: qty,
+      reservedQty: reserved,
     });
   }
   return [...byWh.values()].map((row) => ({
     ...row,
+    freeQty: row.availableQty - row.reservedQty,
     quantityLabel: `${formatQty(row.availableQty)} ${unit}`,
   }));
 }
@@ -122,6 +138,11 @@ export function selectInventoryItemCard(
   locale: string,
 ): InventoryItemCardModel {
   const onHand = sumOnHand(item);
+  const reservedQty = (item.balances ?? []).reduce(
+    (s, b) => s + toNumber(b.reservedQty),
+    0,
+  );
+  const quarantinedQty = toNumber(item.quarantinedQty);
   const minStock = toNumber(item.minStock);
   const isLowStock = onHand <= minStock;
   const hasCost =
@@ -136,6 +157,7 @@ export function selectInventoryItemCard(
     nameAr: item.nameAr,
     sku: item.sku,
     category: item.category,
+    itemClass: item.itemClass ?? null,
     materialType: item.materialType ?? null,
     barcode: item.barcode ?? null,
     color: item.color ?? null,
@@ -146,6 +168,10 @@ export function selectInventoryItemCard(
     minStock,
     standardCost: hasCost ? toNumber(item.standardCost) : null,
     onHand,
+    reservedQty,
+    freeQty: onHand - reservedQty,
+    quarantinedQty,
+    quarantined: quarantinedQty > 0,
     unit: item.unit || 'pcs',
     quantityLabel: `${formatQty(onHand)} ${item.unit || 'pcs'}`,
     isLowStock,

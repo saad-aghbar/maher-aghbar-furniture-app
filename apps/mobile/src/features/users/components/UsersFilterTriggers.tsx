@@ -18,6 +18,10 @@ type Props = {
   roleLabel: string | null;
   onOpenRole?: () => void;
   onClearRole?: () => void;
+  showStaffType?: boolean;
+  staffTypeLabel?: string | null;
+  onOpenStaffType?: () => void;
+  onClearStaffType?: () => void;
 };
 
 /**
@@ -35,6 +39,10 @@ export function UsersFilterTriggers({
   roleLabel,
   onOpenRole,
   onClearRole,
+  showStaffType = false,
+  staffTypeLabel = null,
+  onOpenStaffType,
+  onClearStaffType,
 }: Props) {
   const { isRTL } = useLocale();
 
@@ -75,6 +83,17 @@ export function UsersFilterTriggers({
           active={Boolean(roleLabel)}
           onPress={onOpenRole}
           onClear={roleLabel && onClearRole ? onClearRole : undefined}
+        />
+      ) : null}
+      {showStaffType && onOpenStaffType ? (
+        <FloorTrigger
+          flex={1}
+          icon="briefcase-outline"
+          label={staffTypeLabel}
+          fallbackKey="users.staffTypeFilterAll"
+          active={Boolean(staffTypeLabel)}
+          onPress={onOpenStaffType}
+          onClear={staffTypeLabel && onClearStaffType ? onClearStaffType : undefined}
         />
       ) : null}
     </View>

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { ScrollView, useWindowDimensions } from 'react-native';
+import {
+  submittedRoleId,
+  submittedStageDefinitionIds,
+} from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
-import type { RoleRow } from '@/api/modules/users';
 import { AppText } from '@/components/AppText';
 import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
@@ -10,14 +13,17 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { localizedRoleName } from '../display';
-import { useCreateUserMutation, useDepartmentsQuery, useRolesQuery } from '../query';
-import { namesFromUsername, type UsersSegment, SEGMENT_ROLE_CODE } from '../segment';
+import {
+  useCreateUserMutation,
+  useDepartmentsQuery,
+  useRolesQuery,
+  useStaffTypesQuery,
+} from '../query';
+import { identityFromSegment, namesFromUsername, type UsersSegment } from '../segment';
 import { DepartmentField } from './DepartmentField';
 import { DepartmentPickerSheet } from './DepartmentPickerSheet';
-import { RolesTouchBar } from './RolesTouchBar';
-import { StageSkillsPicker } from './StageSkillsPicker';
 import { TempPasswordSheet } from './TempPasswordSheet';
+import { identityUsesDepartment, UserIdentityFields } from './UserIdentityFields';
 import {
   UserFormError,
   UserFormFooter,
@@ -31,12 +37,11 @@ type Props = {
   segment: UsersSegment;
 };
 
-const empty = () => ({
+const empty = (segment: UsersSegment) => ({
   username: '',
   password: '',
-  roleId: '',
   departmentId: '',
-  stageDefinitionIds: [] as string[],
+  identity: identityFromSegment(segment),
 });
 
 /**
@@ -51,48 +56,36 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const rolesQuery = useRolesQuery(open);
+  const staffTypesQuery = useStaffTypesQuery(open, { isActive: true });
   const departmentsQuery = useDepartmentsQuery(open);
   const stagesQuery = useStageLibraryQuery(open);
   const createMutation = useCreateUserMutation();
 
-  const [form, setForm] = useState(empty);
+  const [form, setForm] = useState(() => empty(segment));
   const [error, setError] = useState<string | null>(null);
   const [deptOpen, setDeptOpen] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [createdUsername, setCreatedUsername] = useState<string | null>(null);
 
   const roles = rolesQuery.data ?? [];
+  const staffTypes = staffTypesQuery.data ?? [];
   const departments = departmentsQuery.data?.data ?? [];
-
-  const preferredRoleId = useMemo(() => {
-    if (segment === 'all') return '';
-    const code = SEGMENT_ROLE_CODE[segment];
-    return roles.find((r) => r.code === code)?.id ?? '';
-  }, [roles, segment]);
 
   useEffect(() => {
     if (!open) return;
-    setForm({ ...empty(), roleId: preferredRoleId });
+    setForm(empty(segment));
     setError(null);
     setDeptOpen(false);
     setTempPassword(null);
     setCreatedUsername(null);
-  }, [open, preferredRoleId]);
+  }, [open, segment]);
 
-  const selectedRole: RoleRow | undefined = roles.find((r) => r.id === form.roleId);
-  const isCustomer = selectedRole?.code === 'CUSTOMER';
-  const isWorker = selectedRole?.code === 'PRODUCTION_WORKER';
-  const isAdmin = selectedRole?.code === 'SYSTEM_ADMINISTRATOR';
-  const showDepartment = !isCustomer && !isWorker && !isAdmin;
+  const showDepartment = identityUsesDepartment(form.identity);
   const selectedDept = departments.find((d) => d.id === form.departmentId);
-
-  const set = <K extends keyof ReturnType<typeof empty>>(
-    key: K,
-    value: ReturnType<typeof empty>[K],
-  ) => setForm((f) => ({ ...f, [key]: value }));
+  const lookupRoles = useMemo(() => [...roles, ...staffTypes], [roles, staffTypes]);
 
   const resetAndClose = () => {
-    setForm(empty());
+    setForm(empty(segment));
     setError(null);
     setDeptOpen(false);
     setTempPassword(null);
@@ -107,7 +100,20 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
       setError(t('validation.usernameRequired'));
       return;
     }
-    if (!form.roleId) {
+    if (form.identity.identityRoleCode === 'PRODUCTION_WORKER' && !form.identity.employeeType) {
+      setError(t('validation.employeeTypeRequired'));
+      return;
+    }
+    if (
+      form.identity.identityRoleCode === 'PRODUCTION_WORKER' &&
+      form.identity.employeeType === 'STAFF' &&
+      !form.identity.staffTypeId
+    ) {
+      setError(t('validation.staffTypeRequired'));
+      return;
+    }
+    const roleId = submittedRoleId(form.identity, lookupRoles);
+    if (!roleId) {
       setError(t('validation.roleRequired'));
       return;
     }
@@ -119,10 +125,10 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
         username,
         firstName,
         lastName,
-        roleIds: [form.roleId],
+        roleIds: [roleId],
         ...(showDepartment && form.departmentId ? { departmentId: form.departmentId } : {}),
         ...(form.password.trim() ? { password: form.password } : {}),
-        ...(isWorker ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
+        stageDefinitionIds: submittedStageDefinitionIds(form.identity),
       });
 
       void haptics.confirmLight();
@@ -130,7 +136,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
       if (temp) {
         setCreatedUsername(created.username ?? username);
         setTempPassword(temp);
-        setForm(empty());
+        setForm(empty(segment));
       } else {
         resetAndClose();
         showToast({ variant: 'success', message: t('users.created') });
@@ -158,7 +164,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
           <UserFormSection icon="person-outline" label={t('users.username')} titleWeight={titleWeight}>
             <TextField
               value={form.username}
-              onChangeText={(v) => set('username', v)}
+              onChangeText={(v) => setForm((f) => ({ ...f, username: v }))}
               autoCapitalize="none"
               autoCorrect={false}
             />
@@ -174,7 +180,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
           <UserFormSection icon="key-outline" label={t('users.password')} titleWeight={titleWeight}>
             <TextField
               value={form.password}
-              onChangeText={(v) => set('password', v)}
+              onChangeText={(v) => setForm((f) => ({ ...f, password: v }))}
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
@@ -188,29 +194,22 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
             </AppText>
           </UserFormSection>
 
-          <UserFormSection icon="shield-outline" label={t('users.roles')} titleWeight={titleWeight}>
-            <RolesTouchBar
-              roles={roles.map((role) => ({
-                id: role.id,
-                label: localizedRoleName(role, locale),
-              }))}
-              value={form.roleId}
-              onChange={(roleId) => {
-                set('roleId', roleId);
-                const code = roles.find((r) => r.id === roleId)?.code;
-                if (
-                  code === 'CUSTOMER' ||
-                  code === 'PRODUCTION_WORKER' ||
-                  code === 'SYSTEM_ADMINISTRATOR'
-                ) {
-                  set('departmentId', '');
-                }
-                if (code !== 'PRODUCTION_WORKER') {
-                  setForm((f) => ({ ...f, stageDefinitionIds: [] }));
-                }
-              }}
-            />
-          </UserFormSection>
+          <UserIdentityFields
+            identity={form.identity}
+            onChange={(identity) =>
+              setForm((f) => ({
+                ...f,
+                identity,
+                ...(!identityUsesDepartment(identity) ? { departmentId: '' } : {}),
+              }))
+            }
+            roles={roles}
+            staffTypes={staffTypes}
+            staffTypesLoading={staffTypesQuery.isLoading}
+            stages={stagesQuery.data ?? []}
+            stagesLoading={stagesQuery.isLoading}
+            titleWeight={titleWeight}
+          />
 
           {showDepartment ? (
             <UserFormSection
@@ -221,22 +220,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
               <DepartmentField
                 department={selectedDept}
                 onPress={() => setDeptOpen(true)}
-                onClear={() => set('departmentId', '')}
-              />
-            </UserFormSection>
-          ) : null}
-
-          {isWorker ? (
-            <UserFormSection
-              icon="construct-outline"
-              label={t('users.stageSkills')}
-              titleWeight={titleWeight}
-            >
-              <StageSkillsPicker
-                stages={(stagesQuery.data ?? []).filter((s) => s.isActive)}
-                selectedIds={form.stageDefinitionIds}
-                onChange={(ids) => setForm((f) => ({ ...f, stageDefinitionIds: ids }))}
-                loading={stagesQuery.isLoading}
+                onClear={() => setForm((f) => ({ ...f, departmentId: '' }))}
               />
             </UserFormSection>
           ) : null}
@@ -258,7 +242,7 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
           onClose={() => setDeptOpen(false)}
           departments={departments}
           selectedId={form.departmentId || null}
-          onSelect={(id) => set('departmentId', id ?? '')}
+          onSelect={(id) => setForm((f) => ({ ...f, departmentId: id ?? '' }))}
           overlay
         />
       ) : null}

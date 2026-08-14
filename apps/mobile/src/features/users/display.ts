@@ -1,4 +1,9 @@
 import { localizedName } from '@maher/i18n';
+import {
+  isIdentityRoleCode,
+  roleKindFromIdentityCode,
+  roleUsesDepartment as roleKindUsesDepartment,
+} from '@maher/permissions';
 import type { UserDepartment, UserRoleRef, UserRow } from '@/api/modules/users';
 
 export function userDisplayName(user: Pick<UserRow, 'firstName' | 'lastName' | 'username'>): string {
@@ -35,20 +40,19 @@ export function isCustomerUser(user: UserRow): boolean {
   return (user.roles ?? []).some((r) => r.role.code === 'CUSTOMER');
 }
 
-/** Roles that do not use department on create/edit/list. */
-const NO_DEPARTMENT_ROLE_CODES = new Set([
-  'CUSTOMER',
-  'PRODUCTION_WORKER',
-  'SYSTEM_ADMINISTRATOR',
-]);
-
-export function roleUsesDepartment(roleCode: string | undefined | null): boolean {
-  if (!roleCode) return false;
-  return !NO_DEPARTMENT_ROLE_CODES.has(roleCode);
+export function roleUsesDepartment(
+  roleCode: string | undefined | null,
+  kind?: string | null,
+): boolean {
+  if (!roleCode && !kind) return false;
+  const resolvedKind =
+    kind ??
+    (isIdentityRoleCode(roleCode) ? roleKindFromIdentityCode(roleCode) : roleCode);
+  return roleKindUsesDepartment(resolvedKind);
 }
 
 export function userShowsDepartment(user: UserRow): boolean {
   const roles = user.roles ?? [];
   if (!roles.length) return false;
-  return roles.some((r) => roleUsesDepartment(r.role.code));
+  return roles.some((r) => roleUsesDepartment(r.role.code, r.role.kind));
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, type ReactNode } from 'react';
-import { Text, TextInput } from 'react-native';
+import { Text, TextInput, type StyleProp, type TextStyle } from 'react-native';
 import { useFonts } from 'expo-font';
 import { getActiveLocale, useLocale } from '@/i18n';
 import {
@@ -23,23 +23,24 @@ function patchHostText() {
   if (hostTextPatched) return;
   hostTextPatched = true;
   const original = React.createElement.bind(React) as typeof React.createElement;
-  (React as unknown as { createElement: typeof React.createElement }).createElement = ((
-    type: unknown,
-    props: { style?: unknown } | null,
-    ...children: unknown[]
+  const patched: typeof React.createElement = ((
+    type: React.ElementType,
+    props: { style?: StyleProp<TextStyle> } | null,
+    ...children: React.ReactNode[]
   ) => {
     if (type === Text || type === TextInput) {
       return original(
-        type as typeof Text,
+        type,
         {
           ...(props ?? {}),
-          style: applyAppTypeface(getActiveLocale(), props?.style as never),
+          style: applyAppTypeface(getActiveLocale(), props?.style),
         },
         ...children,
       );
     }
-    return original(type as typeof Text, props, ...children);
+    return original(type, props, ...children);
   }) as typeof React.createElement;
+  (React as { createElement: typeof React.createElement }).createElement = patched;
 }
 
 patchHostText();

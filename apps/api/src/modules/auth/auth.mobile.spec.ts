@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
@@ -30,7 +30,7 @@ function baseUser(overrides: Record<string, unknown> = {}) {
     roles: [
       {
         role: {
-          code: 'ADMIN',
+          code: 'SYSTEM_ADMINISTRATOR',
           permissions: [{ permission: { code: 'user.manage' } }],
         },
       },
@@ -222,9 +222,11 @@ describe('AuthService mobile auth', () => {
   });
 
   it('updateMe patches profile fields and returns me()', async () => {
+    prisma.user.findUniqueOrThrow
+      .mockResolvedValueOnce(baseUser())
+      .mockResolvedValueOnce({ mfaEnabled: false, mfaSecret: null });
     prisma.user.findFirst.mockResolvedValue(null);
     prisma.user.findFirstOrThrow.mockResolvedValue(baseUser({ firstName: 'Sam', lastName: 'Lee' }));
-    prisma.user.findUniqueOrThrow.mockResolvedValue({ mfaEnabled: false, mfaSecret: null });
 
     const result = await service.updateMe('user-1', {
       firstName: 'Sam',
@@ -254,9 +256,7 @@ describe('AuthService mobile auth', () => {
   });
 
   it('changePassword rejects wrong current password', async () => {
-    prisma.user.findUniqueOrThrow.mockResolvedValue({
-      passwordHash: bcrypt.hashSync('password1', 4),
-    });
+    prisma.user.findUniqueOrThrow.mockResolvedValue(baseUser());
 
     await expect(
       service.changePassword('user-1', 'wrong', 'new-pass'),
@@ -265,9 +265,7 @@ describe('AuthService mobile auth', () => {
   });
 
   it('changePassword updates hash when current password matches', async () => {
-    prisma.user.findUniqueOrThrow.mockResolvedValue({
-      passwordHash: bcrypt.hashSync('password1', 4),
-    });
+    prisma.user.findUniqueOrThrow.mockResolvedValue(baseUser());
 
     const result = await service.changePassword('user-1', 'password1', 'new-pass');
     expect(result).toEqual({ ok: true });
@@ -279,9 +277,10 @@ describe('AuthService mobile auth', () => {
         lockedUntil: null,
       }),
     });
-  });
+    // bcrypt.hash cost 12 is CPU-bound; keep this above Jest's 5s default under parallel workers.
+  }, 15000);
 
-  it('me returns portalPassword for dealer users only', async () => {
+  it('me returns assigned password for dealers and staff, not system administrators', async () => {
     const key = 'dev-access-secret-change-me-min-32-chars!!';
     process.env.JWT_ACCESS_SECRET = key;
     const enc = encryptSecret('123', key);
@@ -311,6 +310,35 @@ describe('AuthService mobile auth', () => {
     expect(dealer.portalPassword).toBe('123');
     expect(dealer.customerId).toBe('cus-1');
 
+    prisma.user.findFirstOrThrow.mockResolvedValue(
+      baseUser({
+        username: 'warehouse',
+        roles: [
+          {
+            role: {
+              code: 'WAREHOUSE_MANAGEMENT',
+              permissions: [{ permission: { code: 'inventory.read' } }],
+            },
+          },
+        ],
+      }),
+    );
+    prisma.user.findUniqueOrThrow.mockResolvedValue({
+      mfaEnabled: false,
+      mfaSecret: null,
+      portalPasswordEnc: enc,
+    });
+
+    const staff = await service.me('user-1');
+    expect(staff.portalPassword).toBe('123');
+    expect(staff.roles).toEqual(['WAREHOUSE_MANAGEMENT']);
+    expect(staff.rolesDetailed).toEqual([
+      expect.objectContaining({
+        code: 'WAREHOUSE_MANAGEMENT',
+        nameEn: 'WAREHOUSE_MANAGEMENT',
+      }),
+    ]);
+
     prisma.user.findFirstOrThrow.mockResolvedValue(baseUser());
     prisma.user.findUniqueOrThrow.mockResolvedValue({
       mfaEnabled: true,
@@ -318,8 +346,50 @@ describe('AuthService mobile auth', () => {
       portalPasswordEnc: enc,
     });
 
-    const staff = await service.me('user-1');
-    expect(staff).not.toHaveProperty('portalPassword');
-    expect(staff.mfaEnabled).toBe(true);
+    const admin = await service.me('user-1');
+    expect(admin).not.toHaveProperty('portalPassword');
+    expect(admin.mfaEnabled).toBe(true);
+  });
+
+  it('updateMe rejects identity edits for staff accounts', async () => {
+    prisma.user.findUniqueOrThrow.mockResolvedValue(
+      baseUser({
+        username: 'warehouse',
+        roles: [
+          {
+            role: {
+              code: 'WAREHOUSE_MANAGEMENT',
+              permissions: [{ permission: { code: 'inventory.read' } }],
+            },
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      service.updateMe('user-1', { firstName: 'Sam', lastName: 'Lee' }),
+    ).rejects.toMatchObject({ response: { code: 'PROFILE_LOCKED' } });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('changePassword rejects staff accounts', async () => {
+    prisma.user.findUniqueOrThrow.mockResolvedValue(
+      baseUser({
+        username: 'warehouse',
+        roles: [
+          {
+            role: {
+              code: 'WAREHOUSE_MANAGEMENT',
+              permissions: [{ permission: { code: 'inventory.read' } }],
+            },
+          },
+        ],
+      }),
+    );
+
+    await expect(service.changePassword('user-1', 'password1', 'new-pass')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

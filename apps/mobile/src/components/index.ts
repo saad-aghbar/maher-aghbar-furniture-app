@@ -39,6 +39,7 @@ export { EmptyState } from './feedback/EmptyState';
 export { ErrorState } from './feedback/ErrorState';
 export { SkeletonLoader } from './feedback/SkeletonLoader';
 export { ToastProvider, useToast } from './feedback/Toast';
+export { ToastCard } from './feedback/ToastCard';
 export { OfflineBanner } from './feedback/OfflineBanner';
 export { NetworkStatus } from './feedback/NetworkStatus';
 export { LoadingOverlay } from './feedback/LoadingOverlay';

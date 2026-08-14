@@ -18,7 +18,13 @@ import {
   generateTotpSecret,
   verifyTotp,
 } from '../../common/helpers/totp.util';
-import { decryptPortalPassword } from '../../common/helpers/secret-box';
+import { decryptPortalPassword, encryptPortalPassword } from '../../common/helpers/secret-box';
+import { effectivePermissionCodes } from '../../common/helpers/auth-permissions.util';
+import {
+  canChangeOwnPassword,
+  canEditOwnProfile,
+  canManageOwnMfa,
+} from '../../common/helpers/account-self-serve.util';
 
 @Injectable()
 export class AuthService {
@@ -43,9 +49,17 @@ export class AuthService {
       },
     });
     const roles = user.roles.map((r) => r.role.code);
-    const permissions = [
-      ...new Set(user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code))),
-    ];
+    const permissions = effectivePermissionCodes(
+      roles,
+      user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code)),
+    );
+    const rolesDetailed = user.roles.map((r) => ({
+      code: r.role.code,
+      kind: r.role.kind ?? 'STAFF',
+      nameEn: r.role.nameEn ?? r.role.code,
+      nameAr: r.role.nameAr ?? r.role.code,
+      nameHe: r.role.nameHe ?? undefined,
+    }));
     return {
       id: user.id,
       username: user.username ?? '',
@@ -55,9 +69,32 @@ export class AuthService {
       lastName: user.lastName,
       name: `${user.firstName} ${user.lastName}`.trim(),
       roles,
+      rolesDetailed,
       permissions,
       preferredLanguage: user.preferredLanguage,
       customerId: user.customerId ?? undefined,
+    };
+  }
+
+  private async loadAccountSelfServe(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: {
+        customerId: true,
+        passwordHash: true,
+        mfaSecret: true,
+        username: true,
+        email: true,
+        roles: { select: { role: { select: { code: true } } } },
+      },
+    });
+    const roles = user.roles.map((r) => r.role.code);
+    return {
+      ...user,
+      roles,
+      canEditProfile: canEditOwnProfile(roles, user.customerId),
+      canChangePassword: canChangeOwnPassword(roles),
+      canManageMfa: canManageOwnMfa(roles, user.customerId),
     };
   }
 
@@ -365,9 +402,9 @@ export class AuthService {
       ...authUser,
       mfaEnabled: row.mfaEnabled,
       mfaPending: Boolean(row.mfaSecret && !row.mfaEnabled),
-      ...(authUser.customerId
-        ? { portalPassword: decryptPortalPassword(row.portalPasswordEnc) }
-        : {}),
+      ...(canChangeOwnPassword(authUser.roles)
+        ? {}
+        : { portalPassword: decryptPortalPassword(row.portalPasswordEnc) }),
     };
   }
 
@@ -382,6 +419,19 @@ export class AuthService {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
         message: 'No profile fields to update.',
+      });
+    }
+
+    const account = await this.loadAccountSelfServe(userId);
+    const identityTouched =
+      dto.firstName !== undefined ||
+      dto.lastName !== undefined ||
+      dto.email !== undefined ||
+      dto.phone !== undefined;
+    if (identityTouched && !account.canEditProfile) {
+      throw new ForbiddenException({
+        code: 'PROFILE_LOCKED',
+        message: 'This account is managed by an administrator.',
       });
     }
 
@@ -450,14 +500,17 @@ export class AuthService {
         message: 'Password is required.',
       });
     }
-    const user = await this.prisma.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { passwordHash: true, customerId: true },
-    });
+    const user = await this.loadAccountSelfServe(userId);
     if (user.customerId) {
       throw new ForbiddenException({
         code: 'FORBIDDEN',
         message: 'Dealer portal passwords are managed by the admin.',
+      });
+    }
+    if (!user.canChangePassword) {
+      throw new ForbiddenException({
+        code: 'PROFILE_LOCKED',
+        message: 'This account is managed by an administrator.',
       });
     }
     const ok = await bcrypt.compare(currentPassword, user.passwordHash);
@@ -603,6 +656,7 @@ export class AuthService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         passwordHash,
+        portalPasswordEnc: encryptPortalPassword(tempPassword),
         isActive: true,
         isEmailVerified: false,
         roles: { create: { roleId: role.id } },
@@ -635,31 +689,43 @@ export class AuthService {
   }
 
   async enableMfa(userId: string) {
+    const account = await this.loadAccountSelfServe(userId);
+    if (!account.canManageMfa) {
+      throw new ForbiddenException({
+        code: 'PROFILE_LOCKED',
+        message: 'This account is managed by an administrator.',
+      });
+    }
     const secret = generateTotpSecret();
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     await this.prisma.user.update({
       where: { id: userId },
       // Secret stored; MFA not enforced until confirmMfa succeeds.
       data: { mfaSecret: secret, mfaEnabled: false },
     });
-    const account = user.username || user.email || userId;
+    const label = account.username || account.email || userId;
     return {
       mfaEnabled: false,
       pending: true,
       secret,
-      otpauthUrl: buildOtpauthUrl({ secret, accountName: account }),
+      otpauthUrl: buildOtpauthUrl({ secret, accountName: label }),
     };
   }
 
   async confirmMfa(userId: string, code: string) {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (!user.mfaSecret) {
+    const account = await this.loadAccountSelfServe(userId);
+    if (!account.canManageMfa) {
+      throw new ForbiddenException({
+        code: 'PROFILE_LOCKED',
+        message: 'This account is managed by an administrator.',
+      });
+    }
+    if (!account.mfaSecret) {
       throw new BadRequestException({
         code: 'MFA_NOT_SETUP',
         message: 'Call mfa/enable first to receive a secret.',
       });
     }
-    if (!verifyTotp(user.mfaSecret, code)) {
+    if (!verifyTotp(account.mfaSecret, code)) {
       throw new BadRequestException({ code: 'MFA_INVALID', message: 'Invalid MFA code.' });
     }
     await this.prisma.user.update({
@@ -678,6 +744,13 @@ export class AuthService {
   }
 
   async disableMfa(userId: string) {
+    const account = await this.loadAccountSelfServe(userId);
+    if (!account.canManageMfa) {
+      throw new ForbiddenException({
+        code: 'PROFILE_LOCKED',
+        message: 'This account is managed by an administrator.',
+      });
+    }
     await this.prisma.user.update({
       where: { id: userId },
       data: { mfaEnabled: false, mfaSecret: null },

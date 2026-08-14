@@ -49,9 +49,7 @@ async function ensureUser(
       email: opts.email,
       phone: opts.phone,
       passwordHash,
-      portalPasswordEnc: opts.customerId
-        ? encryptPortalPassword(DEMO_PORTAL_PASSWORD)
-        : undefined,
+      portalPasswordEnc: encryptPortalPassword(DEMO_PORTAL_PASSWORD),
       firstName: opts.firstName,
       lastName: opts.lastName,
       preferredLanguage: Locale.ar,
@@ -112,6 +110,16 @@ export async function seedPeople(
     roleCode: 'SYSTEM_ADMINISTRATOR',
     phone: '+962790000001',
     departmentCode: 'MGMT',
+  });
+
+  await ensureUser(prisma, passwordHash, {
+    username: 'warehouse',
+    email: `warehouse@${COMPANY_DOMAIN}`,
+    firstName: 'Hani',
+    lastName: 'Warehouse',
+    roleCode: 'WAREHOUSE_MANAGEMENT',
+    phone: '+962790000010',
+    departmentCode: 'WH',
   });
 
   const dealers: DealerRef[] = [];

@@ -8,6 +8,8 @@ import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { StagePipelineService } from '../production/stage-pipeline.service';
+import { ProductionInventoryService } from '../production/production-inventory.service';
+import { ProductionReworkService } from '../production/production-rework.service';
 import type { AuthUser } from '@maher/types';
 
 class CreateInspectionDto {
@@ -17,6 +19,15 @@ class CreateInspectionDto {
   @IsOptional()
   @IsString()
   stageCode?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+class StartReworkDto {
+  @IsUUID()
+  stageInstanceId!: string;
 
   @IsOptional()
   @IsString()
@@ -46,6 +57,8 @@ export class QualityController {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     private readonly pipeline: StagePipelineService,
+    private readonly productionInventory: ProductionInventoryService,
+    private readonly rework: ProductionReworkService,
   ) {}
 
   @Get()
@@ -100,68 +113,28 @@ export class QualityController {
     });
   }
 
+  @Post('rework/:reworkId/start')
+  @RequirePermissions('quality-inspection.approve')
+  startRework(
+    @Param('reworkId') reworkId: string,
+    @Body() dto: StartReworkDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.rework.startRework({
+      reworkId,
+      stageInstanceId: dto.stageInstanceId,
+      notes: dto.notes,
+      userId: user.id,
+    });
+  }
+
   @Post('rework/:reworkId/complete')
   @RequirePermissions('quality-inspection.perform')
   async completeRework(
     @Param('reworkId') reworkId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    const rework = await this.prisma.reworkRequest.findUniqueOrThrow({
-      where: { id: reworkId },
-      include: { inspection: true },
-    });
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.reworkRequest.update({
-        where: { id: reworkId },
-        data: { status: 'COMPLETED', completedAt: new Date() },
-      });
-
-      const stageCode = rework.inspection?.stageCode ?? 'INSPECTION';
-      const stage = await tx.productionStageInstance.findFirst({
-        where: {
-          productionOrderId: rework.productionOrderId,
-          stageDefinition: { code: stageCode },
-        },
-        include: { tasks: true },
-      });
-
-      if (stage) {
-        await tx.productionStageInstance.update({
-          where: { id: stage.id },
-          data: { status: 'READY', progressPercent: 0, actualEnd: null },
-        });
-        for (const task of stage.tasks) {
-          await tx.productionTask.update({
-            where: { id: task.id },
-            data: {
-              status: 'READY',
-              progressPercent: 0,
-              actualCompletion: null,
-            },
-          });
-        }
-      }
-
-      await tx.productionOrder.update({
-        where: { id: rework.productionOrderId },
-        data: { status: 'QUALITY_CHECK', currentStageCode: stageCode },
-      });
-
-      await tx.auditEvent.create({
-        data: {
-          userId: user.id,
-          action: 'quality.rework.complete',
-          entityType: 'ReworkRequest',
-          entityId: reworkId,
-        },
-      });
-
-      return tx.reworkRequest.findUniqueOrThrow({
-        where: { id: reworkId },
-        include: { inspection: true },
-      });
-    });
+    return this.rework.completeRework(reworkId, user.id);
   }
 
   @Get(':id')
@@ -221,11 +194,17 @@ export class QualityController {
             productionOrderId: inspection.productionOrderId,
             inspectionId: id,
             description: dto.defectDescription ?? 'Rework required',
+            status: 'AWAITING_STAGE',
           },
         });
         await tx.productionOrder.update({
           where: { id: inspection.productionOrderId },
           data: { status: 'ON_HOLD' },
+        });
+        await this.productionInventory.reverseFinishedGoods({
+          productionOrderId: inspection.productionOrderId,
+          userId: user.id,
+          tx,
         });
       }
 
@@ -254,12 +233,22 @@ export class QualityController {
               });
             }
           }
+          await this.productionInventory.onInspectionPassed({
+            productionOrderId: inspection.productionOrderId,
+            userId: user.id,
+            tx,
+          });
           await this.pipeline.onTaskComplete(
             inspection.productionOrderId,
             stage.id,
             tx,
           );
         } else {
+          await this.productionInventory.onInspectionPassed({
+            productionOrderId: inspection.productionOrderId,
+            userId: user.id,
+            tx,
+          });
           await this.pipeline.unlockReadyStages(inspection.productionOrderId, tx);
           await this.pipeline.rollupProgress(inspection.productionOrderId, tx);
         }

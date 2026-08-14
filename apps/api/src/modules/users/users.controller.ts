@@ -2,6 +2,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   BadRequestException,
@@ -16,6 +17,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -25,7 +27,7 @@ import {
 import { Transform } from 'class-transformer';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
-import { Locale, Prisma } from '@maher/database';
+import { Locale, Prisma, RoleKind } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -33,9 +35,11 @@ import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pag
 import type { AuthUser } from '@maher/types';
 import {
   assertCannotDeactivateSelf,
+  assertCannotDeleteSelf,
   assertCannotRemoveOwnAdmin,
   assertNotLastActiveAdmin,
 } from './users.guards';
+import { rolesOmitDepartment, stageSkillsForAssignedRoles } from './employee-assignment';
 import { encryptPortalPassword } from '../../common/helpers/secret-box';
 
 function splitCodes(value: unknown): string[] | undefined {
@@ -68,6 +72,14 @@ class ListUsersDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   departmentId?: string;
+
+  @IsOptional()
+  @IsIn(['CUSTOMER', 'PRODUCTION_WORKER', 'STAFF', 'ADMIN'])
+  roleKind?: RoleKind;
+
+  @IsOptional()
+  @IsUUID()
+  staffTypeId?: string;
 }
 
 class CreateUserDto {
@@ -261,9 +273,13 @@ export class UsersController {
     if (roleIds?.length) {
       const roles = await this.prisma.role.findMany({
         where: { id: { in: roleIds } },
-        select: { code: true },
+        select: { code: true, kind: true },
       });
       codes = roles.map((r) => r.code);
+      const kinds = roles.map((r) => r.kind);
+      if (rolesOmitDepartment(kinds)) {
+        return undefined;
+      }
     }
 
     const noDepartment = (codes ?? []).some(
@@ -281,11 +297,15 @@ export class UsersController {
   @RequirePermissions('user.manage')
   async listUsers(@Query() query: ListUsersDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
-    const roleFilter = query.roleCode
-      ? { roles: { some: { role: { code: query.roleCode } } } }
-      : query.roleCodes?.length
-        ? { roles: { some: { role: { code: { in: query.roleCodes } } } } }
-        : {};
+    const roleFilter = query.staffTypeId
+      ? { roles: { some: { roleId: query.staffTypeId } } }
+      : query.roleKind
+        ? { roles: { some: { role: { kind: query.roleKind } } } }
+        : query.roleCode
+          ? { roles: { some: { role: { code: query.roleCode } } } }
+          : query.roleCodes?.length
+            ? { roles: { some: { role: { code: { in: query.roleCodes } } } } }
+            : {};
     const where: Prisma.UserWhereInput = {
       archivedAt: null,
       ...(query.q
@@ -364,6 +384,17 @@ export class UsersController {
       dto.departmentId ?? null,
     );
 
+    const assignedRoles = dto.roleIds?.length
+      ? await this.prisma.role.findMany({
+          where: { id: { in: dto.roleIds } },
+          select: { id: true, code: true, kind: true },
+        })
+      : [];
+    const skillIds = stageSkillsForAssignedRoles(
+      assignedRoles.map((r) => r.kind),
+      dto.stageDefinitionIds,
+    );
+
     const user = await this.prisma.user.create({
       data: {
         username,
@@ -375,7 +406,7 @@ export class UsersController {
         customerId: dto.customerId,
         ...(departmentId ? { departmentId } : {}),
         passwordHash,
-        ...(dto.customerId ? { portalPasswordEnc: encryptPortalPassword(tempPassword) } : {}),
+        portalPasswordEnc: encryptPortalPassword(tempPassword),
         isActive: dto.isActive ?? true,
         roles: dto.roleIds?.length
           ? { create: dto.roleIds.map((roleId) => ({ roleId })) }
@@ -384,7 +415,7 @@ export class UsersController {
       select: userSelect,
     });
 
-    await this.syncWorkerSkills(user.id, dto.stageDefinitionIds);
+    await this.syncWorkerSkills(user.id, skillIds);
 
     await this.prisma.auditEvent.create({
       data: {
@@ -396,7 +427,8 @@ export class UsersController {
           username,
           email,
           roleIds: dto.roleIds ?? [],
-          stageDefinitionIds: dto.stageDefinitionIds ?? [],
+          roleCodes: assignedRoles.map((r) => r.code),
+          stageDefinitionIds: skillIds ?? [],
           isActive: user.isActive,
         },
       },
@@ -458,12 +490,13 @@ export class UsersController {
       await this.ensureNotLastActiveAdmin(id);
     }
 
+    let assignedRoles = existing.roles.map((r) => r.role);
     if (dto.roleIds) {
+      assignedRoles = await this.prisma.role.findMany({
+        where: { id: { in: dto.roleIds } },
+      });
       if (id === actor.id) {
-        const roles = await this.prisma.role.findMany({
-          where: { id: { in: dto.roleIds } },
-        });
-        const stillAdmin = roles.some((r) => r.code === 'SYSTEM_ADMINISTRATOR');
+        const stillAdmin = assignedRoles.some((r) => r.code === 'SYSTEM_ADMINISTRATOR');
         const wasAdmin = existing.roles.some((r) => r.role.code === 'SYSTEM_ADMINISTRATOR');
         assertCannotRemoveOwnAdmin(actor.id, id, wasAdmin, stillAdmin);
       }
@@ -486,15 +519,9 @@ export class UsersController {
       existingRoleCodes,
     );
 
-    const nextCustomerId =
-      dto.customerId === undefined ? existing.customerId : dto.customerId;
     const portalPasswordEnc = dto.password
-      ? nextCustomerId
-        ? encryptPortalPassword(dto.password)
-        : null
-      : dto.customerId === null
-        ? null
-        : undefined;
+      ? encryptPortalPassword(dto.password)
+      : undefined;
 
     const user = await this.prisma.user.update({
       where: { id },
@@ -523,7 +550,11 @@ export class UsersController {
       });
     }
 
-    await this.syncWorkerSkills(id, dto.stageDefinitionIds);
+    const skillIds = stageSkillsForAssignedRoles(
+      assignedRoles.map((r) => r.kind),
+      dto.stageDefinitionIds,
+    );
+    await this.syncWorkerSkills(id, skillIds);
 
     await this.prisma.auditEvent.create({
       data: {
@@ -538,9 +569,11 @@ export class UsersController {
           email: existing.email,
           isActive: existing.isActive,
           departmentId: existing.departmentId,
+          roleCodes: existing.roles.map((r) => r.role.code),
         },
         newValues: {
           ...dto,
+          roleCodes: assignedRoles.map((r) => r.code),
           ...(dto.password ? { password: '[changed]' } : {}),
         },
       },
@@ -572,9 +605,7 @@ export class UsersController {
       where: { id },
       data: {
         passwordHash,
-        ...(user.customerId
-          ? { portalPasswordEnc: encryptPortalPassword(temporaryPassword) }
-          : {}),
+        portalPasswordEnc: encryptPortalPassword(temporaryPassword),
       },
     });
     await this.prisma.session.updateMany({
@@ -590,6 +621,53 @@ export class UsersController {
       },
     });
     return { ok: true, temporaryPassword };
+  }
+
+  @Delete('users/:id')
+  @RequirePermissions('user.manage')
+  async deleteUser(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    const existing = await this.prisma.user.findFirst({
+      where: { id, archivedAt: null },
+    });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'User not found.' });
+
+    assertCannotDeleteSelf(actor.id, id);
+    await this.ensureNotLastActiveAdmin(id);
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.session.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await tx.user.update({
+        where: { id },
+        data: {
+          isActive: false,
+          archivedAt: now,
+          username: null,
+          email: null,
+          phone: null,
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          userId: actor.id,
+          action: 'user.delete',
+          entityType: 'User',
+          entityId: id,
+          oldValues: {
+            username: existing.username,
+            firstName: existing.firstName,
+            lastName: existing.lastName,
+            email: existing.email,
+            isActive: existing.isActive,
+          },
+        },
+      });
+    });
+
+    return { ok: true };
   }
 
   private async ensureNotLastActiveAdmin(userId: string) {

@@ -9,11 +9,12 @@ import { dealerTokens, useTheme } from '@/theme';
 
 export const DEALER_FAB_SIZE = 58;
 
-/** FAB destination — registered tab route, not a visible chip. */
-export const DEALER_NEW_ORDER_HREF = '/(app)/(customer)/(tabs)/new-order' as const;
+import {
+  DEALER_NEW_ORDER_A11Y_KEY,
+  DEALER_NEW_ORDER_HREF,
+} from './dealerFabConstants';
 
-/** i18n key for FAB accessibility label (RTL-safe via t()). */
-export const DEALER_NEW_ORDER_A11Y_KEY = 'mobile.tabs.newOrder' as const;
+export { DEALER_NEW_ORDER_A11Y_KEY, DEALER_NEW_ORDER_HREF };
 
 type Props = {
   /** When false, hide (e.g. no permission). Default: gate on request.create */

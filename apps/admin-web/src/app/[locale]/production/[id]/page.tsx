@@ -185,6 +185,8 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [uploadingTaskId, setUploadingTaskId] = useState<string | null>(null);
 
+  const [returnQty, setReturnQty] = useState<Record<string, string>>({});
+
   const priorityOpts = statusOptions(tStatus, PRIORITY_STATUSES);
 
   const detailQuery = useQuery({
@@ -196,6 +198,32 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
       setPlannedEnd(toDateInput(order.plannedCompletionDate));
       return order;
     },
+  });
+
+  const materialsQuery = useQuery({
+    queryKey: ['production-order-materials', params.id],
+    queryFn: () =>
+      apiFetch<{
+        materials: Array<{
+          inventoryItem: { id: string; sku: string; nameEn: string; nameAr: string; nameHe?: string | null; unit: string };
+          issuedQty: number;
+          returnedQty: number;
+          returnableQty: number;
+        }>;
+      }>(`/api/v1/production-orders/${params.id}/materials`),
+  });
+
+  const returnMaterialMutation = useMutation({
+    mutationFn: (body: { inventoryItemId: string; quantity: number; idempotencyKey: string }) =>
+      apiFetch(`/api/v1/production-orders/${params.id}/materials/return`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async () => {
+      setBanner(tp('materialReturned'));
+      await qc.invalidateQueries({ queryKey: ['production-order-materials', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
   });
 
   const workersQuery = useQuery({
@@ -706,6 +734,56 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
             {tp('assignAll')}
           </Button>
         </div>
+      ) : null}
+
+      {(materialsQuery.data?.materials?.length ?? 0) > 0 ? (
+        <MotionSection className="maher-form-section" as="div">
+          <Card className="space-y-3 p-4">
+            <h2 className="text-base font-semibold">{tp('materials')}</h2>
+            <ul className="space-y-3">
+              {(materialsQuery.data?.materials ?? []).map((row) => {
+                const name = localizedName(locale, row.inventoryItem);
+                const qty = Number(returnQty[row.inventoryItem.id] ?? row.returnableQty);
+                return (
+                  <li key={row.inventoryItem.id} className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{name}</p>
+                      <p className="text-xs text-text-secondary">
+                        {tp('issuedQty')} {row.issuedQty} · {tp('returnedQty')} {row.returnedQty} · {tp('returnableQty')} {row.returnableQty}
+                      </p>
+                    </div>
+                    {row.returnableQty > 0 ? (
+                      <div className="flex flex-wrap items-end gap-2">
+                        <Input
+                          label={tp('returnQuantity')}
+                          type="number"
+                          dir="ltr"
+                          value={returnQty[row.inventoryItem.id] ?? String(row.returnableQty)}
+                          onChange={(e) =>
+                            setReturnQty((prev) => ({ ...prev, [row.inventoryItem.id]: e.target.value }))
+                          }
+                        />
+                        <Button
+                          size="sm"
+                          loading={returnMaterialMutation.isPending}
+                          onClick={() =>
+                            returnMaterialMutation.mutate({
+                              inventoryItemId: row.inventoryItem.id,
+                              quantity: Math.min(qty, row.returnableQty),
+                              idempotencyKey: `prod-return:${params.id}:${row.inventoryItem.id}:${Math.min(qty, row.returnableQty)}`,
+                            })
+                          }
+                        >
+                          {tp('returnUnused')}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        </MotionSection>
       ) : null}
 
       <MotionSection className="maher-form-section maher-table-shell" as="div">

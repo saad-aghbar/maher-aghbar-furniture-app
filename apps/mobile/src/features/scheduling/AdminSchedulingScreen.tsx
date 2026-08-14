@@ -861,7 +861,6 @@ function StatChip({
         backgroundColor: wash,
         paddingVertical: theme.spacing.sm,
         paddingHorizontal: theme.spacing.sm + 2,
-        gap: 4,
         ...(fullWidth
           ? {
               width: '100%',
@@ -874,6 +873,7 @@ function StatChip({
               flexGrow: 1,
               minWidth: '46%',
               maxWidth: '48%',
+              gap: 4,
             }),
         ...orderBoardShadow(colorScheme),
       }}

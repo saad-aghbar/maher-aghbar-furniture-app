@@ -1,5 +1,5 @@
-import { type ReactNode, useEffect } from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { type ComponentType, type ReactNode, useEffect } from 'react';
+import { Pressable, StyleSheet, View, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -11,7 +11,9 @@ import { useTheme } from '@/theme';
 import { durations, easingBezier, withMotionDuration } from './presets';
 import { useReducedMotion } from './useReducedMotion';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable as never) as unknown as ComponentType<
+  PressableProps & { style?: StyleProp<ViewStyle> }
+>;
 
 /** Distance cap (px) — dismiss after this much downward travel, even on tall sheets. */
 export const SHEET_DISMISS_DISTANCE_CAP = 120;

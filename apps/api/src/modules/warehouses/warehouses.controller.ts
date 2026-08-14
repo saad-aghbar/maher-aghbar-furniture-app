@@ -22,7 +22,7 @@ import {
 } from 'class-validator';
 import { Prisma } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
-import { RequirePermissions } from '../../common/decorators/auth.decorators';
+import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListActiveQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
@@ -47,8 +47,16 @@ class WarehouseDto {
   @MinLength(1)
   nameEn!: string;
 
-  @IsIn(['RAW', 'SEMI', 'FINISHED'])
+  @IsIn(['RAW_MATERIALS', 'SEMI_FINISHED', 'FINISHED_GOODS'])
   type!: string;
+
+  @IsOptional()
+  @IsString()
+  nameHe?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
   @IsOptional() @IsUUID() branchId?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
 }
@@ -64,7 +72,7 @@ export class WarehousesController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  @RequirePermissions('warehouse.manage')
+  @RequireAnyPermissions('warehouse.read', 'warehouse.manage')
   async list(@Query() query: ListActiveQueryDto) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
     const where: Prisma.WarehouseWhereInput = {
@@ -118,11 +126,19 @@ export class WarehousesController {
         code,
         nameAr: dto.nameAr.trim(),
         nameEn: dto.nameEn.trim(),
-        type: dto.type,
+        nameHe: dto.nameHe?.trim() || undefined,
+        type: dto.type as never,
         branchId: dto.branchId,
         isActive: dto.isActive ?? true,
+        isDefault: dto.isDefault ?? false,
       },
     });
+    if (row.isDefault) {
+      await this.prisma.warehouse.updateMany({
+        where: { type: row.type, isDefault: true, id: { not: row.id } },
+        data: { isDefault: false },
+      });
+    }
     await this.audit(user.id, 'warehouse.create', row.id, row);
     return row;
   }
@@ -146,7 +162,26 @@ export class WarehousesController {
     @Body() dto: Partial<WarehouseDto>,
     @CurrentUser() user: AuthUser,
   ) {
-    const row = await this.prisma.warehouse.update({ where: { id }, data: dto });
+    const row = await this.prisma.warehouse.update({
+      where: { id },
+      data: {
+        ...(dto.code !== undefined ? { code: dto.code } : {}),
+        ...(dto.nameAr !== undefined ? { nameAr: dto.nameAr } : {}),
+        ...(dto.nameEn !== undefined ? { nameEn: dto.nameEn } : {}),
+        ...(dto.nameHe !== undefined ? { nameHe: dto.nameHe } : {}),
+        ...(dto.type !== undefined ? { type: dto.type as Prisma.WarehouseUpdateInput['type'] } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {}),
+        ...(dto.branchId !== undefined ? { branch: { connect: { id: dto.branchId } } } : {}),
+      },
+    });
+    const type = (dto.type ?? row.type) as string;
+    if (dto.isDefault === true) {
+      await this.prisma.warehouse.updateMany({
+        where: { type: type as never, isDefault: true, id: { not: id } },
+        data: { isDefault: false },
+      });
+    }
     await this.audit(user.id, 'warehouse.update', id, row);
     return row;
   }

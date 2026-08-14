@@ -1,8 +1,10 @@
 'use client';
 
 import { MasterCrudPage } from '@/components/admin/master-crud-page';
+import { useAuthMe } from '@/hooks/use-auth-me';
 import { StatusBadge } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
+import { can } from '@maher/permissions';
 import { useLocale, useTranslations } from 'next-intl';
 
 interface Warehouse {
@@ -12,12 +14,13 @@ interface Warehouse {
   nameEn: string;
   type: string;
   isActive: boolean;
+  isDefault?: boolean;
 }
 
 const WAREHOUSE_TYPES = [
-  { value: 'RAW', labelKey: 'warehouseTypeRaw' as const },
-  { value: 'SEMI', labelKey: 'warehouseTypeSemi' as const },
-  { value: 'FINISHED', labelKey: 'warehouseTypeFinished' as const },
+  { value: 'RAW_MATERIALS', labelKey: 'warehouseTypeRaw' as const },
+  { value: 'SEMI_FINISHED', labelKey: 'warehouseTypeSemi' as const },
+  { value: 'FINISHED_GOODS', labelKey: 'warehouseTypeFinished' as const },
 ];
 
 export default function WarehousesPage() {
@@ -26,6 +29,8 @@ export default function WarehousesPage() {
   const tNav = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const locale = useLocale();
+  const me = useAuthMe();
+  const canManage = can(me.data, 'warehouse.manage');
 
   const typeLabel = (type: string) => {
     const found = WAREHOUSE_TYPES.find((t) => t.value === type);
@@ -37,10 +42,10 @@ export default function WarehousesPage() {
       title={tNav('warehouses')}
       queryKey="warehouses"
       listPath="/api/v1/warehouses"
-      createPath="/api/v1/warehouses"
-      patchPath={(id) => `/api/v1/warehouses/${id}`}
-      activatePath={(id) => `/api/v1/warehouses/${id}/activate`}
-      deactivatePath={(id) => `/api/v1/warehouses/${id}/deactivate`}
+      createPath={canManage ? '/api/v1/warehouses' : undefined}
+      patchPath={canManage ? (id) => `/api/v1/warehouses/${id}` : undefined}
+      activatePath={canManage ? (id) => `/api/v1/warehouses/${id}/activate` : undefined}
+      deactivatePath={canManage ? (id) => `/api/v1/warehouses/${id}/deactivate` : undefined}
       emptyTitle={ti('noWarehouses')}
       activeField="isActive"
       columns={[
@@ -54,6 +59,11 @@ export default function WarehousesPage() {
           key: 'type',
           header: ti('warehouseType'),
           render: (r) => typeLabel(r.type),
+        },
+        {
+          key: 'isDefault',
+          header: ti('isDefault'),
+          render: (r) => (r.isDefault ? tCommon('yes') : tCommon('no')),
         },
         {
           key: 'status',
@@ -75,18 +85,25 @@ export default function WarehousesPage() {
             label: ti(wt.labelKey),
           })),
         },
+        {
+          name: 'isDefault',
+          label: ti('isDefault'),
+          type: 'checkbox',
+        },
       ]}
       mapRowToForm={(r) => ({
         code: r.code,
         nameEn: r.nameEn,
         nameAr: r.nameAr,
-        type: r.type || 'RAW',
+        type: r.type || 'RAW_MATERIALS',
+        isDefault: Boolean(r.isDefault),
       })}
       buildPayload={(form) => ({
         code: String(form.code).trim(),
         nameEn: String(form.nameEn).trim(),
         nameAr: String(form.nameAr).trim(),
-        type: String(form.type || 'RAW'),
+        type: String(form.type || 'RAW_MATERIALS'),
+        isDefault: Boolean(form.isDefault),
       })}
     />
   );

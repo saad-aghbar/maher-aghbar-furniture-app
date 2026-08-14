@@ -11,9 +11,10 @@ import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { UsersSegment } from '../segment';
 
-const SEGMENTS: UsersSegment[] = ['staff', 'customers', 'admins', 'all'];
+const SEGMENTS: UsersSegment[] = ['workers', 'staff', 'customers', 'admins', 'all'];
 
 const LABEL_KEY: Record<UsersSegment, string> = {
+  workers: 'users.segmentWorkers',
   staff: 'users.segmentStaff',
   customers: 'users.segmentCustomers',
   admins: 'users.segmentAdmins',
@@ -27,15 +28,16 @@ const PILL_HEIGHT = 36;
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
 /** Warm atelier stops — one per segment so the bubble tint eases while scrubbing. */
-const FILL_LIGHT = ['#F3EEE5', '#EEEAE4', '#F2E8E4', '#E9EBE3'] as const;
-const BORDER_LIGHT = ['#8F7A58', '#6E6254', '#7A4538', '#5A6348'] as const;
+const FILL_LIGHT = ['#F3EEE5', '#EEEAE4', '#F2E8E4', '#E9EBE3', '#E8EEEA'] as const;
+const BORDER_LIGHT = ['#8F7A58', '#6E6254', '#7A4538', '#5A6348', '#4A6B58'] as const;
 const FILL_DARK = [
   'rgba(168,144,108,0.22)',
   'rgba(181,164,140,0.20)',
   'rgba(196,137,122,0.18)',
   'rgba(154,170,122,0.18)',
+  'rgba(122,170,148,0.18)',
 ] as const;
-const BORDER_DARK = ['#A8906C', '#B5A48C', '#C4897A', '#9AAA7A'] as const;
+const BORDER_DARK = ['#A8906C', '#B5A48C', '#C4897A', '#9AAA7A', '#7AAA94'] as const;
 
 type ChipLayout = { x: number; width: number };
 
@@ -99,8 +101,8 @@ export function UsersSegmentRail({ value, onChange }: Props) {
       { scale: 1 + dragging.value * 0.04 },
     ],
     width: pillW.value,
-    backgroundColor: interpolateColor(hoverIndex.value, [0, 1, 2, 3], [...fills]),
-    borderColor: interpolateColor(hoverIndex.value, [0, 1, 2, 3], [...borders]),
+    backgroundColor: interpolateColor(hoverIndex.value, [0, 1, 2, 3, 4], [...fills]),
+    borderColor: interpolateColor(hoverIndex.value, [0, 1, 2, 3, 4], [...borders]),
   }));
 
   const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;

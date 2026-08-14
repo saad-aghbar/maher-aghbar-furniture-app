@@ -111,7 +111,7 @@ describe('CatalogController.browseProducts scope', () => {
   });
 
   it('strips costs and basePrice for dealers and uses own dealer price', async () => {
-    const { controller } = makeController();
+    const { controller: _controller } = makeController();
     // Mock returns both A and B rows — map must only use A (first match for p1 in loop overwrites)
     // Rebuild with only A’s price to mirror real where clause filtering
     const prismaDealerOnly = {
@@ -140,7 +140,7 @@ describe('CatalogController.browseProducts scope', () => {
   });
 
   it('never exposes another dealer price when map is correctly scoped', async () => {
-    const { controller } = makeController();
+    const { controller: _controller } = makeController();
     // First makeController returns both A and B for same productId — last write wins in Map.set.
     // Simulate correct DB filter: only A.
     const prisma = {

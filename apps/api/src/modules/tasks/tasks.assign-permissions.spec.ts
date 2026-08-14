@@ -94,6 +94,7 @@ describe('TasksService assign permissions & visibility', () => {
     const service = new TasksService(
       prisma as unknown as PrismaService,
       {} as StagePipelineService,
+      { onStageTaskComplete: jest.fn(), assertStageInventoryReady: jest.fn() } as any,
       {} as InvoicesService,
       { createAccessToken: jest.fn(() => 'tok') } as unknown as LocalStorageService,
       mockIdempotency(),

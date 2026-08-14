@@ -87,6 +87,7 @@ describe('TasksService lifecycle (complete / duplicates / isolation)', () => {
         update: jest.Mock;
       };
       productionOrder: { findUnique: jest.Mock };
+      productionOrderWorkflowSnapshotNode: { findFirst: jest.Mock };
       document: {
         count: jest.Mock;
         findMany: jest.Mock;
@@ -103,6 +104,9 @@ describe('TasksService lifecycle (complete / duplicates / isolation)', () => {
       productionOrder: {
         findUnique: productionOrderFindUnique,
       },
+      productionOrderWorkflowSnapshotNode: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       document: {
         count: documentCount,
         findMany: jest.fn().mockResolvedValue([]),
@@ -118,7 +122,7 @@ describe('TasksService lifecycle (complete / duplicates / isolation)', () => {
     const pipeline = {
       onTaskComplete,
       onTaskStart: jest.fn(),
-      arePrereqsMet,
+      arePrereqsMetForInstance: arePrereqsMet,
     } as unknown as StagePipelineService;
     const invoices = { ensureFromSalesOrder: jest.fn() } as unknown as InvoicesService;
     const storage = { createAccessToken: jest.fn(() => 'tok') } as unknown as LocalStorageService;
@@ -126,6 +130,7 @@ describe('TasksService lifecycle (complete / duplicates / isolation)', () => {
     const service = new TasksService(
       prisma as unknown as PrismaService,
       pipeline,
+      { onStageTaskComplete: jest.fn().mockResolvedValue(undefined), assertStageInventoryReady: jest.fn().mockResolvedValue(undefined) } as any,
       invoices,
       storage,
       idempotency,

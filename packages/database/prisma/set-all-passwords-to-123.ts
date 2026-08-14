@@ -1,6 +1,6 @@
 /**
  * One-off: set every user's password to `123` (bcrypt cost 12) and revoke sessions.
- * Also stores the encrypted dealer portal password for customer-linked users.
+ * Also stores the encrypted assigned password so workers, staff, and dealers can view it.
  * Does not wipe operational data (unlike full seed).
  *
  * Run: pnpm --filter @maher/database exec dotenv -e ../../.env -- tsx prisma/set-all-passwords-to-123.ts
@@ -18,24 +18,17 @@ async function main() {
   const users = await prisma.user.updateMany({
     data: {
       passwordHash,
+      portalPasswordEnc,
       failedLoginAttempts: 0,
       lockedUntil: null,
     },
-  });
-  const dealers = await prisma.user.updateMany({
-    where: { customerId: { not: null } },
-    data: { portalPasswordEnc },
-  });
-  const staff = await prisma.user.updateMany({
-    where: { customerId: null },
-    data: { portalPasswordEnc: null },
   });
   const sessions = await prisma.session.updateMany({
     where: { revokedAt: null },
     data: { revokedAt: new Date() },
   });
   console.log(
-    `Updated ${users.count} users to password "123"; ${dealers.count} dealer portal passwords stored; ${staff.count} staff blobs cleared; revoked ${sessions.count} sessions.`,
+    `Updated ${users.count} users to password "123" with a viewable assigned password; revoked ${sessions.count} sessions.`,
   );
 }
 

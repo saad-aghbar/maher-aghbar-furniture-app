@@ -15,6 +15,7 @@ import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import type { SemiFinishedLot } from '@/api/modules/inventory';
 import { openInventoryLabelPdf, type InventoryCategoryGroup } from '../api';
 import {
   isValidCategoryGroup,
@@ -22,10 +23,12 @@ import {
   type InventoryItemCardModel,
 } from '../selectInventory';
 import {
+  countMatchesLifecycle,
   filterStockCountCards,
   filterTransferCards,
   selectStockCountCard,
   selectTransferCard,
+  transferMatchesLifecycle,
   type StockCountCardModel,
   type TransferCardModel,
 } from '../selectInventoryOps';
@@ -40,21 +43,31 @@ import { EditInventoryItemSheet } from './EditInventoryItemSheet';
 import { InventoryLowStockFocus } from './InventoryLowStockFocus';
 import { InventoryMaterialRow } from './InventoryMaterialRow';
 import type { InventoryHomeSection } from './InventorySectionTabs';
+import type { InventoryLifecycle } from './InventoryLifecycleTabs';
 import { InventoryListSkeleton } from './InventorySkeleton';
 import { InventoryStockCountRow } from './InventoryStockCountRow';
 import { InventoryTransferRow } from './InventoryTransferRow';
+import { InventoryFinishedRow, InventoryWipRow } from './InventoryProductionRows';
+import { InventoryLotInspectSheet } from './InventoryLotInspectSheet';
+import { warehousesForLifecycle, warehouseTypeForLifecycle } from '../preferWarehouseForReceive';
 import {
+  flattenFinishedGoodsPages,
   flattenInventoryItemPages,
   flattenInventoryStockCountPages,
+  flattenSemiFinishedPages,
   flattenWarehouseTransferPages,
+  useCompleteWarehouseTransferMutation,
   useCreateInventoryItemMutation,
   useCreateInventoryStockCountMutation,
   useCreateWarehouseTransferMutation,
+  useFinishedGoodsInfiniteQuery,
   useInventoryGroupsQuery,
   useInventoryItemsInfiniteQuery,
   useInventoryStockCountsInfiniteQuery,
   useIssueStockMutation,
+  usePostInventoryStockCountMutation,
   useReceiveStockMutation,
+  useSemiFinishedLotsInfiniteQuery,
   useSyncInventoryFromMaterialsMutation,
   useUpdateInventoryItemMutation,
   useWarehouseTransfersInfiniteQuery,
@@ -69,7 +82,9 @@ type MoveTarget = {
 type ListRow =
   | { kind: 'item'; model: InventoryItemCardModel }
   | { kind: 'transfer'; model: TransferCardModel }
-  | { kind: 'count'; model: StockCountCardModel };
+  | { kind: 'count'; model: StockCountCardModel }
+  | { kind: 'wip'; model: SemiFinishedLot }
+  | { kind: 'fg'; model: InventoryItemCardModel & { reservedQty: number; quarantined: boolean } };
 
 type Props = {
   initialGroup?: InventoryCategoryGroup;
@@ -99,9 +114,11 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   const canCreateWarehouse = can(user, 'warehouse.manage');
 
   const [section, setSection] = useState<InventoryHomeSection>('items');
+  const [lifecycle, setLifecycle] = useState<InventoryLifecycle>('materials');
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createOpsOpen, setCreateOpsOpen] = useState(false);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
+  const [inspectLot, setInspectLot] = useState<SemiFinishedLot | null>(null);
   const [editItem, setEditItem] = useState<InventoryItemCardModel | null>(null);
   const [move, setMove] = useState<MoveTarget | null>(null);
   const [categoryGroup, setCategoryGroup] = useState<InventoryCategoryGroup>(
@@ -125,15 +142,24 @@ export function InventorySignatureHome({ initialGroup }: Props) {
 
   useEffect(() => {
     setCreateOpsOpen(false);
-  }, [section]);
+  }, [section, lifecycle]);
 
-  const groupsQuery = useInventoryGroupsQuery(allowed);
+  const groupsQuery = useInventoryGroupsQuery(allowed && lifecycle === 'materials');
   const itemsQuery = useInventoryItemsInfiniteQuery(
     { categoryGroup, q: section === 'items' ? q || undefined : undefined },
-    allowed,
+    allowed && lifecycle === 'materials',
   );
-  const transfersQuery = useWarehouseTransfersInfiniteQuery(allowed);
-  const countsQuery = useInventoryStockCountsInfiniteQuery(allowed);
+  const wipQuery = useSemiFinishedLotsInfiniteQuery(
+    { q: section === 'items' ? q || undefined : undefined },
+    allowed && lifecycle === 'semiFinished' && section === 'items',
+  );
+  const fgQuery = useFinishedGoodsInfiniteQuery(
+    { q: section === 'items' ? q || undefined : undefined },
+    allowed && lifecycle === 'finished' && section === 'items',
+  );
+  const warehouseType = warehouseTypeForLifecycle(lifecycle);
+  const transfersQuery = useWarehouseTransfersInfiniteQuery(allowed, warehouseType);
+  const countsQuery = useInventoryStockCountsInfiniteQuery(allowed, warehouseType);
   const warehousesQuery = useWarehousesQuery(
     allowed &&
       (section !== 'items' || Boolean(move) || createOpsOpen || canReceive || canIssue),
@@ -146,6 +172,8 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   const issueMutation = useIssueStockMutation();
   const createTransferMutation = useCreateWarehouseTransferMutation();
   const createCountMutation = useCreateInventoryStockCountMutation();
+  const completeTransferMutation = useCompleteWarehouseTransferMutation();
+  const postCountMutation = usePostInventoryStockCountMutation();
 
   function openLabelPdf(item: InventoryItemCardModel) {
     void (async () => {
@@ -177,19 +205,27 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   );
 
   const transfers = useMemo(() => {
-    const rows = flattenWarehouseTransferPages(transfersQuery.data).map((row) =>
-      selectTransferCard(row, locale),
-    );
+    const rows = flattenWarehouseTransferPages(transfersQuery.data)
+      .filter((row) => transferMatchesLifecycle(row, lifecycle))
+      .map((row) => selectTransferCard(row, locale));
     return filterTransferCards(rows, section === 'transfers' ? q : '');
-  }, [transfersQuery.data, locale, q, section]);
+  }, [transfersQuery.data, locale, q, section, lifecycle]);
 
   const counts = useMemo(() => {
     const warehouses = warehousesQuery.data ?? [];
-    const rows = flattenInventoryStockCountPages(countsQuery.data).map((row) =>
-      selectStockCountCard(row, locale, warehouses),
-    );
+    const rows = flattenInventoryStockCountPages(countsQuery.data)
+      .filter(
+        (row) =>
+          warehouses.length === 0 || countMatchesLifecycle(row, lifecycle, warehouses),
+      )
+      .map((row) => selectStockCountCard(row, locale, warehouses));
     return filterStockCountCards(rows, section === 'counts' ? q : '');
-  }, [countsQuery.data, warehousesQuery.data, locale, q, section]);
+  }, [countsQuery.data, warehousesQuery.data, locale, q, section, lifecycle]);
+
+  const lifecycleWarehouses = useMemo(
+    () => warehousesForLifecycle(warehousesQuery.data ?? [], lifecycle),
+    [warehousesQuery.data, lifecycle],
+  );
 
   const topLowStock = useMemo(
     () => items.find((item) => item.isLowStock) ?? null,
@@ -203,15 +239,38 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     if (section === 'counts') {
       return counts.map((model) => ({ kind: 'count' as const, model }));
     }
+    if (lifecycle === 'semiFinished') {
+      return flattenSemiFinishedPages(wipQuery.data).map((model) => ({
+        kind: 'wip' as const,
+        model,
+      }));
+    }
+    if (lifecycle === 'finished') {
+      return flattenFinishedGoodsPages(fgQuery.data).map((item) => {
+        const card = selectInventoryItemCard(item, locale);
+        return {
+          kind: 'fg' as const,
+          model: {
+            ...card,
+            reservedQty: card.reservedQty,
+            quarantined: card.quarantined,
+          },
+        };
+      });
+    }
     return items.map((model) => ({ kind: 'item' as const, model }));
-  }, [section, items, transfers, counts]);
+  }, [section, lifecycle, items, transfers, counts, wipQuery.data, fgQuery.data, locale]);
 
   const activeQuery =
     section === 'transfers'
       ? transfersQuery
       : section === 'counts'
         ? countsQuery
-        : itemsQuery;
+        : lifecycle === 'semiFinished'
+          ? wipQuery
+          : lifecycle === 'finished'
+            ? fgQuery
+            : itemsQuery;
 
   const refreshing =
     section === 'items'
@@ -224,15 +283,33 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   const bodyError = activeQuery.isError && !activeQuery.data;
 
   async function onRefresh() {
-    if (section === 'items') {
-      await Promise.all([groupsQuery.refetch(), itemsQuery.refetch()]);
-      return;
-    }
     if (section === 'transfers') {
       await transfersQuery.refetch();
       return;
     }
-    await Promise.all([countsQuery.refetch(), warehousesQuery.refetch()]);
+    if (section === 'counts') {
+      await Promise.all([countsQuery.refetch(), warehousesQuery.refetch()]);
+      return;
+    }
+    if (lifecycle === 'semiFinished') {
+      await wipQuery.refetch();
+      return;
+    }
+    if (lifecycle === 'finished') {
+      await fgQuery.refetch();
+      return;
+    }
+    await Promise.all([groupsQuery.refetch(), itemsQuery.refetch()]);
+  }
+
+  function onLifecycleChange(next: InventoryLifecycle) {
+    if (next === lifecycle) return;
+    setLifecycle(next);
+    setSection('items');
+    setCreateOpsOpen(false);
+    setSearchInput('');
+    setQ('');
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
   }
 
   function onSectionChange(next: InventoryHomeSection) {
@@ -253,7 +330,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
 
   const canCreate =
     section === 'items'
-      ? canCreateItem
+      ? lifecycle === 'materials' && canCreateItem
       : section === 'transfers'
         ? canCreateTransfer
         : canCreateCount;
@@ -277,16 +354,18 @@ export function InventorySignatureHome({ initialGroup }: Props) {
       <InventoryCompositionChrome
         title={t('mobile.inventory.title')}
         subtitle={t('mobile.inventory.signatureSubtitle')}
+        lifecycle={lifecycle}
+        onLifecycleChange={onLifecycleChange}
         section={section}
         onSectionChange={onSectionChange}
         showSearch
         searchInput={searchInput}
         setSearchInput={setSearchInput}
         searchPlaceholder={searchPlaceholder}
-        canSync={section === 'items' && canSync}
+        canSync={lifecycle === 'materials' && section === 'items' && canSync}
         syncing={syncMutation.isPending}
         onSync={
-          section === 'items'
+          lifecycle === 'materials' && section === 'items'
             ? () => {
                 syncMutation.mutate(undefined, {
                   onSuccess: (result) => {
@@ -319,7 +398,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
           else setCreateOpsOpen(true);
         }}
       >
-        {section === 'items' ? (
+        {section === 'items' && lifecycle === 'materials' ? (
           <InventoryCategoryRail
             groups={groups}
             active={categoryGroup}
@@ -328,7 +407,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
         ) : null}
       </InventoryCompositionChrome>
 
-      {section === 'items' && lowStockCount > 0 ? (
+      {section === 'items' && lifecycle === 'materials' && lowStockCount > 0 ? (
         <InventoryLowStockFocus
           count={lowStockCount}
           groupLabel={groupLabel}
@@ -349,10 +428,22 @@ export function InventorySignatureHome({ initialGroup }: Props) {
         weight={locale === 'ar' ? 'regular' : 'medium'}
       >
         {section === 'items'
-          ? t('mobile.inventory.materialsHeading', { group: groupLabel })
+          ? lifecycle === 'semiFinished'
+            ? t('mobile.inventory.semiHeading')
+            : lifecycle === 'finished'
+              ? t('mobile.inventory.finishedHeading')
+              : t('mobile.inventory.materialsHeading', { group: groupLabel })
           : section === 'transfers'
-            ? t('mobile.inventory.transfersHeading')
-            : t('mobile.inventory.countsHeading')}
+            ? lifecycle === 'semiFinished'
+              ? t('mobile.inventory.transfersHeadingSemi')
+              : lifecycle === 'finished'
+                ? t('mobile.inventory.transfersHeadingFinished')
+                : t('mobile.inventory.transfersHeading')
+            : lifecycle === 'semiFinished'
+              ? t('mobile.inventory.countsHeadingSemi')
+              : lifecycle === 'finished'
+                ? t('mobile.inventory.countsHeadingFinished')
+                : t('mobile.inventory.countsHeading')}
       </AppText>
     </View>
   );
@@ -372,11 +463,21 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   } else if (section === 'items') {
     empty = (
       <EmptyState
-        title={t('mobile.inventory.emptyMaterialsTitle')}
+        title={
+          lifecycle === 'semiFinished'
+            ? t('mobile.inventory.emptySemiTitle')
+            : lifecycle === 'finished'
+              ? t('mobile.inventory.emptyFinishedTitle')
+              : t('mobile.inventory.emptyMaterialsTitle')
+        }
         description={
           q
             ? t('mobile.inventory.emptySearchBody')
-            : t('mobile.inventory.emptyCategoryBody', { group: groupLabel })
+            : lifecycle === 'semiFinished'
+              ? t('mobile.inventory.emptySemiBody')
+              : lifecycle === 'finished'
+                ? t('mobile.inventory.emptyFinishedBody')
+                : t('mobile.inventory.emptyCategoryBody', { group: groupLabel })
         }
       />
     );
@@ -385,7 +486,13 @@ export function InventorySignatureHome({ initialGroup }: Props) {
       <EmptyState
         title={t('mobile.inventory.emptyTransfersTitle')}
         description={
-          q ? t('mobile.inventory.emptySearchBody') : t('mobile.inventory.emptyTransfersBody')
+          q
+            ? t('mobile.inventory.emptySearchBody')
+            : lifecycle === 'semiFinished'
+              ? t('mobile.inventory.emptyTransfersSemiBody')
+              : lifecycle === 'finished'
+                ? t('mobile.inventory.emptyTransfersFinishedBody')
+                : t('mobile.inventory.emptyTransfersBody')
         }
       />
     );
@@ -394,7 +501,13 @@ export function InventorySignatureHome({ initialGroup }: Props) {
       <EmptyState
         title={t('mobile.inventory.emptyCountsTitle')}
         description={
-          q ? t('mobile.inventory.emptySearchBody') : t('mobile.inventory.emptyCountsBody')
+          q
+            ? t('mobile.inventory.emptySearchBody')
+            : lifecycle === 'semiFinished'
+              ? t('mobile.inventory.emptyCountsSemiBody')
+              : lifecycle === 'finished'
+                ? t('mobile.inventory.emptyCountsFinishedBody')
+                : t('mobile.inventory.emptyCountsBody')
         }
       />
     );
@@ -458,17 +571,86 @@ export function InventorySignatureHome({ initialGroup }: Props) {
               onEdit={() => setEditItem(item.model)}
               onLabelPdf={() => openLabelPdf(item.model)}
             />
+          ) : item.kind === 'wip' ? (
+            <InventoryWipRow
+              lot={item.model}
+              index={index}
+              animateEnter={false}
+              onPress={() => setInspectLot(item.model)}
+            />
+          ) : item.kind === 'fg' ? (
+            <InventoryFinishedRow
+              name={item.model.name}
+              sku={item.model.sku}
+              available={item.model.onHand}
+              reserved={item.model.reservedQty}
+              quarantined={item.model.quarantined}
+              imageUrl={item.model.imageUrl}
+              index={index}
+              animateEnter={false}
+              onPress={() =>
+                router.push(
+                  `/(app)/(admin)/inventory/items/${item.model.id}` as Href,
+                )
+              }
+            />
           ) : item.kind === 'transfer' ? (
             <InventoryTransferRow
               transfer={item.model}
               index={index}
               animateEnter={false}
+              onComplete={
+                canCreateTransfer &&
+                item.model.status !== 'COMPLETED' &&
+                item.model.status !== 'CANCELLED'
+                  ? () =>
+                      completeTransferMutation.mutate(item.model.id, {
+                        onSuccess: () => {
+                          void haptics.confirmMedium();
+                          showToast({
+                            variant: 'success',
+                            message: t('mobile.inventory.transferCompleted'),
+                          });
+                        },
+                        onError: () => {
+                          void haptics.error();
+                          showToast({
+                            variant: 'error',
+                            message: t('mobile.inventory.transferCompleteFailed'),
+                          });
+                        },
+                      })
+                  : undefined
+              }
+              completing={completeTransferMutation.isPending}
             />
           ) : (
             <InventoryStockCountRow
               count={item.model}
               index={index}
               animateEnter={false}
+              onPost={
+                canCreateCount && item.model.status !== 'POSTED'
+                  ? () =>
+                      postCountMutation.mutate(item.model.id, {
+                        onSuccess: () => {
+                          void haptics.confirmMedium();
+                          showToast({
+                            variant: 'success',
+                            message: t('mobile.inventory.countPosted'),
+                          });
+                        },
+                        onError: () => {
+                          void haptics.error();
+                          showToast({
+                            variant: 'error',
+                            message: t('mobile.inventory.countPostFailed'),
+                          });
+                        },
+                      })
+                  : undefined
+              }
+              posting={postCountMutation.isPending}
             />
           )
         }
@@ -477,6 +659,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
       <CreateWarehouseSheet
         open={createWarehouseOpen}
         onClose={() => setCreateWarehouseOpen(false)}
+        defaultType={warehouseTypeForLifecycle(lifecycle)}
         onCreated={() => setCreateWarehouseOpen(false)}
       />
 
@@ -549,6 +732,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
                 sku: move.item.sku,
                 name: move.item.name,
                 category: move.item.category,
+                itemClass: move.item.itemClass,
                 unit: move.item.unit,
                 balances: move.item.balances,
               }
@@ -594,7 +778,8 @@ export function InventorySignatureHome({ initialGroup }: Props) {
       <CreateTransferSheet
         open={section === 'transfers' && createOpsOpen}
         onClose={() => setCreateOpsOpen(false)}
-        warehouses={warehousesQuery.data ?? []}
+        lifecycle={lifecycle}
+        warehouses={lifecycleWarehouses}
         loading={createTransferMutation.isPending}
         onSubmit={(body) => {
           createTransferMutation.mutate(body, {
@@ -620,7 +805,8 @@ export function InventorySignatureHome({ initialGroup }: Props) {
       <CreateStockCountSheet
         open={section === 'counts' && createOpsOpen}
         onClose={() => setCreateOpsOpen(false)}
-        warehouses={warehousesQuery.data ?? []}
+        lifecycle={lifecycle}
+        warehouses={lifecycleWarehouses}
         loading={createCountMutation.isPending}
         onSubmit={(body) => {
           createCountMutation.mutate(body, {
@@ -641,6 +827,11 @@ export function InventorySignatureHome({ initialGroup }: Props) {
             },
           });
         }}
+      />
+      <InventoryLotInspectSheet
+        open={Boolean(inspectLot)}
+        lot={inspectLot}
+        onClose={() => setInspectLot(null)}
       />
       {pdfDownloadSheet}
     </AppScreen>

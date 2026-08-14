@@ -19,6 +19,7 @@ import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pag
 import type { AuthUser } from '@maher/types';
 import { InvoicesService } from '../invoices/invoices.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { InventoryService } from '../inventory/inventory.service';
 
 const DELIVERY_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   PLANNED: [DeliveryStatus.READY, DeliveryStatus.CANCELLED, DeliveryStatus.FAILED],
@@ -108,6 +109,7 @@ export class DeliveriesController {
     private readonly sequences: SequenceService,
     private readonly invoices: InvoicesService,
     private readonly notifications: NotificationsService,
+    private readonly inventory: InventoryService,
   ) {}
 
   @Get()
@@ -329,6 +331,14 @@ export class DeliveriesController {
           where: { id: existing.salesOrderId },
           data: { status: SalesOrderStatus.DELIVERED },
         });
+        await this.inventory.issueForDelivery(id, existing.salesOrderId, user.id, tx);
+      }
+
+      if (
+        (dto.status === DeliveryStatus.FAILED || dto.status === DeliveryStatus.CANCELLED) &&
+        existing.status === DeliveryStatus.DELIVERED
+      ) {
+        await this.inventory.restoreForDelivery(id, existing.salesOrderId, user.id, tx);
       }
 
       await tx.auditEvent.create({

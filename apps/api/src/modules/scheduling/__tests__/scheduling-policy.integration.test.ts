@@ -168,7 +168,7 @@ describe('SchedulingService.dealerDateChange', () => {
 
 describe('SchedulingService.availability', () => {
   it('returns a dealer-safe UNAVAILABLE shape with no capacity/worker internals when products are unknown', async () => {
-    const { service, prisma } = makeService({
+    const { service } = makeService({
       product: { findMany: jest.fn().mockResolvedValue([]) },
       productionStageDefinition: { findMany: jest.fn().mockResolvedValue([]) },
     });

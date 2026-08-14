@@ -27,6 +27,8 @@ import { ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
 import { WorkflowSnapshotService } from '../production/workflow/workflow-snapshot.service';
+import { InventoryService } from '../inventory/inventory.service';
+import { ProductionInventoryService } from '../production/production-inventory.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { firstImageDocument } from '../../common/helpers/document-image.util';
 import { buildSalesOrderSearchOr } from './build-sales-order-search-or';
@@ -210,6 +212,8 @@ export class SalesOrdersService {
     private readonly storage: LocalStorageService,
     private readonly scheduling: SchedulingService,
     private readonly workflowSnapshots: WorkflowSnapshotService,
+    private readonly inventory: InventoryService,
+    private readonly productionInventory: ProductionInventoryService,
   ) {}
 
   /** Short-lived download URL for list thumbnails from request attachments. */
@@ -1078,9 +1082,21 @@ export class SalesOrdersService {
         );
       }
 
+      const readiness = await this.inventory.tryReserveForSalesOrder(id, userId, tx);
+      if (!readiness.ready) {
+        await tx.productionOrder.updateMany({
+          where: { salesOrderId: id, status: 'PLANNED' },
+          data: { status: 'WAITING_FOR_MATERIALS' },
+        });
+      }
+
       return tx.salesOrder.update({
         where: { id },
-        data: { status: SalesOrderStatus.READY_FOR_PRODUCTION },
+        data: {
+          status: readiness.ready
+            ? SalesOrderStatus.READY_FOR_PRODUCTION
+            : SalesOrderStatus.WAITING_FOR_MATERIALS,
+        },
         include: {
           lines: true,
           productionOrders: { include: { stages: true, tasks: true } },
@@ -1157,28 +1173,41 @@ export class SalesOrdersService {
         message: `Cannot cancel sales order in status ${order.status}.`,
       });
     }
-    const updated = await this.prisma.salesOrder.update({
-      where: { id },
-      data: {
-        status: SalesOrderStatus.CANCELLED,
-        cancellationReason: reason ?? 'Cancelled',
-      },
-    });
-    await this.prisma.productionOrder.updateMany({
-      where: {
-        salesOrderId: id,
-        status: { notIn: ['COMPLETED', 'CANCELLED'] },
-      },
-      data: { status: 'CANCELLED' },
-    });
-    await this.prisma.auditEvent.create({
-      data: {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const cancelled = await tx.salesOrder.update({
+        where: { id },
+        data: {
+          status: SalesOrderStatus.CANCELLED,
+          cancellationReason: reason ?? 'Cancelled',
+        },
+      });
+      await tx.productionOrder.updateMany({
+        where: {
+          salesOrderId: id,
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+        },
+        data: { status: 'CANCELLED' },
+      });
+      const cancelledPos = await tx.productionOrder.findMany({
+        where: { salesOrderId: id, status: 'CANCELLED' },
+        select: { id: true },
+      });
+      await this.productionInventory.onProductionOrdersCancelled({
+        productionOrderIds: cancelledPos.map((row) => row.id),
         userId,
-        action: 'sales-order.cancel',
-        entityType: 'SalesOrder',
-        entityId: id,
-        newValues: { reason: reason ?? null },
-      },
+        tx,
+      });
+      await this.inventory.releaseForSalesOrder(id, tx);
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'sales-order.cancel',
+          entityType: 'SalesOrder',
+          entityId: id,
+          newValues: { reason: reason ?? null },
+        },
+      });
+      return cancelled;
     });
     return updated;
   }

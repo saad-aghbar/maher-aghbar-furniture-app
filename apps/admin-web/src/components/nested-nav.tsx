@@ -3,18 +3,21 @@
 import { Link, usePathname } from '@/i18n/navigation';
 import { cn } from '@maher/ui';
 import { useTranslations } from 'next-intl';
-import { nestedNavGroups } from './nav-items';
+import { nestedNavGroups, canSeeNav } from './nav-items';
+import { useAuthMe } from '@/hooks/use-auth-me';
 
 export function NestedNav() {
   const pathname = usePathname();
   const t = useTranslations('navigation');
+  const me = useAuthMe();
+  const permissions = me.data?.permissions ?? [];
 
   const group = nestedNavGroups.find((g) =>
     g.matchPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)),
   );
   if (!group) return null;
 
-  const items = group.items;
+  const items = group.items.filter((item) => canSeeNav(item, permissions));
 
   if (items.length < 2) return null;
 

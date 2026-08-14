@@ -3,6 +3,7 @@
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import type { AuthUser } from '@maher/types';
+import { can, canAny, resolveComposedHomeKind, type Permission } from '@maher/permissions';
 import {
   AnimatedValue,
   AttentionChip,
@@ -328,10 +329,28 @@ export default function DashboardPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const user = me.data;
+  const canSales = can(user, 'report.sales.read');
+  const canInvRead = can(user, 'inventory.read');
+  const homeKind = resolveComposedHomeKind(user ?? null);
+
   const { data, isLoading, isError, refetch, isSuccess } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => apiFetch<DashboardMetrics>('/api/v1/reports/dashboard'),
-    refetchInterval: 60_000,
+    enabled: canSales,
+    refetchInterval: canSales ? 60_000 : false,
+  });
+
+  const inventoryOverview = useQuery({
+    queryKey: ['inventory-overview'],
+    queryFn: () =>
+      apiFetch<{
+        rawMaterials: { itemCount: number; lowStockCount: number };
+        semiFinished: { itemCount: number; totalQty: number };
+        finishedGoods: { availableQty: number; reservedQty: number };
+      }>('/api/v1/inventory/overview'),
+    enabled: canInvRead,
+    staleTime: 30_000,
   });
 
   const firstName = useMemo(() => {
@@ -377,6 +396,33 @@ export default function DashboardPage() {
     };
   }, [data]);
 
+  if (me.isLoading && !user) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-48 w-full rounded-[var(--maher-radius-xl)]" />
+        <div className="grid gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-[var(--maher-radius-xl)]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!canSales) {
+    if (homeKind === 'warehouse') {
+      return (
+        <WarehouseStaffDashboard
+          firstName={firstName}
+          overview={inventoryOverview.data}
+          loading={inventoryOverview.isLoading}
+          user={user}
+        />
+      );
+    }
+    return <RestrictedStaffDashboard firstName={firstName} />;
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -412,16 +458,24 @@ export default function DashboardPage() {
     );
   }
 
-  const quickActions: Array<{ href: string; label: string; icon: LucideIcon }> = [
-    { href: '/orders', label: t('orders'), icon: ShoppingCart },
-    { href: '/production', label: t('production'), icon: Factory },
-    { href: '/products', label: t('products'), icon: Armchair },
-    { href: '/customers', label: t('dealers'), icon: Users },
-    { href: '/inventory', label: t('inventory'), icon: Boxes },
-    { href: '/purchasing', label: t('purchasing'), icon: Receipt },
-    { href: '/invoices', label: t('invoices'), icon: Banknote },
-    { href: '/returns', label: t('returns'), icon: RotateCcw },
+  const allQuick: Array<{
+    href: string;
+    label: string;
+    icon: LucideIcon;
+    anyPermissions?: readonly Permission[];
+  }> = [
+    { href: '/orders', label: t('orders'), icon: ShoppingCart, anyPermissions: ['request.read', 'quotation.read', 'sales-order.read'] },
+    { href: '/production', label: t('production'), icon: Factory, anyPermissions: ['production-order.read'] },
+    { href: '/products', label: t('products'), icon: Armchair, anyPermissions: ['catalog.manage'] },
+    { href: '/customers', label: t('dealers'), icon: Users, anyPermissions: ['customer.read'] },
+    { href: '/inventory', label: t('inventory'), icon: Boxes, anyPermissions: ['inventory.read'] },
+    { href: '/purchasing', label: t('purchasing'), icon: Receipt, anyPermissions: ['purchase-order.read', 'supplier.read'] },
+    { href: '/invoices', label: t('invoices'), icon: Banknote, anyPermissions: ['invoice.read'] },
+    { href: '/returns', label: t('returns'), icon: RotateCcw, anyPermissions: ['sales-order.read', 'customer.read'] },
   ];
+  const quickActions = allQuick.filter(
+    (item) => !item.anyPermissions?.length || canAny(user, item.anyPermissions),
+  );
 
   return (
     <div className="space-y-8 pb-4">
@@ -816,6 +870,134 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
+      </section>
+    </div>
+  );
+}
+
+function WarehouseStaffDashboard({
+  firstName,
+  overview,
+  loading,
+  user,
+}: {
+  firstName: string | null;
+  overview?: {
+    rawMaterials: { itemCount: number; lowStockCount: number };
+    semiFinished: { itemCount: number; totalQty: number };
+    finishedGoods: { availableQty: number; reservedQty: number };
+  };
+  loading: boolean;
+  user?: AuthUser;
+}) {
+  const t = useTranslations('navigation');
+  const tCommon = useTranslations('common');
+  const canReceive = can(user, 'inventory.receive');
+  const canTransfer = can(user, 'inventory.transfer');
+  const canCount = can(user, 'inventory.count');
+  const lowStock = overview?.rawMaterials.lowStockCount ?? 0;
+
+  const actions = [
+    {
+      href: '/inventory',
+      label: t('inventory'),
+      icon: <Boxes className="h-5 w-5" />,
+      show: can(user, 'inventory.read'),
+    },
+    {
+      href: '/inventory',
+      label: tCommon('receiveStock'),
+      icon: <PackageCheck className="h-5 w-5" />,
+      show: canReceive,
+    },
+    {
+      href: '/inventory',
+      label: tCommon('transferStock'),
+      icon: <RotateCcw className="h-5 w-5" />,
+      show: canTransfer,
+    },
+    {
+      href: '/inventory',
+      label: tCommon('stockCount'),
+      icon: <ClipboardList className="h-5 w-5" />,
+      show: canCount,
+    },
+  ].filter((a) => a.show);
+
+  return (
+    <div className="space-y-8 pb-4">
+      <section className="rounded-[var(--maher-radius-xl)] border border-border bg-surface p-6 shadow-card sm:p-8">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-brand rtl:normal-case rtl:tracking-normal">
+          {tCommon('personaWarehouseTitle')}
+        </p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-text-primary">
+          {firstName
+            ? tCommon('dashboardGreetingNamed', { name: firstName })
+            : tCommon('dashboardGreeting')}
+        </h1>
+        <p className="mt-2 max-w-xl text-sm text-text-secondary">{tCommon('personaWarehouseBody')}</p>
+      </section>
+
+      {loading && !overview ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-28 rounded-[var(--maher-radius-xl)]" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <BentoMetricCard
+            label={tCommon('metricLowStock')}
+            value={lowStock}
+            icon={<AlertTriangle className="h-4 w-4" />}
+            href="/inventory"
+            LinkComponent={Link}
+          />
+          <BentoMetricCard
+            label={t('rawMaterials')}
+            value={overview?.rawMaterials.itemCount ?? 0}
+            icon={<Boxes className="h-4 w-4" />}
+            href="/inventory"
+            LinkComponent={Link}
+          />
+          <BentoMetricCard
+            label={t('inventory')}
+            value={overview?.finishedGoods.availableQty ?? 0}
+            icon={<PackageCheck className="h-4 w-4" />}
+            href="/inventory"
+            LinkComponent={Link}
+          />
+        </div>
+      )}
+
+      {actions.length ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {actions.map((action) => (
+            <QuickActionTile
+              key={`${action.href}-${action.label}`}
+              href={action.href}
+              label={action.label}
+              icon={action.icon}
+              LinkComponent={Link}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RestrictedStaffDashboard({ firstName }: { firstName: string | null }) {
+  const tCommon = useTranslations('common');
+  return (
+    <div className="space-y-6 pb-4">
+      <section className="rounded-[var(--maher-radius-xl)] border border-border bg-surface p-6 shadow-card sm:p-8">
+        <h1 className="text-3xl font-bold tracking-tight text-text-primary">
+          {firstName
+            ? tCommon('dashboardGreetingNamed', { name: firstName })
+            : tCommon('dashboardGreeting')}
+        </h1>
+        <p className="mt-2 max-w-xl text-sm text-text-secondary">{tCommon('personaGenericBody')}</p>
       </section>
     </div>
   );

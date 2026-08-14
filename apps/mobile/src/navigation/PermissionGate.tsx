@@ -18,7 +18,7 @@ export function PermissionGate({
   children,
 }: PermissionGateProps) {
   if (!require) return <>{children}</>;
-  if (!user) return <ForbiddenView />;
+  if (!user) return null;
 
   const list = Array.isArray(require) ? require : [require];
   const ok = mode === 'all' ? canAll(user, list) : canAny(user, list);

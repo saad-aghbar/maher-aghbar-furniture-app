@@ -21,6 +21,9 @@ import {
   upsertProductWorkflowConfiguration,
   validateWorkflowVersion,
   assignProductionOrderWorkflow,
+  getProductProductionSetup,
+  getProductProductionSetupPreview,
+  putProductProductionSetup,
 } from '@/api/modules/workflow';
 
 export function useWorkflowsQuery(enabled = true) {
@@ -223,6 +226,36 @@ export function useUpsertProductWorkflowMutation(productId: string) {
       });
       await qc.invalidateQueries({
         queryKey: [...queryKeys.workflow.all, 'product', productId],
+      });
+    },
+  });
+}
+
+export function useProductProductionSetupQuery(productId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.workflow.productionSetup(productId),
+    queryFn: () => getProductProductionSetup(productId),
+    enabled: enabled && Boolean(productId),
+  });
+}
+
+export function useProductProductionSetupPreviewQuery(productId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.workflow.productionSetupPreview(productId),
+    queryFn: () => getProductProductionSetupPreview(productId),
+    enabled: enabled && Boolean(productId),
+  });
+}
+
+export function usePutProductProductionSetupMutation(productId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof putProductProductionSetup>[1]) =>
+      putProductProductionSetup(productId, body),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.workflow.productionSetup(productId) });
+      await qc.invalidateQueries({
+        queryKey: queryKeys.workflow.productionSetupPreview(productId),
       });
     },
   });

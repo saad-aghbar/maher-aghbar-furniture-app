@@ -9,16 +9,15 @@ import {
 } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AppText } from '@/components/AppText';
 import { FadeIn, SlideIn, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { ToastCard } from './ToastCard';
 import {
   dismissToast,
   enqueueToast,
   peekToast,
   type ShowToastInput,
   type ToastItem,
-  type ToastVariant,
 } from './toastQueue';
 
 type ToastContextValue = {
@@ -27,26 +26,9 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-function toastColors(
-  variant: ToastVariant,
-  colors: ReturnType<typeof useTheme>['colors'],
-): { bg: string; fg: string } {
-  switch (variant) {
-    case 'success':
-      return { bg: colors.successSoft, fg: colors.success };
-    case 'warning':
-      return { bg: colors.warningSoft, fg: colors.warning };
-    case 'error':
-      return { bg: colors.errorSoft, fg: colors.error };
-    default:
-      return { bg: colors.infoSoft, fg: colors.info };
-  }
-}
-
 function ToastHost({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) => void }) {
-  const { colors, theme } = useTheme();
+  const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { bg, fg } = toastColors(item.variant, colors);
 
   useEffect(() => {
     const t = setTimeout(() => onDismiss(item.id), item.durationMs);
@@ -66,30 +48,18 @@ function ToastHost({ item, onDismiss }: { item: ToastItem; onDismiss: (id: strin
         styles.host,
         {
           top: insets.top + theme.spacing.sm,
-          paddingHorizontal: theme.spacing.lg,
+          paddingHorizontal: theme.spacing.md,
         },
       ]}
     >
       <SlideIn direction="down">
         <FadeIn>
-          <View
-            accessibilityLiveRegion="polite"
-            accessibilityRole="alert"
-            style={{
-              backgroundColor: bg,
-              borderColor: colors.border,
-              borderWidth: 1,
-              borderRadius: theme.radius.md,
-              paddingHorizontal: theme.spacing.lg,
-              paddingVertical: theme.spacing.md,
-              minHeight: theme.sizes.touch.min,
-              justifyContent: 'center',
-            }}
-          >
-            <AppText variant="bodySecondary" style={{ color: fg }} align="start">
-              {item.message}
-            </AppText>
-          </View>
+          <ToastCard
+            variant={item.variant}
+            message={item.message}
+            durationMs={item.durationMs}
+            onPress={() => onDismiss(item.id)}
+          />
         </FadeIn>
       </SlideIn>
     </View>

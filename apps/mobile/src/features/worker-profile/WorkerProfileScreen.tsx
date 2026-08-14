@@ -14,6 +14,7 @@ import { AppText } from '@/components/AppText';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { DestructiveButton } from '@/components/buttons/DestructiveButton';
+import { PasswordField } from '@/components/forms/PasswordField';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { Divider } from '@/components/layout/Divider';
@@ -272,6 +273,19 @@ export function WorkerProfileScreen() {
                 {t('mobile.more.biometricUnavailable')}
               </AppText>
             )}
+            <Divider compact />
+            <PasswordField
+              label={t('auth.password')}
+              value={user.portalPassword ?? ''}
+              editable={false}
+              showLabel={t('auth.showPassword')}
+              hideLabel={t('auth.hidePassword')}
+              hint={
+                user.portalPassword
+                  ? t('mobile.more.portalPasswordHint')
+                  : t('mobile.more.portalPasswordUnavailable')
+              }
+            />
           </MoreBoard>
         </Animated.View>
 

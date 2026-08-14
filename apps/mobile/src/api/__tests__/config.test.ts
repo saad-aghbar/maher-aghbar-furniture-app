@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { getApiBaseUrl, getApiV1Url } from '../config';
+import { getApiBaseUrl, getApiV1Url, hostnameFromDevUri } from '../config';
 
 jest.mock('expo-constants', () => ({
   expoConfig: {
@@ -29,6 +29,16 @@ describe('api config', () => {
     constants.expoConfig.hostUri = undefined;
     constants.expoConfig.extra = {};
     constants.linkingUri = undefined;
+  });
+
+  it('parses Metro and Expo Go hosts', () => {
+    expect(hostnameFromDevUri('172.20.10.2:8082')).toBe('172.20.10.2');
+    expect(hostnameFromDevUri('exp://192.168.1.16:8081')).toBe('192.168.1.16');
+    expect(hostnameFromDevUri('exp://192.168.1.16:8081/--/login')).toBe('192.168.1.16');
+    expect(hostnameFromDevUri('http://192.168.1.16:8081/index.bundle?platform=ios')).toBe(
+      '192.168.1.16',
+    );
+    expect(hostnameFromDevUri('maher://')).toBeFalsy();
   });
 
   it('uses EXPO_PUBLIC_API_BASE_URL when set and strips trailing slash', () => {

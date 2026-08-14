@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
 const API_PORT = 4000;
 const DEFAULT_API_BASE_URL = `http://localhost:${API_PORT}`;
@@ -16,20 +16,67 @@ function easProfile(): string {
   );
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
 function isLoopbackUrl(url: string): boolean {
   try {
-    const { hostname } = new URL(url);
-    return hostname === 'localhost' || hostname === '127.0.0.1';
+    return isLoopbackHost(new URL(url).hostname);
   } catch {
     return false;
   }
 }
 
+/** Parse Metro / Expo Go host from hostUri, debuggerHost, linkingUri, or scriptURL. */
+export function hostnameFromDevUri(uri: string | null | undefined): string | undefined {
+  if (!uri) return undefined;
+  const trimmed = uri.trim();
+  if (!trimmed) return undefined;
+
+  const withProto = /^\w+:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  try {
+    const hostname = new URL(withProto).hostname;
+    if (hostname) return hostname;
+  } catch {
+    // fall through
+  }
+
+  const stripped = trimmed.replace(/^\w+:\/\//i, '').split('/')[0] ?? '';
+  const host = stripped.startsWith('[')
+    ? stripped.slice(0, (stripped.indexOf(']') + 1) || undefined)
+    : stripped.split(':')[0];
+  return host || undefined;
+}
+
+function scriptUrlHost(): string | undefined {
+  try {
+    const scriptURL = NativeModules.SourceCode?.scriptURL as string | undefined;
+    return hostnameFromDevUri(scriptURL);
+  } catch {
+    return undefined;
+  }
+}
+
+type ExpoHostConstants = {
+  expoGoConfig?: { debuggerHost?: string };
+  manifest?: { debuggerHost?: string } | null;
+};
+
 /** Expo Metro host on the LAN (physical device / Expo Go). */
 function expoDevHost(): string | undefined {
-  const hostUri = Constants.expoConfig?.hostUri ?? Constants.linkingUri;
-  const host = hostUri?.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
-  if (host && host !== 'localhost' && host !== '127.0.0.1') return host;
+  const extra = Constants as unknown as ExpoHostConstants;
+  const candidates = [
+    Constants.expoConfig?.hostUri,
+    extra.expoGoConfig?.debuggerHost,
+    extra.manifest?.debuggerHost,
+    Constants.linkingUri,
+    scriptUrlHost(),
+  ];
+  for (const candidate of candidates) {
+    const host = typeof candidate === 'string' ? hostnameFromDevUri(candidate) : candidate;
+    if (host && !isLoopbackHost(host)) return host;
+  }
   return undefined;
 }
 

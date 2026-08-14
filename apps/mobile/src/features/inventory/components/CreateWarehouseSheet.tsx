@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { View, Pressable } from 'react-native';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
@@ -21,6 +21,7 @@ type Props = {
   /** Stack on top of receive / transfer / count sheets. */
   overlay?: boolean;
   onCreated: (warehouse: Warehouse) => void;
+  defaultType?: WarehouseType;
 };
 
 export function CreateWarehouseSheet({
@@ -28,6 +29,7 @@ export function CreateWarehouseSheet({
   onClose,
   overlay = false,
   onCreated,
+  defaultType = 'RAW_MATERIALS',
 }: Props) {
   const { t } = useLocale();
   const { theme } = useTheme();
@@ -36,8 +38,9 @@ export function CreateWarehouseSheet({
 
   const [nameEn, setNameEn] = useState('');
   const [nameAr, setNameAr] = useState('');
-  const [type, setType] = useState<WarehouseType>('RAW');
+  const [type, setType] = useState<WarehouseType>('RAW_MATERIALS');
   const [typeSheet, setTypeSheet] = useState(false);
+  const [isDefault, setIsDefault] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const label = (key: string, fallback: string) => {
@@ -49,10 +52,11 @@ export function CreateWarehouseSheet({
     if (!open) return;
     setNameEn('');
     setNameAr('');
-    setType('RAW');
+    setType(defaultType);
     setTypeSheet(false);
+    setIsDefault(false);
     setError(null);
-  }, [open]);
+  }, [open, defaultType]);
 
   function submit() {
     if (!nameEn.trim() || !nameAr.trim()) {
@@ -70,6 +74,7 @@ export function CreateWarehouseSheet({
         nameEn: nameEn.trim(),
         nameAr: nameAr.trim(),
         type,
+        isDefault,
       },
       {
         onSuccess: (row) => {
@@ -133,6 +138,12 @@ export function CreateWarehouseSheet({
             icon="business-outline"
             onPress={() => setTypeSheet(true)}
           />
+          <Pressable onPress={() => setIsDefault((v) => !v)}>
+            <AppText variant="caption">
+              {isDefault ? '☑ ' : '☐ '}
+              {label('inventory.isDefault', 'Default for this type')}
+            </AppText>
+          </Pressable>
           <InventorySheetFooter
             primaryLabel={t('mobile.inventory.saveItem')}
             onPrimary={submit}

@@ -1,9 +1,12 @@
 import {
   resolveAppSurface,
+  resolveComposedHomeKind,
   resolveHomePersona,
   resolveMobileHomeHref,
   resolveWebHomePath,
+  shouldFetchSalesAdminHome,
 } from '../routing';
+import { can } from '../access';
 import type { AuthUser } from '@maher/types';
 
 const base: AuthUser = {
@@ -15,6 +18,17 @@ const base: AuthUser = {
   permissions: [],
   preferredLanguage: 'en',
 };
+
+const warehouseManagerPerms = [
+  'inventory.read',
+  'inventory.receive',
+  'inventory.issue',
+  'inventory.transfer',
+  'inventory.count',
+  'warehouse.read',
+  'notification.read',
+  'document.read',
+] as const;
 
 describe('post-login routing', () => {
   it('sends customers to the customer portal', () => {
@@ -38,6 +52,76 @@ describe('post-login routing', () => {
     expect(resolveWebHomePath(user)).toBe('/dashboard');
     expect(resolveHomePersona(user)).toBe('production_worker');
     expect(resolveMobileHomeHref(user)).toBe('/(app)/(employee)/(tabs)');
+  });
+
+  it('sends warehouse staff to the admin portal with a warehouse persona', () => {
+    const user: AuthUser = {
+      ...base,
+      roles: ['WAREHOUSE_MANAGEMENT'],
+      permissions: [...warehouseManagerPerms],
+    };
+    expect(resolveAppSurface(user)).toBe('admin');
+    expect(resolveHomePersona(user)).toBe('warehouse');
+    expect(resolveComposedHomeKind(user)).toBe('warehouse');
+    expect(shouldFetchSalesAdminHome(user)).toBe(false);
+    expect(resolveMobileHomeHref(user)).toBe('/(app)/(admin)/(tabs)');
+    expect(resolveWebHomePath(user)).toBe('/dashboard');
+  });
+
+  it('treats inventory.read-only staff as warehouse, not generic sales home', () => {
+    const user: AuthUser = {
+      ...base,
+      roles: ['INVENTORY_ASSISTANT'],
+      permissions: ['inventory.read', 'warehouse.read'],
+    };
+    expect(resolveAppSurface(user)).toBe('admin');
+    expect(resolveHomePersona(user)).toBe('warehouse');
+    expect(resolveComposedHomeKind(user)).toBe('warehouse');
+    expect(shouldFetchSalesAdminHome(user)).toBe(false);
+  });
+
+  it('composes an inventory-counter home without receive/transfer', () => {
+    const user: AuthUser = {
+      ...base,
+      permissions: ['inventory.read', 'inventory.count', 'warehouse.read'],
+    };
+    expect(resolveHomePersona(user)).toBe('warehouse');
+    expect(resolveComposedHomeKind(user)).toBe('warehouse');
+    expect(can(user, 'inventory.receive')).toBe(false);
+    expect(can(user, 'inventory.transfer')).toBe(false);
+    expect(can(user, 'inventory.count')).toBe(true);
+  });
+
+  it('uses a personal home when staff have no business permissions', () => {
+    const user: AuthUser = {
+      ...base,
+      roles: ['EMPTY_STAFF'],
+      permissions: ['notification.read', 'document.read'],
+    };
+    expect(resolveAppSurface(user)).toBe('admin');
+    expect(resolveComposedHomeKind(user)).toBe('personal');
+    expect(shouldFetchSalesAdminHome(user)).toBe(false);
+  });
+
+  it('keeps sales home when report.sales.read is granted', () => {
+    const user: AuthUser = {
+      ...base,
+      permissions: ['report.sales.read', 'inventory.read'],
+    };
+    expect(resolveComposedHomeKind(user)).toBe('sales');
+    expect(shouldFetchSalesAdminHome(user)).toBe(true);
+  });
+
+  it('hides transfer after the staff type loses inventory.transfer', () => {
+    const before: AuthUser = { ...base, permissions: [...warehouseManagerPerms] };
+    const after: AuthUser = {
+      ...base,
+      permissions: warehouseManagerPerms.filter((p) => p !== 'inventory.transfer'),
+    };
+    expect(can(before, 'inventory.transfer')).toBe(true);
+    expect(can(after, 'inventory.transfer')).toBe(false);
+    expect(resolveComposedHomeKind(after)).toBe('warehouse');
+    expect(shouldFetchSalesAdminHome(after)).toBe(false);
   });
 
   it('sends sales/admin to the admin portal', () => {

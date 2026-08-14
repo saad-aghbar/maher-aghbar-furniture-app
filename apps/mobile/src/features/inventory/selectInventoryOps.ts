@@ -3,6 +3,11 @@ import type {
   Warehouse,
   WarehouseTransfer,
 } from './api';
+import {
+  warehouseMatchesType,
+  warehouseTypeForLifecycle,
+  type InventoryLifecycle,
+} from './preferWarehouseForReceive';
 
 export type TransferCardModel = {
   id: string;
@@ -103,6 +108,36 @@ export function filterTransferCards(
       .toLowerCase();
     return hay.includes(needle);
   });
+}
+
+export function transferMatchesLifecycle(
+  transfer: WarehouseTransfer,
+  lifecycle: InventoryLifecycle,
+): boolean {
+  const required = warehouseTypeForLifecycle(lifecycle);
+  const from = transfer.fromWarehouse;
+  if (!from) return false;
+  return warehouseMatchesType(
+    {
+      id: transfer.fromWarehouseId,
+      code: from.code,
+      nameEn: from.nameEn,
+      nameAr: from.nameAr,
+      type: from.type,
+    },
+    required,
+  );
+}
+
+export function countMatchesLifecycle(
+  count: InventoryStockCount,
+  lifecycle: InventoryLifecycle,
+  warehouses: Warehouse[],
+): boolean {
+  const required = warehouseTypeForLifecycle(lifecycle);
+  const wh = warehouses.find((w) => w.id === count.warehouseId);
+  if (!wh) return false;
+  return warehouseMatchesType(wh, required);
 }
 
 export function filterStockCountCards(

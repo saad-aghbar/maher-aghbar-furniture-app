@@ -448,7 +448,7 @@ export class ProductionService {
     const where: Prisma.UserWhereInput = {
       archivedAt: null,
       isActive: true,
-      roles: { some: { role: { code: 'PRODUCTION_WORKER' } } },
+      roles: { some: { role: { kind: 'PRODUCTION_WORKER' } } },
       ...(stageId
         ? {
             workerSkills: {

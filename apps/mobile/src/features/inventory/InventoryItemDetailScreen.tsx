@@ -1,6 +1,7 @@
 import type { Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, FlatList, Image, Platform, Pressable, RefreshControl, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -12,6 +13,7 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics, useReducedMotion } from '@/motion';
@@ -25,6 +27,11 @@ import {
 import { useAccessoryCamera } from './components/AccessoryCameraProvider';
 import { AccessoryPhotoSourceSheet } from './components/AccessoryPhotoSourceSheet';
 import { AddStockSheet } from './components/AddStockSheet';
+import {
+  InventoryBoardCard,
+  InventoryQtyStrip,
+  InventorySectionHeader,
+} from './components/InventoryBoardCard';
 import { InventoryDetailSkeleton } from './components/InventorySkeleton';
 import {
   flattenInventoryTransactionPages,
@@ -43,6 +50,38 @@ import {
 type InventoryItemDetailScreenProps = {
   itemId: string;
 };
+
+function lifecycleEyebrow(
+  itemClass: string | null | undefined,
+  t: (key: string) => string,
+): string {
+  if (itemClass === 'FINISHED_GOOD') return t('mobile.inventory.finishedHeading');
+  if (itemClass === 'SEMI_FINISHED_GOOD') return t('mobile.inventory.semiHeading');
+  return t('mobile.inventory.pulseEyebrow');
+}
+
+function txIcon(type: string): keyof typeof Ionicons.glyphMap {
+  switch (type) {
+    case 'PURCHASE_RECEIPT':
+    case 'FINISHED_GOODS_RECEIPT':
+      return 'download-outline';
+    case 'PRODUCTION_ISSUE':
+    case 'DELIVERY_ISSUE':
+      return 'arrow-up-outline';
+    case 'PRODUCTION_RETURN':
+    case 'CUSTOMER_RETURN':
+      return 'return-down-back-outline';
+    case 'WAREHOUSE_TRANSFER':
+      return 'swap-horizontal-outline';
+    case 'SCRAP':
+    case 'DAMAGE':
+      return 'warning-outline';
+    case 'INVENTORY_ADJUSTMENT':
+      return 'options-outline';
+    default:
+      return 'cube-outline';
+  }
+}
 
 export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenProps) {
   const { user } = useAuth();
@@ -192,10 +231,42 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
     );
   }
 
-  const stockLabel = detail.isLowStock
-    ? t('mobile.inventory.lowStock')
-    : t('mobile.inventory.inStock');
+  const stockLabel = detail.quarantined
+    ? t('mobile.inventory.lotStatus.QUARANTINED')
+    : detail.isLowStock
+      ? t('mobile.inventory.lowStock')
+      : detail.itemClass === 'FINISHED_GOOD' &&
+          detail.freeQty > 0 &&
+          detail.reservedQty <= 0
+        ? t('mobile.inventory.lotStatus.READY')
+        : t('mobile.inventory.inStock');
+  const stockStatus = detail.quarantined
+    ? 'QUARANTINED'
+    : detail.isLowStock
+      ? 'OVERDUE'
+      : detail.itemClass === 'FINISHED_GOOD' &&
+          detail.freeQty > 0 &&
+          detail.reservedQty <= 0
+        ? 'READY'
+        : 'ACTIVE';
   const materialTypeLabel = formatInventoryMaterialType(detail.materialType, t);
+  const showBreakdown =
+    detail.itemClass === 'FINISHED_GOOD' ||
+    detail.itemClass === 'SEMI_FINISHED_GOOD' ||
+    detail.reservedQty > 0;
+  const heroAccent = detail.quarantined
+    ? colors.warning
+    : detail.isLowStock
+      ? colors.warning
+      : detail.itemClass === 'FINISHED_GOOD'
+        ? colors.success
+        : colors.brand;
+  const heroIcon: keyof typeof Ionicons.glyphMap =
+    detail.itemClass === 'FINISHED_GOOD'
+      ? 'cube-outline'
+      : detail.itemClass === 'SEMI_FINISHED_GOOD'
+        ? 'layers-outline'
+        : 'cube-outline';
 
   const HeaderShell = reduce ? View : Animated.View;
   const headerEnter = reduce
@@ -205,7 +276,6 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   return (
     <AppScreen
       edges={{ top: true, bottom: false }}
-      backFallback={'/(app)/(admin)/(tabs)/inventory' as Href}
     >
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
@@ -236,7 +306,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               marginBottom: theme.spacing.md,
             }}
           >
-            <View style={{ gap: theme.spacing.xs }}>
+            <View style={{ gap: theme.spacing.sm }}>
               <AppText
                 variant="caption"
                 weight={locale === 'ar' ? 'regular' : 'medium'}
@@ -246,20 +316,36 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   color: colors.brand,
                 }}
               >
-                {t('mobile.inventory.pulseEyebrow')}
+                {lifecycleEyebrow(detail.itemClass, t)}
               </AppText>
               <View
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
+                  alignItems: 'center',
                   gap: theme.spacing.sm,
                 }}
               >
-                <View style={{ flex: 1, gap: theme.spacing.xs }}>
+                <ScreenBackLead fallback={'/(app)/(admin)/(tabs)/inventory' as Href} />
+                <View
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: theme.radius.lg,
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    ...theme.elevation.rest,
+                  }}
+                >
+                  <Ionicons name={heroIcon} size={22} color={heroAccent} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.xs }}>
                   <AppText
                     variant="title"
                     weight={locale === 'ar' ? 'medium' : 'semibold'}
+                    numberOfLines={2}
                   >
                     {detail.name}
                   </AppText>
@@ -268,11 +354,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                     {materialTypeLabel ? ` · ${materialTypeLabel}` : ''}
                   </AppText>
                 </View>
-                <StatusBadge
-                  status={detail.isLowStock ? 'OVERDUE' : 'ACTIVE'}
-                  label={stockLabel}
-                  dot
-                />
+                <StatusBadge status={stockStatus} label={stockLabel} dot />
               </View>
             </View>
 
@@ -322,34 +404,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               </Pressable>
             ) : null}
 
-            <View
-              style={{
-                width: '100%',
-                alignSelf: 'stretch',
-                gap: theme.spacing.sm,
-                paddingVertical: theme.spacing.lg,
-                paddingHorizontal: theme.spacing.lg,
-                paddingLeft: isRTL ? theme.spacing.lg : theme.spacing.lg + 4,
-                paddingRight: isRTL ? theme.spacing.lg + 4 : theme.spacing.lg,
-                borderRadius: theme.radius.xl,
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: detail.isLowStock ? colors.warning : colors.borderStrong,
-                overflow: 'hidden',
-                ...theme.elevation.card,
-              }}
-            >
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  bottom: 0,
-                  ...(isRTL ? { right: 0 } : { left: 0 }),
-                  width: 3,
-                  backgroundColor: detail.isLowStock ? colors.warning : colors.brand,
-                  opacity: detail.isLowStock ? 0.85 : 0.55,
-                }}
-              />
+            <InventoryBoardCard accent={heroAccent}>
               <AppText
                 variant="caption"
                 color="muted"
@@ -363,19 +418,29 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               >
                 {t('mobile.inventory.currentQuantity')}
               </AppText>
-              <AppText
-                variant="heading"
-                weight={locale === 'ar' ? 'medium' : 'semibold'}
-                color={detail.isLowStock ? 'warning' : 'primary'}
-                dir="ltr"
-                style={{
-                  fontSize: 28,
-                  lineHeight: 36,
-                  ...(Platform.OS === 'android' ? { includeFontPadding: false } : null),
-                }}
-              >
-                {detail.quantityLabel}
-              </AppText>
+              {showBreakdown ? (
+                <InventoryQtyStrip
+                  onHand={detail.onHand}
+                  reserved={detail.reservedQty}
+                  available={detail.freeQty}
+                  emphasizeAvailable={!detail.quarantined}
+                  warning={detail.quarantined}
+                />
+              ) : (
+                <AppText
+                  variant="heading"
+                  weight={locale === 'ar' ? 'medium' : 'semibold'}
+                  color={detail.isLowStock ? 'warning' : 'primary'}
+                  dir="ltr"
+                  style={{
+                    fontSize: 28,
+                    lineHeight: 36,
+                    ...(Platform.OS === 'android' ? { includeFontPadding: false } : null),
+                  }}
+                >
+                  {detail.quantityLabel}
+                </AppText>
+              )}
               <AppText
                 variant="caption"
                 color="muted"
@@ -388,43 +453,25 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   {t('mobile.inventory.cost', { value: detail.costLabel })}
                 </AppText>
               ) : null}
-            </View>
+            </InventoryBoardCard>
 
             {detail.balances.length > 0 ? (
               <View style={{ gap: theme.spacing.sm }}>
-                <AppText
-                  variant="caption"
-                  color="muted"
-                  weight={locale === 'ar' ? 'regular' : 'medium'}
-                  style={{
-                    letterSpacing: locale === 'ar' ? 0 : 0.6,
-                    textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                    fontSize: 11,
-                    lineHeight: 14,
-                  }}
-                >
-                  {t('mobile.inventory.byWarehouse')}
-                </AppText>
-                <View
-                  style={{
-                    borderRadius: theme.radius.xl,
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.borderStrong,
-                    overflow: 'hidden',
-                    ...theme.elevation.card,
-                  }}
-                >
+                <InventorySectionHeader
+                  icon="business-outline"
+                  label={t('mobile.inventory.byWarehouse')}
+                  accent={heroAccent}
+                />
+                <InventoryBoardCard padded={false} accent={heroAccent}>
                   {detail.balances.map((b, i) => (
                     <View
                       key={b.warehouseId}
                       style={{
-                        flexDirection: isRTL ? 'row-reverse' : 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'baseline',
-                        gap: theme.spacing.md,
+                        gap: theme.spacing.sm,
                         paddingVertical: theme.spacing.md,
-                        paddingHorizontal: theme.spacing.lg,
+                        paddingHorizontal: theme.spacing.md,
+                        paddingLeft: isRTL ? theme.spacing.md : theme.spacing.md + 4,
+                        paddingRight: isRTL ? theme.spacing.md + 4 : theme.spacing.md,
                         borderTopWidth: i === 0 ? 0 : 1,
                         borderTopColor: colors.border,
                       }}
@@ -432,37 +479,38 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                       <AppText
                         variant="body"
                         weight={locale === 'ar' ? 'regular' : 'medium'}
-                        style={{ flex: 1 }}
                       >
                         {b.warehouseName}
                       </AppText>
-                      <AppText
-                        variant="body"
-                        weight={locale === 'ar' ? 'medium' : 'semibold'}
-                        dir="ltr"
-                      >
-                        {b.quantityLabel}
-                      </AppText>
+                      {showBreakdown ? (
+                        <InventoryQtyStrip
+                          onHand={b.availableQty}
+                          reserved={b.reservedQty}
+                          available={b.freeQty}
+                          emphasizeAvailable={!detail.quarantined && b.freeQty > 0}
+                          warning={detail.quarantined}
+                        />
+                      ) : (
+                        <AppText
+                          variant="body"
+                          weight={locale === 'ar' ? 'medium' : 'semibold'}
+                          dir="ltr"
+                        >
+                          {b.quantityLabel}
+                        </AppText>
+                      )}
                     </View>
                   ))}
-                </View>
+                </InventoryBoardCard>
               </View>
             ) : null}
 
             <View style={{ gap: theme.spacing['2xs'], marginTop: theme.spacing.xs }}>
-              <AppText
-                variant="caption"
-                color="muted"
-                weight={locale === 'ar' ? 'regular' : 'medium'}
-                style={{
-                  letterSpacing: locale === 'ar' ? 0 : 0.6,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                  fontSize: 11,
-                  lineHeight: 14,
-                }}
-              >
-                {t('mobile.inventory.adjustmentHistory')}
-              </AppText>
+              <InventorySectionHeader
+                icon="time-outline"
+                label={t('mobile.inventory.adjustmentHistory')}
+                accent={colors.info}
+              />
               <AppText variant="caption" color="muted">
                 {t('mobile.inventory.adjustmentHistoryHint')}
               </AppText>
@@ -494,7 +542,8 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               <View
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
-                  gap: theme.spacing.md,
+                  alignItems: 'center',
+                  gap: theme.spacing.sm,
                   paddingVertical: theme.spacing.md,
                   paddingHorizontal: theme.spacing.md,
                   paddingLeft: isRTL ? theme.spacing.md : theme.spacing.md + 4,
@@ -519,44 +568,50 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                       : qtyPositive
                         ? colors.success
                         : colors.brand,
-                    opacity: 0.7,
+                    opacity: 0.75,
                   }}
                 />
-                <View style={{ flex: 1, gap: theme.spacing.xs }}>
-                  <View
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'baseline',
-                      gap: theme.spacing.sm,
-                    }}
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: qtyNegative
+                      ? colors.warningSoft
+                      : qtyPositive
+                        ? colors.successSoft
+                        : colors.surfaceSecondary,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <Ionicons
+                    name={txIcon(item.type)}
+                    size={16}
+                    color={
+                      qtyNegative
+                        ? colors.warning
+                        : qtyPositive
+                          ? colors.success
+                          : colors.brand
+                    }
+                  />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <AppText
+                    variant="body"
+                    weight={locale === 'ar' ? 'medium' : 'semibold'}
+                    numberOfLines={1}
                   >
-                    <AppText
-                      variant="body"
-                      weight={locale === 'ar' ? 'medium' : 'semibold'}
-                      style={{ flex: 1 }}
-                    >
-                      {resolvedType}
-                    </AppText>
-                    <AppText
-                      variant="body"
-                      weight={locale === 'ar' ? 'medium' : 'semibold'}
-                      color={
-                        qtyNegative ? 'warning' : qtyPositive ? 'success' : 'primary'
-                      }
-                      dir="ltr"
-                    >
-                      {item.quantityLabel}
-                    </AppText>
-                  </View>
-                  <AppText variant="caption" color="muted">
-                    {item.warehouseName}
+                    {resolvedType}
                   </AppText>
-                  <AppText variant="caption" color="muted" dir="ltr">
-                    {formatDateTime(item.createdAt)}
+                  <AppText variant="caption" color="muted" numberOfLines={1}>
+                    {item.warehouseName} · {formatDateTime(item.createdAt)}
                   </AppText>
                   {item.notes ? (
-                    <AppText variant="caption" color="secondary">
+                    <AppText variant="caption" color="secondary" numberOfLines={2}>
                       {item.notes}
                     </AppText>
                   ) : null}
@@ -565,6 +620,33 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                       {t('mobile.inventory.cost', { value: item.costLabel })}
                     </AppText>
                   ) : null}
+                </View>
+                <View
+                  style={{
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: 4,
+                    borderRadius: theme.radius.md,
+                    backgroundColor: qtyNegative
+                      ? colors.warningSoft
+                      : qtyPositive
+                        ? colors.successSoft
+                        : colors.surfaceSecondary,
+                    borderWidth: 1,
+                    borderColor: qtyNegative
+                      ? colors.warning
+                      : qtyPositive
+                        ? colors.success
+                        : colors.border,
+                  }}
+                >
+                  <AppText
+                    variant="caption"
+                    weight={locale === 'ar' ? 'medium' : 'semibold'}
+                    color={qtyNegative ? 'warning' : qtyPositive ? 'success' : 'primary'}
+                    dir="ltr"
+                  >
+                    {item.quantityLabel}
+                  </AppText>
                 </View>
               </View>
             </ListItemEnter>
@@ -584,21 +666,10 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
             paddingBottom: theme.spacing.md,
           }}
         >
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surface,
-              padding: theme.spacing.md,
-              ...theme.elevation.raised,
-            }}
-          >
-            <PrimaryButton
-              label={t('mobile.inventory.receive')}
-              onPress={() => setAddOpen(true)}
-            />
-          </View>
+          <PrimaryButton
+            label={t('mobile.inventory.receive')}
+            onPress={() => setAddOpen(true)}
+          />
         </View>
       ) : null}
 
@@ -612,6 +683,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
           sku: detail.sku,
           name: detail.name,
           category: detail.category,
+          itemClass: detail.itemClass,
           unit: detail.unit,
           balances: addStockBalances,
         }}

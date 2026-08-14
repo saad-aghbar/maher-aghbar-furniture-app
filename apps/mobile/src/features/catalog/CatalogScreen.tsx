@@ -90,10 +90,10 @@ export function CatalogScreen({
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const searchParams = useLocalSearchParams();
+  const isDealer = variant === 'dealer';
   const pickForOrder = isDealer && isCatalogPickForOrder(searchParams);
   const allowed = can(user, 'catalog.read');
   const canCreate = showCreateProduct && can(user, 'catalog.manage');
-  const isDealer = variant === 'dealer';
   const addProductLabel = (() => {
     const v = t('catalog.addProduct');
     return v === 'catalog.addProduct' ? 'Add product' : v;

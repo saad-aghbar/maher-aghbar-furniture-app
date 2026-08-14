@@ -38,6 +38,7 @@ interface ReturnRow {
   reason: string;
   description?: string | null;
   approvalStatus?: string;
+  inventoryFate?: string | null;
   productImageUrl?: string | null;
   reasonPhotoUrl?: string | null;
   issuePhotoUrl?: string | null;
@@ -119,8 +120,11 @@ function ReturnCard({
   resolvingAction,
   onApprove,
   onReject,
+  onApplyFate,
+  fateApplying,
   tCommon,
   tc,
+  ti,
 }: {
   row: ReturnRow;
   customerLabel: string;
@@ -134,8 +138,11 @@ function ReturnCard({
   resolvingAction: 'APPROVED' | 'REJECTED' | null;
   onApprove: () => void;
   onReject: () => void;
+  onApplyFate: (fate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP') => void;
+  fateApplying: boolean;
   tCommon: ReturnType<typeof useTranslations>;
   tc: ReturnType<typeof useTranslations>;
+  ti: ReturnType<typeof useTranslations>;
 }) {
   const pending = (row.approvalStatus ?? 'PENDING') === 'PENDING';
   const productSrc = mediaSrc(row.productImageUrl);
@@ -256,9 +263,41 @@ function ReturnCard({
               </Button>
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-text-tertiary">{tCommon('status')}</span>
-              <StatusBadge status={row.approvalStatus ?? 'PENDING'} />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-text-tertiary">{tCommon('status')}</span>
+                <StatusBadge status={row.approvalStatus ?? 'PENDING'} />
+              </div>
+              {row.approvalStatus === 'APPROVED' ? (
+                row.inventoryFate && row.inventoryFate !== 'PENDING' ? (
+                  <StatusBadge status={row.inventoryFate} />
+                ) : (
+                  <div className="grid gap-2">
+                    <p className="text-[11px] text-text-secondary">{ti('fatePending')}</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(
+                        [
+                          ['RETURN_TO_STOCK', 'fateReturnToStock'],
+                          ['REWORK', 'fateRework'],
+                          ['DAMAGED', 'fateDamaged'],
+                          ['SCRAP', 'fateScrap'],
+                        ] as const
+                      ).map(([value, key]) => (
+                        <Button
+                          key={value}
+                          size="sm"
+                          variant="subtle"
+                          disabled={fateApplying}
+                          loading={fateApplying}
+                          onClick={() => onApplyFate(value)}
+                        >
+                          {ti(key)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              ) : null}
             </div>
           )}
         </div>
@@ -271,6 +310,7 @@ export default function ReturnsPage() {
   const locale = useLocale();
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
+  const ti = useTranslations('inventory');
   const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
@@ -279,6 +319,7 @@ export default function ReturnsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [resolvingAction, setResolvingAction] = useState<'APPROVED' | 'REJECTED' | null>(null);
+  const [fateId, setFateId] = useState<string | null>(null);
 
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ page: '1', pageSize: '100' });
@@ -326,6 +367,27 @@ export default function ReturnsPage() {
       setResolvingId(null);
       setResolvingAction(null);
     },
+  });
+
+  const fateMutation = useMutation({
+    mutationFn: ({
+      id,
+      inventoryFate,
+    }: {
+      id: string;
+      inventoryFate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP';
+    }) =>
+      apiFetch(`/api/v1/returns/${id}/inventory-fate`, {
+        method: 'PATCH',
+        body: JSON.stringify({ inventoryFate }),
+      }),
+    onMutate: ({ id }) => setFateId(id),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['returns'] });
+    },
+    onError: (err) => setActionError(mutationErrorMessage(err)),
+    onSettled: () => setFateId(null),
   });
 
   const dealerOptions = useMemo(() => {
@@ -449,8 +511,13 @@ export default function ReturnsPage() {
               onReject={() =>
                 resolveMutation.mutate({ id: row.id, approvalStatus: 'REJECTED' })
               }
+              onApplyFate={(inventoryFate) =>
+                fateMutation.mutate({ id: row.id, inventoryFate })
+              }
+              fateApplying={fateId === row.id}
               tCommon={tCommon}
               tc={tc}
+              ti={ti}
             />
           ))}
         </div>

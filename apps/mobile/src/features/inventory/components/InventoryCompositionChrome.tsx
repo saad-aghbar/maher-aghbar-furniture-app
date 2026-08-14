@@ -11,10 +11,16 @@ import {
   InventorySectionTabs,
   type InventoryHomeSection,
 } from './InventorySectionTabs';
+import {
+  InventoryLifecycleTabs,
+  type InventoryLifecycle,
+} from './InventoryLifecycleTabs';
 
 type Props = {
   title: string;
   subtitle?: string;
+  lifecycle: InventoryLifecycle;
+  onLifecycleChange: (lifecycle: InventoryLifecycle) => void;
   section: InventoryHomeSection;
   onSectionChange: (section: InventoryHomeSection) => void;
   showSearch?: boolean;
@@ -37,6 +43,8 @@ type Props = {
 export function InventoryCompositionChrome({
   title,
   subtitle,
+  lifecycle,
+  onLifecycleChange,
   section,
   onSectionChange,
   showSearch = true,
@@ -56,7 +64,7 @@ export function InventoryCompositionChrome({
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { theme, colors } = useTheme();
-  const syncVisible = section === 'items' && canSync && onSync;
+  const syncVisible = lifecycle === 'materials' && section === 'items' && canSync && onSync;
   const createVisible = Boolean(canCreate && onCreate && createLabel);
   const warehouseVisible = Boolean(
     canCreateWarehouse && onCreateWarehouse && warehouseLabel,
@@ -104,16 +112,6 @@ export function InventoryCompositionChrome({
             maxWidth: '46%',
           }}
         >
-          {syncVisible ? (
-            <FloorActionButton
-              label={t('mobile.inventory.sync')}
-              accessibilityLabel={t('mobile.inventory.syncFromMaterials')}
-              icon="sync-outline"
-              tone="soft"
-              loading={syncing}
-              onPress={onSync}
-            />
-          ) : null}
           {warehouseVisible ? (
             <FloorActionButton
               label={warehouseLabel!}
@@ -135,20 +133,41 @@ export function InventoryCompositionChrome({
         </View>
       </View>
 
+      <InventoryLifecycleTabs active={lifecycle} onChange={onLifecycleChange} />
       <InventorySectionTabs active={section} onChange={onSectionChange} />
 
       {showSearch && setSearchInput ? (
         <View style={{ gap: theme.spacing.sm }}>
           <Divider compact />
-          <TextField
-            value={searchInput}
-            onChangeText={setSearchInput}
-            placeholder={searchPlaceholder}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-          />
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+            }}
+          >
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <TextField
+                value={searchInput}
+                onChangeText={setSearchInput}
+                placeholder={searchPlaceholder}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+            </View>
+            {syncVisible ? (
+              <FloorActionButton
+                label={t('mobile.inventory.sync')}
+                accessibilityLabel={t('mobile.inventory.syncFromMaterials')}
+                icon="sync-outline"
+                tone="soft"
+                loading={syncing}
+                onPress={() => onSync?.()}
+              />
+            ) : null}
+          </View>
         </View>
       ) : null}
       {children}

@@ -65,6 +65,17 @@ export const statusVariantMap: Record<string, BadgeVariant> = {
   SUPERSEDED: 'default',
   PROVISIONAL: 'default',
   NEEDS_REVIEW: 'warning',
+  AVAILABLE: 'success',
+  RESERVED: 'warning',
+  QUARANTINED: 'warning',
+  CONSUMED: 'default',
+  DAMAGED: 'error',
+  SCRAPPED: 'error',
+  SCRAP: 'error',
+  RETURN_TO_STOCK: 'success',
+  REWORK: 'warning',
+  IN_TRANSIT: 'info',
+  POSTED: 'success',
 };
 
 export const priorityVariantMap: Record<PriorityLevel, BadgeVariant> = {

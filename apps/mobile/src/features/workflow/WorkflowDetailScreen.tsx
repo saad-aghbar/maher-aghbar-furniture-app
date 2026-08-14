@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import { usePreventRemove } from '@react-navigation/native';
 import { useNavigation, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
@@ -12,6 +13,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { stageNodeLabel } from './stageNodeLabel';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
@@ -86,7 +88,8 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
   const draftKickoffRef = useRef(false);
   const sessionCreatedDraftIdRef = useRef<string | null>(null);
   const pendingLeaveActionRef = useRef<unknown>(null);
-  const allowLeaveRef = useRef(false);
+  const leaveDispatchedRef = useRef(false);
+  const [leaveArmed, setLeaveArmed] = useState(false);
 
   const markDirty = useCallback(() => setDirty(true), []);
 
@@ -119,27 +122,10 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManage, draftVersionId, ensuringDraft, showToast, t, workflowQuery.data]);
 
-  const shouldDiscardOnLeave = useCallback(() => {
-    if (publishedThisSession) return false;
-    if (!draftVersionId) return false;
-    if (dirty) return true;
-    if (sessionCreatedDraftIdRef.current && sessionCreatedDraftIdRef.current === draftVersionId) {
-      return true;
-    }
-    return false;
-  }, [dirty, draftVersionId, publishedThisSession]);
-
   const leaveNow = useCallback(() => {
-    allowLeaveRef.current = true;
     setDiscardOpen(false);
-    const action = pendingLeaveActionRef.current;
-    pendingLeaveActionRef.current = null;
-    if (action && typeof navigation.dispatch === 'function') {
-      navigation.dispatch(action as never);
-      return;
-    }
-    smartBack();
-  }, [navigation, smartBack]);
+    setLeaveArmed(true);
+  }, []);
 
   const performDiscardThenLeave = useCallback(async () => {
     if (!draftVersionId) {
@@ -148,6 +134,8 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
     }
     try {
       await discardMutation.mutateAsync(draftVersionId);
+      sessionCreatedDraftIdRef.current = null;
+      setDirty(false);
     } catch (err) {
       showToast({
         variant: 'error',
@@ -160,23 +148,35 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
     leaveNow();
   }, [discardMutation, draftVersionId, leaveNow, showToast, t]);
 
+  const preventLeave = dirty && !publishedThisSession && !leaveArmed;
+
+  usePreventRemove(preventLeave, (event: { data: { action: unknown } }) => {
+    pendingLeaveActionRef.current = event.data.action;
+    setDiscardOpen(true);
+  });
+
   useEffect(() => {
-    const unsub = navigation.addListener(
-      'beforeRemove',
-      (e: { preventDefault: () => void; data: { action: unknown } }) => {
-        if (allowLeaveRef.current) return;
-        if (!shouldDiscardOnLeave()) return;
-        e.preventDefault();
-        pendingLeaveActionRef.current = e.data.action;
-        if (dirty) {
-          setDiscardOpen(true);
-          return;
-        }
-        void performDiscardThenLeave();
-      },
-    );
+    if (!leaveArmed || leaveDispatchedRef.current) return;
+    leaveDispatchedRef.current = true;
+    const action = pendingLeaveActionRef.current;
+    pendingLeaveActionRef.current = null;
+    if (action && typeof navigation.dispatch === 'function') {
+      navigation.dispatch(action as never);
+      return;
+    }
+    smartBack();
+  }, [leaveArmed, navigation, smartBack]);
+
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', () => {
+      if (publishedThisSession || dirty || leaveArmed) return;
+      const draftId = draftVersionId;
+      if (!draftId || sessionCreatedDraftIdRef.current !== draftId) return;
+      sessionCreatedDraftIdRef.current = null;
+      discardMutation.mutate(draftId);
+    });
     return unsub;
-  }, [dirty, navigation, performDiscardThenLeave, shouldDiscardOnLeave]);
+  }, [dirty, discardMutation, draftVersionId, leaveArmed, navigation, publishedThisSession]);
 
   const version = versionQuery.data;
   const previewStages = useMemo(
@@ -267,9 +267,7 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
               const afterMeta = preds.length
                 ? t('mobile.production.workflow.afterStages', {
                     stages: preds
-                      .map((p) =>
-                        localizedName(locale, p!.stageDefinition, p!.stageDefinition.code),
-                      )
+                      .map((p) => stageNodeLabel(locale, p!.stageDefinition))
                       .join(', '),
                   })
                 : t('mobile.production.workflow.startStage');
@@ -279,11 +277,7 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
               return (
                 <ListItemEnter key={node.id} index={index}>
                   <WorkflowFloorRow
-                    label={localizedName(
-                      locale,
-                      node.stageDefinition,
-                      node.stageDefinition.code,
-                    )}
+                    label={stageNodeLabel(locale, node.stageDefinition)}
                     meta={`${afterMeta} · ${reqMeta}`}
                     badge={String(index + 1)}
                     showChevron={!(isDraft && canManage)}
@@ -411,10 +405,7 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
 
       <ConfirmationSheet
         open={discardOpen}
-        onClose={() => {
-          setDiscardOpen(false);
-          pendingLeaveActionRef.current = null;
-        }}
+        onClose={() => setDiscardOpen(false)}
         title={t('mobile.production.workflow.discardChanges')}
         message={t('mobile.production.workflow.discardConfirm')}
         confirmLabel={t('mobile.production.workflow.discardChanges')}

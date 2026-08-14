@@ -204,6 +204,34 @@ export function localizedName(
   );
 }
 
+/** Stage + optional output label for production-setup preview. SKUs stay Latin. */
+export function formatProductionPreviewStep(
+  locale: string,
+  step: {
+    stageNameEn: string;
+    stageNameAr?: string | null;
+    stageNameHe?: string | null;
+    produces?: {
+      nameEn?: string | null;
+      nameAr?: string | null;
+      nameHe?: string | null;
+    } | null;
+  },
+): string {
+  const stage = localizedName(
+    locale,
+    {
+      nameEn: step.stageNameEn,
+      nameAr: step.stageNameAr,
+      nameHe: step.stageNameHe,
+    },
+    step.stageNameEn,
+  );
+  if (!step.produces) return stage;
+  const output = localizedName(locale, step.produces, '');
+  return output ? `${stage} → ${output}` : stage;
+}
+
 export function localizedBody(
   locale: string,
   row: LocalizedNamed | null | undefined,

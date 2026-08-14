@@ -151,6 +151,29 @@ export function ProductWorkflowSection({
         </Pressable>
       ) : null}
 
+      <Pressable
+        onPress={() => {
+          void haptics.selection();
+          router.push(`/(app)/(admin)/products/${productId}/production-setup`);
+        }}
+        style={({ pressed }) => ({
+          borderRadius: theme.radius.lg,
+          borderWidth: 1,
+          borderColor: colors.borderStrong,
+          backgroundColor: colors.surfaceSecondary,
+          padding: theme.spacing.md,
+          opacity: pressed ? 0.88 : 1,
+          gap: 4,
+        })}
+      >
+        <AppText variant="body" weight="semibold">
+          {t('mobile.production.workflow.openProductionSetup')}
+        </AppText>
+        <AppText variant="caption" color="muted">
+          {t('mobile.production.workflow.openProductionSetupHint')}
+        </AppText>
+      </Pressable>
+
       <TextField
         value={query}
         onChangeText={setQuery}

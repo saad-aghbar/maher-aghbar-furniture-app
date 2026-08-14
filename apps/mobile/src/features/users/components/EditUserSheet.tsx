@@ -1,8 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
+import {
+  emptyUserIdentityForm,
+  hydrateUserIdentityForm,
+  submittedRoleId,
+  submittedStageDefinitionIds,
+  type UserIdentityForm,
+} from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
-import type { RoleRow, UserRow } from '@/api/modules/users';
+import type { UserRow } from '@/api/modules/users';
 import { AppText } from '@/components/AppText';
 import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
@@ -10,12 +17,10 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { localizedRoleName } from '../display';
-import { useDepartmentsQuery, useRolesQuery, useUpdateUserMutation } from '../query';
+import { useDepartmentsQuery, useRolesQuery, useStaffTypesQuery, useUpdateUserMutation } from '../query';
 import { DepartmentField } from './DepartmentField';
 import { DepartmentPickerSheet } from './DepartmentPickerSheet';
-import { RolesTouchBar } from './RolesTouchBar';
-import { StageSkillsPicker } from './StageSkillsPicker';
+import { identityUsesDepartment, UserIdentityFields } from './UserIdentityFields';
 import {
   UserActiveToggle,
   UserFormError,
@@ -23,7 +28,6 @@ import {
   UserFormSection,
 } from './userSheetForm';
 import { useStageLibraryQuery } from '@/features/workflow/query';
-
 
 type Props = {
   open: boolean;
@@ -39,21 +43,29 @@ type FormState = {
   firstName: string;
   lastName: string;
   isActive: boolean;
-  roleId: string;
   departmentId: string;
-  stageDefinitionIds: string[];
+  identity: UserIdentityForm;
 };
 
 function formFromUser(user: UserRow): FormState {
+  const assigned = user.roles?.[0]?.role;
+  const identity = assigned
+    ? {
+        ...hydrateUserIdentityForm(assigned),
+        stageDefinitionIds:
+          assigned.kind === 'PRODUCTION_WORKER' || assigned.code === 'PRODUCTION_WORKER'
+            ? (user.stageDefinitionIds ?? [])
+            : [],
+      }
+    : emptyUserIdentityForm();
   return {
     username: user.username ?? '',
     password: '',
     firstName: user.firstName ?? '',
     lastName: user.lastName ?? '',
     isActive: user.isActive,
-    roleId: user.roles?.[0]?.role.id ?? '',
     departmentId: user.departmentId ?? user.department?.id ?? '',
-    stageDefinitionIds: user.stageDefinitionIds ?? [],
+    identity,
   };
 }
 
@@ -69,6 +81,7 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const rolesQuery = useRolesQuery(open && !passwordMode);
+  const staffTypesQuery = useStaffTypesQuery(open && !passwordMode, {});
   const departmentsQuery = useDepartmentsQuery(open && !passwordMode);
   const stagesQuery = useStageLibraryQuery(open && !passwordMode);
   const updateMutation = useUpdateUserMutation();
@@ -78,7 +91,9 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
   const [deptOpen, setDeptOpen] = useState(false);
 
   const roles = rolesQuery.data ?? [];
+  const staffTypes = staffTypesQuery.data ?? [];
   const departments = departmentsQuery.data?.data ?? [];
+  const lookupRoles = useMemo(() => [...roles, ...staffTypes], [roles, staffTypes]);
 
   useEffect(() => {
     if (!open || !user) {
@@ -91,18 +106,15 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
     setError(null);
   }, [open, user, passwordMode]);
 
-  const selectedRole: RoleRow | undefined = form
-    ? roles.find((r) => r.id === form.roleId) ?? user?.roles?.[0]?.role
-    : undefined;
-  const isCustomer =
-    selectedRole?.code === 'CUSTOMER' ||
-    (user?.roles ?? []).some((r) => r.role.code === 'CUSTOMER');
-  const isWorker = selectedRole?.code === 'PRODUCTION_WORKER';
-  const isAdmin = selectedRole?.code === 'SYSTEM_ADMINISTRATOR';
-  const showDepartment = !isCustomer && !isWorker && !isAdmin;
+  const showDepartment = form ? identityUsesDepartment(form.identity) : false;
   const selectedDept = form
     ? departments.find((d) => d.id === form.departmentId)
     : undefined;
+
+  const assignableStaffTypes = useMemo(() => {
+    const assignedId = form?.identity.staffTypeId;
+    return staffTypes.filter((type) => type.isActive !== false || type.id === assignedId);
+  }, [form?.identity.staffTypeId, staffTypes]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => (f ? { ...f, [key]: value } : f));
@@ -146,7 +158,20 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
       setError(t('validation.nameRequired'));
       return;
     }
-    if (!form.roleId) {
+    if (form.identity.identityRoleCode === 'PRODUCTION_WORKER' && !form.identity.employeeType) {
+      setError(t('validation.employeeTypeRequired'));
+      return;
+    }
+    if (
+      form.identity.identityRoleCode === 'PRODUCTION_WORKER' &&
+      form.identity.employeeType === 'STAFF' &&
+      !form.identity.staffTypeId
+    ) {
+      setError(t('validation.staffTypeRequired'));
+      return;
+    }
+    const roleId = submittedRoleId(form.identity, lookupRoles);
+    if (!roleId) {
       setError(t('validation.roleRequired'));
       return;
     }
@@ -159,13 +184,11 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
           firstName,
           lastName,
           isActive: form.isActive,
-          roleIds: [form.roleId],
+          roleIds: [roleId],
           ...(showDepartment
             ? { departmentId: form.departmentId || null }
-            : isCustomer
-              ? { departmentId: null }
-              : {}),
-          ...(isWorker ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
+            : { departmentId: null }),
+          stageDefinitionIds: submittedStageDefinitionIds(form.identity),
         },
       });
       void haptics.confirmLight();
@@ -296,33 +319,26 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
                   onChange={(next) => set('isActive', next)}
                 />
 
-                <UserFormSection
-                  icon="shield-outline"
-                  label={t('users.roles')}
+                <UserIdentityFields
+                  identity={form.identity}
+                  onChange={(identity) =>
+                    setForm((f) =>
+                      f
+                        ? {
+                            ...f,
+                            identity,
+                            ...(!identityUsesDepartment(identity) ? { departmentId: '' } : {}),
+                          }
+                        : f,
+                    )
+                  }
+                  roles={roles}
+                  staffTypes={assignableStaffTypes}
+                  staffTypesLoading={staffTypesQuery.isLoading}
+                  stages={stagesQuery.data ?? []}
+                  stagesLoading={stagesQuery.isLoading}
                   titleWeight={titleWeight}
-                >
-                  <RolesTouchBar
-                    roles={roles.map((role) => ({
-                      id: role.id,
-                      label: localizedRoleName(role, locale),
-                    }))}
-                    value={form.roleId}
-                    onChange={(roleId) => {
-                      set('roleId', roleId);
-                      const code = roles.find((r) => r.id === roleId)?.code;
-                      if (
-                        code === 'CUSTOMER' ||
-                        code === 'PRODUCTION_WORKER' ||
-                        code === 'SYSTEM_ADMINISTRATOR'
-                      ) {
-                        set('departmentId', '');
-                      }
-                      if (code !== 'PRODUCTION_WORKER') {
-                        set('stageDefinitionIds', []);
-                      }
-                    }}
-                  />
-                </UserFormSection>
+                />
 
                 {showDepartment ? (
                   <UserFormSection
@@ -334,21 +350,6 @@ export function EditUserSheet({ open, onClose, user, passwordMode = false }: Pro
                       department={selectedDept}
                       onPress={() => setDeptOpen(true)}
                       onClear={() => set('departmentId', '')}
-                    />
-                  </UserFormSection>
-                ) : null}
-
-                {isWorker ? (
-                  <UserFormSection
-                    icon="construct-outline"
-                    label={t('users.stageSkills')}
-                    titleWeight={titleWeight}
-                  >
-                    <StageSkillsPicker
-                      stages={(stagesQuery.data ?? []).filter((s) => s.isActive)}
-                      selectedIds={form.stageDefinitionIds}
-                      onChange={(ids) => set('stageDefinitionIds', ids)}
-                      loading={stagesQuery.isLoading}
                     />
                   </UserFormSection>
                 ) : null}

@@ -9,6 +9,8 @@
   "usernameRequired": "Username is required.",
   "nameRequired": "First name and last name are required.",
   "roleRequired": "Role is required.",
+  "staffTypeRequired": "Staff type is required.",
+  "employeeTypeRequired": "Employee type is required.",
   "createNotSupported": "Create is not supported.",
   "fieldRequired": "{field} is required."
 }

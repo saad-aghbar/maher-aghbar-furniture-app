@@ -5,6 +5,7 @@ import { SequenceService } from '../../../common/sequence.service';
 import { buildStageTaskInstructions } from '../../../common/helpers/stage-task-instructions';
 import { WorkflowVersionService } from './workflow-version.service';
 import type { CompilerOrderOverride, CompiledProductionWorkflow } from './domain';
+import { resolveProductStageOutput } from '../product-inventory-output.resolver';
 
 type Tx = Prisma.TransactionClient;
 
@@ -193,9 +194,38 @@ export class WorkflowSnapshotService {
       },
     });
 
+    const po = await tx.productionOrder.findUnique({
+      where: { id: meta.productionOrderId },
+      select: { productId: true },
+    });
+    const productOutputs = po?.productId
+      ? await tx.productStageInventoryOutput.findMany({ where: { productId: po.productId } })
+      : [];
+    const productInputs = po?.productId
+      ? await tx.productStageInventoryInput.findMany({
+          where: { productId: po.productId },
+          include: { output: true },
+        })
+      : [];
+
     const nodeIdByKey = new Map<string, string>();
 
     for (const n of compiled.included) {
+      const resolved = resolveProductStageOutput(
+        {
+          sourceWorkflowNodeId: n.sourceWorkflowNodeId,
+          stageDefinitionId: n.stageDefinitionId,
+          inventoryTracking: n.inventoryTracking ?? 'NONE',
+          consumesRawMaterials: n.consumesRawMaterials ?? false,
+          consumesSemiFinished: n.consumesSemiFinished ?? false,
+          outputQtyPerUnit: n.outputQtyPerUnit,
+          outputNameAr: n.outputNameAr,
+          outputNameEn: n.outputNameEn,
+          outputNameHe: n.outputNameHe,
+          defaultWarehouseId: n.defaultWarehouseId,
+        },
+        productOutputs,
+      );
       const stageInstance = await tx.productionStageInstance.create({
         data: {
           productionOrderId: meta.productionOrderId,
@@ -203,6 +233,14 @@ export class WorkflowSnapshotService {
           status: 'PENDING',
         },
       });
+
+      const consumeRows = productInputs.filter(
+        (row) => row.workflowNodeId === n.sourceWorkflowNodeId,
+      );
+      const consumeOutputDefinitionIds = consumeRows.map((row) => row.outputId);
+      const consumeInventoryItemIds = consumeRows
+        .map((row) => row.output.inventoryItemId)
+        .filter((id): id is string => Boolean(id));
 
       const snapNode = await tx.productionOrderWorkflowSnapshotNode.create({
         data: {
@@ -223,6 +261,21 @@ export class WorkflowSnapshotService {
           estimateReviewRequired: n.estimateReviewRequired,
           requiresInspection: n.requiresInspection,
           requiresPhotos: n.requiresPhotos,
+          inventoryTracking: resolved.tracking,
+          consumesRawMaterials: resolved.consumesRawMaterials,
+          consumesSemiFinished: resolved.consumesSemiFinished,
+          outputQtyPerUnit: resolved.qtyPerUnit ?? undefined,
+          outputNameAr: resolved.nameAr ?? undefined,
+          outputNameEn: resolved.nameEn ?? undefined,
+          outputNameHe: resolved.nameHe ?? undefined,
+          outputUnit: resolved.unit ?? undefined,
+          outputDefinitionId: resolved.outputDefinitionId ?? undefined,
+          outputInventoryItemId: resolved.inventoryItemId ?? undefined,
+          consumeOutputDefinitionIds:
+            consumeOutputDefinitionIds.length > 0 ? consumeOutputDefinitionIds : undefined,
+          consumeInventoryItemIds:
+            consumeInventoryItemIds.length > 0 ? consumeInventoryItemIds : undefined,
+          defaultWarehouseId: resolved.warehouseId ?? undefined,
           sortOrder: n.sortOrder,
           displayX: n.displayX,
           displayY: n.displayY,

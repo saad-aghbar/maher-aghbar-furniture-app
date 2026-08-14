@@ -208,6 +208,14 @@ export const nestedNavGroups: NestedNavGroup[] = [
       },
     ],
   },
+  {
+    parentHref: '/employees',
+    matchPrefixes: ['/employees'],
+    items: [
+      { href: '/employees', key: 'users', anyPermissions: ['user.manage'] },
+      { href: '/employees/staff-types', key: 'staffTypes', anyPermissions: ['role.manage'] },
+    ],
+  },
 ];
 
 export function canSeeNav(item: { anyPermissions?: readonly Permission[] }, permissions: string[]) {

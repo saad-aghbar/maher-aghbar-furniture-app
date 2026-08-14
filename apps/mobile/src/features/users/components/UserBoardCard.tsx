@@ -20,6 +20,7 @@ type Props = {
   onEdit: () => void;
   onToggleActive: () => void;
   onSetPassword: () => void;
+  onDelete?: () => void;
 };
 
 /**
@@ -31,6 +32,7 @@ export function UserBoardCard({
   onEdit,
   onToggleActive,
   onSetPassword,
+  onDelete,
 }: Props) {
   const { t, locale, isRTL, formatDateTime } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -176,6 +178,30 @@ export function UserBoardCard({
           icon="key-outline"
           onPress={onSetPassword}
         />
+        {onDelete ? (
+          <AnimatedPressable
+            variant="button"
+            accessibilityRole="button"
+            accessibilityLabel={t('common.delete')}
+            onPress={() => {
+              void haptics.selection();
+              onDelete();
+            }}
+            style={{
+              marginStart: isRTL ? 0 : 'auto',
+              width: 36,
+              height: 36,
+              borderRadius: theme.radius.lg,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.errorSoft,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <Ionicons name="trash-outline" size={16} color={colors.error} />
+          </AnimatedPressable>
+        ) : null}
       </View>
     </View>
   );

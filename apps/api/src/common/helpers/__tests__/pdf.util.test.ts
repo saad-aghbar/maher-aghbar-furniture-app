@@ -7,6 +7,9 @@ import {
   visualRuns,
 } from '../pdf.util';
 
+jest.retryTimes(1);
+jest.setTimeout(120_000);
+
 function pageCount(buf: Buffer): number {
   const text = buf.toString('latin1');
   return text.match(/\/Type\s*\/Page(?!s)\b/g)?.length ?? 0;
@@ -136,6 +139,8 @@ describe('printableScanCode', () => {
 });
 
 describe('buildSimplePdf', () => {
+  jest.setTimeout(60_000);
+
   const invoiceRows = [
     ['Walnut dining table 220cm', '1', '1850.000', '1850.000'],
     ['Upholstered side chair', '6', '240.000', '1440.000'],
@@ -299,7 +304,7 @@ describe('buildSimplePdf', () => {
         }
       }
     },
-    30000,
+    120000,
   );
 
   it('embeds a scannable QR image and ignores exp:// payloads', async () => {

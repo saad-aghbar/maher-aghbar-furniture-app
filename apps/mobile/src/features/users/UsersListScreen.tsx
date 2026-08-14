@@ -6,6 +6,7 @@ import {
   View,
 } from 'react-native';
 import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { localizedName } from '@maher/i18n';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
@@ -14,6 +15,7 @@ import type { UserRow } from '@/api/modules/users';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -44,11 +46,13 @@ import {
   flattenUsers,
   useActivateUserMutation,
   useDeactivateUserMutation,
+  useDeleteUserMutation,
   useDepartmentsQuery,
   useRolesQuery,
+  useStaffTypesQuery,
   useUsersInfiniteQuery,
 } from './query';
-import { roleCodeForSegment, type UsersSegment } from './segment';
+import { roleKindForSegment, type UsersSegment } from './segment';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 
 function UsersScreenTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
@@ -92,15 +96,17 @@ export function UsersListScreen() {
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
+  const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const allowed = can(user, 'user.manage');
 
-  const [segment, setSegment] = useState<UsersSegment>('staff');
+  const [segment, setSegment] = useState<UsersSegment>('workers');
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [isActive, setIsActive] = useState<UserStatusFilter>('');
   const [roleCode, setRoleCode] = useState('');
+  const [staffTypeId, setStaffTypeId] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
@@ -108,8 +114,9 @@ export function UsersListScreen() {
   const [deptFilterOpen, setDeptFilterOpen] = useState(false);
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   const [roleFilterOpen, setRoleFilterOpen] = useState(false);
+  const [staffTypeFilterOpen, setStaffTypeFilterOpen] = useState(false);
   const [confirm, setConfirm] = useState<
-    { type: 'activate' | 'deactivate'; user: UserRow } | null
+    { type: 'activate' | 'deactivate' | 'delete'; user: UserRow } | null
   >(null);
 
   useEffect(() => {
@@ -120,19 +127,24 @@ export function UsersListScreen() {
   useEffect(() => {
     setRoleCode('');
     setDepartmentId('');
+    setStaffTypeId('');
   }, [segment]);
 
   const showRoleFilter = segment === 'all';
-  // Department is unused for Worker/Admin/Customer; only relevant for other roles under "all".
+  const showStaffTypeFilter = segment === 'staff';
+  // Department is unused for Worker/Admin/Customer/Staff; only relevant for other roles under "all".
   const showDepartmentFilter = segment === 'all';
   const showDepartmentColumn = segment === 'all';
+  const canManageStaffTypes = can(user, 'role.manage');
 
   const listFilters = useMemo(() => {
-    const segmentRole = roleCodeForSegment(segment);
+    const roleKind = roleKindForSegment(segment);
     return {
       q: debouncedQ || undefined,
       isActive: isActive || undefined,
-      roleCode: showRoleFilter ? roleCode || undefined : segmentRole,
+      roleCode: showRoleFilter ? roleCode || undefined : undefined,
+      roleKind: showStaffTypeFilter && staffTypeId ? undefined : roleKind,
+      staffTypeId: showStaffTypeFilter && staffTypeId ? staffTypeId : undefined,
       departmentId: showDepartmentFilter && departmentId ? departmentId : undefined,
     };
   }, [
@@ -143,18 +155,23 @@ export function UsersListScreen() {
     segment,
     showDepartmentFilter,
     showRoleFilter,
+    showStaffTypeFilter,
+    staffTypeId,
   ]);
 
   const query = useUsersInfiniteQuery(listFilters, allowed);
   const rolesQuery = useRolesQuery(allowed);
+  const staffTypesQuery = useStaffTypesQuery(allowed && showStaffTypeFilter, { isActive: true });
   const departmentsQuery = useDepartmentsQuery(allowed && showDepartmentFilter);
 
   const activateMutation = useActivateUserMutation();
   const deactivateMutation = useDeactivateUserMutation();
+  const deleteMutation = useDeleteUserMutation();
 
   const rows = flattenUsers(query.data);
   const departments = departmentsQuery.data?.data ?? [];
   const roles = rolesQuery.data ?? [];
+  const staffTypes = staffTypesQuery.data ?? [];
 
   /** Pull-to-refresh only — not segment / filter transitions. */
   const pullRefreshing =
@@ -184,6 +201,12 @@ export function UsersListScreen() {
     return role ? localizedRoleName(role, locale) : roleCode;
   }, [locale, roleCode, roles]);
 
+  const staffTypeLabel = useMemo(() => {
+    if (!staffTypeId) return null;
+    const type = staffTypes.find((r) => r.id === staffTypeId);
+    return type ? localizedRoleName(type, locale) : null;
+  }, [locale, staffTypeId, staffTypes]);
+
   const statusLabel = useMemo(() => {
     if (isActive === 'true') return t('users.active');
     if (isActive === 'false') return t('users.inactive');
@@ -200,6 +223,16 @@ export function UsersListScreen() {
     [locale, roles],
   );
 
+  const staffTypeOptions = useMemo(
+    () =>
+      staffTypes.map((r) => ({
+        id: r.id,
+        code: r.id,
+        label: localizedRoleName(r, locale),
+      })),
+    [locale, staffTypes],
+  );
+
   const runConfirm = async () => {
     if (!confirm) return;
     try {
@@ -207,6 +240,10 @@ export function UsersListScreen() {
         await activateMutation.mutateAsync(confirm.user.id);
         void haptics.confirmLight();
         showToast({ variant: 'success', message: t('users.activated') });
+      } else if (confirm.type === 'delete') {
+        await deleteMutation.mutateAsync(confirm.user.id);
+        void haptics.confirmLight();
+        showToast({ variant: 'success', message: t('users.deleted') });
       } else {
         await deactivateMutation.mutateAsync(confirm.user.id);
         void haptics.confirmLight();
@@ -297,18 +334,34 @@ export function UsersListScreen() {
             <UsersScreenTitle titleWeight={titleWeight} />
             {showOfflineBanner ? <OfflineBanner /> : null}
 
-            <PrimaryButton
-              label={t('users.add')}
-              onPress={() => {
-                void haptics.selection();
-                setCreateOpen(true);
-              }}
-              style={{
-                borderRadius: theme.radius.full,
-                minHeight: theme.sizes.touch.min,
-                paddingVertical: 0,
-              }}
-            />
+            <View style={{ gap: theme.spacing.sm }}>
+              <PrimaryButton
+                label={t('users.add')}
+                onPress={() => {
+                  void haptics.selection();
+                  setCreateOpen(true);
+                }}
+                style={{
+                  borderRadius: theme.radius.full,
+                  minHeight: theme.sizes.touch.min,
+                  paddingVertical: 0,
+                }}
+              />
+              {canManageStaffTypes ? (
+                <SecondaryButton
+                  label={t('users.staffTypes')}
+                  onPress={() => {
+                    void haptics.selection();
+                    router.push('/(app)/(admin)/users/staff-types' as Href);
+                  }}
+                  style={{
+                    borderRadius: theme.radius.full,
+                    minHeight: theme.sizes.touch.min,
+                    paddingVertical: 0,
+                  }}
+                />
+              ) : null}
+            </View>
 
             <UsersSegmentRail
               value={segment}
@@ -360,6 +413,10 @@ export function UsersListScreen() {
                 roleLabel={roleLabel}
                 onOpenRole={() => setRoleFilterOpen(true)}
                 onClearRole={() => setRoleCode('')}
+                showStaffType={showStaffTypeFilter}
+                staffTypeLabel={staffTypeLabel}
+                onOpenStaffType={() => setStaffTypeFilterOpen(true)}
+                onClearStaffType={() => setStaffTypeId('')}
               />
             </View>
           </View>
@@ -383,6 +440,11 @@ export function UsersListScreen() {
                 })
               }
               onSetPassword={() => openEdit(item, true)}
+              onDelete={
+                item.id !== user?.id
+                  ? () => setConfirm({ type: 'delete', user: item })
+                  : undefined
+              }
             />
           </ListItemEnter>
         )}
@@ -432,21 +494,42 @@ export function UsersListScreen() {
         value={roleCode}
         onApply={setRoleCode}
       />
+      <UsersRoleFilterSheet
+        open={staffTypeFilterOpen}
+        onClose={() => setStaffTypeFilterOpen(false)}
+        roles={staffTypeOptions}
+        value={staffTypeId}
+        onApply={setStaffTypeId}
+        titleKey="users.staffType"
+        allLabelKey="users.staffTypeFilterAll"
+      />
 
       <ConfirmationSheet
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}
-        title={confirm?.type === 'activate' ? t('users.activate') : t('users.deactivate')}
+        title={
+          confirm?.type === 'activate'
+            ? t('users.activate')
+            : confirm?.type === 'delete'
+              ? t('common.delete')
+              : t('users.deactivate')
+        }
         message={
           confirm?.type === 'activate'
             ? t('users.confirmActivate')
-            : t('users.confirmDeactivate')
+            : confirm?.type === 'delete'
+              ? t('users.confirmDelete')
+              : t('users.confirmDeactivate')
         }
         confirmLabel={
-          confirm?.type === 'activate' ? t('users.activate') : t('users.deactivate')
+          confirm?.type === 'activate'
+            ? t('users.activate')
+            : confirm?.type === 'delete'
+              ? t('common.delete')
+              : t('users.deactivate')
         }
         cancelLabel={t('common.cancel')}
-        destructive={confirm?.type === 'deactivate'}
+        destructive={confirm?.type === 'deactivate' || confirm?.type === 'delete'}
         onConfirm={() => void runConfirm()}
       />
     </AppScreen>

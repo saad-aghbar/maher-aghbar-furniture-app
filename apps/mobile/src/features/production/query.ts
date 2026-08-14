@@ -16,6 +16,8 @@ import {
   unblockTask,
   updateProductionOrder,
   updateProductionTaskNotes,
+  getProductionOrderMaterials,
+  returnProductionUnusedMaterial,
   type ProductionListBucket,
   type ProductionPriority,
 } from './api';
@@ -156,6 +158,26 @@ export function usePauseTaskMutation(orderId: string) {
   return useMutation({
     mutationFn: (taskId: string) => pauseProductionTask(taskId),
     onSuccess: () => invalidateProduction(qc, orderId),
+  });
+}
+
+export function useProductionMaterialsQuery(orderId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: [...queryKeys.production.detail(orderId ?? ''), 'materials'] as const,
+    queryFn: () => getProductionOrderMaterials(orderId!),
+    enabled: Boolean(orderId) && enabled,
+    staleTime: 10_000,
+  });
+}
+
+export function useReturnUnusedMaterialMutation(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { inventoryItemId: string; quantity: number; idempotencyKey?: string }) =>
+      returnProductionUnusedMaterial(orderId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.production.detail(orderId) });
+    },
   });
 }
 

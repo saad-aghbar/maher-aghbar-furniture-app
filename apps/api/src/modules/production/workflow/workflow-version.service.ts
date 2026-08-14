@@ -180,6 +180,14 @@ export class WorkflowVersionService {
               responsibleDepartmentId: n.responsibleDepartmentId,
               requiresInspectionOverride: n.requiresInspectionOverride,
               requiresPhotosOverride: n.requiresPhotosOverride,
+              inventoryTracking: n.inventoryTracking,
+              consumesRawMaterials: n.consumesRawMaterials,
+              consumesSemiFinished: n.consumesSemiFinished,
+              outputQtyPerUnit: n.outputQtyPerUnit,
+              outputNameAr: n.outputNameAr,
+              outputNameEn: n.outputNameEn,
+              outputNameHe: n.outputNameHe,
+              defaultWarehouseId: n.defaultWarehouseId,
               metadata: n.metadata ?? undefined,
             },
           });
@@ -257,6 +265,14 @@ export class WorkflowVersionService {
       responsibleDepartmentId?: string;
       requiresInspectionOverride?: boolean;
       requiresPhotosOverride?: boolean;
+      inventoryTracking?: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
+      consumesRawMaterials?: boolean;
+      consumesSemiFinished?: boolean;
+      outputQtyPerUnit?: number;
+      outputNameAr?: string;
+      outputNameEn?: string;
+      outputNameHe?: string;
+      defaultWarehouseId?: string;
       runsAfterNodeIds?: string[];
       expectedRevision?: number;
     },
@@ -295,6 +311,14 @@ export class WorkflowVersionService {
           responsibleDepartmentId: data.responsibleDepartmentId,
           requiresInspectionOverride: data.requiresInspectionOverride,
           requiresPhotosOverride: data.requiresPhotosOverride,
+          inventoryTracking: data.inventoryTracking,
+          consumesRawMaterials: data.consumesRawMaterials ?? false,
+          consumesSemiFinished: data.consumesSemiFinished ?? false,
+          outputQtyPerUnit: data.outputQtyPerUnit,
+          outputNameAr: data.outputNameAr,
+          outputNameEn: data.outputNameEn,
+          outputNameHe: data.outputNameHe,
+          defaultWarehouseId: data.defaultWarehouseId,
         },
       });
       for (const fromNodeId of data.runsAfterNodeIds ?? []) {
@@ -556,6 +580,14 @@ export class WorkflowVersionService {
       responsibleDepartmentId: n.responsibleDepartmentId,
       requiresInspectionOverride: n.requiresInspectionOverride,
       requiresPhotosOverride: n.requiresPhotosOverride,
+      inventoryTracking: n.inventoryTracking,
+      consumesRawMaterials: n.consumesRawMaterials,
+      consumesSemiFinished: n.consumesSemiFinished,
+      outputQtyPerUnit: n.outputQtyPerUnit != null ? Number(n.outputQtyPerUnit) : null,
+      outputNameAr: n.outputNameAr,
+      outputNameEn: n.outputNameEn,
+      outputNameHe: n.outputNameHe,
+      defaultWarehouseId: n.defaultWarehouseId,
       metadata: n.metadata,
       stage: {
         id: n.stageDefinition.id,
@@ -583,7 +615,7 @@ export class WorkflowVersionService {
     };
   }
 
-  async compileForProduct(
+  async compileForProductReport(
     versionId: string,
     productId: string | null | undefined,
     orderOverrides?: CompilerOrderOverride[],
@@ -611,7 +643,6 @@ export class WorkflowVersionService {
         where: { productId },
       });
       for (const e of estimates) {
-        // Prefer fixedMinutes or setup+linear unit estimate as minutesPerUnit for qty=1 baseline
         const minutes =
           e.fixedMinutes ??
           (e.setupMinutes ?? 0) + (e.minutesPerUnit ?? 0);
@@ -619,13 +650,22 @@ export class WorkflowVersionService {
       }
     }
 
-    const compiled = compileWorkflow({
+    return compileWorkflow({
       nodes,
       edges,
       productOverrides,
       orderOverrides,
       productEstimateMinutes,
     });
+  }
+
+  async compileForProduct(
+    versionId: string,
+    productId: string | null | undefined,
+    orderOverrides?: CompilerOrderOverride[],
+    tx?: Tx,
+  ) {
+    const compiled = await this.compileForProductReport(versionId, productId, orderOverrides, tx);
     if (compiled.issues.length) {
       throw new BadRequestException({
         code: compiled.issues[0]?.code ?? 'WORKFLOW_INVALID_STAGE',

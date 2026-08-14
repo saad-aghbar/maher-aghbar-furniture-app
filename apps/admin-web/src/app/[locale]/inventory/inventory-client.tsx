@@ -3,6 +3,7 @@
 import { useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { useAuthMe } from '@/hooks/use-auth-me';
 import {
   Alert,
   Button,
@@ -23,6 +24,7 @@ import {
   TableRow,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
+import { can } from '@maher/permissions';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
@@ -30,6 +32,9 @@ import { Fragment, useMemo, useState } from 'react';
 
 interface Balance {
   availableQty: string | number;
+  reservedQty?: string | number;
+  onHandQty?: number;
+  freeQty?: number;
   warehouseId?: string;
   warehouse?: { id: string; code: string; nameEn?: string; nameAr?: string };
 }
@@ -42,6 +47,7 @@ interface Row {
   nameEn: string;
   unit: string;
   category?: string | null;
+  itemClass?: string | null;
   color?: string | null;
   materialType?: string | null;
   size?: string | null;
@@ -49,6 +55,47 @@ interface Row {
   minStock?: string | number;
   standardCost?: string | number;
   balances?: Balance[];
+  quarantinedQty?: number | string;
+  onHandQty?: number;
+  reservedQty?: number;
+  freeQty?: number;
+}
+
+interface SemiLot {
+  id: string;
+  quantity: string | number;
+  producedAt: string;
+  status: string;
+  inventoryItem: { id: string; sku: string; nameEn: string; nameAr: string };
+  warehouse: Warehouse;
+  productionOrder?: { id: string; number: string } | null;
+  stageInstance?: {
+    stageDefinition?: { nameEn: string; nameAr: string; nameHe?: string | null } | null;
+  } | null;
+  productNameEn?: string | null;
+  productNameAr?: string | null;
+  productionOrderNumber?: string | null;
+  producingStageNameEn?: string | null;
+  producingStageNameAr?: string | null;
+  laterMovements?: Array<{
+    type: string;
+    quantity: number;
+    createdAt: string;
+    warehouseNameEn: string;
+    warehouseNameAr: string;
+  }>;
+}
+
+interface Overview {
+  rawMaterials: { itemCount: number; lowStockCount: number };
+  semiFinished: { itemCount: number; totalQty: number };
+  finishedGoods: {
+    availableQty: number;
+    reservedQty: number;
+    readyForDeliveryQty: number;
+    onHandQty?: number;
+    freeQty?: number;
+  };
 }
 
 interface Warehouse {
@@ -56,6 +103,7 @@ interface Warehouse {
   code: string;
   nameEn: string;
   nameAr?: string;
+  type?: string;
 }
 
 interface LowStockItem {
@@ -66,6 +114,7 @@ interface LowStockItem {
   unit: string;
   minStock: string | number;
   availableQty: number;
+  onHandQty?: number;
 }
 
 interface TransferLine {
@@ -117,6 +166,46 @@ const CATEGORY_FOR_CREATE: Record<CategoryGroup, string> = {
   accessories: 'METAL_ACCESSORY',
 };
 
+function warehouseTypeForItemClass(itemClass?: string | null, category?: string | null): string {
+  const cls = (itemClass ?? '').toUpperCase();
+  if (cls === 'SEMI_FINISHED_GOOD' || cls === 'SEMI_FINISHED') return 'SEMI_FINISHED';
+  if (cls === 'FINISHED_GOOD' || cls === 'FINISHED_GOODS') return 'FINISHED_GOODS';
+  if (cls === 'RAW_MATERIAL') return 'RAW_MATERIALS';
+  const cat = (category ?? '').toUpperCase();
+  if (cat === 'FINISHED' || cat === 'FINISHED_GOODS') return 'FINISHED_GOODS';
+  if (cat === 'SEMI_FINISHED') return 'SEMI_FINISHED';
+  return 'RAW_MATERIALS';
+}
+
+function warehouseMatchesLifecycleType(wh: Warehouse, required: string): boolean {
+  const type = (wh.type ?? '').toUpperCase();
+  const code = (wh.code ?? '').toUpperCase();
+  if (required === 'RAW_MATERIALS') {
+    return type === 'RAW_MATERIALS' || type === 'RAW' || code === 'RAW';
+  }
+  if (required === 'SEMI_FINISHED') {
+    return type === 'SEMI_FINISHED' || type === 'SEMI' || code === 'SEMI';
+  }
+  if (required === 'FINISHED_GOODS') {
+    return (
+      type === 'FINISHED_GOODS' ||
+      type === 'FINISHED' ||
+      code === 'FIN' ||
+      code === 'FINISHED'
+    );
+  }
+  return type === required || code === required;
+}
+
+function warehousesForItem(
+  list: Warehouse[],
+  item?: Pick<Row, 'itemClass' | 'category'> | null,
+): Warehouse[] {
+  if (!item) return list;
+  const required = warehouseTypeForItemClass(item.itemClass, item.category);
+  return list.filter((wh) => warehouseMatchesLifecycleType(wh, required));
+}
+
 export default function InventoryPage() {
   const locale = useLocale();
   const t = useTranslations('navigation');
@@ -124,8 +213,15 @@ export default function InventoryPage() {
   const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
+  const me = useAuthMe();
+  const canReceive = can(me.data, 'inventory.receive');
+  const canIssue = can(me.data, 'inventory.issue');
+  const canTransfer = can(me.data, 'inventory.transfer');
+  const canCount = can(me.data, 'inventory.count');
+  const canAdjust = can(me.data, 'inventory.adjust');
 
   const [tab, setTab] = useState<Tab>('items');
+  const [lifecycle, setLifecycle] = useState<'materials' | 'semiFinished' | 'finished'>('materials');
   const [categoryGroup, setCategoryGroup] = useState<'fabric' | 'foam' | 'wood' | 'accessories'>('fabric');
   const router = useRouter();
   const [q, setQ] = useState('');
@@ -179,23 +275,45 @@ export default function InventoryPage() {
   const [editMaterialType, setEditMaterialType] = useState('');
   const [editSize, setEditSize] = useState('');
   const [editSupplierId, setEditSupplierId] = useState('');
+  const [inspectLot, setInspectLot] = useState<SemiLot | null>(null);
   const [scanCode, setScanCode] = useState('');
   const [countKind, setCountKind] = useState<'periodic' | 'surprise'>('periodic');
 
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: '20' });
     if (q.trim()) params.set('q', q.trim());
-    params.set('categoryGroup', categoryGroup);
+    if (lifecycle === 'materials') params.set('categoryGroup', categoryGroup);
+    if (lifecycle === 'semiFinished') params.set('itemClass', 'SEMI_FINISHED_GOOD');
+    if (lifecycle === 'finished') params.set('itemClass', 'FINISHED_GOOD');
     return params.toString();
-  }, [q, page, categoryGroup]);
+  }, [q, page, categoryGroup, lifecycle]);
 
   const itemsQuery = useQuery({
     queryKey: ['inventory-items', listParams],
     queryFn: () =>
       apiFetch<{ data: Row[]; meta: { page: number; totalPages: number } }>(
-        `/api/v1/inventory/items?${listParams}`,
+        lifecycle === 'finished'
+          ? `/api/v1/inventory/finished-goods?${listParams}`
+          : `/api/v1/inventory/items?${listParams}`,
       ),
     placeholderData: keepPreviousData,
+    enabled: tab === 'items' && lifecycle !== 'semiFinished',
+  });
+
+  const wipQuery = useQuery({
+    queryKey: ['inventory-semi-finished', listParams],
+    queryFn: () =>
+      apiFetch<{ data: SemiLot[]; meta: { page: number; totalPages: number } }>(
+        `/api/v1/inventory/semi-finished?${listParams}`,
+      ),
+    placeholderData: keepPreviousData,
+    enabled: tab === 'items' && lifecycle === 'semiFinished',
+  });
+
+  const overviewQuery = useQuery({
+    queryKey: ['inventory-overview'],
+    queryFn: () => apiFetch<Overview>('/api/v1/inventory/overview'),
+    staleTime: 30_000,
   });
 
   const itemOptionsQuery = useQuery({
@@ -269,6 +387,8 @@ export default function InventoryPage() {
       setBanner(ti('itemCreated'));
       await queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-low-stock'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-overview'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-semi-finished'] });
     },
     onError: (err) => setFormError(mutationErrorMessage(err)),
   });
@@ -282,6 +402,8 @@ export default function InventoryPage() {
       setBanner(`${ti('materialsSynced')} (${res.created})`);
       await queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-low-stock'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-overview'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-semi-finished'] });
     },
     onError: (err) => setActionError(mutationErrorMessage(err)),
   });
@@ -346,6 +468,8 @@ export default function InventoryPage() {
       const kind = moveOpen;
       await queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-low-stock'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-overview'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-semi-finished'] });
       setMoveOpen(null);
       setBanner(kind === 'receive' ? ti('stockReceived') : ti('stockIssued'));
     },
@@ -385,6 +509,8 @@ export default function InventoryPage() {
       await queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-low-stock'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-overview'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-semi-finished'] });
     },
     onError: (err) => setActionError(mutationErrorMessage(err)),
   });
@@ -427,11 +553,24 @@ export default function InventoryPage() {
       await queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-low-stock'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-overview'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-semi-finished'] });
     },
     onError: (err) => setActionError(mutationErrorMessage(err)),
   });
 
-  if (itemsQuery.isLoading && !itemsQuery.data) {
+  const itemsBusy =
+    tab === 'items' &&
+    (lifecycle === 'semiFinished'
+      ? wipQuery.isLoading && !wipQuery.data
+      : itemsQuery.isLoading && !itemsQuery.data);
+  const itemsFailed =
+    tab === 'items' &&
+    (lifecycle === 'semiFinished'
+      ? wipQuery.isError && !wipQuery.data
+      : itemsQuery.isError && !itemsQuery.data);
+
+  if (itemsBusy) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -439,27 +578,33 @@ export default function InventoryPage() {
       </div>
     );
   }
-  if (itemsQuery.isError && !itemsQuery.data) {
+  if (itemsFailed) {
     return (
       <ErrorState
         title={t('inventory')}
-        onRetry={() => itemsQuery.refetch()}
+        onRetry={() =>
+          lifecycle === 'semiFinished' ? wipQuery.refetch() : itemsQuery.refetch()
+        }
         retryLabel={tCommon('retry')}
       />
     );
   }
 
   const rows = itemsQuery.data?.data ?? [];
-  const meta = itemsQuery.data?.meta;
+  const meta =
+    lifecycle === 'semiFinished' ? wipQuery.data?.meta : itemsQuery.data?.meta;
+  const wipLots = wipQuery.data?.data ?? [];
+  const overview = overviewQuery.data;
   const warehouses = warehousesQuery.data ?? [];
   const lowStock = lowStockQuery.data ?? [];
   const transfers = transfersQuery.data?.data ?? [];
   const transferMeta = transfersQuery.data?.meta;
   const itemOptions = itemOptionsQuery.data ?? rows;
+  const moveWarehouses = warehousesForItem(warehouses, selectedItem);
 
   function openMove(kind: 'receive' | 'issue', row: Row) {
     setSelectedItem(row);
-    setWarehouseId(warehouses[0]?.id ?? '');
+    setWarehouseId(warehousesForItem(warehouses, row)[0]?.id ?? '');
     setQuantity('1');
     setNotes('');
     setScanCode('');
@@ -483,11 +628,11 @@ export default function InventoryPage() {
         title={t('inventory')}
         tone="soft"
         actions={
-          tab === 'transfers' ? (
+          tab === 'transfers' && canTransfer ? (
             <Button size="sm" onClick={openTransfer}>
               {ti('newTransfer')}
             </Button>
-          ) : tab === 'counts' ? (
+          ) : tab === 'counts' && canCount ? (
             <Button
               size="sm"
               onClick={() => {
@@ -500,7 +645,7 @@ export default function InventoryPage() {
             >
               {ti('newCount')}
             </Button>
-          ) : (
+          ) : tab === 'items' && lifecycle === 'materials' && canAdjust ? (
             <Button
               size="sm"
               variant="secondary"
@@ -509,11 +654,46 @@ export default function InventoryPage() {
             >
               {ti('syncFromMaterials')}
             </Button>
-          )
+          ) : null
         }
       />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {actionError ? <Alert variant="error">{actionError}</Alert> : null}
+
+      {overview ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
+            <p className="text-xs text-text-secondary">{ti('overviewRaw')}</p>
+            <p className="mt-1 text-lg font-semibold text-text-primary" dir="ltr">
+              {overview.rawMaterials.itemCount}
+            </p>
+            {overview.rawMaterials.lowStockCount > 0 ? (
+              <p className="text-xs text-amber-700">
+                {ti('lowStock')}: {overview.rawMaterials.lowStockCount}
+              </p>
+            ) : null}
+          </div>
+          <div className="rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
+            <p className="text-xs text-text-secondary">{ti('overviewSemi')}</p>
+            <p className="mt-1 text-lg font-semibold text-text-primary" dir="ltr">
+              {overview.semiFinished.itemCount}
+            </p>
+            <p className="text-xs text-text-secondary" dir="ltr">
+              {overview.semiFinished.totalQty}
+            </p>
+          </div>
+          <div className="rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
+            <p className="text-xs text-text-secondary">{ti('overviewFinished')}</p>
+            <p className="mt-1 text-lg font-semibold text-text-primary" dir="ltr">
+              {overview.finishedGoods.onHandQty ?? overview.finishedGoods.availableQty}
+            </p>
+            <p className="text-xs text-text-secondary">
+              {ti('reserved')} {overview.finishedGoods.reservedQty} · {ti('available')}{' '}
+              {overview.finishedGoods.freeQty ?? overview.finishedGoods.readyForDeliveryQty}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <Button
@@ -523,24 +703,65 @@ export default function InventoryPage() {
         >
           {ti('items')}
         </Button>
-        <Button
-          size="sm"
-          variant={tab === 'transfers' ? 'primary' : 'subtle'}
-          onClick={() => setTab('transfers')}
-        >
-          {ti('transfers')}
-        </Button>
-        <Button
-          size="sm"
-          variant={tab === 'counts' ? 'primary' : 'subtle'}
-          onClick={() => setTab('counts')}
-        >
-          {ti('counts')}
-        </Button>
+        {canTransfer || canReceive ? (
+          <Button
+            size="sm"
+            variant={tab === 'transfers' ? 'primary' : 'subtle'}
+            onClick={() => setTab('transfers')}
+          >
+            {ti('transfers')}
+          </Button>
+        ) : null}
+        {canCount ? (
+          <Button
+            size="sm"
+            variant={tab === 'counts' ? 'primary' : 'subtle'}
+            onClick={() => setTab('counts')}
+          >
+            {ti('counts')}
+          </Button>
+        ) : null}
       </div>
 
       {tab === 'items' ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant={lifecycle === 'materials' ? 'primary' : 'subtle'}
+            onClick={() => {
+              setLifecycle('materials');
+              setPage(1);
+            }}
+          >
+            {ti('lifecycleMaterials')}
+          </Button>
+          <Button
+            size="sm"
+            variant={lifecycle === 'semiFinished' ? 'primary' : 'subtle'}
+            onClick={() => {
+              setLifecycle('semiFinished');
+              setPage(1);
+            }}
+          >
+            {ti('lifecycleSemi')}
+          </Button>
+          <Button
+            size="sm"
+            variant={lifecycle === 'finished' ? 'primary' : 'subtle'}
+            onClick={() => {
+              setLifecycle('finished');
+              setPage(1);
+            }}
+          >
+            {ti('lifecycleFinished')}
+          </Button>
+        </div>
+      ) : null}
+
+      {tab === 'items' ? (
         <>
+          {lifecycle === 'materials' ? (
+            <>
           <div className="maher-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {CATEGORY_TILES.map((tile) => (
               <button
@@ -593,12 +814,14 @@ export default function InventoryPage() {
                       {localizedName(locale, item)}
                     </span>
                     <span className="text-text-secondary" dir="ltr">
-                      {item.availableQty} / {Number(item.minStock)} {item.unit}
+                      {item.onHandQty ?? item.availableQty} / {Number(item.minStock)} {item.unit}
                     </span>
                   </li>
                 ))}
               </ul>
             </div>
+          ) : null}
+            </>
           ) : null}
 
           <div className="flex flex-wrap items-end gap-3">
@@ -613,6 +836,7 @@ export default function InventoryPage() {
                 placeholder={ti('searchPlaceholder')}
               />
             </label>
+            {lifecycle === 'materials' && canAdjust ? (
             <Button
               size="sm"
               onClick={() => {
@@ -633,10 +857,75 @@ export default function InventoryPage() {
             >
               {ti('newItem')}
             </Button>
+            ) : null}
           </div>
 
-          {rows.length === 0 ? (
-            <EmptyState title={ti('empty')} />
+          {lifecycle === 'semiFinished' ? (
+            wipLots.length === 0 ? (
+              <EmptyState title={ti('emptySemi')} />
+            ) : (
+              <>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableHeaderCell>{ti('sku')}</TableHeaderCell>
+                      <TableHeaderCell>{tc('name')}</TableHeaderCell>
+                      <TableHeaderCell>{ti('productionOrder')}</TableHeaderCell>
+                      <TableHeaderCell>{ti('stage')}</TableHeaderCell>
+                      <TableHeaderCell>{ti('lotQty')}</TableHeaderCell>
+                      <TableHeaderCell>{ti('warehouse')}</TableHeaderCell>
+                      <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {wipLots.map((lot) => (
+                      <TableRow key={lot.id} className="cursor-pointer" onClick={() => setInspectLot(lot)}>
+                        <TableCell>{lot.inventoryItem.sku}</TableCell>
+                        <TableCell>{localizedName(locale, lot.inventoryItem)}</TableCell>
+                        <TableCell>{lot.productionOrder?.number ?? '—'}</TableCell>
+                        <TableCell>
+                          {lot.stageInstance?.stageDefinition
+                            ? localizedName(locale, lot.stageInstance.stageDefinition)
+                            : '—'}
+                        </TableCell>
+                        <TableCell dir="ltr">{Number(lot.quantity)}</TableCell>
+                        <TableCell>
+                          {lot.warehouse.code} — {localizedName(locale, lot.warehouse)}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={lot.status} />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {meta && meta.totalPages > 1 ? (
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                      {tCommon('previous')}
+                    </Button>
+                    <span className="text-sm text-text-secondary" dir="ltr">
+                      {page} / {meta.totalPages}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={page >= meta.totalPages}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      {tCommon('next')}
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            )
+          ) : rows.length === 0 ? (
+            <EmptyState title={lifecycle === 'finished' ? ti('emptyFinished') : ti('empty')} />
           ) : (
             <>
               <Table>
@@ -647,7 +936,12 @@ export default function InventoryPage() {
                     <TableHeaderCell>{tc('name')}</TableHeaderCell>
                     <TableHeaderCell>{tc('unit')}</TableHeaderCell>
                     <TableHeaderCell>{ti('standardCost')}</TableHeaderCell>
+                    <TableHeaderCell>{ti('onHand')}</TableHeaderCell>
+                    <TableHeaderCell>{ti('reserved')}</TableHeaderCell>
                     <TableHeaderCell>{ti('available')}</TableHeaderCell>
+                    {lifecycle === 'finished' ? (
+                      <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
+                    ) : null}
                     <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
                   </TableRow>
                 </TableHead>
@@ -657,6 +951,14 @@ export default function InventoryPage() {
                       (s, b) => s + Number(b.availableQty),
                       0,
                     );
+                    const reserved = (row.balances ?? []).reduce(
+                      (s, b) => s + Number(b.reservedQty ?? 0),
+                      0,
+                    );
+                    const onHand = Number(row.onHandQty ?? total);
+                    const reservedQty = Number(row.reservedQty ?? reserved);
+                    const freeQty = Number(row.freeQty ?? onHand - reservedQty);
+                    const quarantined = Number(row.quarantinedQty ?? 0) > 0;
                     const expanded = expandedId === row.id;
                     return (
                       <Fragment key={row.id}>
@@ -690,9 +992,25 @@ export default function InventoryPage() {
                           <TableCell dir="ltr">
                             {Number(row.standardCost ?? 0).toFixed(2)}
                           </TableCell>
-                          <TableCell dir="ltr">{String(total)}</TableCell>
+                          <TableCell dir="ltr">{String(onHand)}</TableCell>
+                          <TableCell dir="ltr">{String(reservedQty)}</TableCell>
+                          <TableCell dir="ltr">{String(freeQty)}</TableCell>
+                          {lifecycle === 'finished' ? (
+                            <TableCell>
+                                <div className="flex flex-wrap gap-1">
+                                  {quarantined ? <StatusBadge status="QUARANTINED" /> : null}
+                                  {reservedQty > 0 ? <StatusBadge status="RESERVED" /> : null}
+                                  {freeQty > 0 && !quarantined ? (
+                                    <StatusBadge status="READY" />
+                                  ) : null}
+                                </div>
+                            </TableCell>
+                          ) : null}
                           <TableCell>
                             <div className="flex flex-wrap items-center gap-1.5">
+                              {lifecycle === 'materials' ? (
+                                <>
+                              {canReceive ? (
                               <Button
                                 size="sm"
                                 variant="subtle"
@@ -700,6 +1018,8 @@ export default function InventoryPage() {
                               >
                                 {ti('receive')}
                               </Button>
+                              ) : null}
+                              {canIssue ? (
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -707,6 +1027,8 @@ export default function InventoryPage() {
                               >
                                 {ti('issue')}
                               </Button>
+                              ) : null}
+                              {canAdjust ? (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -727,6 +1049,9 @@ export default function InventoryPage() {
                               >
                                 {tCommon('edit')}
                               </Button>
+                              ) : null}
+                                </>
+                              ) : null}
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -747,7 +1072,7 @@ export default function InventoryPage() {
                         </TableRow>
                         {expanded ? (
                           <TableRow>
-                            <td className="px-4 py-3 align-middle" colSpan={8}>
+                            <td className="px-4 py-3 align-middle" colSpan={lifecycle === 'finished' ? 11 : 10}>
                               <div className="space-y-1 ps-8 text-sm text-text-secondary">
                                 <p className="font-medium text-text-primary">
                                   {ti('balancesByWarehouse')}
@@ -766,7 +1091,9 @@ export default function InventoryPage() {
                                             ? `${b.warehouse.code} — ${localizedName(locale, b.warehouse)}`
                                             : (b.warehouseId ?? '—')}
                                         </span>
-                                        <span dir="ltr">{Number(b.availableQty)}</span>
+                                        <span dir="ltr">
+                                          {ti('onHand')} {Number(b.onHandQty ?? b.availableQty)} · {ti('reserved')} {Number(b.reservedQty ?? 0)} · {ti('available')} {Number(b.freeQty ?? Number(b.availableQty) - Number(b.reservedQty ?? 0))}
+                                        </span>
                                       </li>
                                     ))}
                                   </ul>
@@ -841,7 +1168,7 @@ export default function InventoryPage() {
                         <StatusBadge status={tr.status} />
                       </TableCell>
                       <TableCell>
-                        {tr.status === 'DRAFT' || tr.status === 'IN_TRANSIT' ? (
+                        {canTransfer && (tr.status === 'DRAFT' || tr.status === 'IN_TRANSIT') ? (
                           <Button
                             size="sm"
                             variant="subtle"
@@ -913,7 +1240,7 @@ export default function InventoryPage() {
                         <StatusBadge status={count.status} />
                       </TableCell>
                       <TableCell>
-                        {count.status === 'DRAFT' ? (
+                        {canCount && count.status === 'DRAFT' ? (
                           <Button
                             size="sm"
                             variant="subtle"
@@ -1055,6 +1382,7 @@ export default function InventoryPage() {
                       `/api/v1/inventory/items/by-code/${encodeURIComponent(scanCode.trim())}`,
                     );
                     setSelectedItem(found);
+                    setWarehouseId(warehousesForItem(warehouses, found)[0]?.id ?? '');
                     setScanCode('');
                     setFormError(null);
                   } catch (err) {
@@ -1075,6 +1403,7 @@ export default function InventoryPage() {
                     `/api/v1/inventory/items/by-code/${encodeURIComponent(scanCode.trim())}`,
                   );
                   setSelectedItem(found);
+                  setWarehouseId(warehousesForItem(warehouses, found)[0]?.id ?? '');
                   setScanCode('');
                   setFormError(null);
                 } catch (err) {
@@ -1094,7 +1423,7 @@ export default function InventoryPage() {
             value={warehouseId}
             onChange={(e) => setWarehouseId(e.target.value)}
           >
-            {warehouses.map((w) => (
+            {moveWarehouses.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.code} — {localizedName(locale, w)}
               </option>
@@ -1346,6 +1675,77 @@ export default function InventoryPage() {
             dir="ltr"
           />
         </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(inspectLot)}
+        onClose={() => setInspectLot(null)}
+        title={ti('inspectLot')}
+      >
+        {inspectLot ? (
+          <div className="space-y-2 text-sm">
+            <p className="font-semibold">{localizedName(locale, inspectLot.inventoryItem)}</p>
+            <p>
+              {ti('lotProduct')}:{' '}
+              {inspectLot.productNameEn
+                ? locale === 'ar'
+                  ? inspectLot.productNameAr
+                  : inspectLot.productNameEn
+                : '—'}
+            </p>
+            <p>
+              {ti('productionOrder')}:{' '}
+              {inspectLot.productionOrderNumber ?? inspectLot.productionOrder?.number ?? '—'}
+            </p>
+            <p>
+              {ti('stage')}:{' '}
+              {inspectLot.producingStageNameEn
+                ? locale === 'ar'
+                  ? inspectLot.producingStageNameAr
+                  : inspectLot.producingStageNameEn
+                : inspectLot.stageInstance?.stageDefinition
+                  ? localizedName(locale, inspectLot.stageInstance.stageDefinition)
+                  : '—'}
+            </p>
+            <p>
+              {ti('producedAt')}: {new Date(inspectLot.producedAt).toLocaleString()}
+            </p>
+            <p>
+              {ti('warehouse')}: {localizedName(locale, inspectLot.warehouse)}
+            </p>
+            <p className="pt-2 font-semibold">{ti('laterMovements')}</p>
+            {(inspectLot.laterMovements ?? []).length === 0 ? (
+              <p className="text-text-tertiary">{ti('noLaterMovements')}</p>
+            ) : (
+              <ul className="space-y-1">
+                {inspectLot.laterMovements!.map((m, i) => (
+                  <li key={`${m.type}-${i}`}>
+                    {ti(
+                      m.type === 'SEMI_FINISHED_ISSUE'
+                        ? 'movementIssue'
+                        : m.type === 'FINISHED_GOODS_RECEIPT'
+                          ? 'movementFinishedReceipt'
+                          : m.type === 'DELIVERY_ISSUE'
+                            ? 'movementDelivery'
+                            : m.type === 'DELIVERY_RESTORE'
+                              ? 'movementRestore'
+                              : m.type === 'CUSTOMER_RETURN'
+                                ? 'movementReturn'
+                                : m.type === 'SCRAP'
+                                  ? 'movementScrap'
+                                  : m.type === 'DAMAGE'
+                                    ? 'movementDamage'
+                                    : m.type === 'PRODUCTION_RETURN'
+                                      ? 'movementProductionReturn'
+                                      : 'laterMovements',
+                    )}{' '}
+                    · {m.quantity} · {locale === 'ar' ? m.warehouseNameAr : m.warehouseNameEn}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

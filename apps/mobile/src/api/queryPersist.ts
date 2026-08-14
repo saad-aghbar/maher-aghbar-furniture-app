@@ -1,5 +1,7 @@
 import type { Query } from '@tanstack/react-query';
 
+export const QUERY_PERSIST_KEY = 'maher.rq.cache';
+
 /** Persist recent lists for offline — never tokens or mutations. */
 export function shouldDehydrateQuery(query: Query): boolean {
   const key = query.queryKey;

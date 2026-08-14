@@ -2,16 +2,17 @@
 
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
-import type { AuthUser } from '@maher/types';
 import { Button, cn, isNavItemActive, useHeaderOverDark } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Bell, ChevronDown, LogOut, Menu, User } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GlobalSearch } from './global-search';
 import { LanguageSwitcher } from './language-switcher';
 import { allNavItems, navFooterItems, navGroups } from './nav-items';
 import { AppThemeToggle } from './theme-toggle';
+import { useAuthMe } from '@/hooks/use-auth-me';
+import { can } from '@maher/permissions';
 
 interface NotificationItem {
   id: string;
@@ -28,6 +29,7 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
   const t = useTranslations('navigation');
   const tCommon = useTranslations('common');
   const tAuth = useTranslations('auth');
+  const locale = useLocale();
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -42,18 +44,15 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
       ...navFooterItems.map((item) => ({ ...item, group: 'groupMain' as const })),
     ].find((item) => isNavItemActive(pathname, item.href, allHrefs));
 
-  const me = useQuery({
-    queryKey: ['auth-me'],
-    queryFn: () => apiFetch<AuthUser>('/api/v1/auth/me'),
-    retry: false,
-    staleTime: 5 * 60 * 1000,
-  });
+  const me = useAuthMe();
+  const canNotify = can(me.data, 'notification.read');
 
   const notifications = useQuery({
     queryKey: ['notifications-inbox'],
     queryFn: () => apiFetch<NotificationItem[]>('/api/v1/notifications'),
+    enabled: canNotify,
     retry: false,
-    refetchInterval: 60_000,
+    refetchInterval: canNotify ? 60_000 : false,
   });
 
   const unread = (notifications.data ?? []).filter((n) => !n.readAt).length;
@@ -144,6 +143,7 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
         <AppThemeToggle className="hidden sm:inline-flex" inverted={overDark} />
         <LanguageSwitcher className="hidden sm:block" inverted={overDark} />
 
+        {canNotify ? (
         <Link
           href="/notifications"
           aria-label={t('notifications')}
@@ -166,6 +166,7 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
           </span>
         ) : null}
       </Link>
+        ) : null}
 
       <div className="relative" ref={menuRef}>
         <button
@@ -210,7 +211,17 @@ export function Topbar({ onOpenSidebar, menuButtonClassName = 'lg:hidden' }: Top
               <p className="truncate text-xs text-text-secondary">{me.data?.email}</p>
               {me.data?.roles?.length ? (
                 <p className="mt-1.5 truncate text-[11px] uppercase tracking-wide text-text-tertiary">
-                  {me.data.roles.join(' · ')}
+              {me.data?.rolesDetailed?.length
+                ? me.data.rolesDetailed
+                    .map((role) =>
+                      locale === 'ar'
+                        ? role.nameAr
+                        : locale === 'he'
+                          ? role.nameHe || role.nameEn
+                          : role.nameEn,
+                    )
+                    .join(' · ')
+                : me.data.roles.join(' · ')}
                 </p>
               ) : null}
             </div>

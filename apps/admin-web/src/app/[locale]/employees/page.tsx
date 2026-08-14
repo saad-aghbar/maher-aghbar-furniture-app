@@ -1,12 +1,11 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
-import {
-  DepartmentSearchPicker,
-  type DepartmentOption,
-} from '@/components/admin/department-search-picker';
+import { type DepartmentOption } from '@/components/admin/department-search-picker';
+import { useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { useAuthMe } from '@/hooks/use-auth-me';
 import {
   Alert,
   Button,
@@ -22,6 +21,19 @@ import {
   StatusBadge,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
+import {
+  applyEmployeeTypeChange,
+  applyIdentityChange,
+  can,
+  emptyUserIdentityForm,
+  hydrateUserIdentityForm,
+  IDENTITY_ROLE_CODES,
+  isIdentityRoleCode,
+  submittedRoleId,
+  submittedStageDefinitionIds,
+  type IdentityRoleCode,
+  type UserIdentityForm,
+} from '@maher/permissions';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
@@ -46,7 +58,16 @@ interface UserRow {
     nameEn?: string | null;
   } | null;
   stageDefinitionIds?: string[];
-  roles?: Array<{ role: { id: string; code: string; nameEn: string; nameAr?: string } }>;
+  roles?: Array<{
+    role: {
+      id: string;
+      code: string;
+      nameEn: string;
+      nameAr?: string;
+      nameHe?: string | null;
+      kind?: string | null;
+    };
+  }>;
 }
 
 interface RoleRow {
@@ -54,6 +75,13 @@ interface RoleRow {
   code: string;
   nameEn: string;
   nameAr: string;
+  nameHe?: string | null;
+  kind?: string | null;
+  isSystem?: boolean;
+  isActive?: boolean;
+  descriptionEn?: string | null;
+  descriptionAr?: string | null;
+  descriptionHe?: string | null;
 }
 
 interface StageDefinitionRow {
@@ -73,35 +101,53 @@ interface UserFormState {
   lastName: string;
   password: string;
   isActive: boolean;
-  roleId: string;
+  identity: UserIdentityForm;
   departmentId: string;
-  stageDefinitionIds: string[];
 }
 
-type Segment = 'staff' | 'customers' | 'admins' | 'all';
+type Segment = 'workers' | 'staff' | 'customers' | 'admins' | 'all';
 
-const SEGMENT_ROLE_CODE: Record<Exclude<Segment, 'all'>, string> = {
-  staff: 'PRODUCTION_WORKER',
+const SEGMENT_ROLE_KIND: Record<Exclude<Segment, 'all'>, string> = {
+  workers: 'PRODUCTION_WORKER',
+  staff: 'STAFF',
   customers: 'CUSTOMER',
-  admins: 'SYSTEM_ADMINISTRATOR',
+  admins: 'ADMIN',
 };
 
-/** Customer, Worker, and Admin do not use department on create/edit/list. */
-const NO_DEPARTMENT_ROLE_CODES = new Set([
-  'CUSTOMER',
-  'PRODUCTION_WORKER',
-  'SYSTEM_ADMINISTRATOR',
-]);
+function identityFromSegment(seg: Segment): UserIdentityForm {
+  if (seg === 'workers') {
+    return { identityRoleCode: 'PRODUCTION_WORKER', employeeType: 'WORKER', staffTypeId: '', stageDefinitionIds: [] };
+  }
+  if (seg === 'staff') {
+    return { identityRoleCode: 'PRODUCTION_WORKER', employeeType: 'STAFF', staffTypeId: '', stageDefinitionIds: [] };
+  }
+  if (seg === 'customers') {
+    return { ...emptyUserIdentityForm(), identityRoleCode: 'CUSTOMER' };
+  }
+  if (seg === 'admins') {
+    return { ...emptyUserIdentityForm(), identityRoleCode: 'SYSTEM_ADMINISTRATOR' };
+  }
+  return emptyUserIdentityForm();
+}
 
-function roleUsesDepartment(roleCode: string | undefined | null): boolean {
-  if (!roleCode) return false;
-  return !NO_DEPARTMENT_ROLE_CODES.has(roleCode);
+function roleUsesDepartment(kind: string | undefined | null, roleCode?: string): boolean {
+  if (kind === 'CUSTOMER' || kind === 'PRODUCTION_WORKER' || kind === 'ADMIN' || kind === 'STAFF') {
+    return false;
+  }
+  if (
+    roleCode === 'CUSTOMER' ||
+    roleCode === 'PRODUCTION_WORKER' ||
+    roleCode === 'SYSTEM_ADMINISTRATOR'
+  ) {
+    return false;
+  }
+  return Boolean(kind || roleCode);
 }
 
 function userShowsDepartment(user: UserRow): boolean {
   const roles = user.roles ?? [];
   if (!roles.length) return false;
-  return roles.some((r) => roleUsesDepartment(r.role.code));
+  return roles.some((r) => roleUsesDepartment(r.role.kind, r.role.code));
 }
 
 function namesFromUsername(username: string): { firstName: string; lastName: string } {
@@ -118,15 +164,14 @@ function namesFromUsername(username: string): { firstName: string; lastName: str
   return { firstName: single, lastName: single };
 }
 
-const emptyForm = (): UserFormState => ({
+const emptyForm = (segment: Segment = 'workers'): UserFormState => ({
   username: '',
   firstName: '',
   lastName: '',
   password: '',
   isActive: true,
-  roleId: '',
+  identity: identityFromSegment(segment),
   departmentId: '',
-  stageDefinitionIds: [],
 });
 
 export default function UsersPage() {
@@ -152,16 +197,20 @@ function UsersHub() {
   const tVal = useTranslations('validation');
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
+  const me = useAuthMe();
+  const canManageStaffTypes = can(me.data, 'role.manage');
+  const router = useRouter();
 
-  const [segment, setSegment] = useState<Segment>('staff');
+  const [segment, setSegment] = useState<Segment>('workers');
   const [q, setQ] = useState('');
   const [roleCode, setRoleCode] = useState('');
   const [departmentId, setDepartmentId] = useState('');
+  const [staffTypeId, setStaffTypeId] = useState('');
   const [isActive, setIsActive] = useState('');
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
-  const [form, setForm] = useState<UserFormState>(emptyForm);
+  const [form, setForm] = useState<UserFormState>(() => emptyForm('workers'));
   const [formError, setFormError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<
@@ -171,7 +220,7 @@ function UsersHub() {
   const [editDeepLinkHandled, setEditDeepLinkHandled] = useState(false);
 
   const showRoleFilter = segment === 'all';
-  // Department unused for Worker/Admin/Customer; only relevant for other roles under "all".
+  const showStaffTypeFilter = segment === 'staff';
   const showDepartmentFilter = segment === 'all';
   const showDepartmentColumn = segment === 'all';
 
@@ -180,15 +229,28 @@ function UsersHub() {
     if (q.trim()) params.set('q', q.trim());
     if (showRoleFilter && roleCode) {
       params.set('roleCode', roleCode);
+    } else if (showStaffTypeFilter && staffTypeId) {
+      params.set('staffTypeId', staffTypeId);
     } else if (segment !== 'all') {
-      params.set('roleCode', SEGMENT_ROLE_CODE[segment]);
+      params.set('roleKind', SEGMENT_ROLE_KIND[segment]);
     }
     if (showDepartmentFilter && departmentId) {
       params.set('departmentId', departmentId);
     }
     if (isActive) params.set('isActive', isActive);
     return params.toString();
-  }, [q, roleCode, departmentId, isActive, page, segment, showRoleFilter, showDepartmentFilter]);
+  }, [
+    q,
+    roleCode,
+    departmentId,
+    isActive,
+    page,
+    segment,
+    showRoleFilter,
+    showDepartmentFilter,
+    showStaffTypeFilter,
+    staffTypeId,
+  ]);
 
   const usersQuery = useQuery({
     queryKey: ['people', listParams],
@@ -213,6 +275,12 @@ function UsersHub() {
     enabled: showDepartmentFilter || formOpen,
   });
 
+  const staffTypesQuery = useQuery({
+    queryKey: ['staff-types', 'assign'],
+    queryFn: () => apiFetch<RoleRow[]>('/api/v1/staff-types'),
+    enabled: formOpen || showStaffTypeFilter,
+  });
+
   const stagesQuery = useQuery({
     queryKey: ['production-stage-library'],
     queryFn: () => apiFetch<StageDefinitionRow[]>('/api/v1/production-stage-library'),
@@ -225,11 +293,24 @@ function UsersHub() {
       if (!username) {
         throw new ApiClientError(tVal('usernameRequired'), 400);
       }
+      if (form.identity.identityRoleCode === 'PRODUCTION_WORKER' && !form.identity.employeeType) {
+        throw new ApiClientError(tVal('employeeTypeRequired'), 400);
+      }
+      if (
+        form.identity.identityRoleCode === 'PRODUCTION_WORKER' &&
+        form.identity.employeeType === 'STAFF' &&
+        !form.identity.staffTypeId
+      ) {
+        throw new ApiClientError(tVal('staffTypeRequired'), 400);
+      }
 
-      const selectedRoleCode = rolesQuery.data?.find((r) => r.id === form.roleId)?.code;
-      const isCustomerRole = selectedRoleCode === 'CUSTOMER';
-      const isWorkerRole = selectedRoleCode === 'PRODUCTION_WORKER';
-      const usesDepartment = roleUsesDepartment(selectedRoleCode);
+      const lookup = [...(rolesQuery.data ?? []), ...(staffTypesQuery.data ?? [])];
+      const roleId = submittedRoleId(form.identity, lookup);
+      if (!roleId) {
+        throw new ApiClientError(tVal('roleRequired'), 400);
+      }
+      const usesDepartment = false;
+      const stageIds = submittedStageDefinitionIds(form.identity);
 
       if (editing) {
         const firstName = form.firstName.trim();
@@ -237,10 +318,6 @@ function UsersHub() {
         if (!firstName || !lastName) {
           throw new ApiClientError(tVal('nameRequired'), 400);
         }
-        if (!form.roleId) {
-          throw new ApiClientError(tVal('roleRequired'), 400);
-        }
-        // Password optional on edit: blank keeps current; any non-empty value is accepted.
         return apiFetch<UserRow>(`/api/v1/users/${editing.id}`, {
           method: 'PATCH',
           body: JSON.stringify({
@@ -248,20 +325,12 @@ function UsersHub() {
             firstName,
             lastName,
             isActive: form.isActive,
-            ...(usesDepartment
-              ? { departmentId: form.departmentId || null }
-              : isCustomerRole
-                ? { departmentId: null }
-                : {}),
-            roleIds: [form.roleId],
+            departmentId: usesDepartment ? form.departmentId || null : null,
+            roleIds: [roleId],
             ...(form.password.trim() ? { password: form.password.trim() } : {}),
-            ...(isWorkerRole ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
+            stageDefinitionIds: stageIds,
           }),
         });
-      }
-
-      if (!form.roleId) {
-        throw new ApiClientError(tVal('roleRequired'), 400);
       }
 
       const { firstName, lastName } = namesFromUsername(username);
@@ -272,10 +341,9 @@ function UsersHub() {
           username,
           firstName,
           lastName,
-          roleIds: [form.roleId],
-          ...(usesDepartment && form.departmentId ? { departmentId: form.departmentId } : {}),
+          roleIds: [roleId],
           ...(form.password.trim() ? { password: form.password } : {}),
-          ...(isWorkerRole ? { stageDefinitionIds: form.stageDefinitionIds } : {}),
+          stageDefinitionIds: stageIds,
         }),
       });
     },
@@ -326,19 +394,24 @@ function UsersHub() {
     onError: (err) => setConfirmError(mutationErrorMessage(err)),
   });
 
-  function preferredRoleIdForSegment(seg: Segment): string {
-    if (seg === 'all') return '';
-    return (rolesQuery.data ?? []).find((r) => r.code === SEGMENT_ROLE_CODE[seg])?.id ?? '';
-  }
-
   function openCreate() {
     setEditing(null);
-    setForm({ ...emptyForm(), roleId: preferredRoleIdForSegment(segment) });
+    setForm(emptyForm(segment));
     setFormError(null);
     setFormOpen(true);
   }
 
   function openEdit(user: UserRow) {
+    const assigned = (user.roles ?? [])[0]?.role;
+    const identity = assigned
+      ? {
+          ...hydrateUserIdentityForm(assigned),
+          stageDefinitionIds:
+            assigned.kind === 'PRODUCTION_WORKER' || assigned.code === 'PRODUCTION_WORKER'
+              ? (user.stageDefinitionIds ?? [])
+              : [],
+        }
+      : emptyUserIdentityForm();
     setEditing(user);
     setForm({
       username: user.username ?? '',
@@ -346,9 +419,8 @@ function UsersHub() {
       lastName: user.lastName,
       password: '',
       isActive: user.isActive,
-      roleId: (user.roles ?? [])[0]?.role.id ?? '',
+      identity,
       departmentId: user.departmentId ?? user.department?.id ?? '',
-      stageDefinitionIds: user.stageDefinitionIds ?? [],
     });
     setFormError(null);
     setFormOpen(true);
@@ -374,14 +446,21 @@ function UsersHub() {
   }, [editDeepLinkHandled, searchParams, usersQuery.data, usersQuery.isLoading]);
 
   const roles = rolesQuery.data ?? [];
+  const staffTypes = staffTypesQuery.data ?? [];
   const departments = departmentsQuery.data ?? [];
-  const formRoles = roles;
-  const selectedFormRoleCode = roles.find((r) => r.id === form.roleId)?.code;
-  const showFormDepartment = roleUsesDepartment(selectedFormRoleCode);
-  const showFormStageSkills = selectedFormRoleCode === 'PRODUCTION_WORKER';
+  const identityRoles = IDENTITY_ROLE_CODES.map((code) => roles.find((r) => r.code === code)).filter(
+    (r): r is RoleRow => Boolean(r),
+  );
+  const isWorkerIdentity = form.identity.identityRoleCode === 'PRODUCTION_WORKER';
+  const showFormStageSkills = isWorkerIdentity && form.identity.employeeType === 'WORKER';
+  const showFormStaffType = isWorkerIdentity && form.identity.employeeType === 'STAFF';
+  const assignableStaffTypes = staffTypes.filter(
+    (type) => type.isActive !== false || type.id === form.identity.staffTypeId,
+  );
   const activeStages = (stagesQuery.data ?? []).filter((s) => s.isActive);
 
   const segments: Array<{ key: Segment; label: string }> = [
+    { key: 'workers', label: t('segmentWorkers') },
     { key: 'staff', label: t('segmentStaff') },
     { key: 'customers', label: t('segmentCustomers') },
     { key: 'admins', label: t('segmentAdmins') },
@@ -418,7 +497,16 @@ function UsersHub() {
         title={t('title')}
         description={t('description')}
         tone="soft"
-        actions={<Button onClick={openCreate}>{t('add')}</Button>}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {canManageStaffTypes ? (
+              <Button variant="secondary" onClick={() => router.push('/employees/staff-types')}>
+                {t('staffTypes')}
+              </Button>
+            ) : null}
+            <Button onClick={openCreate}>{t('add')}</Button>
+          </div>
+        }
       />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
@@ -431,6 +519,7 @@ function UsersHub() {
             onClick={() => {
               setSegment(s.key);
               setRoleCode('');
+              setStaffTypeId('');
               if (s.key !== 'all') setDepartmentId('');
               setPage(1);
             }}
@@ -472,6 +561,24 @@ function UsersHub() {
             {roles.map((role) => (
               <option key={role.id} value={role.code}>
                 {localizedName(locale, role)}
+              </option>
+            ))}
+          </Select>
+        ) : null}
+        {showStaffTypeFilter ? (
+          <Select
+            value={staffTypeId}
+            onChange={(e) => {
+              setPage(1);
+              setStaffTypeId(e.target.value);
+            }}
+            aria-label={t('staffType')}
+            className="w-52 shrink-0"
+          >
+            <option value="">{t('staffTypeFilterAll')}</option>
+            {staffTypes.map((type) => (
+              <option key={type.id} value={type.id}>
+                {localizedName(locale, type)}
               </option>
             ))}
           </Select>
@@ -691,35 +798,64 @@ function UsersHub() {
           ) : null}
           <Select
             label={`${t('roles')} *`}
-            value={form.roleId}
+            value={identityRoles.find((r) => r.code === form.identity.identityRoleCode)?.id ?? ''}
             onChange={(e) => {
-              const nextRoleId = e.target.value;
-              const nextCode = roles.find((r) => r.id === nextRoleId)?.code;
+              const nextCode = identityRoles.find((r) => r.id === e.target.value)?.code;
+              if (!nextCode || !isIdentityRoleCode(nextCode)) return;
               setForm((f) => ({
                 ...f,
-                roleId: nextRoleId,
-                ...(!roleUsesDepartment(nextCode) ? { departmentId: '' } : {}),
-                ...(nextCode !== 'PRODUCTION_WORKER' ? { stageDefinitionIds: [] } : {}),
+                identity: applyIdentityChange(f.identity, nextCode as IdentityRoleCode),
+                departmentId: '',
               }));
             }}
             required
           >
             <option value="">—</option>
-            {formRoles.map((role) => (
+            {identityRoles.map((role) => (
               <option key={role.id} value={role.id}>
                 {localizedName(locale, role)}
               </option>
             ))}
           </Select>
-          {showFormDepartment ? (
-            <DepartmentSearchPicker
-              label={t('department')}
-              value={form.departmentId}
-              selectedDepartment={
-                departments.find((d) => d.id === form.departmentId) ?? null
-              }
-              onChange={(id) => setForm((f) => ({ ...f, departmentId: id }))}
-            />
+          {isWorkerIdentity ? (
+            <Select
+              label={`${t('employeeType')} *`}
+              value={form.identity.employeeType || 'WORKER'}
+              onChange={(e) => {
+                const next = e.target.value === 'STAFF' ? 'STAFF' : 'WORKER';
+                setForm((f) => ({
+                  ...f,
+                  identity: applyEmployeeTypeChange(f.identity, next),
+                }));
+              }}
+              required
+            >
+              <option value="WORKER">{t('employeeTypeWorker')}</option>
+              <option value="STAFF">{t('employeeTypeStaff')}</option>
+            </Select>
+          ) : null}
+          {showFormStaffType ? (
+            <div className="grid gap-2">
+              <Select
+                label={`${t('staffType')} *`}
+                value={form.identity.staffTypeId}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    identity: { ...f.identity, staffTypeId: e.target.value },
+                  }))
+                }
+                required
+              >
+                <option value="">—</option>
+                {assignableStaffTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {localizedName(locale, type)}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-text-tertiary">{t('staffTypeHint')}</p>
+            </div>
           ) : null}
           {showFormStageSkills ? (
             <fieldset className="grid gap-2">
@@ -732,7 +868,7 @@ function UsersHub() {
               ) : (
                 <div className="grid gap-1.5">
                   {activeStages.map((stage) => {
-                    const checked = form.stageDefinitionIds.includes(stage.id);
+                    const checked = form.identity.stageDefinitionIds.includes(stage.id);
                     return (
                       <label
                         key={stage.id}
@@ -744,9 +880,12 @@ function UsersHub() {
                           onChange={() =>
                             setForm((f) => ({
                               ...f,
-                              stageDefinitionIds: checked
-                                ? f.stageDefinitionIds.filter((id) => id !== stage.id)
-                                : [...f.stageDefinitionIds, stage.id],
+                              identity: {
+                                ...f.identity,
+                                stageDefinitionIds: checked
+                                  ? f.identity.stageDefinitionIds.filter((id) => id !== stage.id)
+                                  : [...f.identity.stageDefinitionIds, stage.id],
+                              },
                             }))
                           }
                         />

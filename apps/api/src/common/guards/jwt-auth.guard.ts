@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from '../decorators/auth.decorators';
+import { effectivePermissionCodes } from '../helpers/auth-permissions.util';
 import { PrismaService } from '../prisma.service';
 import type { AuthUser } from '@maher/types';
 
@@ -56,11 +57,10 @@ export class JwtAuthGuard implements CanActivate {
       if (!user) throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'User not found.' });
 
       const roles = user.roles.map((r) => r.role.code);
-      const permissions = [
-        ...new Set(
-          user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code)),
-        ),
-      ];
+      const permissions = effectivePermissionCodes(
+        roles,
+        user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code)),
+      );
 
       req.user = {
         id: user.id,

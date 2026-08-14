@@ -85,4 +85,82 @@ describe('tabConfig', () => {
     expect(visibleTabsForUser('employee', bare).map((t) => t.name)).toEqual(['index', 'profile']);
     expect(isTabAllowed('employee', 'tasks', bare)).toBe(false);
   });
+
+  it('shows inventory tab from inventory permissions, not a staff-type switch', () => {
+    const warehouse: AuthUser = {
+      ...base,
+      roles: ['WAREHOUSE_MANAGEMENT'],
+      permissions: [
+        'inventory.read',
+        'inventory.receive',
+        'inventory.issue',
+        'inventory.transfer',
+        'inventory.count',
+        'warehouse.read',
+        'notification.read',
+        'document.read',
+      ],
+    };
+    expect(visibleTabsForUser('admin', warehouse).map((t) => t.name)).toEqual([
+      'index',
+      'inventory',
+      'more',
+    ]);
+    expect(visibleTabsForUser('admin', { ...warehouse }).map((t) => t.name)).toEqual([
+      'index',
+      'inventory',
+      'more',
+    ]);
+  });
+
+  it('Inventory Counter keeps Inventory + Count-capable tabs without Orders', () => {
+    const counter: AuthUser = {
+      ...base,
+      permissions: ['inventory.read', 'inventory.count', 'warehouse.read'],
+    };
+    expect(visibleTabsForUser('admin', counter).map((t) => t.name)).toEqual([
+      'index',
+      'inventory',
+      'more',
+    ]);
+  });
+
+  it('read-only inventory still gets Inventory; staff with no business perms get Home + More', () => {
+    const readOnly: AuthUser = {
+      ...base,
+      permissions: ['inventory.read', 'warehouse.read'],
+    };
+    expect(visibleTabsForUser('admin', readOnly).map((t) => t.name)).toEqual([
+      'index',
+      'inventory',
+      'more',
+    ]);
+
+    const none: AuthUser = { ...base, permissions: ['notification.read'] };
+    expect(visibleTabsForUser('admin', none).map((t) => t.name)).toEqual(['index', 'more']);
+  });
+
+  it('does not leak admin tabs onto staff, worker, or dealer snapshots', () => {
+    const admin: AuthUser = {
+      ...base,
+      permissions: ['sales-order.read', 'inventory.read', 'production-order.read', 'user.manage'],
+    };
+    const staff: AuthUser = {
+      ...base,
+      permissions: ['inventory.read', 'inventory.receive', 'warehouse.read'],
+    };
+    const worker: AuthUser = {
+      ...base,
+      permissions: ['production-task.read', 'production-task.update-own'],
+    };
+    const dealer: AuthUser = {
+      ...base,
+      customerId: 'c1',
+      permissions: ['catalog.read', 'request.create', 'sales-order.read'],
+    };
+    expect(visibleTabsForUser('admin', admin).map((t) => t.name)).toContain('orders');
+    expect(visibleTabsForUser('admin', staff).map((t) => t.name)).not.toContain('orders');
+    expect(visibleTabsForUser('employee', worker).map((t) => t.name)).not.toContain('inventory');
+    expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).not.toContain('inventory');
+  });
 });

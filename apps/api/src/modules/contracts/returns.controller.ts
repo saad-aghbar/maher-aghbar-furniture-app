@@ -33,6 +33,8 @@ import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { roundMoney } from '../../common/helpers/money.util';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { InventoryService } from '../inventory/inventory.service';
+import { ProductionReworkService } from '../production/production-rework.service';
 
 /** Pack one or many storage keys into the existing String column (JSON array when >1). */
 function packPhotoKeys(keys: Array<string | null | undefined>): string | null {
@@ -111,6 +113,18 @@ class CreateReturnDto {
 class ResolveReturnDto {
   @IsIn(['APPROVED', 'REJECTED'])
   approvalStatus!: 'APPROVED' | 'REJECTED';
+
+  @IsOptional()
+  @IsIn(['RETURN_TO_STOCK', 'REWORK', 'DAMAGED', 'SCRAP'])
+  inventoryFate?: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP';
+
+  @IsOptional()
+  @IsUUID()
+  reentryStageInstanceId?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 class ListReturnsDto extends PaginationDto {
@@ -127,6 +141,8 @@ export class ReturnsController {
     private readonly sequences: SequenceService,
     private readonly storage: LocalStorageService,
     private readonly notifications: NotificationsService,
+    private readonly inventory: InventoryService,
+    private readonly rework: ProductionReworkService,
   ) {}
 
   private photoUrl(key: string | null | undefined): string | null {
@@ -370,7 +386,11 @@ export class ReturnsController {
 
   @Patch(':id/resolve')
   @RequirePermissions('sales-order.update')
-  async resolve(@Param('id') id: string, @Body() body: ResolveReturnDto) {
+  async resolve(
+    @Param('id') id: string,
+    @Body() body: ResolveReturnDto,
+    @CurrentUser() user: AuthUser,
+  ) {
     const resolution =
       body.approvalStatus === 'APPROVED'
         ? ReturnResolution.REPLACEMENT
@@ -380,8 +400,23 @@ export class ReturnsController {
       data: {
         resolution,
         approvalStatus: body.approvalStatus,
+        inventoryFate: body.approvalStatus === 'APPROVED' ? 'PENDING' : undefined,
       },
     });
+    if (body.approvalStatus === 'APPROVED') {
+      await this.inventory.quarantineReturn(
+        updated.id,
+        updated.salesOrderId,
+        Number(updated.quantity),
+        user.id,
+      );
+      if (body.inventoryFate) {
+        await this.applyReturnFate(updated.id, body.inventoryFate, user.id, {
+          stageInstanceId: body.reentryStageInstanceId,
+          notes: body.notes,
+        });
+      }
+    }
     await this.notifications
       .notifyCustomerUsers(updated.customerId, {
         templateCode:
@@ -391,5 +426,56 @@ export class ReturnsController {
       })
       .catch(() => undefined);
     return updated;
+  }
+
+  @Patch(':id/inventory-fate')
+  @RequirePermissions('sales-order.update')
+  async setInventoryFate(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      inventoryFate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP';
+      reentryStageInstanceId?: string;
+      notes?: string;
+    },
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (!['RETURN_TO_STOCK', 'REWORK', 'DAMAGED', 'SCRAP'].includes(body.inventoryFate)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid inventory fate.',
+      });
+    }
+    await this.applyReturnFate(id, body.inventoryFate, user.id, {
+      stageInstanceId: body.reentryStageInstanceId,
+      notes: body.notes,
+    });
+    const row = await this.prisma.returnRequest.findUniqueOrThrow({ where: { id } });
+    return row;
+  }
+
+  private async applyReturnFate(
+    returnId: string,
+    fate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP',
+    userId: string,
+    opts?: { stageInstanceId?: string; notes?: string },
+  ) {
+    await this.inventory.resolveReturnFate(returnId, fate, userId);
+    if (fate !== 'REWORK') return;
+    const row = await this.prisma.returnRequest.findUniqueOrThrow({ where: { id: returnId } });
+    const created = await this.rework.createForReturn({
+      returnId,
+      salesOrderId: row.salesOrderId,
+      description: opts?.notes || `Customer return ${row.number}`,
+      userId,
+    });
+    if (opts?.stageInstanceId) {
+      await this.rework.startRework({
+        reworkId: created.id,
+        stageInstanceId: opts.stageInstanceId,
+        notes: opts.notes,
+        userId,
+      });
+    }
   }
 }

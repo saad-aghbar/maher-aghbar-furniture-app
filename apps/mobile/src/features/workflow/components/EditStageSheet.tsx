@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { localizedName } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import type { WorkflowNode, WorkflowVersion } from '@/api/modules/workflow';
@@ -13,6 +12,7 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { stageNodeLabel } from '../stageNodeLabel';
 import {
   commitEditWorkflowStage,
   commitRemoveWorkflowStage,
@@ -158,9 +158,7 @@ export function EditStageSheet({
   );
 
   const sinkNode = sinkId ? version.nodes.find((n) => n.id === sinkId) : undefined;
-  const sinkName = sinkNode
-    ? localizedName(locale, sinkNode.stageDefinition, sinkNode.stageDefinition.code)
-    : '';
+  const sinkName = sinkNode ? stageNodeLabel(locale, sinkNode.stageDefinition) : '';
 
   const becomingNewLast =
     Boolean(node) &&
@@ -337,7 +335,7 @@ export function EditStageSheet({
   }
 
   const title = node
-    ? localizedName(locale, node.stageDefinition, node.stageDefinition.code)
+    ? stageNodeLabel(locale, node.stageDefinition)
     : t('mobile.production.workflow.editStage');
 
   return (
@@ -394,11 +392,7 @@ export function EditStageSheet({
               {runsAfterOptions.map((item) => (
                 <WorkflowCompactPickRow
                   key={`p-${item.id}`}
-                  label={localizedName(
-                    locale,
-                    item.stageDefinition,
-                    item.stageDefinition.code,
-                  )}
+                  label={stageNodeLabel(locale, item.stageDefinition)}
                   active={runsAfterIds.includes(item.id)}
                   onPress={() => {
                     void haptics.selection();
@@ -420,11 +414,7 @@ export function EditStageSheet({
               {leadsIntoOptions.map((item) => (
                 <WorkflowCompactPickRow
                   key={`s-${item.id}`}
-                  label={localizedName(
-                    locale,
-                    item.stageDefinition,
-                    item.stageDefinition.code,
-                  )}
+                  label={stageNodeLabel(locale, item.stageDefinition)}
                   active={leadsIntoIds.includes(item.id)}
                   onPress={() => {
                     void haptics.selection();

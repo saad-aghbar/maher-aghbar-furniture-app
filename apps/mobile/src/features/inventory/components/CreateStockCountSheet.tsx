@@ -9,15 +9,19 @@ import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { CreateInventoryStockCountInput, InventoryItem, Warehouse } from '../api';
+import type { InventoryLifecycle } from '../preferWarehouseForReceive';
 import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { InventoryItemPickPanel } from './InventoryItemPickPanel';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventorySheetSectionLabel } from './InventorySheetBody';
 import { WarehousePickList } from './WarehousePickList';
+import { warehouseTypeForLifecycle } from '../preferWarehouseForReceive';
+import { inventoryPickCopyKey, selectInventoryPickRow } from '../selectInventoryPick';
 
 type Props = {
   open: boolean;
   onClose: () => void;
+  lifecycle: InventoryLifecycle;
   warehouses: Warehouse[];
   loading?: boolean;
   onSubmit: (body: CreateInventoryStockCountInput) => void;
@@ -26,6 +30,7 @@ type Props = {
 export function CreateStockCountSheet({
   open,
   onClose,
+  lifecycle,
   warehouses,
   loading,
   onSubmit,
@@ -37,6 +42,8 @@ export function CreateStockCountSheet({
   const sheetHeight = Math.round(height * 0.78);
   const warehouseListHeight = Math.round(height * 0.28);
   const canAddWarehouse = can(user, 'warehouse.manage');
+  const copy = inventoryPickCopyKey(lifecycle);
+  const defaultWarehouseType = warehouseTypeForLifecycle(lifecycle);
 
   const [warehouseId, setWarehouseId] = useState('');
   const [kind, setKind] = useState<'PERIODIC' | 'SURPRISE'>('PERIODIC');
@@ -59,17 +66,19 @@ export function CreateStockCountSheet({
     setNotes('');
     setError(null);
     setPickOpen(false);
-  }, [open]);
+  }, [open, lifecycle]);
 
   useEffect(() => {
     if (!open) return;
-    setWarehouseId((id) => id || warehouses[0]?.id || '');
+    setWarehouseId((id) =>
+      id && warehouses.some((wh) => wh.id === id) ? id : warehouses[0]?.id || '',
+    );
   }, [open, warehouses]);
 
   function submit() {
     const countedQty = Number(qty);
     if (!warehouseId || !item || !Number.isFinite(countedQty)) {
-      setError(t('mobile.inventory.countRequired'));
+      setError(t(copy.countRequired));
       return;
     }
     setError(null);
@@ -80,6 +89,8 @@ export function CreateStockCountSheet({
       lines: [{ inventoryItemId: item.id, countedQty }],
     });
   }
+
+  const selected = item ? selectInventoryPickRow(item, warehouseId, locale) : null;
 
   return (
     <>
@@ -97,6 +108,10 @@ export function CreateStockCountSheet({
     >
       {pickOpen ? (
         <InventoryItemPickPanel
+          key={`${lifecycle}:${warehouseId}`}
+          lifecycle={lifecycle}
+          warehouseId={warehouseId}
+          mode="count"
           onPick={(picked) => {
             setItem(picked);
             setPickOpen(false);
@@ -124,7 +139,7 @@ export function CreateStockCountSheet({
               }}
             >
               {(['PERIODIC', 'SURPRISE'] as const).map((k) => {
-                const selected = kind === k;
+                const selectedKind = kind === k;
                 return (
                   <Pressable
                     key={k}
@@ -136,15 +151,15 @@ export function CreateStockCountSheet({
                       flex: 1,
                       minHeight: theme.sizes.touch.min,
                       borderWidth: 1,
-                      borderColor: selected ? colors.brand : colors.borderStrong,
+                      borderColor: selectedKind ? colors.brand : colors.borderStrong,
                       borderRadius: theme.radius.xl,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: selected ? colors.brandSoft : colors.surface,
+                      backgroundColor: selectedKind ? colors.brandSoft : colors.surface,
                       ...theme.elevation.card,
                     }}
                   >
-                    <AppText variant="label" weight="semibold" color={selected ? 'brand' : 'primary'}>
+                    <AppText variant="label" weight="semibold" color={selectedKind ? 'brand' : 'primary'}>
                       {t(`mobile.inventory.countKind.${k}`)}
                     </AppText>
                   </Pressable>
@@ -155,16 +170,19 @@ export function CreateStockCountSheet({
             <WarehousePickList
               warehouses={warehouses}
               selectedId={warehouseId}
-              onSelect={setWarehouseId}
+              onSelect={(id) => {
+                if (id !== warehouseId) setItem(null);
+                setWarehouseId(id);
+              }}
               label={t('mobile.inventory.warehouse')}
               listHeight={warehouseListHeight}
-              resetToken={open}
+              resetToken={open ? `count-${lifecycle}` : 'count-closed'}
               onAddWarehouse={
                 canAddWarehouse ? () => setCreateWarehouseOpen(true) : undefined
               }
             />
 
-            <InventorySheetSectionLabel label={t('mobile.inventory.item')} />
+            <InventorySheetSectionLabel label={t(copy.item)} />
             <Pressable
               accessibilityRole="button"
               onPress={() => setPickOpen(true)}
@@ -185,11 +203,7 @@ export function CreateStockCountSheet({
                 color={item ? 'primary' : 'brand'}
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
-                {item
-                  ? `${item.sku} — ${
-                      locale === 'ar' ? item.nameAr || item.nameEn : item.nameEn || item.nameAr
-                    }`
-                  : t('mobile.inventory.pickItem')}
+                {selected ? `${selected.sku} — ${selected.name}` : t(copy.pickItem)}
               </AppText>
             </Pressable>
 
@@ -220,8 +234,10 @@ export function CreateStockCountSheet({
       overlay
       open={createWarehouseOpen}
       onClose={() => setCreateWarehouseOpen(false)}
+      defaultType={defaultWarehouseType}
       onCreated={(warehouse) => {
         setWarehouseId(warehouse.id);
+        setItem(null);
         setError(null);
       }}
     />

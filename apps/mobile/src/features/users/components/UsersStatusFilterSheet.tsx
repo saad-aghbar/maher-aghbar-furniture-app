@@ -85,15 +85,25 @@ type RoleProps = {
   roles: Array<{ id: string; code: string; label: string }>;
   value: string;
   onApply: (roleCode: string) => void;
+  titleKey?: string;
+  allLabelKey?: string;
 };
 
-export function UsersRoleFilterSheet({ open, onClose, roles, value, onApply }: RoleProps) {
+export function UsersRoleFilterSheet({
+  open,
+  onClose,
+  roles,
+  value,
+  onApply,
+  titleKey = 'users.filterRole',
+  allLabelKey = 'common.all',
+}: RoleProps) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
-    <BottomSheet open={open} onClose={onClose} title={t('users.filterRole')} sheetHeight={420}>
+    <BottomSheet open={open} onClose={onClose} title={t(titleKey)} sheetHeight={420}>
       <View style={{ gap: theme.spacing.md, flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ gap: theme.spacing.sm, paddingBottom: theme.spacing.md }}
@@ -120,7 +130,7 @@ export function UsersRoleFilterSheet({ open, onClose, roles, value, onApply }: R
               color={!value ? 'brand' : 'primary'}
               style={{ textAlign: isRTL ? 'right' : 'left' }}
             >
-              {t('common.all')}
+              {t(allLabelKey)}
             </AppText>
           </AnimatedPressable>
           {roles.map((role) => {
@@ -150,14 +160,6 @@ export function UsersRoleFilterSheet({ open, onClose, roles, value, onApply }: R
                   style={{ textAlign: isRTL ? 'right' : 'left' }}
                 >
                   {role.label}
-                </AppText>
-                <AppText
-                  variant="caption"
-                  color="muted"
-                  dir="ltr"
-                  style={{ textAlign: isRTL ? 'right' : 'left', marginTop: 2 }}
-                >
-                  {role.code}
                 </AppText>
               </AnimatedPressable>
             );

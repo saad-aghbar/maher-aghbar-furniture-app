@@ -257,6 +257,103 @@ export function upsertProductWorkflowConfiguration(
   return apiPatch<ProductWorkflowConfig>(`/products/${productId}/workflow-configuration`, body);
 }
 
+export type ProductionSetupBehavior =
+  | 'NONE'
+  | 'USES_MATERIALS'
+  | 'PRODUCES_SEMI_FINISHED'
+  | 'USES_SEMI_FINISHED'
+  | 'USES_AND_PRODUCES'
+  | 'PRODUCES_FINISHED';
+
+export type ProductionSetupStage = {
+  workflowNodeId: string;
+  nodeKey: string;
+  stageDefinitionId: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+  behavior: ProductionSetupBehavior;
+  consumesRawMaterials: boolean;
+  consumesSemiFinished: boolean;
+  consumeOutputIds: string[];
+  output: {
+    id: string | null;
+    nameEn: string | null;
+    nameAr: string | null;
+    nameHe?: string | null;
+    qtyPerUnit: number | null;
+    defaultWarehouseId: string | null;
+  } | null;
+};
+
+export type ProductionSetupResponse = {
+  status: 'READY' | 'NEEDS_SETUP' | 'INVALID';
+  issues: Array<{ code: string; message: string }>;
+  workflow: { id: string; nameEn: string; nameAr: string; nameHe?: string | null } | null;
+  bomLines?: Array<{ sku: string; qty: number; exists: boolean }>;
+  stages: ProductionSetupStage[];
+  warehouses: Array<{
+    id: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    type: string;
+    isDefault: boolean;
+  }>;
+  outputs: Array<{
+    id: string;
+    workflowNodeId: string | null;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+  }>;
+};
+
+export type ProductionSetupPreview = {
+  steps: Array<{
+    stageNameEn: string;
+    stageNameAr: string;
+    stageNameHe?: string | null;
+    behavior: ProductionSetupBehavior;
+    consumes: string[];
+    consumeOutputs?: Array<{ nameEn: string; nameAr: string; nameHe?: string | null }>;
+    produces: {
+      nameEn: string | null;
+      nameAr: string | null;
+      nameHe?: string | null;
+    } | null;
+  }>;
+};
+
+export function getProductProductionSetup(productId: string) {
+  return apiGet<ProductionSetupResponse>(`/products/${productId}/production-setup`);
+}
+
+export function getProductProductionSetupPreview(productId: string) {
+  return apiGet<ProductionSetupPreview>(`/products/${productId}/production-setup/preview`);
+}
+
+export function putProductProductionSetup(
+  productId: string,
+  body: {
+    stages: Array<{
+      workflowNodeId: string;
+      stageDefinitionId: string;
+      behavior: ProductionSetupBehavior;
+      consumesRawMaterials?: boolean;
+      consumesSemiFinished?: boolean;
+      outputNameEn?: string | null;
+      outputNameAr?: string | null;
+      outputNameHe?: string | null;
+      outputQtyPerUnit?: number | null;
+      defaultWarehouseId?: string | null;
+      consumeOutputIds?: string[];
+    }>;
+  },
+) {
+  return apiPut<ProductionSetupResponse>(`/products/${productId}/production-setup`, body);
+}
+
 export function customizeProductionOrderWorkflow(
   productionOrderId: string,
   body: {

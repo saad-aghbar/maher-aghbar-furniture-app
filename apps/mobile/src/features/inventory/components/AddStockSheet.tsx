@@ -15,6 +15,8 @@ import {
   preferWarehouseForIssue,
   preferWarehouseForReceive,
   sortWarehousesForReceive,
+  warehousesCompatibleWithItem,
+  warehouseTypeForItemClass,
 } from '../preferWarehouseForReceive';
 import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { InventorySheetFooter } from './InventorySheetFooter';
@@ -27,6 +29,7 @@ export type StockMoveItem = {
   sku: string;
   name: string;
   category: string;
+  itemClass?: string | null;
   unit: string;
   balances: Array<{
     warehouseId: string;
@@ -60,6 +63,7 @@ function toMoveItem(item: InventoryItem, locale: string): StockMoveItem {
     sku: card.sku,
     name: card.name,
     category: card.category,
+    itemClass: card.itemClass,
     unit: card.unit,
     balances: card.balances.map((b) => ({
       warehouseId: b.warehouseId,
@@ -99,10 +103,20 @@ export function AddStockSheet({
   const [error, setError] = useState<string | null>(null);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
 
+  const compatibleWarehouses = useMemo(
+    () =>
+      warehousesCompatibleWithItem(warehouses, {
+        itemClass: item?.itemClass,
+        category: item?.category,
+      }),
+    [warehouses, item?.itemClass, item?.category],
+  );
+
   const preferredId = useMemo(() => {
     if (!item) return '';
     if (mode === 'issue') {
-      return preferWarehouseForIssue(warehouses, {
+      return preferWarehouseForIssue(compatibleWarehouses, {
+        itemClass: item.itemClass,
         category: item.category,
         balances: item.balances.map((b) => ({
           warehouseId: b.warehouseId,
@@ -110,15 +124,16 @@ export function AddStockSheet({
         })),
       });
     }
-    return preferWarehouseForReceive(warehouses, {
+    return preferWarehouseForReceive(compatibleWarehouses, {
+      itemClass: item.itemClass,
       category: item.category,
       balanceWarehouseIds: item.balances.map((b) => b.warehouseId),
     });
-  }, [warehouses, item, mode]);
+  }, [compatibleWarehouses, item, mode]);
 
   const orderedWarehouses = useMemo(
-    () => sortWarehousesForReceive(warehouses, preferredId),
-    [warehouses, preferredId],
+    () => sortWarehousesForReceive(compatibleWarehouses, preferredId),
+    [compatibleWarehouses, preferredId],
   );
 
   useEffect(() => {
@@ -142,7 +157,7 @@ export function AddStockSheet({
     setWarehouseId(preferredId);
   }, [open, preferredId, item?.id]);
 
-  const effectiveWarehouseId = warehouseId || preferredId || warehouses[0]?.id || '';
+  const effectiveWarehouseId = warehouseId || preferredId || orderedWarehouses[0]?.id || '';
   const unit = item?.unit || 'pcs';
   const itemLabel = item ? `${item.sku} — ${item.name}` : '—';
 
@@ -330,8 +345,13 @@ export function AddStockSheet({
       overlay
       open={createWarehouseOpen}
       onClose={() => setCreateWarehouseOpen(false)}
+      defaultType={warehouseTypeForItemClass(item?.itemClass, item?.category)}
       onCreated={(warehouse) => {
-        setWarehouseId(warehouse.id);
+        const allowed = warehousesCompatibleWithItem([warehouse], {
+          itemClass: item?.itemClass,
+          category: item?.category,
+        });
+        if (allowed[0]) setWarehouseId(allowed[0].id);
         setError(null);
       }}
     />

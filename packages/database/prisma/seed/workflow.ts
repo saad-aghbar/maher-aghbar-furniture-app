@@ -2,6 +2,19 @@ import type { PrismaClient } from '@prisma/client';
 
 export const STANDARD_FURNITURE_WORKFLOW_CODE = 'STANDARD_FURNITURE';
 
+/** Hebrew labels for the stage library. Codes stay Latin. */
+export const STAGE_LIBRARY_NAME_HE: Record<string, string> = {
+  MATERIAL_PREP: 'הכנת חומרים',
+  CARPENTRY: 'נגרות',
+  PAINTING: 'צביעה',
+  FOAM: 'הכנת ספוג',
+  UPHOLSTERY: 'ריפוד',
+  ASSEMBLY: 'הרכבה',
+  INSPECTION: 'בדיקת איכות',
+  PACKAGING: 'אריזה',
+  DELIVERY: 'אספקה',
+};
+
 const FOAM_STAGE = {
   code: 'FOAM',
   nameAr: 'تجهيز الإسفنج',

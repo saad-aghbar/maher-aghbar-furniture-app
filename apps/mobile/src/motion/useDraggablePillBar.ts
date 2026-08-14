@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import { Gesture } from 'react-native-gesture-handler';
 import {
+  Easing,
   runOnJS,
   useSharedValue,
   withSpring,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 import { selection as hapticSelection } from '@/motion/haptics';
@@ -19,8 +21,10 @@ function nearestIndex(fingerX: number, xs: number[], ws: number[]): number {
   let best = 0;
   let bestDist = Number.POSITIVE_INFINITY;
   for (let i = 0; i < xs.length; i++) {
-    if (ws[i] <= 0) continue;
-    const center = xs[i] + ws[i] / 2;
+    const w = ws[i];
+    const x = xs[i];
+    if (w == null || x == null || w <= 0) continue;
+    const center = x + w / 2;
     const d = Math.abs(center - fingerX);
     if (d < bestDist) {
       bestDist = d;
@@ -41,7 +45,11 @@ function scrubPill(
   if (n === 0) return { x: 0, width: 0, index: 0 };
 
   const centers: number[] = [];
-  for (let i = 0; i < n; i++) centers.push(xs[i] + ws[i] / 2);
+  for (let i = 0; i < n; i++) {
+    const x = xs[i] ?? 0;
+    const w = ws[i] ?? 0;
+    centers.push(x + w / 2);
+  }
 
   const first = centers[0]!;
   const last = centers[n - 1]!;
@@ -86,6 +94,8 @@ type Options = {
   reduceMotion: boolean;
   enabled?: boolean;
   spring?: { damping: number; stiffness: number; mass: number };
+  /** When set, snap/layout uses ease-out timing instead of spring. */
+  timing?: { duration: number };
 };
 
 export type DraggablePillBar = {
@@ -109,15 +119,21 @@ export function useDraggablePillBar({
   reduceMotion,
   enabled = true,
   spring = DRAG_SPRING,
+  timing,
 }: Options): DraggablePillBar {
   const pillX = useSharedValue(0);
   const pillW = useSharedValue(0);
   const dragging = useSharedValue(0);
   const hoverIndex = useSharedValue(Math.max(0, activeIndex));
   const activeIndexSV = useSharedValue(Math.max(0, activeIndex));
+  const timingMs = useSharedValue(timing?.duration ?? 0);
 
   const layoutXs = useSharedValue<number[]>([]);
   const layoutWs = useSharedValue<number[]>([]);
+
+  useEffect(() => {
+    timingMs.value = timing?.duration ?? 0;
+  }, [timing, timingMs]);
 
   useEffect(() => {
     activeIndexSV.value = Math.max(0, activeIndex);
@@ -138,6 +154,15 @@ export function useDraggablePillBar({
       pillW.value = target.width;
       return;
     }
+    if (timing) {
+      const cfg = {
+        duration: timing.duration,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
+      };
+      pillX.value = withTiming(target.x, cfg);
+      pillW.value = withTiming(target.width, cfg);
+      return;
+    }
     pillX.value = withSpring(target.x, spring);
     pillW.value = withSpring(target.width, spring);
   }, [
@@ -149,6 +174,7 @@ export function useDraggablePillBar({
     pillX,
     reduceMotion,
     spring,
+    timing,
   ]);
 
   const select = (index: number) => {
@@ -193,8 +219,15 @@ export function useDraggablePillBar({
       const idx = nearestIndex(pillX.value + pillW.value / 2, xs, ws);
       const tx = xs[idx] ?? 0;
       const tw = ws[idx] ?? 0;
-      pillX.value = withSpring(tx, spring);
-      pillW.value = withSpring(tw, spring);
+      const ms = timingMs.value;
+      if (ms > 0) {
+        const cfg = { duration: ms, easing: Easing.bezier(0.4, 0, 0.2, 1) };
+        pillX.value = withTiming(tx, cfg);
+        pillW.value = withTiming(tw, cfg);
+      } else {
+        pillX.value = withSpring(tx, spring);
+        pillW.value = withSpring(tw, spring);
+      }
       dragging.value = 0;
       hoverIndex.value = idx;
       // Keep scrub highlight on the snapped tab until the route catches up

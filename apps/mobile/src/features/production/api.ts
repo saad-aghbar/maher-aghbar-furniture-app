@@ -7,15 +7,18 @@ export type {
   ProductionPriority,
   ProductionSummary,
   ProductionTask,
+  ProductionMaterialLine,
 } from '@/api/modules/production';
 export {
   assignTask,
   blockProductionTask,
   getProductionOrder,
+  getProductionOrderMaterials,
   getProductionSummary,
   listAssignableWorkers,
   listProductionOrders,
   pauseProductionTask,
+  returnProductionUnusedMaterial,
   unblockTask,
   updateProductionOrder,
   updateProductionTaskNotes,

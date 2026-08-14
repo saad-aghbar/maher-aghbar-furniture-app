@@ -1,10 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 import { hashSync } from 'bcryptjs';
-import { PERMISSIONS, ROLES, ROLE_PERMISSIONS } from '@maher/permissions';
+import { PERMISSIONS, ROLES, ROLE_PERMISSIONS, SYSTEM_STAFF_PRESETS } from '@maher/permissions';
 import { seedDemoWorld, wipeOperationalData } from './seed-demo-world';
 import {
   ensureFoamStageDefinition,
   seedStandardFurnitureWorkflow,
+  STAGE_LIBRARY_NAME_HE,
 } from './seed/workflow';
 
 const prisma = new PrismaClient();
@@ -20,24 +21,85 @@ async function main() {
     });
   }
 
-  const roleMeta: Record<string, { nameAr: string; nameEn: string }> = {
-    CUSTOMER: { nameAr: 'تاجر', nameEn: 'Customer' },
-    PRODUCTION_WORKER: { nameAr: 'عامل', nameEn: 'Worker' },
-    SYSTEM_ADMINISTRATOR: { nameAr: 'مسؤول النظام', nameEn: 'Admin' },
+  const identityRoleMeta: Record<
+    (typeof ROLES)[number],
+    { nameAr: string; nameEn: string; nameHe: string; kind: 'CUSTOMER' | 'PRODUCTION_WORKER' | 'ADMIN' }
+  > = {
+    CUSTOMER: { nameAr: 'تاجر', nameEn: 'Customer', nameHe: 'לקוח', kind: 'CUSTOMER' },
+    PRODUCTION_WORKER: { nameAr: 'عامل', nameEn: 'Worker', nameHe: 'עובד', kind: 'PRODUCTION_WORKER' },
+    SYSTEM_ADMINISTRATOR: {
+      nameAr: 'مسؤول النظام',
+      nameEn: 'Admin',
+      nameHe: 'מנהל מערכת',
+      kind: 'ADMIN',
+    },
   };
 
   for (const code of ROLES) {
-    const meta = roleMeta[code] ?? { nameAr: code, nameEn: code };
+    const meta = identityRoleMeta[code];
     const role = await prisma.role.upsert({
       where: { code },
-      update: { nameAr: meta.nameAr, nameEn: meta.nameEn },
-      create: { code, nameAr: meta.nameAr, nameEn: meta.nameEn },
+      update: {
+        nameAr: meta.nameAr,
+        nameEn: meta.nameEn,
+        nameHe: meta.nameHe,
+        kind: meta.kind,
+        isSystem: true,
+        isActive: true,
+      },
+      create: {
+        code,
+        nameAr: meta.nameAr,
+        nameEn: meta.nameEn,
+        nameHe: meta.nameHe,
+        kind: meta.kind,
+        isSystem: true,
+        isActive: true,
+      },
     });
 
-    const perms = ROLE_PERMISSIONS[code as keyof typeof ROLE_PERMISSIONS] ?? [];
-    // Replace grants so removed permissions are not left on the role.
+    const perms = ROLE_PERMISSIONS[code] ?? [];
     await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
     for (const permCode of perms) {
+      const permission = await prisma.permission.findUnique({ where: { code: permCode } });
+      if (!permission) continue;
+      await prisma.rolePermission.create({
+        data: { roleId: role.id, permissionId: permission.id },
+      });
+    }
+  }
+
+  for (const preset of Object.values(SYSTEM_STAFF_PRESETS)) {
+    const role = await prisma.role.upsert({
+      where: { code: preset.code },
+      update: {
+        nameAr: preset.nameAr,
+        nameEn: preset.nameEn,
+        nameHe: preset.nameHe,
+        descriptionEn: preset.descriptionEn,
+        descriptionAr: preset.descriptionAr,
+        descriptionHe: preset.descriptionHe,
+        kind: 'STAFF',
+        isSystem: true,
+        isActive: true,
+        iconKey: preset.iconKey,
+      },
+      create: {
+        code: preset.code,
+        nameAr: preset.nameAr,
+        nameEn: preset.nameEn,
+        nameHe: preset.nameHe,
+        descriptionEn: preset.descriptionEn,
+        descriptionAr: preset.descriptionAr,
+        descriptionHe: preset.descriptionHe,
+        kind: 'STAFF',
+        isSystem: true,
+        isActive: true,
+        iconKey: preset.iconKey,
+      },
+    });
+    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+    for (const permCode of preset.permissionCodes) {
       const permission = await prisma.permission.findUnique({ where: { code: permCode } });
       if (!permission) continue;
       await prisma.rolePermission.create({
@@ -58,14 +120,14 @@ async function main() {
   });
 
   const warehouses = [
-    { code: 'RAW', nameAr: 'مستودع خامات', nameEn: 'Raw Materials', type: 'RAW' },
-    { code: 'SEMI', nameAr: 'مستودع نصف مصنّع', nameEn: 'Semi-Finished', type: 'SEMI' },
-    { code: 'FIN', nameAr: 'مستودع منتج نهائي', nameEn: 'Finished Goods', type: 'FINISHED' },
+    { code: 'RAW', nameAr: 'مستودع المواد الخام', nameEn: 'Raw Materials', type: 'RAW_MATERIALS' as const, isDefault: true },
+    { code: 'SEMI', nameAr: 'مستودع المنتجات نصف المصنّعة', nameEn: 'Semi-Finished', type: 'SEMI_FINISHED' as const, isDefault: true },
+    { code: 'FIN', nameAr: 'مستودع المنتجات الجاهزة', nameEn: 'Finished Goods', type: 'FINISHED_GOODS' as const, isDefault: true },
   ];
   for (const wh of warehouses) {
     await prisma.warehouse.upsert({
       where: { code: wh.code },
-      update: {},
+      update: { type: wh.type, isDefault: wh.isDefault, nameAr: wh.nameAr, nameEn: wh.nameEn },
       create: wh,
     });
   }
@@ -169,11 +231,13 @@ async function main() {
     },
   ];
   for (const s of stages) {
+    const nameHe = STAGE_LIBRARY_NAME_HE[s.code];
     await prisma.productionStageDefinition.upsert({
       where: { code: s.code },
       update: {
         nameAr: s.nameAr,
         nameEn: s.nameEn,
+        nameHe,
         sortOrder: s.sortOrder,
         dependsOnCodes: s.dependsOnCodes,
         requiresInspection: s.requiresInspection ?? false,
@@ -183,6 +247,7 @@ async function main() {
         code: s.code,
         nameAr: s.nameAr,
         nameEn: s.nameEn,
+        nameHe,
         sortOrder: s.sortOrder,
         dependsOnCodes: s.dependsOnCodes,
         requiresInspection: s.requiresInspection ?? false,
@@ -536,6 +601,11 @@ async function main() {
 
   const passwordHash = hashSync('123', 12);
   await seedDemoWorld(prisma, passwordHash);
+
+  if (process.env.SEED_FACTORY_UAT === '1') {
+    const { seedFactoryUat } = await import('./seed/factory-uat');
+    await seedFactoryUat(prisma);
+  }
 
   console.log('Seed complete.');
   if (process.env.SEED_FULL_DEMO === '1') {

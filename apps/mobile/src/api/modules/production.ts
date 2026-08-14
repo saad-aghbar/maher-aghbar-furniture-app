@@ -265,3 +265,31 @@ export async function pauseProductionTask(taskId: string) {
 export async function updateProductionTaskNotes(taskId: string, notes: string) {
   return apiPatch(`/tasks/${encodeURIComponent(taskId)}/notes`, { notes });
 }
+
+export type ProductionMaterialLine = {
+  inventoryItem: {
+    id: string;
+    sku: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    unit: string;
+  };
+  issuedQty: number;
+  returnedQty: number;
+  returnableQty: number;
+  warehouseId: string | null;
+};
+
+export async function getProductionOrderMaterials(id: string) {
+  return apiGet<{ materials: ProductionMaterialLine[] }>(
+    `/production-orders/${encodeURIComponent(id)}/materials`,
+  );
+}
+
+export async function returnProductionUnusedMaterial(
+  id: string,
+  body: { inventoryItemId: string; quantity: number; idempotencyKey?: string },
+) {
+  return apiPost(`/production-orders/${encodeURIComponent(id)}/materials/return`, body);
+}

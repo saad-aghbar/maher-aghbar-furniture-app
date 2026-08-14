@@ -27,11 +27,16 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
-import { rolesLabel } from '@/i18n/roleLabel';
+import { displayRolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './components/MoreBoard';
 import { useAuth } from '@/auth/AuthProvider';
+import {
+  canChangeOwnPassword,
+  canEditOwnProfile,
+  canManageOwnMfa,
+} from '@/auth/accountSelfServe';
 import {
   canUseBiometrics,
   isBiometricUnlockEnabled,
@@ -68,10 +73,17 @@ export function MoreAccountScreen({
   const { showToast } = useToast();
   const router = useRouter();
   const dealerTitles = titleMode === 'dealer';
+  const profileLocked = !canEditOwnProfile(user ?? { roles: [] });
+  const passwordLocked = !canChangeOwnPassword(user ?? { roles: [] });
+  const mfaLocked = !canManageOwnMfa(user ?? { roles: [] });
   const backLabel = t(backLabelKey ?? (dealerTitles ? 'mobile.dealerAccount.backToAccount' : 'mobile.more.backToMore'));
   const eyebrow = dealerTitles ? t('mobile.dealerAccount.securityEyebrow') : t('mobile.more.accountEyebrow');
   const title = dealerTitles ? t('mobile.dealerAccount.securityTitle') : t('mobile.more.accountTitle');
-  const subtitle = dealerTitles ? t('mobile.dealerAccount.securitySubtitle') : t('mobile.more.accountSubtitle');
+  const subtitle = dealerTitles
+    ? t('mobile.dealerAccount.securitySubtitle')
+    : profileLocked
+      ? t('mobile.more.accountSubtitleAssigned')
+      : t('mobile.more.accountSubtitle');
   const reduce = useReducedMotion();
   const queryClient = useQueryClient();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -258,8 +270,7 @@ export function MoreAccountScreen({
 
   if (!user) return null;
 
-  const roles =
-    user.roles.length > 0 ? rolesLabel(t, user.roles) : t('mobile.more.roleFallback');
+  const roles = displayRolesLabel(t, user, locale);
 
   const enter = (delay: number) =>
     reduce ? undefined : FadeInDown.delay(delay).duration(360).damping(22);
@@ -373,38 +384,64 @@ export function MoreAccountScreen({
               isRTL={isRTL}
             />
             <ProfileRow label={t('users.roles')} value={roles} isRTL={isRTL} />
-            <TextField
-              label={t('users.firstName')}
-              value={firstName}
-              onChangeText={setFirstName}
-              autoCapitalize="words"
-            />
-            <TextField
-              label={t('users.lastName')}
-              value={lastName}
-              onChangeText={setLastName}
-              autoCapitalize="words"
-            />
-            <TextField
-              label={t('users.email')}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <PhoneField
-              label={t('users.phone')}
-              value={phone}
-              onChangeText={setPhone}
-            />
-            <PrimaryButton
-              label={t('mobile.more.saveProfile')}
-              loading={profileMutation.isPending}
-              disabled={profileMutation.isPending || !firstName.trim() || !lastName.trim()}
-              onPress={() => profileMutation.mutate()}
-              style={{ borderRadius: theme.radius.xl }}
-            />
+            {profileLocked ? (
+              <>
+                <ProfileRow
+                  label={t('users.firstName')}
+                  value={firstName || '—'}
+                  isRTL={isRTL}
+                />
+                <ProfileRow
+                  label={t('users.lastName')}
+                  value={lastName || '—'}
+                  isRTL={isRTL}
+                />
+                {email ? (
+                  <ProfileRow label={t('users.email')} value={email} isRTL={isRTL} />
+                ) : null}
+                {phone ? (
+                  <ProfileRow label={t('users.phone')} value={phone} isRTL={isRTL} />
+                ) : null}
+                <AppText variant="caption" color="muted" weight="regular">
+                  {t('mobile.more.profileManagedHint')}
+                </AppText>
+              </>
+            ) : (
+              <>
+                <TextField
+                  label={t('users.firstName')}
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  autoCapitalize="words"
+                />
+                <TextField
+                  label={t('users.lastName')}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  autoCapitalize="words"
+                />
+                <TextField
+                  label={t('users.email')}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <PhoneField
+                  label={t('users.phone')}
+                  value={phone}
+                  onChangeText={setPhone}
+                />
+                <PrimaryButton
+                  label={t('mobile.more.saveProfile')}
+                  loading={profileMutation.isPending}
+                  disabled={profileMutation.isPending || !firstName.trim() || !lastName.trim()}
+                  onPress={() => profileMutation.mutate()}
+                  style={{ borderRadius: theme.radius.xl }}
+                />
+              </>
+            )}
           </MoreBoard>
         </Animated.View>
 
@@ -471,7 +508,23 @@ export function MoreAccountScreen({
 
             <Divider compact />
 
-            {!user?.customerId ? (
+            {passwordLocked ? (
+              <>
+                <PasswordField
+                  label={t('auth.password')}
+                  value={user.portalPassword ?? ''}
+                  editable={false}
+                  showLabel={t('auth.showPassword')}
+                  hideLabel={t('auth.hidePassword')}
+                  hint={
+                    user.portalPassword
+                      ? t('mobile.more.portalPasswordHint')
+                      : t('mobile.more.portalPasswordUnavailable')
+                  }
+                />
+                {!mfaLocked ? <Divider compact /> : null}
+              </>
+            ) : (
               <>
                 <AppText variant="label" weight={titleWeight}>
                   {t('auth.password')}
@@ -511,113 +564,98 @@ export function MoreAccountScreen({
 
                 <Divider compact />
               </>
-            ) : (
-              <>
-                <PasswordField
-                  label={t('auth.password')}
-                  value={user?.portalPassword ?? ''}
-                  editable={false}
-                  showLabel={t('auth.showPassword')}
-                  hideLabel={t('auth.hidePassword')}
-                  hint={
-                    user?.portalPassword
-                      ? t('mobile.more.portalPasswordHint')
-                      : t('mobile.more.portalPasswordUnavailable')
-                  }
-                />
-                <Divider compact />
-              </>
             )}
 
-            <AppText variant="label" weight={titleWeight}>
-              {t('auth.mfaSetup')}
-            </AppText>
-            <AppText variant="caption" color="muted">
-              {mfaEnabled
-                ? t('auth.mfaEnabled')
-                : setupActive
-                  ? t('auth.mfaSetupHint')
-                  : mfaPendingServer
-                    ? t('mobile.more.mfaResumeHint')
-                    : t('auth.mfaDisabled')}
-            </AppText>
-
-            {/* Fresh setup — MFA off and nothing pending on server */}
-            {!mfaEnabled && !mfaPendingServer && !setupActive ? (
-              <SecondaryButton
-                label={t('auth.mfaEnable')}
-                loading={mfaEnableMutation.isPending}
-                onPress={() => mfaEnableMutation.mutate()}
-                style={{ borderRadius: theme.radius.xl }}
-              />
-            ) : null}
-
-            {/* Left mid-setup earlier — resume or cancel, no code box until secret is local */}
-            {!mfaEnabled && mfaPendingServer && !setupActive ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                <SecondaryButton
-                  label={t('mobile.more.mfaResume')}
-                  loading={mfaEnableMutation.isPending}
-                  onPress={() => mfaEnableMutation.mutate()}
-                  style={{ borderRadius: theme.radius.xl }}
-                />
-                <DestructiveButton
-                  label={t('mobile.more.mfaCancelSetup')}
-                  loading={mfaDisableMutation.isPending}
-                  onPress={() => mfaDisableMutation.mutate()}
-                  style={{ borderRadius: theme.radius.xl }}
-                />
-              </View>
-            ) : null}
-
-            {/* Active setup this visit — secret + code + confirm */}
-            {setupActive ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                <AppText variant="caption" color="secondary" dir="ltr">
-                  {t('auth.mfaSecret')}: {mfaSecret}
+            {mfaLocked ? null : (
+              <>
+                <AppText variant="label" weight={titleWeight}>
+                  {t('auth.mfaSetup')}
                 </AppText>
-                {mfaOtpauth ? (
-                  <Pressable
-                    onPress={() => {
-                      void Linking.openURL(mfaOtpauth);
-                    }}
-                  >
-                    <AppText variant="caption" style={{ color: colors.brand }} dir="ltr">
-                      {t('mobile.more.mfaOpenAuthenticator')}
-                    </AppText>
-                  </Pressable>
-                ) : null}
-                <TextField
-                  label={t('auth.mfaCode')}
-                  value={mfaCode}
-                  onChangeText={setMfaCode}
-                  keyboardType="number-pad"
-                  autoCapitalize="none"
-                />
-                <PrimaryButton
-                  label={t('auth.mfaConfirm')}
-                  loading={mfaConfirmMutation.isPending}
-                  disabled={mfaCode.trim().length < 6 || mfaConfirmMutation.isPending}
-                  onPress={() => mfaConfirmMutation.mutate()}
-                  style={{ borderRadius: theme.radius.xl }}
-                />
-                <DestructiveButton
-                  label={t('mobile.more.mfaCancelSetup')}
-                  loading={mfaDisableMutation.isPending}
-                  onPress={() => mfaDisableMutation.mutate()}
-                  style={{ borderRadius: theme.radius.xl }}
-                />
-              </View>
-            ) : null}
+                <AppText variant="caption" color="muted">
+                  {mfaEnabled
+                    ? t('auth.mfaEnabled')
+                    : setupActive
+                      ? t('auth.mfaSetupHint')
+                      : mfaPendingServer
+                        ? t('mobile.more.mfaResumeHint')
+                        : t('auth.mfaDisabled')}
+                </AppText>
 
-            {mfaEnabled ? (
-              <DestructiveButton
-                label={t('auth.mfaDisable')}
-                loading={mfaDisableMutation.isPending}
-                onPress={() => mfaDisableMutation.mutate()}
-                style={{ borderRadius: theme.radius.xl }}
-              />
-            ) : null}
+                {!mfaEnabled && !mfaPendingServer && !setupActive ? (
+                  <SecondaryButton
+                    label={t('auth.mfaEnable')}
+                    loading={mfaEnableMutation.isPending}
+                    onPress={() => mfaEnableMutation.mutate()}
+                    style={{ borderRadius: theme.radius.xl }}
+                  />
+                ) : null}
+
+                {!mfaEnabled && mfaPendingServer && !setupActive ? (
+                  <View style={{ gap: theme.spacing.sm }}>
+                    <SecondaryButton
+                      label={t('mobile.more.mfaResume')}
+                      loading={mfaEnableMutation.isPending}
+                      onPress={() => mfaEnableMutation.mutate()}
+                      style={{ borderRadius: theme.radius.xl }}
+                    />
+                    <DestructiveButton
+                      label={t('mobile.more.mfaCancelSetup')}
+                      loading={mfaDisableMutation.isPending}
+                      onPress={() => mfaDisableMutation.mutate()}
+                      style={{ borderRadius: theme.radius.xl }}
+                    />
+                  </View>
+                ) : null}
+
+                {setupActive ? (
+                  <View style={{ gap: theme.spacing.sm }}>
+                    <AppText variant="caption" color="secondary" dir="ltr">
+                      {t('auth.mfaSecret')}: {mfaSecret}
+                    </AppText>
+                    {mfaOtpauth ? (
+                      <Pressable
+                        onPress={() => {
+                          void Linking.openURL(mfaOtpauth);
+                        }}
+                      >
+                        <AppText variant="caption" style={{ color: colors.brand }} dir="ltr">
+                          {t('mobile.more.mfaOpenAuthenticator')}
+                        </AppText>
+                      </Pressable>
+                    ) : null}
+                    <TextField
+                      label={t('auth.mfaCode')}
+                      value={mfaCode}
+                      onChangeText={setMfaCode}
+                      keyboardType="number-pad"
+                      autoCapitalize="none"
+                    />
+                    <PrimaryButton
+                      label={t('auth.mfaConfirm')}
+                      loading={mfaConfirmMutation.isPending}
+                      disabled={mfaCode.trim().length < 6 || mfaConfirmMutation.isPending}
+                      onPress={() => mfaConfirmMutation.mutate()}
+                      style={{ borderRadius: theme.radius.xl }}
+                    />
+                    <DestructiveButton
+                      label={t('mobile.more.mfaCancelSetup')}
+                      loading={mfaDisableMutation.isPending}
+                      onPress={() => mfaDisableMutation.mutate()}
+                      style={{ borderRadius: theme.radius.xl }}
+                    />
+                  </View>
+                ) : null}
+
+                {mfaEnabled ? (
+                  <DestructiveButton
+                    label={t('auth.mfaDisable')}
+                    loading={mfaDisableMutation.isPending}
+                    onPress={() => mfaDisableMutation.mutate()}
+                    style={{ borderRadius: theme.radius.xl }}
+                  />
+                ) : null}
+              </>
+            )}
           </MoreBoard>
         </Animated.View>
 

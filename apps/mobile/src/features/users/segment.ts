@@ -1,7 +1,16 @@
-export type UsersSegment = 'staff' | 'customers' | 'admins' | 'all';
+import type { UserIdentityForm } from '@maher/permissions';
 
-export const SEGMENT_ROLE_CODE: Record<Exclude<UsersSegment, 'all'>, string> = {
-  staff: 'PRODUCTION_WORKER',
+export type UsersSegment = 'workers' | 'staff' | 'customers' | 'admins' | 'all';
+
+export const SEGMENT_ROLE_KIND: Record<Exclude<UsersSegment, 'all'>, string> = {
+  workers: 'PRODUCTION_WORKER',
+  staff: 'STAFF',
+  customers: 'CUSTOMER',
+  admins: 'ADMIN',
+};
+
+/** Identity role codes for Customer / Admin chips. */
+export const SEGMENT_ROLE_CODE: Record<'customers' | 'admins', string> = {
   customers: 'CUSTOMER',
   admins: 'SYSTEM_ADMINISTRATOR',
 };
@@ -21,7 +30,54 @@ export function namesFromUsername(username: string): { firstName: string; lastNa
   return { firstName: single, lastName: single };
 }
 
-export function roleCodeForSegment(segment: UsersSegment): string | undefined {
+export function roleKindForSegment(segment: UsersSegment): string | undefined {
   if (segment === 'all') return undefined;
-  return SEGMENT_ROLE_CODE[segment];
+  return SEGMENT_ROLE_KIND[segment];
+}
+
+export function roleCodeForSegment(segment: UsersSegment): string | undefined {
+  if (segment === 'customers') return 'CUSTOMER';
+  if (segment === 'admins') return 'SYSTEM_ADMINISTRATOR';
+  return undefined;
+}
+
+export function identityFromSegment(segment: UsersSegment): UserIdentityForm {
+  if (segment === 'workers') {
+    return {
+      identityRoleCode: 'PRODUCTION_WORKER',
+      employeeType: 'WORKER',
+      staffTypeId: '',
+      stageDefinitionIds: [],
+    };
+  }
+  if (segment === 'staff') {
+    return {
+      identityRoleCode: 'PRODUCTION_WORKER',
+      employeeType: 'STAFF',
+      staffTypeId: '',
+      stageDefinitionIds: [],
+    };
+  }
+  if (segment === 'customers') {
+    return {
+      identityRoleCode: 'CUSTOMER',
+      employeeType: '',
+      staffTypeId: '',
+      stageDefinitionIds: [],
+    };
+  }
+  if (segment === 'admins') {
+    return {
+      identityRoleCode: 'SYSTEM_ADMINISTRATOR',
+      employeeType: '',
+      staffTypeId: '',
+      stageDefinitionIds: [],
+    };
+  }
+  return {
+    identityRoleCode: '',
+    employeeType: '',
+    staffTypeId: '',
+    stageDefinitionIds: [],
+  };
 }

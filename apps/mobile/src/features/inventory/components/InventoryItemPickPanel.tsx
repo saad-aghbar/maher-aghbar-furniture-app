@@ -22,8 +22,18 @@ import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { useLocale } from '@/i18n';
 import { haptics, springs, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+import type { InventoryLifecycle } from '../preferWarehouseForReceive';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+import {
+  buildInventoryPickQuery,
+  filterPickableItems,
+  formatPickQty,
+  inventoryPickCopyKey,
+  selectInventoryPickRow,
+  showsRawCategoryRail,
+  type InventoryPickMode,
+} from '../selectInventoryPick';
 
 const CATEGORIES: InventoryCategoryGroup[] = [
   'fabric',
@@ -38,24 +48,33 @@ const SEGMENT_H = 40;
 type Props = {
   onPick: (item: InventoryItem) => void;
   onCancel: () => void;
+  lifecycle: InventoryLifecycle;
+  warehouseId: string;
+  mode: InventoryPickMode;
   title?: string;
-  /** Initial section focus (defaults to fabric). */
+  /** Initial section focus for RAW materials (defaults to fabric). */
   initialCategory?: InventoryCategoryGroup;
 };
 
 /**
- * In-sheet material picker by inventory section (fabric / foam / wood / accessories).
- * No nested Modal — parent sheets are already Modals.
+ * In-sheet inventory picker.
+ * RAW keeps fabric / foam / wood / accessories.
+ * SEMI / FG query production-generated items in the selected warehouse — no raw groups.
  */
 export function InventoryItemPickPanel({
   onPick,
   onCancel,
+  lifecycle,
+  warehouseId,
+  mode,
   title,
   initialCategory = 'fabric',
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const reduce = useReducedMotion();
+  const copy = inventoryPickCopyKey(lifecycle);
+  const showCategories = showsRawCategoryRail(lifecycle);
 
   const [category, setCategory] = useState<InventoryCategoryGroup>(initialCategory);
   const [q, setQ] = useState('');
@@ -76,7 +95,7 @@ export function InventoryItemPickPanel({
   const activeLayout = layouts[category];
 
   useEffect(() => {
-    if (!activeLayout) return;
+    if (!showCategories || !activeLayout) return;
     if (reduce || bubbleReady.value === 0) {
       bubbleX.value = activeLayout.x;
       bubbleW.value = activeLayout.width;
@@ -85,7 +104,7 @@ export function InventoryItemPickPanel({
     }
     bubbleX.value = withSpring(activeLayout.x, springs.snappy);
     bubbleW.value = withSpring(activeLayout.width, springs.snappy);
-  }, [activeLayout, bubbleReady, bubbleW, bubbleX, reduce]);
+  }, [activeLayout, bubbleReady, bubbleW, bubbleX, reduce, showCategories]);
 
   const bubbleStyle = useAnimatedStyle(() => ({
     opacity: bubbleReady.value,
@@ -94,20 +113,31 @@ export function InventoryItemPickPanel({
   }));
 
   const groupLabel = t(`mobile.inventory.groups.${category}`);
+  const searchPlaceholder =
+    lifecycle === 'materials'
+      ? t('mobile.inventory.searchPlaceholder', { group: groupLabel })
+      : t(copy.searchPlaceholder);
+
+  const pickQuery = warehouseId
+    ? buildInventoryPickQuery({
+        lifecycle,
+        warehouseId,
+        categoryGroup: showCategories ? category : undefined,
+        q: debouncedQ || undefined,
+      })
+    : null;
 
   const itemsQuery = useQuery({
-    queryKey: ['inventory-item-pick', category, debouncedQ],
-    queryFn: () =>
-      listInventoryItems({
-        page: 1,
-        pageSize: 80,
-        categoryGroup: category,
-        q: debouncedQ || undefined,
-      }),
+    queryKey: ['inventory-item-pick', pickQuery, mode],
+    queryFn: () => listInventoryItems(pickQuery!),
+    enabled: Boolean(pickQuery),
     staleTime: 15_000,
   });
 
-  const rows = itemsQuery.data?.data ?? [];
+  const rows = filterPickableItems(itemsQuery.data?.data ?? [], {
+    warehouseId,
+    mode,
+  });
 
   function onSegmentLayout(key: InventoryCategoryGroup, event: LayoutChangeEvent) {
     const { x, width } = event.nativeEvent.layout;
@@ -128,75 +158,77 @@ export function InventoryItemPickPanel({
 
   return (
     <View style={{ flex: 1, gap: theme.spacing.md }}>
-      <AppText variant="heading">{title ?? t('mobile.inventory.pickItem')}</AppText>
+      <AppText variant="heading">{title ?? t(copy.pickItem)}</AppText>
 
-      <View
-        accessibilityRole="tablist"
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          width: '100%',
-          padding: TRACK_PAD,
-          borderRadius: theme.radius.full,
-          backgroundColor: colors.surfaceSecondary,
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}
-      >
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            {
-              position: 'absolute',
-              left: 0,
-              top: TRACK_PAD,
-              height: SEGMENT_H,
-              borderRadius: theme.radius.full,
-              backgroundColor: colors.brandSoft,
-              borderWidth: 1.5,
-              borderColor: colors.brand,
-            },
-            bubbleStyle,
-          ]}
-        />
-        {CATEGORIES.map((key) => {
-          const active = category === key;
-          return (
-            <Pressable
-              key={key}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              onLayout={(e) => onSegmentLayout(key, e)}
-              onPress={() => selectCategory(key)}
-              style={{
-                flex: 1,
-                minHeight: SEGMENT_H,
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingHorizontal: theme.spacing.xs,
+      {showCategories ? (
+        <View
+          accessibilityRole="tablist"
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            width: '100%',
+            padding: TRACK_PAD,
+            borderRadius: theme.radius.full,
+            backgroundColor: colors.surfaceSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              {
+                position: 'absolute',
+                left: 0,
+                top: TRACK_PAD,
+                height: SEGMENT_H,
                 borderRadius: theme.radius.full,
-                zIndex: 1,
-              }}
-            >
-              <AppText
-                variant="caption"
-                weight="semibold"
-                numberOfLines={1}
-                color={active ? 'brand' : 'primary'}
-                style={{ textAlign: 'center' }}
+                backgroundColor: colors.brandSoft,
+                borderWidth: 1.5,
+                borderColor: colors.brand,
+              },
+              bubbleStyle,
+            ]}
+          />
+          {CATEGORIES.map((key) => {
+            const active = category === key;
+            return (
+              <Pressable
+                key={key}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                onLayout={(e) => onSegmentLayout(key, e)}
+                onPress={() => selectCategory(key)}
+                style={{
+                  flex: 1,
+                  minHeight: SEGMENT_H,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: theme.spacing.xs,
+                  borderRadius: theme.radius.full,
+                  zIndex: 1,
+                }}
               >
-                {t(`mobile.inventory.groups.${key}`)}
-              </AppText>
-            </Pressable>
-          );
-        })}
-      </View>
+                <AppText
+                  variant="caption"
+                  weight="semibold"
+                  numberOfLines={1}
+                  color={active ? 'brand' : 'primary'}
+                  style={{ textAlign: 'center' }}
+                >
+                  {t(`mobile.inventory.groups.${key}`)}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
 
       <SearchBarShell>
         <AppTextInput
           value={q}
           onChangeText={setQ}
-          placeholder={t('mobile.inventory.searchPlaceholder', { group: groupLabel })}
+          placeholder={searchPlaceholder}
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -212,7 +244,13 @@ export function InventoryItemPickPanel({
         />
       </SearchBarShell>
 
-      {itemsQuery.isLoading ? (
+      {!warehouseId ? (
+        <View style={{ gap: theme.spacing.xs, paddingVertical: theme.spacing.md }}>
+          <AppText variant="caption" color="secondary">
+            {t('mobile.inventory.pickWarehouseFirst')}
+          </AppText>
+        </View>
+      ) : itemsQuery.isLoading ? (
         <ActivityIndicator color={colors.brand} style={{ marginTop: theme.spacing.lg }} />
       ) : (
         <FlatList
@@ -224,15 +262,12 @@ export function InventoryItemPickPanel({
           ListEmptyComponent={
             <View style={{ gap: theme.spacing.xs, paddingVertical: theme.spacing.md }}>
               <AppText variant="caption" color="secondary">
-                {debouncedQ
-                  ? t('mobile.inventory.emptySearchBody')
-                  : t('mobile.inventory.emptyMaterialsBody')}
+                {debouncedQ ? t('mobile.inventory.emptySearchBody') : t(copy.emptyBody)}
               </AppText>
             </View>
           }
           renderItem={({ item }) => {
-            const name =
-              locale === 'ar' ? item.nameAr || item.nameEn : item.nameEn || item.nameAr;
+            const row = selectInventoryPickRow(item, warehouseId, locale);
             return (
               <Pressable
                 accessibilityRole="button"
@@ -252,12 +287,21 @@ export function InventoryItemPickPanel({
                 }}
               >
                 <AppText variant="body" weight="semibold">
-                  {name}
+                  {row.name}
                 </AppText>
                 <AppText variant="caption" color="secondary">
-                  {item.sku}
-                  {item.unit ? ` · ${item.unit}` : ''}
+                  {row.sku}
+                  {row.unit ? ` · ${row.unit}` : ''}
+                  {` · ${t('mobile.inventory.pickFreeQty', {
+                    qty: formatPickQty(row.freeQty),
+                    unit: row.unit,
+                  })}`}
                 </AppText>
+                {row.productName ? (
+                  <AppText variant="caption" color="muted">
+                    {row.productName}
+                  </AppText>
+                ) : null}
               </Pressable>
             );
           }}

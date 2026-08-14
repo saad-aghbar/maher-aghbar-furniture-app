@@ -6,8 +6,12 @@ export {
   resolveAppSurface,
   resolveMobileHomeHref,
   resolveHomePersona,
+  resolveComposedHomeKind,
+  shouldFetchSalesAdminHome,
+  WAREHOUSE_HOME_PERMISSIONS,
   type AppSurface,
   type HomePersona,
+  type ComposedHomeKind,
   type Permission,
   type Role,
 } from '@maher/permissions';

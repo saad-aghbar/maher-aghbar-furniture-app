@@ -121,3 +121,8 @@ export function visibleTabsForUser(surface: AppSurface, user: AuthUser): TabDef[
 export function isTabAllowed(surface: AppSurface, tabName: string, user: AuthUser): boolean {
   return visibleTabsForUser(surface, user).some((t) => t.name === tabName);
 }
+
+/** Stable layout key from surface + sorted permissions — not AuthUser identity. */
+export function tabLayoutKey(surface: AppSurface, permissions: readonly string[]): string {
+  return `${surface}:${[...permissions].sort().join('|')}`;
+}

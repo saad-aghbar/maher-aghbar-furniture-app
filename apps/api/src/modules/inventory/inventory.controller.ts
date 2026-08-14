@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
@@ -27,6 +27,40 @@ class ListInventoryItemsDto extends PaginationDto {
   @IsOptional()
   @IsString()
   categoryGroup?: string;
+
+  @IsOptional()
+  @IsString()
+  itemClass?: string;
+
+  @IsOptional()
+  @IsString()
+  materialGroup?: string;
+
+  @IsOptional()
+  @IsString()
+  warehouseType?: string;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsString()
+  lowStock?: string;
+
+  @IsOptional()
+  @IsString()
+  active?: string;
+
+  @IsOptional()
+  @IsString()
+  isPurchasable?: string;
+}
+
+class ListInventoryOpsDto extends PaginationDto {
+  @IsOptional()
+  @IsString()
+  warehouseType?: string;
 }
 
 class CustomMeasurementDto {
@@ -314,6 +348,32 @@ class ScanCountDto {
 export class InventoryController {
   constructor(private readonly inventory: InventoryService) {}
 
+  @Get('overview')
+  @RequirePermissions('inventory.read')
+  overview() {
+    return this.inventory.overview();
+  }
+
+  @Get('semi-finished')
+  @RequirePermissions('inventory.read')
+  listSemiFinished(@Query() query: PaginationDto) {
+    return this.inventory.listSemiFinished(query);
+  }
+
+  @Get('lots/:id')
+  @RequirePermissions('inventory.read')
+  async getLot(@Param('id') id: string) {
+    const lot = await this.inventory.getLot(id);
+    if (!lot) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Lot not found.' });
+    return lot;
+  }
+
+  @Get('finished-goods')
+  @RequirePermissions('inventory.read')
+  listFinishedGoods(@Query() query: ListInventoryItemsDto, @CurrentUser() user: AuthUser) {
+    return this.inventory.listItems({ ...query, itemClass: 'FINISHED_GOOD' }, user.permissions);
+  }
+
   @Get('groups')
   @RequirePermissions('inventory.read')
   listGroups(@CurrentUser() user: AuthUser) {
@@ -372,8 +432,8 @@ export class InventoryController {
 
   @Get('warehouses')
   @RequirePermissions('inventory.read')
-  warehouses() {
-    return this.inventory.listWarehouses();
+  warehouses(@Query('type') type?: string) {
+    return this.inventory.listWarehouses(type);
   }
 
   @Get('low-stock')
@@ -396,7 +456,7 @@ export class InventoryController {
 
   @Get('transfers')
   @RequirePermissions('inventory.read')
-  listTransfers(@Query() query: PaginationDto) {
+  listTransfers(@Query() query: ListInventoryOpsDto) {
     return this.inventory.listTransfers(query);
   }
 
@@ -414,7 +474,7 @@ export class InventoryController {
 
   @Get('counts')
   @RequirePermissions('inventory.read')
-  listCounts(@Query() query: PaginationDto) {
+  listCounts(@Query() query: ListInventoryOpsDto) {
     return this.inventory.listCounts(query);
   }
 

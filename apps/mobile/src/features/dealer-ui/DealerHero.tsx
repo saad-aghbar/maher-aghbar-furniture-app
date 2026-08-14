@@ -10,6 +10,7 @@ import Animated, {
   withSequence,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { DealerGlassCard } from '@/features/dealer-ui/DealerGlassCard';
@@ -42,8 +43,8 @@ function ShowcasePageDot({
   reduceMotion,
 }: {
   index: number;
-  pageSv: Animated.SharedValue<number>;
-  pulseSv: Animated.SharedValue<number>;
+  pageSv: SharedValue<number>;
+  pulseSv: SharedValue<number>;
   color: string;
   onPress: () => void;
   reduceMotion: boolean;

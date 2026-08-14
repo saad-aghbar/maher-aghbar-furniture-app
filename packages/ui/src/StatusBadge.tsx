@@ -63,6 +63,17 @@ const statusVariantMap: Record<string, BadgeVariant> = {
   RESCHEDULED: 'warning',
   PUBLISHED: 'success',
   ARCHIVED: 'default',
+  AVAILABLE: 'success',
+  RESERVED: 'warning',
+  QUARANTINED: 'warning',
+  CONSUMED: 'default',
+  DAMAGED: 'error',
+  SCRAPPED: 'error',
+  SCRAP: 'error',
+  RETURN_TO_STOCK: 'success',
+  REWORK: 'warning',
+  IN_TRANSIT: 'info',
+  POSTED: 'success',
 };
 
 type StatusTranslator = (status: string) => string | undefined;

@@ -9,6 +9,8 @@
   "usernameRequired": "يرجى إدخال اسم المستخدم",
   "nameRequired": "الاسم الأول واسم العائلة مطلوبان.",
   "roleRequired": "الدور مطلوب.",
+  "staffTypeRequired": "نوع الموظف الإداري مطلوب.",
+  "employeeTypeRequired": "نوع الموظف مطلوب.",
   "createNotSupported": "الإنشاء غير مدعوم.",
   "fieldRequired": "{field} مطلوب."
 }

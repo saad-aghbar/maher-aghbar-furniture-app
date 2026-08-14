@@ -237,6 +237,7 @@ export function InventoryGroupListScreen({
                 sku: move.item.sku,
                 name: move.item.name,
                 category: move.item.category,
+                itemClass: move.item.itemClass,
                 unit: move.item.unit,
                 balances: move.item.balances,
               }

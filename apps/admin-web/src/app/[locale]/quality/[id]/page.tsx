@@ -26,8 +26,9 @@ import {
   TextArea,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
+import { localizedName } from '@maher/i18n';
 
 interface InspectionDetail {
   id: string;
@@ -44,14 +45,22 @@ interface InspectionDetail {
     note?: string | null;
   }>;
   defects?: Array<{ id: string; description: string; severity?: string | null }>;
-  rework?: Array<{ id: string; number: string; status: string; description?: string | null }>;
+  rework?: Array<{
+    id: string;
+    number: string;
+    status: string;
+    description?: string | null;
+    reentryStageInstanceId?: string | null;
+  }>;
 }
 
 export default function QualityDetailPage({ params }: { params: { id: string } }) {
   const tc = useTranslations('catalog');
+  const tp = useTranslations('production');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('navigation');
   const tStatus = useTranslations('statuses');
+  const locale = useLocale();
   const queryClient = useQueryClient();
 
   const [banner, setBanner] = useState<string | null>(null);
@@ -60,6 +69,8 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
   const [notes, setNotes] = useState('');
   const [defectDescription, setDefectDescription] = useState('');
   const [itemResults, setItemResults] = useState<Record<string, string>>({});
+  const [reworkStageId, setReworkStageId] = useState('');
+  const [reworkNotes, setReworkNotes] = useState('');
 
   const detailQuery = useQuery({
     queryKey: ['quality-inspection', params.id],
@@ -103,11 +114,39 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
+  const poQuery = useQuery({
+    queryKey: ['production-order', detailQuery.data?.productionOrderId],
+    queryFn: () =>
+      apiFetch<{
+        stages: Array<{
+          id: string;
+          stageDefinition: { nameEn: string; nameAr: string; nameHe?: string | null };
+        }>;
+      }>(`/api/v1/production-orders/${detailQuery.data!.productionOrderId}`),
+    enabled: Boolean(detailQuery.data?.productionOrderId),
+  });
+
   const reworkMutation = useMutation({
     mutationFn: (reworkId: string) =>
       apiFetch(`/api/v1/quality-inspections/rework/${reworkId}/complete`, { method: 'POST' }),
     onSuccess: async () => {
       setBanner(tc('reworkCompleted'));
+      await queryClient.invalidateQueries({ queryKey: ['quality-inspection', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
+  const startReworkMutation = useMutation({
+    mutationFn: (args: { reworkId: string; stageInstanceId: string; notes?: string }) =>
+      apiFetch(`/api/v1/quality-inspections/rework/${args.reworkId}/start`, {
+        method: 'POST',
+        body: JSON.stringify({
+          stageInstanceId: args.stageInstanceId,
+          notes: args.notes,
+        }),
+      }),
+    onSuccess: async () => {
+      setBanner(tp('reworkStarted'));
       await queryClient.invalidateQueries({ queryKey: ['quality-inspection', params.id] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
@@ -259,13 +298,51 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
                   <StatusBadge status={rw.status} />
                 </span>
                 {rw.status !== 'COMPLETED' ? (
-                  <Button
-                    size="sm"
-                    loading={reworkMutation.isPending}
-                    onClick={() => reworkMutation.mutate(rw.id)}
-                  >
-                    {tc('completeRework')}
-                  </Button>
+                  <div className="flex flex-wrap items-end gap-2">
+                    {rw.status === 'AWAITING_STAGE' || rw.status === 'OPEN' ? (
+                      <>
+                        <Select
+                          label={tp('chooseReworkStage')}
+                          value={reworkStageId}
+                          onChange={(e) => setReworkStageId(e.target.value)}
+                          options={[
+                            { value: '', label: tp('chooseReworkStage') },
+                            ...(poQuery.data?.stages ?? []).map((stage) => ({
+                              value: stage.id,
+                              label: localizedName(locale, stage.stageDefinition),
+                            })),
+                          ]}
+                        />
+                        <Input
+                          label={tc('notes')}
+                          value={reworkNotes}
+                          onChange={(e) => setReworkNotes(e.target.value)}
+                        />
+                        <Button
+                          size="sm"
+                          loading={startReworkMutation.isPending}
+                          disabled={!reworkStageId}
+                          onClick={() =>
+                            startReworkMutation.mutate({
+                              reworkId: rw.id,
+                              stageInstanceId: reworkStageId,
+                              notes: reworkNotes.trim() || undefined,
+                            })
+                          }
+                        >
+                          {tp('startRework')}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        loading={reworkMutation.isPending}
+                        onClick={() => reworkMutation.mutate(rw.id)}
+                      >
+                        {tc('completeRework')}
+                      </Button>
+                    )}
+                  </div>
                 ) : null}
               </li>
             ))}

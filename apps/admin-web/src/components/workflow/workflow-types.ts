@@ -20,6 +20,9 @@ export type WorkflowNode = {
   canBeSkipped: boolean;
   defaultEstimatedMinutes?: number | null;
   responsibleDepartmentId?: string | null;
+  inventoryTracking?: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
+  consumesRawMaterials?: boolean;
+  consumesSemiFinished?: boolean;
   stageDefinition: StageDefinition;
 };
 

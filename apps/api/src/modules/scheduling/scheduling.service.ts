@@ -12,6 +12,8 @@ import { IdempotencyService } from '../../common/idempotency.service';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingQueueService } from './scheduling-queue';
+import { bomToReadinessInput } from '../../common/helpers/inventory-reservation.util';
+import type { BomDefaults } from '../../common/helpers/order-costing.util';
 import {
   type AllocationToValidate,
   type OccupancyInterval,
@@ -28,6 +30,7 @@ import {
   resolveDealerChangePolicy,
   validateSchedule,
   WorkingCalendar,
+  assessMaterialReadiness,
 } from './domain';
 import type {
   AvailabilityRequestDto,
@@ -662,7 +665,7 @@ export class SchedulingService {
       where: {
         isActive: true,
         archivedAt: null,
-        roles: { some: { role: { code: 'PRODUCTION_WORKER' } } },
+        roles: { some: { role: { kind: 'PRODUCTION_WORKER' } } },
       },
       select: {
         id: true,
@@ -700,6 +703,78 @@ export class SchedulingService {
   }
 
   // ── Generation / approval ───────────────────────────────────────────────
+
+  private async assessLiveMaterialReadiness(po: {
+    id: string;
+    quantity?: unknown;
+    product?: { bomDefaults?: unknown } | null;
+  }) {
+    const bom = (po.product?.bomDefaults ?? null) as BomDefaults | null;
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { archivedAt: null, isActive: true, itemClass: 'RAW_MATERIAL' },
+      select: {
+        category: true,
+        materialGroup: true,
+        balances: { select: { availableQty: true, reservedQty: true } },
+      },
+    });
+    const totals = { fabricMeters: 0, woodUnits: 0, foamBlocks: 0 };
+    for (const item of items) {
+      const free = item.balances.reduce(
+        (s, b) => s + Number(b.availableQty) - Number(b.reservedQty),
+        0,
+      );
+      const group = String(item.materialGroup ?? item.category);
+      if (group === 'FABRIC') totals.fabricMeters += free;
+      else if (group === 'WOOD') totals.woodUnits += free;
+      else if (group === 'FOAM') totals.foamBlocks += free;
+    }
+    const raw = assessMaterialReadiness(bomToReadinessInput(bom), {
+      fabricMeters: { available: totals.fabricMeters },
+      woodUnits: { available: totals.woodUnits },
+      foamBlocks: { available: totals.foamBlocks },
+    });
+    const wipReady = await this.assessWipReadiness(po.id, Number(po.quantity) || 1);
+    if (!wipReady) {
+      return { ...raw, ready: false, risk: true };
+    }
+    return raw;
+  }
+
+  private async assessWipReadiness(productionOrderId: string, orderQty: number) {
+    const consume = await this.prisma.productionOrderWorkflowSnapshotNode.count({
+      where: {
+        snapshot: { productionOrderId },
+        isSkipped: false,
+        consumesSemiFinished: true,
+      },
+    });
+    if (!consume) return true;
+    const producers = await this.prisma.productionOrderWorkflowSnapshotNode.findMany({
+      where: {
+        snapshot: { productionOrderId },
+        isSkipped: false,
+        inventoryTracking: 'PRODUCES_SEMI_FINISHED',
+      },
+      select: { outputQtyPerUnit: true },
+    });
+    const required = producers.length
+      ? producers.reduce((sum, node) => {
+          const per = Number(node.outputQtyPerUnit);
+          return sum + (Number.isFinite(per) && per > 0 ? per : 1) * orderQty;
+        }, 0)
+      : orderQty;
+    const lots = await this.prisma.inventoryLot.findMany({
+      where: {
+        productionOrderId,
+        status: 'AVAILABLE',
+        inventoryItem: { itemClass: 'SEMI_FINISHED_GOOD' },
+      },
+      select: { quantity: true },
+    });
+    const available = lots.reduce((s, lot) => s + Number(lot.quantity), 0);
+    return available + 1e-9 >= required;
+  }
 
   async generateForProductionOrder(
     poId: string,
@@ -906,6 +981,7 @@ export class SchedulingService {
       ? opts.mode === 'backward'
       : Boolean(orderInput.requestedDeliveryDate);
     const result = useBackward ? backwardSchedule([orderInput], ctx) : forwardSchedule([orderInput], ctx);
+    const materialReadiness = await this.assessLiveMaterialReadiness(po);
 
     const earliestStart =
       result.allocations.length > 0
@@ -941,6 +1017,8 @@ export class SchedulingService {
           requiresAdminEstimateReview,
           estimateConfidence: requiresAdminEstimateReview ? 'LOW' : 'HIGH',
           estimateReviewStatus: requiresAdminEstimateReview ? 'PENDING' : 'NOT_REQUIRED',
+          materialReadyAt: materialReadiness.materialReadyAt,
+          materialRisk: materialReadiness.risk || !materialReadiness.ready,
         },
       });
 
@@ -985,6 +1063,22 @@ export class SchedulingService {
 
       return createdSchedule;
     });
+
+    if (!materialReadiness.ready && (po.status === 'PLANNED' || po.status === 'READY')) {
+      await this.prisma.productionOrder.update({
+        where: { id: po.id },
+        data: { status: 'WAITING_FOR_MATERIALS' },
+      });
+      if (po.salesOrderId) {
+        await this.prisma.salesOrder.updateMany({
+          where: {
+            id: po.salesOrderId,
+            status: { in: ['CONFIRMED', 'READY_FOR_PRODUCTION'] },
+          },
+          data: { status: 'WAITING_FOR_MATERIALS' },
+        });
+      }
+    }
 
     await this.debouncedNotify('SCHEDULE_AWAITING_APPROVAL', po.id, () =>
       this.notifications.notifyAdminUsers({

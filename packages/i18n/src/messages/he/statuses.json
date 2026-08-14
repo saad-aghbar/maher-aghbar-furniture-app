@@ -75,5 +75,15 @@
   "AWAITING_APPROVAL": "ממתין לאישור",
   "AT_RISK": "עלול לאחר",
   "PUBLISHED": "פורסם",
-  "ARCHIVED": "בארכיון"
+  "ARCHIVED": "בארכיון",
+  "AVAILABLE": "זמין",
+  "RESERVED": "שמור",
+  "QUARANTINED": "בהסגר",
+  "CONSUMED": "נוצל",
+  "DAMAGED": "פגום",
+  "SCRAPPED": "גרוטאה",
+  "REQUIRES_REVIEW": "דורש בדיקה",
+  "RETURN_TO_STOCK": "הוחזר למלאי",
+  "REWORK": "עיבוד מחדש",
+  "SCRAP": "גרוטאה"
 }

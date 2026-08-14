@@ -1,9 +1,5 @@
-export {
-  DealerNewOrderButton,
-  DEALER_FAB_SIZE,
-  DEALER_NEW_ORDER_HREF,
-  DEALER_NEW_ORDER_A11Y_KEY,
-} from './DealerNewOrderButton';
+export { DealerNewOrderButton, DEALER_FAB_SIZE } from './DealerNewOrderButton';
+export { DEALER_NEW_ORDER_HREF, DEALER_NEW_ORDER_A11Y_KEY } from './dealerFabConstants';
 export { DealerSectionHeader } from './DealerSectionHeader';
 export { DealerEmptyState } from './DealerEmptyState';
 export { DealerSkeleton } from './DealerSkeleton';

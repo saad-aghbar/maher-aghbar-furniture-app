@@ -29,6 +29,8 @@ import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pag
 import { roundMoney } from '../../common/helpers/money.util';
 import type { AuthUser } from '@maher/types';
 import { PurchasingService } from './purchasing.service';
+import { InventoryService } from '../inventory/inventory.service';
+import { InventoryTxType } from '@maher/database';
 
 class PurchaseLineDto {
   @IsString()
@@ -131,7 +133,24 @@ export class PurchasingController {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     private readonly purchasing: PurchasingService,
+    private readonly inventory: InventoryService,
   ) {}
+
+  private async assertPurchasableItems(ids: Array<string | undefined>) {
+    const inventoryIds = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+    if (!inventoryIds.length) return;
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: inventoryIds } },
+      select: { id: true, isPurchasable: true, sku: true },
+    });
+    const blocked = items.filter((i) => !i.isPurchasable);
+    if (blocked.length) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Only purchasable raw materials can be added to purchasing documents.',
+      });
+    }
+  }
 
   @Get('purchase-requests')
   @RequirePermissions('purchase-request.read')
@@ -226,6 +245,7 @@ export class PurchasingController {
   @Post('purchase-requests')
   @RequirePermissions('purchase-request.create')
   async createRequest(@Body() dto: CreatePurchaseRequestDto, @CurrentUser() user: AuthUser) {
+    await this.assertPurchasableItems(dto.lines.map((l) => l.inventoryItemId));
     const number = await this.sequences.next('PR', 'PR');
     return this.prisma.purchaseRequest.create({
       data: {
@@ -511,6 +531,7 @@ export class PurchasingController {
       });
     }
     await this.purchasing.assertSupplierCertified(dto.supplierId);
+    await this.assertPurchasableItems(dto.lines.map((l) => l.inventoryItemId));
     const number = await this.sequences.next('PORD', 'PORD');
 
     const inventoryIds = [
@@ -672,6 +693,15 @@ export class PurchasingController {
       where: { id },
       include: { lines: true, goodsReceipts: { include: { lines: true } } },
     });
+    const warehouse = await this.prisma.warehouse.findUniqueOrThrow({
+      where: { id: body.warehouseId },
+    });
+    if (warehouse.type !== 'RAW_MATERIALS') {
+      throw new BadRequestException({
+        code: 'WAREHOUSE_TYPE_MISMATCH',
+        message: 'Goods receipts must go into a raw materials warehouse.',
+      });
+    }
     if (
       po.status !== PurchaseOrderStatus.APPROVED &&
       po.status !== PurchaseOrderStatus.SENT &&
@@ -712,42 +742,17 @@ export class PurchasingController {
         const accepted = line.receivedQty - (line.rejectedQty ?? 0);
         if (accepted <= 0) continue;
 
-        const balance = await tx.inventoryBalance.findFirst({
-          where: {
-            inventoryItemId: line.inventoryItemId,
-            warehouseId: body.warehouseId,
-            locationId: null,
-          },
-        });
-        const next = Number(balance?.availableQty ?? 0) + accepted;
-        if (balance) {
-          await tx.inventoryBalance.update({
-            where: { id: balance.id },
-            data: { availableQty: roundMoney(next) },
-          });
-        } else {
-          await tx.inventoryBalance.create({
-            data: {
-              inventoryItemId: line.inventoryItemId,
-              warehouseId: body.warehouseId,
-              availableQty: roundMoney(next),
-            },
-          });
-        }
-
-        const txNumber = await this.sequences.next('INVTX', 'INV');
-        await tx.inventoryTransaction.create({
-          data: {
-            number: txNumber,
-            type: 'PURCHASE_RECEIPT',
-            inventoryItemId: line.inventoryItemId,
-            warehouseId: body.warehouseId,
-            quantity: roundMoney(accepted),
-            referenceType: 'GoodsReceipt',
-            referenceId: grn.id,
-            createdById: user.id,
-            notes: `GRN ${number}`,
-          },
+        await this.inventory.applyMovement({
+          type: InventoryTxType.PURCHASE_RECEIPT,
+          inventoryItemId: line.inventoryItemId,
+          warehouseId: body.warehouseId,
+          quantity: accepted,
+          userId: user.id,
+          referenceType: 'GoodsReceipt',
+          referenceId: grn.id,
+          notes: `GRN ${number}`,
+          idempotencyKey: `grn:${grn.id}:${line.inventoryItemId}`,
+          db: tx,
         });
       }
 
@@ -793,6 +798,8 @@ export class PurchasingController {
         newValues: { purchaseOrderId: po.id },
       },
     });
+
+    await this.inventory.retryWaitingMaterialOrders(user.id).catch(() => undefined);
 
     return receipt;
   }

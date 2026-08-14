@@ -9,6 +9,8 @@
   "usernameRequired": "שם משתמש הוא שדה חובה.",
   "nameRequired": "שם פרטי ושם משפחה הם שדות חובה.",
   "roleRequired": "תפקיד הוא שדה חובה.",
+  "staffTypeRequired": "סוג משרה הוא שדה חובה.",
+  "employeeTypeRequired": "סוג עובד הוא שדה חובה.",
   "createNotSupported": "יצירה אינה נתמכת.",
   "fieldRequired": "{field} הוא שדה חובה."
 }

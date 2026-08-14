@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@maher/database';
+import { InventoryTracking, Prisma, QualityResult } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { calculateWorkflowProgress } from './workflow/domain';
 
@@ -222,6 +222,30 @@ export class StagePipelineService {
         ['INSPECTION', 'QC', 'QUALITY'].includes(s.stageDefinition.code) &&
         s.status === 'COMPLETED',
     );
+    const fgNodes = (snapshot?.nodes ?? []).filter(
+      (n) => !n.isSkipped && n.inventoryTracking === InventoryTracking.PRODUCES_FINISHED,
+    );
+    const fgStagesComplete =
+      fgNodes.length === 0
+        ? false
+        : fgNodes.every((n) => {
+            const stage = n.stageInstanceId
+              ? refreshed.find((s) => s.id === n.stageInstanceId)
+              : refreshed.find((s) => s.stageDefinition.code === n.stageCode);
+            return stage?.status === 'COMPLETED';
+          });
+    let qcPassed = true;
+    if (fgNodes.some((n) => n.requiresInspection)) {
+      const passed = await db.qualityInspection.findFirst({
+        where: {
+          productionOrderId,
+          result: { in: [QualityResult.PASSED, QualityResult.PASSED_WITH_NOTES] },
+        },
+      });
+      qcPassed = Boolean(passed);
+    }
+    const readyForDelivery =
+      fgNodes.length > 0 ? fgStagesComplete && qcPassed : packagingDone && inspectionDone;
 
     await db.productionOrder.update({
       where: { id: productionOrderId },
@@ -234,7 +258,7 @@ export class StagePipelineService {
               refreshed.filter((s) => s.status !== 'SKIPPED').at(-1)?.stageDefinition.code ??
               null,
           }
-        : packagingDone && inspectionDone
+        : readyForDelivery
           ? {
               progressPercent,
               currentStageCode: active?.stageDefinition.code ?? null,
@@ -251,7 +275,7 @@ export class StagePipelineService {
       where: { id: productionOrderId },
       select: { salesOrderId: true },
     });
-    if (po?.salesOrderId && (allComplete || (packagingDone && inspectionDone))) {
+    if (po?.salesOrderId && (allComplete || readyForDelivery)) {
       const siblings = await db.productionOrder.findMany({
         where: {
           salesOrderId: po.salesOrderId,

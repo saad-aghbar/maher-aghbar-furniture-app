@@ -282,6 +282,8 @@ describe('SalesOrdersService.getById ownership', () => {
         generateForProductionOrder: jest.fn().mockResolvedValue(undefined),
       } as any,
       { createSnapshotForProductionOrder: jest.fn() } as any,
+      { tryReserveForSalesOrder: jest.fn(), releaseForSalesOrder: jest.fn() } as any,
+      { onProductionOrdersCancelled: jest.fn() } as any,
     );
     jest.spyOn(service, 'hydrateLineProducts').mockImplementation(async (lines) => lines as never);
     jest.spyOn(service, 'loadDealerPrices').mockResolvedValue(new Map());

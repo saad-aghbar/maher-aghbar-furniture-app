@@ -12,6 +12,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { corsAllowlistFromEnv, isAllowedCorsOrigin } from './common/helpers/cors-origin.util';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
 import { createLogger } from '@maher/logging';
 
@@ -21,8 +22,12 @@ async function bootstrap() {
 
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cookieParser());
+  const corsAllowlist = corsAllowlistFromEnv(process.env.CORS_ORIGINS);
+  const allowPrivateLan = process.env.NODE_ENV !== 'production';
   app.enableCors({
-    origin: (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(','),
+    origin: (origin, callback) => {
+      callback(null, isAllowedCorsOrigin(origin, { allowlist: corsAllowlist, allowPrivateLan }));
+    },
     credentials: true,
   });
   app.setGlobalPrefix('api/v1');

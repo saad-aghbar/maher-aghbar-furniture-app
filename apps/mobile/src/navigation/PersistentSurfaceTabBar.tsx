@@ -13,8 +13,10 @@ import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
+  Easing,
   useAnimatedStyle,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import type { AppSurface } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -26,7 +28,15 @@ import { useTheme } from '@/theme';
 import { can } from '@maher/permissions';
 import { activeTabFromPath } from './activeTabFromPath';
 import { navigateToTab } from './navigateToTab';
-import { visibleTabsForUser, type TabName } from './tabConfig';
+import { type TabName } from './tabConfig';
+import { useStableVisibleTabs } from './useStableVisibleTabs';
+import {
+  STAFF_CAPSULE_MIN,
+  STAFF_PILL_DURATION_MS,
+  shouldUseStaffAdaptiveTabLayout,
+  staffCapsuleInSlot,
+  staffFallbackTabName,
+} from './staffAdaptiveTabLayout';
 
 if (
   Platform.OS === 'android' &&
@@ -75,6 +85,7 @@ function TabItemContent({
   iconSize = 22,
   slotHeight = ACTIVE_HEIGHT,
   iconsOnly = false,
+  hugContent = false,
 }: {
   iconName: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -85,6 +96,8 @@ function TabItemContent({
   slotHeight?: number;
   /** Dealer bar: icons only, no expanding labels. */
   iconsOnly?: boolean;
+  /** Staff: size to icon/label so the capsule can hug content inside a flex slot. */
+  hugContent?: boolean;
 }) {
   const showLabel = !iconsOnly && expanded;
   return (
@@ -92,7 +105,13 @@ function TabItemContent({
       style={{
         height: slotHeight,
         paddingHorizontal: showLabel ? 14 : 0,
-        width: showLabel ? undefined : iconsOnly ? slotHeight : INACTIVE_SLOT,
+        width: hugContent
+          ? undefined
+          : showLabel
+            ? undefined
+            : iconsOnly
+              ? slotHeight
+              : INACTIVE_SLOT,
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -139,14 +158,11 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [layouts, setLayouts] = useState<Record<string, { x: number; width: number }>>({});
+  const [contentWidths, setContentWidths] = useState<Record<string, number>>({});
   /** While scrubbing, which tab shows its label (null = route active). */
   const [scrubIndex, setScrubIndex] = useState<number | null>(null);
 
-  const tabs = useMemo(
-    () => (user ? visibleTabsForUser(surface, user) : []),
-    [surface, user],
-  );
-  const tabNamesKey = useMemo(() => tabs.map((t) => t.name).join('|'), [tabs]);
+  const { tabs, layoutKey: tabNamesKey } = useStableVisibleTabs(surface);
   const activeName = activeTabFromPath(surface, pathname);
   /** Floating icon pill for admin, worker, and dealer. */
   const floating = surface === 'admin' || surface === 'employee' || surface === 'customer';
@@ -154,6 +170,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
     surface === 'customer' && Boolean(user && can(user, 'request.create'));
   /** Dealer: icon-only equal pills — no expanding labels. */
   const iconsOnly = surface === 'customer';
+  const staffAdaptive = shouldUseStaffAdaptiveTabLayout(surface, user);
   const tabInBar = tabs.some((tab) => tab.name === activeName);
   const activeIndex = Math.max(
     0,
@@ -166,6 +183,9 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
     return tabs.map((tab) => {
       const layout = layouts[tab.name];
       if (!layout || layout.width <= 0) return undefined;
+      if (staffAdaptive) {
+        return staffCapsuleInSlot(layout, contentWidths[tab.name] ?? STAFF_CAPSULE_MIN);
+      }
       if (!iconsOnly) return layout;
       // Equal pill centered in each flex slot.
       const pill = ACTIVE_HEIGHT;
@@ -174,7 +194,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
         width: pill,
       };
     });
-  }, [layouts, tabs, iconsOnly]);
+  }, [contentWidths, iconsOnly, layouts, staffAdaptive, tabs]);
   const activeLayout = tabInBar ? orderedLayouts[activeIndex] : undefined;
   const layoutsReady =
     tabs.length > 0 && orderedLayouts.every((l) => l != null && l.width > 0);
@@ -202,7 +222,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
         setScrubIndex(null);
         return;
       }
-      if (!reduce) {
+      if (!reduce && !staffAdaptive) {
         LayoutAnimation.configureNext({
           duration: 280,
           update: {
@@ -212,10 +232,13 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
       }
       setScrubIndex(index);
     },
-    [iconsOnly, reduce],
+    [iconsOnly, reduce, staffAdaptive],
   );
 
   const bubbleSpring = iconsOnly ? APPLE_BUBBLE_SPRING : PILL_SPRING;
+  const staffTiming = staffAdaptive
+    ? { duration: STAFF_PILL_DURATION_MS }
+    : undefined;
 
   const { pillX, pillW, dragging, gesture } = useDraggablePillBar({
     layouts: orderedLayouts,
@@ -225,6 +248,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
     reduceMotion: reduce,
     enabled: floating && tabs.length > 0 && tabInBar,
     spring: bubbleSpring,
+    timing: staffTiming,
   });
 
   const onLayoutTab = useCallback((name: string, e: LayoutChangeEvent) => {
@@ -236,6 +260,13 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
     });
   }, []);
 
+  const onContentLayout = useCallback((name: string, width: number) => {
+    setContentWidths((prev) => {
+      if (prev[name] === width) return prev;
+      return { ...prev, [name]: width };
+    });
+  }, []);
+
   useEffect(() => {
     setScrubIndex(null);
   }, [activeName]);
@@ -243,7 +274,15 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
   useEffect(() => {
     // Remeasure only when the chip set actually changes (not on AuthUser identity churn).
     setLayouts({});
+    setContentWidths({});
   }, [tabNamesKey, dealerFab]);
+
+  useEffect(() => {
+    if (!staffAdaptive || tabs.length === 0) return;
+    const next = staffFallbackTabName(tabs, activeName);
+    if (next === activeName) return;
+    navigateToTab(router, surface, next, pathname);
+  }, [activeName, pathname, router, staffAdaptive, surface, tabs]);
 
   // Spring the bubble to the active slot (instant assign killed Apple-like motion).
   useEffect(() => {
@@ -254,9 +293,18 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
       pillW.value = activeLayout.width;
       return;
     }
+    if (staffAdaptive) {
+      const cfg = {
+        duration: STAFF_PILL_DURATION_MS,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
+      };
+      pillX.value = withTiming(activeLayout.x, cfg);
+      pillW.value = withTiming(activeLayout.width, cfg);
+      return;
+    }
     pillX.value = withSpring(activeLayout.x, bubbleSpring);
     pillW.value = withSpring(activeLayout.width, bubbleSpring);
-  }, [activeLayout, bubbleSpring, dragging, pillW, pillX, reduce]);
+  }, [activeLayout, bubbleSpring, dragging, pillW, pillX, reduce, staffAdaptive]);
 
   const pillStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: pillX.value }],
@@ -297,7 +345,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
         ]
       : tabs.map((tab, index) => ({ kind: 'tab' as const, tab, index }));
 
-    const equalSlots = iconsOnly;
+    const equalSlots = iconsOnly || staffAdaptive;
 
     const trackRowStyle = {
       flex: 1,
@@ -316,22 +364,33 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
         index === expandedIndex ||
         (expandedIndex < 0 && tab.name === activeName);
       const content = (
-        <TabItemContent
-          iconName={iconName}
-          label={label}
-          expanded={expanded}
-          isRTL={isRTL}
-          color={highlighted ? colors.brand : colors.textMuted}
-          iconsOnly={iconsOnly}
-        />
+        <View
+          collapsable={false}
+          onLayout={
+            staffAdaptive
+              ? (e) => onContentLayout(tab.name, e.nativeEvent.layout.width)
+              : undefined
+          }
+        >
+          <TabItemContent
+            iconName={iconName}
+            label={label}
+            expanded={expanded}
+            isRTL={isRTL}
+            color={highlighted ? colors.brand : colors.textMuted}
+            iconsOnly={iconsOnly}
+            hugContent={staffAdaptive}
+          />
+        </View>
       );
 
       const slotStyle = equalSlots
         ? {
             flex: 1 as const,
+            minHeight: ACTIVE_HEIGHT,
             alignItems: 'center' as const,
             justifyContent: 'center' as const,
-            overflow: 'hidden' as const,
+            overflow: (staffAdaptive ? 'visible' : 'hidden') as 'visible' | 'hidden',
           }
         : undefined;
 
