@@ -39,6 +39,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
+      - run: pnpm check:boundaries
       - run: pnpm --filter @maher/database generate
       - run: pnpm --filter @maher/database exec prisma db push
       - run: pnpm --filter @maher/types build

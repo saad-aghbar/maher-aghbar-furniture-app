@@ -340,7 +340,11 @@ See [docs/launch-checklist.md](docs/launch-checklist.md) and [docs/troubleshooti
 
 ## Documentation
 
-See [`docs/`](docs/) for architecture, permissions, workflows, security, deployment, and PDF compliance.
+- [Repository map](docs/architecture/repository-map.md) — which app/package owns what
+- [Where to change things](docs/architecture/where-to-change-things.md) — feature → path (Web vs Mobile vs API)
+- [Docs index](docs/README.md)
+
+Also: architecture, permissions, workflows, security, deployment, PDF compliance.
 
 - Mobile release / EAS: [docs/mobile-release.md](docs/mobile-release.md)
 - Phase 2 credential-gated integrations (IMAP, WhatsApp, Maps): [docs/factory-ux-phase2.md](docs/factory-ux-phase2.md)

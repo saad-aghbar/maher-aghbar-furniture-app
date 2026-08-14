@@ -28,6 +28,10 @@ logs
 uploads
 .minio-data
 
+# Redis dump if started from the repo cwd
+dump.rdb
+*.rdb
+
 # Prisma
 packages/database/prisma/*.db
 packages/database/prisma/*.db-journal

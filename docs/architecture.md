@@ -43,11 +43,13 @@ The **backend is the sole authority** for authz, workflow transitions, pricing/t
 ## Monorepo
 
 ```
-apps/admin-web|customer-portal|employee-portal|api|worker
-packages/ui|database|types|validation|permissions|i18n|config|logging|testing|eslint-config|tsconfig
-infra/docker|nginx|database|deployment
-docs/...
+apps/api | admin-web | customer-portal | employee-portal | mobile | worker
+packages/types | permissions | i18n | ui | database | integrations | logging | tsconfig
+         (+ unused: validation, config, testing, eslint-config, workflow-graph)
+scripts/  docs/  e2e/  infra/docker/  design-references/
 ```
+
+Map and “where do I change this?”: [architecture/repository-map.md](architecture/repository-map.md), [architecture/where-to-change-things.md](architecture/where-to-change-things.md). Index: [README.md](README.md).
 
 ## Environments
 

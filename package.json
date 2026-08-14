@@ -16,6 +16,7 @@
     "smoke:factory-uat": "node scripts/smoke-factory-uat.mjs",
     "smoke:factory-lifecycle": "node scripts/factory-lifecycle-uat.mjs",
     "smoke:scope": "node scripts/smoke-scope-isolation.mjs",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
     "test:e2e:playwright": "playwright test",
     "db:generate": "pnpm --filter @maher/database generate",
     "db:migrate": "pnpm --filter @maher/database migrate:dev",
