@@ -190,6 +190,7 @@ export default function StaffTypeEditorPage() {
   }, [catalogGroups, groupFilter, needle]);
 
   const assignedCount = detailQuery.data?._count?.users ?? 0;
+  const readOnly = Boolean(!isNew && detailQuery.data?.isSystem);
 
   if (!isNew && detailQuery.isLoading && !detailQuery.data) {
     return (
@@ -212,7 +213,7 @@ export default function StaffTypeEditorPage() {
   }
 
   function toggleCode(code: string, assignable: boolean) {
-    if (!assignable) return;
+    if (readOnly || !assignable) return;
     setForm((f) => {
       const has = f.permissionCodes.includes(code);
       const next = has ? f.permissionCodes.filter((c) => c !== code) : [...f.permissionCodes, code];
@@ -223,7 +224,7 @@ export default function StaffTypeEditorPage() {
   return (
     <div className="space-y-6">
       <PageHero
-        title={isNew ? t('newStaffType') : t('editStaffType')}
+        title={isNew ? t('newStaffType') : readOnly ? t('view') : t('editStaffType')}
         description={
           isNew
             ? t('staffTypesDescription')
@@ -235,16 +236,19 @@ export default function StaffTypeEditorPage() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => router.push('/employees/staff-types')}>
-              {tCommon('cancel')}
+              {readOnly ? tCommon('back') : tCommon('cancel')}
             </Button>
-            <Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-              {tCommon('save')}
-            </Button>
+            {!readOnly ? (
+              <Button loading={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+                {tCommon('save')}
+              </Button>
+            ) : null}
           </div>
         }
       />
 
       {error ? <Alert variant="error">{error}</Alert> : null}
+      {readOnly ? <Alert variant="info">{t('systemPresetReadOnly')}</Alert> : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <div className="space-y-3 rounded-[var(--maher-radius-md)] border border-border bg-surface p-4">
@@ -253,40 +257,47 @@ export default function StaffTypeEditorPage() {
             value={form.nameEn}
             onChange={(e) => setForm((f) => ({ ...f, nameEn: e.target.value }))}
             required
+            disabled={readOnly}
           />
           <Input
             label={`${t('nameAr')} *`}
             value={form.nameAr}
             onChange={(e) => setForm((f) => ({ ...f, nameAr: e.target.value }))}
             required
+            disabled={readOnly}
           />
           <Input
             label={`${t('nameHe')} (${t('optional')})`}
             value={form.nameHe}
             onChange={(e) => setForm((f) => ({ ...f, nameHe: e.target.value }))}
+            disabled={readOnly}
           />
           <TextArea
             label={`${t('descriptionEn')} (${t('optional')})`}
             value={form.descriptionEn}
             onChange={(e) => setForm((f) => ({ ...f, descriptionEn: e.target.value }))}
             rows={3}
+            disabled={readOnly}
           />
           <TextArea
             label={`${t('descriptionAr')} (${t('optional')})`}
             value={form.descriptionAr}
             onChange={(e) => setForm((f) => ({ ...f, descriptionAr: e.target.value }))}
             rows={3}
+            disabled={readOnly}
           />
           <TextArea
             label={`${t('descriptionHe')} (${t('optional')})`}
             value={form.descriptionHe}
             onChange={(e) => setForm((f) => ({ ...f, descriptionHe: e.target.value }))}
             rows={3}
+            disabled={readOnly}
           />
           <Select
             label={t('icon')}
             value={form.iconKey}
             onChange={(e) => setForm((f) => ({ ...f, iconKey: e.target.value }))}
+            disabled={readOnly}
           >
             {ICON_OPTIONS.map((icon) => (
               <option key={icon} value={icon}>
@@ -298,6 +309,7 @@ export default function StaffTypeEditorPage() {
             <input
               type="checkbox"
               checked={form.isActive}
+              disabled={readOnly}
               onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
             />
             {t('active')}
@@ -344,7 +356,7 @@ export default function StaffTypeEditorPage() {
                 <legend className="text-sm font-semibold text-brand">{catalogLabel(group, locale)}</legend>
                 {group.permissions.map((perm) => {
                   const checked = form.permissionCodes.includes(perm.code);
-                  const disabled = !perm.assignableToStaff;
+                  const disabled = readOnly || !perm.assignableToStaff;
                   return (
                     <label
                       key={perm.code}

@@ -1,7 +1,7 @@
 import { Image, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { AnimatedPressable, haptics } from '@/motion';
+import { haptics } from '@/motion';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
@@ -10,7 +10,7 @@ export type DealerUploadItem = {
   uri?: string;
   name: string;
   kind: 'image' | 'pdf' | 'handwritten';
-  status: 'ready' | 'uploading' | 'failed';
+  status: 'ready' | 'uploading' | 'failed' | 'uploaded';
   progress?: number;
 };
 
@@ -93,7 +93,7 @@ export function DealerUploadGrid({
         }}
       >
         {actions.map((action) => (
-          <AnimatedPressable
+          <Pressable
             key={action.key}
             onPress={() => {
               void haptics.selection();
@@ -117,7 +117,7 @@ export function DealerUploadGrid({
             <AppText variant="caption" weight="medium">
               {action.label}
             </AppText>
-          </AnimatedPressable>
+          </Pressable>
         ))}
       </View>
 
@@ -136,7 +136,12 @@ export function DealerUploadGrid({
               borderRadius: theme.radius.md,
               overflow: 'hidden',
               borderWidth: 1,
-              borderColor: item.status === 'failed' ? colors.error : colors.border,
+              borderColor:
+                item.status === 'failed'
+                  ? colors.error
+                  : item.status === 'uploaded'
+                    ? colors.brand
+                    : colors.border,
               backgroundColor: colors.surfaceSecondary,
             }}
           >
@@ -167,7 +172,12 @@ export function DealerUploadGrid({
                   />
                 </View>
               ) : null}
-              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: 8 }}>
+              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: 8, alignItems: 'center' }}>
+                {item.status === 'uploaded' ? (
+                  <AppText variant="caption" color="brand">
+                    {t('mobile.newOrder.uploadDone')}
+                  </AppText>
+                ) : null}
                 {item.status === 'failed' && onRetry ? (
                   <Pressable
                     onPress={() => onRetry(item.id)}

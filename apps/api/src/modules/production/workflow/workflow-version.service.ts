@@ -583,6 +583,8 @@ export class WorkflowVersionService {
       inventoryTracking: n.inventoryTracking,
       consumesRawMaterials: n.consumesRawMaterials,
       consumesSemiFinished: n.consumesSemiFinished,
+      schedulingResourceMode: n.schedulingResourceMode,
+      resourceSlots: n.resourceSlots,
       outputQtyPerUnit: n.outputQtyPerUnit != null ? Number(n.outputQtyPerUnit) : null,
       outputNameAr: n.outputNameAr,
       outputNameEn: n.outputNameEn,
@@ -601,6 +603,8 @@ export class WorkflowVersionService {
         requiresInspection: n.stageDefinition.requiresInspection,
         requiresPhotos: n.stageDefinition.requiresPhotos,
         responsibleDepartment: n.stageDefinition.responsibleDepartment,
+        schedulingResourceMode: n.stageDefinition.schedulingResourceMode,
+        resourceSlots: n.stageDefinition.resourceSlots,
       },
     }));
 

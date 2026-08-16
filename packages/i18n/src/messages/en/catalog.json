@@ -687,9 +687,12 @@
   "schedulingBufferPercent": "Scheduling buffer %",
   "shiftStart": "Shift start",
   "shiftEnd": "Shift end",
+  "deliveryBufferWorkingDays": "Delivery buffer (working days)",
+  "deliveryBufferWorkingDaysHint": "Production finishes this many working days before the requested delivery date. 1 means the order is ready the previous working day.",
   "workingWeekdays": "Working days",
   "calendar": {
     "savedReplanned": "Production calendar saved. {count} orders replanned.",
+    "recalculating": "Production calendar saved. Schedule is being recalculated.",
     "workingDaysHint": "The factory is closed on Fridays by default. Saturday is a normal working day.",
     "exceptions": {
       "title": "Day exceptions",
@@ -707,6 +710,8 @@
       "savedReplanned": "Day exception saved. {count} orders replanned.",
       "cleared": "Day exception cleared.",
       "clearedReplanned": "Day exception cleared. {count} orders replanned.",
+      "recalculating": "Day exception saved. Schedule is being recalculated.",
+      "clearedRecalculating": "Day exception cleared. Schedule is being recalculated.",
       "dateInvalid": "Pick a valid date.",
       "typeOpen": "Open day",
       "typeClosed": "Closed",

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Alert, Image, Pressable, View } from 'react-native';
+import { Image, Pressable, View } from 'react-native';
 import { AppText } from '@/components/AppText';
+import { useToast } from '@/components/feedback/Toast';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -29,6 +30,7 @@ export function AccessoryPhotoField({
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const { showToast } = useToast();
   const { openAccessoryCamera } = useAccessoryCamera();
   const [busyLocal, setBusyLocal] = useState(false);
   const [sourceOpen, setSourceOpen] = useState(false);
@@ -50,7 +52,7 @@ export function AccessoryPhotoField({
       }
     } catch {
       void haptics.error();
-      Alert.alert(t('mobile.inventory.photoUploadFailed'));
+      showToast({ variant: 'error', message: t('mobile.inventory.photoUploadFailed') });
       setBusyLocal(false);
       onUploadingChange?.(false);
     }
@@ -73,7 +75,7 @@ export function AccessoryPhotoField({
       }
     } catch {
       void haptics.error();
-      Alert.alert(t('mobile.inventory.photoUploadFailed'));
+      showToast({ variant: 'error', message: t('mobile.inventory.photoUploadFailed') });
       setBusyLocal(false);
       onUploadingChange?.(false);
     }

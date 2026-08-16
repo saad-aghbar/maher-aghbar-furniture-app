@@ -211,6 +211,16 @@ export function CreateUserSheet({ open, onClose, segment }: Props) {
             titleWeight={titleWeight}
           />
 
+          {form.identity.identityRoleCode === 'CUSTOMER' ? (
+            <AppText
+              variant="caption"
+              color="muted"
+              style={{ textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {t('users.customerPortalHint')}
+            </AppText>
+          ) : null}
+
           {showDepartment ? (
             <UserFormSection
               icon="business-outline"

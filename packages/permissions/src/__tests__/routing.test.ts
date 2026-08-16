@@ -43,6 +43,17 @@ describe('post-login routing', () => {
     expect(resolveMobileHomeHref(user)).toBe('/(app)/(customer)/(tabs)');
   });
 
+  it('sends CUSTOMER-role users to the customer portal even without customerId', () => {
+    const user: AuthUser = {
+      ...base,
+      roles: ['CUSTOMER'],
+      permissions: ['request.create', 'quotation.read', 'ai-intake.manage'],
+    };
+    expect(resolveAppSurface(user)).toBe('customer');
+    expect(resolveHomePersona(user)).toBe('customer');
+    expect(resolveMobileHomeHref(user)).toBe('/(app)/(customer)/(tabs)');
+  });
+
   it('sends production workers to the employee portal', () => {
     const user: AuthUser = {
       ...base,

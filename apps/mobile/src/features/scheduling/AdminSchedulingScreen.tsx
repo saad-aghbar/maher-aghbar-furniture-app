@@ -1,7 +1,11 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { can } from '@maher/permissions';
+import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
@@ -17,14 +21,15 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { Divider } from '@/components/layout/Divider';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
-import { formatDate, useLocale } from '@/i18n';
+import { formatDate, formatDuration, formatIdentifier, formatTimeRange, useLocale } from '@/i18n';
 import { AnimatedPressable, SkeletonShimmer, haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import { invalidateKeys } from '@/api/queryKeys';
+import { invalidateKeys, queryKeys } from '@/api/queryKeys';
 import { OrderCardMedia } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { isApiError } from '@/api/errors';
@@ -36,27 +41,53 @@ import {
   dealerDateChange,
   deleteCalendarException,
   getOrderSchedule,
+  getReplanRun,
   isOwnOrderSchedule,
   recalculateSchedule,
+  resolveAllAtRisk,
+  resolveAllConflicts,
+  resolveConflict,
   type ProductionScheduleDetail,
+  type ResolveAllAtRiskResult,
 } from '@/api/modules/scheduling';
 import {
   AdminChangeScheduleDateSheet,
   AdminDayExceptionSheet,
+  ApproveAllSchedulesSheet,
   ApproveScheduleSheet,
+  ConflictHelpSheet,
+  ConflictReviewSheet,
+  AtRiskDetailSheet,
+  AtRiskHelpSheet,
   RecalculateScheduleSheet,
+  ResolveAllAtRiskSheet,
+  ResolveConflictSheet,
 } from './components/AdminScheduleSheets';
+import { AtRiskOrderCard, atRiskActionIcon } from './components/AtRiskOrderCard';
+import { FactoryCapacitySection } from './components/FactoryCapacitySection';
+import { ScheduleExplanation } from './components/ScheduleExplanation';
 import {
   useAtRiskQuery,
   useSchedulingCalendarQuery,
+  useSchedulingCapacityQuery,
+  useSchedulingConflictsQuery,
   useSchedulingDashboardQuery,
 } from './query';
+import { selectFactoryLoadByDay } from './selectFactoryCapacity';
 import {
   filterScheduleCards,
+  scheduleSourceFromCard,
   selectAdminCalendarDayMeta,
+  selectApprovableScheduleTargets,
   selectApprovalsWaiting,
+  selectAtRiskActionKey,
   selectAtRiskCards,
+  selectAtRiskReasonGroups,
+  selectAtRiskReasonKey,
+  selectAtRiskStatusKey,
   selectAvailableActions,
+  selectDaysLate,
+  selectConflictBarCount,
   selectConflictCards,
   selectDashboardStats,
   selectMonthDayMeta,
@@ -67,14 +98,41 @@ import {
   type AdminScheduleCardModel,
   type ScheduleFocusKey,
 } from './selectAdminScheduling';
+import {
+  filterConflictRows,
+  selectConflictRows,
+  selectConflictTypeKey,
+  selectShowPriority,
+  selectUniqueConflictProductionOrderIds,
+  type ConflictRowModel,
+} from './selectScheduleDates';
+import { pollReplanRun, selectReplanResultToast } from './pollReplanRun';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+import { adminProductionFlowHref } from '@/features/production-flow/flowRoutes';
 
 const FLOOR_ROW_ESTIMATE = 152;
+const AT_RISK_ROW_ESTIMATE = 248;
+const OVERLAP_ROW_ESTIMATE = 168;
 const FLOOR_LIST_VISIBLE_ROWS = 3;
 const SCHEDULE_MEDIA = 88;
 
+function workerInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '·';
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0] ?? ''}${parts[parts.length - 1]![0] ?? ''}`.toUpperCase();
+}
+
 export function AdminSchedulingScreen() {
-  const { t, locale, isRTL } = useLocale();
+  const { user } = useAuth();
+  const router = useRouter();
+  const canApprove = can(user, 'schedule.approve');
+  const canManage = can(user, 'schedule.manage');
+  const canAdjustHours = can(user, 'schedule.settings.manage');
+  const canViewMaterials = can(user, 'inventory.read');
+  const canReviewEstimates = can(user, 'catalog.manage');
+  const canManageUsers = can(user, 'user.manage');
+  const { t, tPlural, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
@@ -93,7 +151,28 @@ export function AdminSchedulingScreen() {
   const [changeDateOpen, setChangeDateOpen] = useState(false);
   const [recalculateOpen, setRecalculateOpen] = useState(false);
   const [dayExceptionOpen, setDayExceptionOpen] = useState(false);
+  const [approveAllOpen, setApproveAllOpen] = useState(false);
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolveDraft, setResolveDraft] = useState<{ ids: string[]; body: string; all?: boolean } | null>(null);
+  const resolveIdsRef = useRef<string[]>([]);
+  const resolveAllRef = useRef(false);
+  const pageScrollRef = useRef<ScrollView>(null);
+  const [ordersExpanded, setOrdersExpanded] = useState(false);
+  const [conflictOverlapExpanded, setConflictOverlapExpanded] = useState(false);
+  const [conflictHelpOpen, setConflictHelpOpen] = useState(false);
+  const [atRiskHelpOpen, setAtRiskHelpOpen] = useState(false);
+  const pendingAtRiskSheetRef = useRef<'recalculate' | 'changeDate' | null>(null);
+  const [atRiskDetailOpen, setAtRiskDetailOpen] = useState(false);
+  const [atRiskResolveOpen, setAtRiskResolveOpen] = useState(false);
+  const [atRiskResolveResult, setAtRiskResolveResult] = useState<ResolveAllAtRiskResult | null>(null);
+  const [reviewRow, setReviewRow] = useState<ConflictRowModel | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [userPullRefreshing, setUserPullRefreshing] = useState(false);
+  const [bulkSnapshot, setBulkSnapshot] = useState<{
+    focusCards: AdminScheduleCardModel[];
+    conflictRows: ConflictRowModel[];
+  } | null>(null);
 
   const monthRange = useMemo(() => monthRangeYmd(cursor), [cursor]);
 
@@ -104,9 +183,10 @@ export function AdminSchedulingScreen() {
     view: 'month',
   });
   const atRiskQuery = useAtRiskQuery();
+  const conflictsQuery = useSchedulingConflictsQuery();
 
   /** Always load the current week for today/week focus so lists stay filled while the month cursor resets. */
-  const needsWeekWindow = focus === 'today' || focus === 'week';
+  const needsWeekWindow = focus === 'today' || focus === 'week' || focus === 'conflicts';
 
   const weekCalendarQuery = useSchedulingCalendarQuery(
     needsWeekWindow
@@ -115,14 +195,50 @@ export function AdminSchedulingScreen() {
     Boolean(needsWeekWindow),
   );
 
-  const stats = useMemo(() => selectDashboardStats(dashboardQuery.data), [dashboardQuery.data]);
+  const monthCapacityQuery = useSchedulingCapacityQuery({
+    from: monthRange.from,
+    to: monthRange.to,
+    granularity: 'day',
+  });
+
+  const refetchAll = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.scheduling.all });
+    return Promise.all([
+      dashboardQuery.refetch(),
+      calendarQuery.refetch(),
+      atRiskQuery.refetch(),
+      conflictsQuery.refetch(),
+      monthCapacityQuery.refetch(),
+      needsWeekWindow ? weekCalendarQuery.refetch() : Promise.resolve(null),
+    ]);
+  };
+
+  const onPullRefresh = () => {
+    setUserPullRefreshing(true);
+    void refetchAll().finally(() => setUserPullRefreshing(false));
+  };
+
+  const factoryLoadByDay = useMemo(
+    () => selectFactoryLoadByDay(monthCapacityQuery.data, locale),
+    [locale, monthCapacityQuery.data],
+  );
   const dayMeta = useMemo(
-    () => selectAdminCalendarDayMeta(calendarQuery.data?.days, calendarQuery.data?.orders),
-    [calendarQuery.data],
+    () =>
+      selectAdminCalendarDayMeta(
+        calendarQuery.data?.days,
+        calendarQuery.data?.orders,
+        factoryLoadByDay,
+      ),
+    [calendarQuery.data, factoryLoadByDay],
   );
   const monthMeta = useMemo(
-    () => selectMonthDayMeta(calendarQuery.data?.days, calendarQuery.data?.orders),
-    [calendarQuery.data],
+    () =>
+      selectMonthDayMeta(
+        calendarQuery.data?.days,
+        calendarQuery.data?.orders,
+        factoryLoadByDay,
+      ),
+    [calendarQuery.data, factoryLoadByDay],
   );
   const dayOrders = useMemo(
     () => selectOrdersForDay(calendarQuery.data?.orders, selectedDay, locale),
@@ -149,6 +265,10 @@ export function AdminSchedulingScreen() {
     () => selectAtRiskCards(atRiskQuery.data?.data, locale),
     [atRiskQuery.data, locale],
   );
+  const conflictRows = useMemo(
+    () => selectConflictRows(conflictsQuery.data?.data),
+    [conflictsQuery.data],
+  );
 
   const focusSourceOrders = useMemo(() => {
     const monthOrders = calendarQuery.data?.orders ?? [];
@@ -162,24 +282,82 @@ export function AdminSchedulingScreen() {
     return [...byId.values()];
   }, [calendarQuery.data?.orders, weekCalendarQuery.data?.orders]);
 
+  const conflictOrderCards = useMemo(
+    () => selectConflictCards(focusSourceOrders, locale),
+    [focusSourceOrders, locale],
+  );
+  const approvalCards = useMemo(
+    () => selectApprovalsWaiting(focusSourceOrders, locale),
+    [focusSourceOrders, locale],
+  );
+  const stats = useMemo(
+    () =>
+      selectDashboardStats(dashboardQuery.data, {
+        atRiskCount: atRiskQuery.data?.data.length,
+        conflictCount: selectConflictBarCount(conflictsQuery.data?.count ?? conflictRows),
+        awaitingApprovalCount: approvalCards.length,
+      }),
+    [
+      approvalCards.length,
+      atRiskQuery.data?.data.length,
+      conflictRows,
+      conflictsQuery.data?.count,
+      dashboardQuery.data,
+    ],
+  );
   const focusCards = useMemo(() => {
     if (!focus) return [];
     if (focus === 'today') return selectOrdersForDay(focusSourceOrders, today, locale);
     if (focus === 'week') {
       return selectOrdersInRange(focusSourceOrders, weekRange.from, weekRange.to, locale);
     }
-    if (focus === 'awaitingApproval') return selectApprovalsWaiting(focusSourceOrders, locale);
+    if (focus === 'awaitingApproval') return approvalCards;
     if (focus === 'atRisk') return atRisk;
-    return selectConflictCards(focusSourceOrders, locale);
-  }, [atRisk, focus, focusSourceOrders, locale, today, weekRange.from, weekRange.to]);
+    return conflictOrderCards;
+  }, [
+    approvalCards,
+    atRisk,
+    conflictOrderCards,
+    focus,
+    focusSourceOrders,
+    locale,
+    today,
+    weekRange.from,
+    weekRange.to,
+  ]);
 
-  const visibleFocusCards = useMemo(
+  const conflictLabelCards = useMemo(() => {
+    const fromCalendar = (calendarQuery.data?.orders ?? []).map((order) => ({
+      productionOrderId: order.productionOrderId,
+      number: order.number,
+    }));
+    return [...fromCalendar, ...focusCards, ...dayOrders, ...atRisk];
+  }, [atRisk, calendarQuery.data?.orders, dayOrders, focusCards]);
+  const liveFocusCards = useMemo(
     () => filterScheduleCards(focusCards, orderSearch),
     [focusCards, orderSearch],
   );
+  const liveConflictRows = useMemo(
+    () => filterConflictRows(conflictRows, orderSearch, conflictLabelCards),
+    [conflictLabelCards, conflictRows, orderSearch],
+  );
+  const visibleFocusCards = bulkSnapshot?.focusCards ?? liveFocusCards;
+  const visibleConflictRows = bulkSnapshot?.conflictRows ?? liveConflictRows;
   const visibleDayOrders = useMemo(
     () => filterScheduleCards(dayOrders, orderSearch),
     [dayOrders, orderSearch],
+  );
+  const dayAtRiskCount = useMemo(
+    () =>
+      dayOrders.filter((order) =>
+        atRisk.some((row) => row.productionOrderId === order.productionOrderId),
+      ).length,
+    [atRisk, dayOrders],
+  );
+  const dayConflictCount = useMemo(
+    () =>
+      conflictRows.filter((row) => row.startYmd === selectedDay).length,
+    [conflictRows, selectedDay],
   );
 
   const focusEmptyKey =
@@ -204,6 +382,8 @@ export function AdminSchedulingScreen() {
     }
     setFocus(key);
     setOrderSearch('');
+    setOrdersExpanded(false);
+    setConflictOverlapExpanded(false);
     if (key === 'today' || key === 'week') {
       setCursor(initialCursorFromValue(today));
       setSelectedDay(today);
@@ -295,14 +475,27 @@ export function AdminSchedulingScreen() {
       invalidateAfterMutation(vars.id);
       setRecalculateOpen(false);
       setMutationError(null);
-      jumpToScheduleStart(detail);
+      const unchanged = !isOwnOrderSchedule(detail) && Boolean(detail.planUnchanged);
+      const stillAtRisk = !isOwnOrderSchedule(detail) && Boolean(detail.stillAtRisk);
+      if (unchanged || stillAtRisk) {
+        showToast({
+          variant: 'warning',
+          message: t('mobile.adminScheduling.atRisk.recalculateUnchanged'),
+        });
+        return;
+      }
+      if (!isOwnOrderSchedule(detail)) jumpToScheduleStart(detail);
       haptics.completeStrong();
       showToast({
         variant: 'success',
         message: t('mobile.adminScheduling.sheets.recalculateSuccess'),
       });
     },
-    onError: (err) => setMutationError(mutationErrorMessage(err)),
+    onError: (err) => {
+      const message = mutationErrorMessage(err);
+      setMutationError(message);
+      showToast({ variant: 'error', message });
+    },
   });
 
   const dayExceptionMutation = useMutation({
@@ -340,16 +533,243 @@ export function AdminSchedulingScreen() {
         note: 'Opened by admin',
       });
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setDayExceptionOpen(false);
       setMutationError(null);
+      // Calendar write already landed. Refetch the month board now so Open /
+      // Close / overtime is visible. Do not await the replan poll: React Query
+      // keeps isPending true until onSuccess resolves, which left the sheet
+      // spinner up and skipped this refresh when the poll threw.
       void calendarQuery.refetch();
-      void dashboardQuery.refetch();
-      void atRiskQuery.refetch();
-      if (needsWeekWindow) void weekCalendarQuery.refetch();
+      void monthCapacityQuery.refetch();
+      if (!data.replanQueued || !data.replanJobId) {
+        void refetchAll();
+        return;
+      }
+      showToast({
+        variant: 'info',
+        message: t('mobile.adminScheduling.replan.recalculating'),
+      });
+      const runId = data.replanJobId;
+      void (async () => {
+        try {
+          const run = await pollReplanRun(getReplanRun, runId);
+          void refetchAll();
+          const toast = selectReplanResultToast(run);
+          showToast({
+            variant: toast.variant,
+            message:
+              toast.count != null ? tPlural(toast.key, toast.count) : t(toast.key),
+          });
+        } catch {
+          void refetchAll();
+          showToast({
+            variant: 'error',
+            message: t('mobile.adminScheduling.replan.failed'),
+          });
+        }
+      })();
     },
     onError: (err) => setMutationError(mutationErrorMessage(err)),
   });
+
+  const approvableTargets = useMemo(
+    () => selectApprovableScheduleTargets(visibleFocusCards),
+    [visibleFocusCards],
+  );
+
+  const finishBulk = () => {
+    setBulkBusy(false);
+    setBulkSnapshot(null);
+    pageScrollRef.current?.scrollTo({ y: 0, animated: false });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.scheduling.all });
+    void conflictsQuery.refetch();
+    void dashboardQuery.refetch();
+    void calendarQuery.refetch();
+    void atRiskQuery.refetch();
+  };
+
+  const finishResolve = () => {
+    setBulkBusy(false);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.scheduling.conflicts() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.scheduling.dashboard() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.scheduling.atRisk() });
+    void conflictsQuery.refetch();
+    void dashboardQuery.refetch();
+    void atRiskQuery.refetch();
+  };
+
+  const runApproveAll = async () => {
+    const targets = selectApprovableScheduleTargets(visibleFocusCards);
+    if (!targets.length) return;
+    setBulkSnapshot({ focusCards: visibleFocusCards, conflictRows: visibleConflictRows });
+    setBulkBusy(true);
+    setMutationError(null);
+    let ok = 0;
+    let fail = 0;
+    for (const target of targets) {
+      try {
+        let version = target.version;
+        try {
+          const latest = await getOrderSchedule(target.productionOrderId);
+          if (!isOwnOrderSchedule(latest) && latest.schedule?.version != null) {
+            version = latest.schedule.version;
+          }
+        } catch {
+          // Keep the card version.
+        }
+        await approveSchedule(target.productionOrderId, {
+          version,
+          idempotencyKey: `approve-all-${target.productionOrderId}-${Date.now()}`,
+        });
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setApproveAllOpen(false);
+    finishBulk();
+    if (fail === 0) {
+      haptics.completeStrong();
+      showToast({
+        variant: 'success',
+        message: tPlural('mobile.adminScheduling.sheets.approveAllSuccess', ok),
+      });
+    } else if (ok === 0) {
+      showToast({
+        variant: 'error',
+        message: t('mobile.adminScheduling.sheets.approveAllFailed'),
+      });
+    } else {
+      showToast({
+        variant: 'warning',
+        message: t('mobile.adminScheduling.sheets.approveAllPartial', { ok, fail }),
+      });
+    }
+  };
+
+  const runResolveAllAtRisk = async () => {
+    setBulkBusy(true);
+    setMutationError(null);
+    try {
+      const result = await resolveAllAtRisk();
+      setAtRiskResolveResult(result);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.scheduling.all });
+      void atRiskQuery.refetch();
+      void dashboardQuery.refetch();
+      void calendarQuery.refetch();
+      if (result.stillNeedsAttention === 0) haptics.completeStrong();
+    } catch (err) {
+      setMutationError(mutationErrorMessage(err));
+      showToast({
+        variant: 'error',
+        message: mutationErrorMessage(err),
+      });
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const openResolve = (ids: string[], body: string, all = false) => {
+    const unique = [...new Set(ids.filter(Boolean))];
+    resolveIdsRef.current = unique;
+    resolveAllRef.current = all;
+    setResolveDraft({ ids: unique, body, all });
+    setMutationError(unique.length || all ? null : t('mobile.adminScheduling.conflicts.resolveNoTargets'));
+    setResolveOpen(true);
+  };
+
+  const runResolveConflicts = async (conflictIds: string[]) => {
+    const unique = [...new Set((conflictIds.length ? conflictIds : resolveIdsRef.current).filter(Boolean))];
+    const resolveAll = resolveAllRef.current || unique.length > 1;
+    if (!unique.length && !resolveAll) {
+      setMutationError(t('mobile.adminScheduling.conflicts.resolveNoTargets'));
+      return;
+    }
+    setBulkBusy(true);
+    setMutationError(null);
+    try {
+      if (resolveAll) {
+        const result = await resolveAllConflicts();
+        setResolveOpen(false);
+        setResolveDraft(null);
+        setReviewRow(null);
+        resolveIdsRef.current = [];
+        resolveAllRef.current = false;
+        if (result.failedCount === 0) {
+          haptics.completeStrong();
+          showToast({
+            variant: 'success',
+            message: t('mobile.adminScheduling.conflicts.resolveSuccess'),
+          });
+        } else if (result.resolvedCount === 0) {
+          showToast({
+            variant: 'error',
+            message: t('mobile.adminScheduling.conflicts.resolveFailed'),
+          });
+        } else {
+          showToast({
+            variant: 'warning',
+            message: t('mobile.adminScheduling.conflicts.resolvePartial', {
+              ok: result.resolvedCount,
+              fail: result.failedCount,
+            }),
+          });
+        }
+        return;
+      }
+      const result = await resolveConflict(unique[0]!);
+      setResolveOpen(false);
+      setResolveDraft(null);
+      setReviewRow(null);
+      resolveIdsRef.current = [];
+      haptics.completeStrong();
+      const range = result.moved
+        ? formatTimeRange(locale, result.moved.start, result.moved.end)
+        : '';
+      const message =
+        result.action === 'ALREADY_RESOLVED'
+          ? t('mobile.adminScheduling.conflicts.alreadyResolved')
+          : result.action === 'REASSIGNED' && result.moved
+            ? t('mobile.adminScheduling.conflicts.resolveSuccessReassigned', {
+                number: formatIdentifier(locale, result.moved.orderNumber),
+                name: result.moved.employeeName,
+              })
+            : result.moved
+              ? t('mobile.adminScheduling.conflicts.resolveSuccessMoved', {
+                  number: formatIdentifier(locale, result.moved.orderNumber),
+                  range,
+                })
+              : t('mobile.adminScheduling.conflicts.resolveSuccess');
+      showToast({ variant: 'success', message });
+    } catch (error) {
+      const code = isApiError(error) ? error.code : '';
+      const orderNumber = isApiError(error)
+        ? (error.message.match(/put\s+(.+?)\s+at risk/i)?.[1]?.trim() ?? '')
+        : '';
+      const message =
+        code === 'MANUAL_LOCKED'
+          ? t('mobile.adminScheduling.conflicts.bothLocked')
+          : code === 'IN_PROGRESS_NO_WORKER'
+            ? t('mobile.adminScheduling.conflicts.inProgressNoWorker')
+          : code === 'WOULD_MISS_COMMITMENT'
+            ? t('mobile.adminScheduling.conflicts.wouldMissCommitment', {
+                number: formatIdentifier(
+                  locale,
+                  orderNumber || t('mobile.adminScheduling.conflicts.emptyDetail'),
+                ),
+              })
+            : code === 'NO_ALTERNATIVE'
+              ? t('mobile.adminScheduling.conflicts.resolveFailedAuto')
+              : isApiError(error)
+                ? toastMessageForError(error)
+                : t('mobile.adminScheduling.conflicts.resolveFailed');
+      setMutationError(message);
+      showToast({ variant: 'error', message });
+    } finally {
+      finishResolve();
+    }
+  };
 
   const hasAnyData = Boolean(dashboardQuery.data || calendarQuery.data || atRiskQuery.data);
   const isInitialLoading =
@@ -378,32 +798,60 @@ export function AdminSchedulingScreen() {
   const atRiskColdLoading =
     focus === 'atRisk' && atRiskQuery.isLoading && !atRiskQuery.data && focusCards.length === 0;
 
-  const pullRefreshing =
-    (dashboardQuery.isRefetching ||
-      calendarQuery.isRefetching ||
-      atRiskQuery.isRefetching ||
-      weekCalendarQuery.isRefetching) &&
-    !dashboardQuery.isPlaceholderData &&
-    !calendarQuery.isPlaceholderData &&
-    !atRiskQuery.isPlaceholderData;
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const refetchAll = () => {
-    void dashboardQuery.refetch();
-    void calendarQuery.refetch();
-    void atRiskQuery.refetch();
-    if (needsWeekWindow) void weekCalendarQuery.refetch();
+  const openAtRiskFollowUp = (kind: 'recalculate' | 'changeDate', card: AdminScheduleCardModel) => {
+    setSelectedCard(card);
+    setMutationError(null);
+    if (atRiskDetailOpen) {
+      pendingAtRiskSheetRef.current = kind;
+      setAtRiskDetailOpen(false);
+      return;
+    }
+    if (kind === 'recalculate') setRecalculateOpen(true);
+    else setChangeDateOpen(true);
   };
 
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const runAtRiskAction = (card: AdminScheduleCardModel) => {
+    const action = card.recommendedAction;
+    if (action === 'RECALCULATE') {
+      openAtRiskFollowUp('recalculate', card);
+      return;
+    }
+    if (action === 'REVIEW_COMMITMENT') {
+      openAtRiskFollowUp('changeDate', card);
+      return;
+    }
+    setAtRiskDetailOpen(false);
+    if (action === 'REVIEW_ESTIMATES' && canReviewEstimates) {
+      router.push('/(app)/(admin)/production/workflow' as Href);
+      return;
+    }
+    if (action === 'VIEW_PRODUCTION') {
+      router.push(adminProductionFlowHref(card.productionOrderId));
+      return;
+    }
+    if (action === 'MANAGE_WORKERS' && canManageUsers) {
+      router.push('/(app)/(admin)/users' as Href);
+      return;
+    }
+    if (action === 'VIEW_MATERIALS' && canViewMaterials) {
+      router.push('/(app)/(admin)/(tabs)/inventory' as Href);
+    }
+  };
 
   const openActions = (card: AdminScheduleCardModel) => {
     setSelectedCard(card);
     setMutationError(null);
+    if (card.riskStatus) {
+      setAtRiskDetailOpen(true);
+      return;
+    }
     setActionSheetOpen(true);
   };
 
   const actionSheetItems: ActionSheetItem[] = selectedCard
-    ? selectAvailableActions(selectedCard).map((mode) =>
+    ? selectAvailableActions(selectedCard, { canApprove, canManage }).map((mode) =>
         buildActionItem(mode, selectedCard, t, {
           onApprove: () => setApproveOpen(true),
           onChangeDate: () => setChangeDateOpen(true),
@@ -458,11 +906,23 @@ export function AdminSchedulingScreen() {
     <AppScreen>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
+        ref={pageScrollRef}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        scrollEnabled={!(bulkBusy && approveAllOpen)}
+        automaticallyAdjustContentInsets={false}
+        automaticallyAdjustKeyboardInsets={false}
         contentContainerStyle={{
           gap: theme.spacing.lg,
           paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
         }}
-        refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={refetchAll} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={userPullRefreshing}
+            onRefresh={onPullRefresh}
+            enabled={!bulkBusy}
+          />
+        }
       >
         <View style={{ gap: theme.spacing.xs }}>
           <AppText
@@ -540,7 +1000,122 @@ export function AdminSchedulingScreen() {
               </AnimatedPressable>
             </View>
 
-            {focusColdLoading || atRiskColdLoading ? (
+            {focus === 'conflicts' ? (
+              focusColdLoading ? (
+                <ScheduleOrdersBoard
+                  title={t('mobile.adminScheduling.conflicts.overlapTitle')}
+                  count={null}
+                  search={orderSearch}
+                  onSearchChange={setOrderSearch}
+                >
+                  <ScheduleListSkeleton />
+                </ScheduleOrdersBoard>
+              ) : (
+                <ScheduleOrdersBoard
+                  title={t('mobile.adminScheduling.conflicts.overlapTitle')}
+                  caption={tPlural('mobile.adminScheduling.conflicts.affectingOrders', visibleConflictRows.length, {
+                    conflicts: visibleConflictRows.length,
+                    orders: selectUniqueConflictProductionOrderIds(visibleConflictRows).length,
+                  })}
+                  count={visibleConflictRows.length}
+                  search={orderSearch}
+                  onSearchChange={setOrderSearch}
+                  tone="danger"
+                  expandKind="overlaps"
+                  headerAction={
+                    <View
+                      style={{
+                        flexDirection: isRTL ? 'row-reverse' : 'row',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <AnimatedPressable
+                        variant="button"
+                        accessibilityRole="button"
+                        accessibilityLabel={t('mobile.adminScheduling.conflicts.helpTitle')}
+                        onPress={() => {
+                          void haptics.selection();
+                          setConflictHelpOpen(true);
+                        }}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 14,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: colors.errorSoft,
+                          borderWidth: 1,
+                          borderColor: colors.error,
+                        }}
+                      >
+                        <Ionicons name="information" size={14} color={colors.error} />
+                      </AnimatedPressable>
+                      {canManage && conflictRows.length > 0 ? (
+                        <BoardHeaderAction
+                          label={t('mobile.adminScheduling.conflicts.resolveAll')}
+                          emphasis="filled"
+                          onPress={() =>
+                            openResolve(
+                              conflictRows.map((row) => row.id),
+                              tPlural(
+                                'mobile.adminScheduling.conflicts.resolveAllBody',
+                                conflictRows.length,
+                              ),
+                              true,
+                            )
+                          }
+                        />
+                      ) : null}
+                    </View>
+                  }
+                  expanded={conflictOverlapExpanded}
+                  onToggleExpand={() => setConflictOverlapExpanded((open) => !open)}
+                  itemCount={visibleConflictRows.length}
+                >
+                  {visibleConflictRows.length === 0 ? (
+                    <EmptyState
+                      title={t(
+                        conflictRows.length === 0
+                          ? 'mobile.adminScheduling.conflicts.overlapEmpty'
+                          : 'mobile.adminScheduling.searchEmpty',
+                      )}
+                    />
+                  ) : (
+                    <>
+                    <CappedNestedScroll
+                      itemCount={visibleConflictRows.length}
+                      rowEstimate={OVERLAP_ROW_ESTIMATE}
+                      gap={theme.spacing.sm}
+                      expanded={conflictOverlapExpanded}
+                    >
+                      {visibleConflictRows.map((row) => (
+                        <ConflictFocusRow
+                          key={row.id}
+                          row={row}
+                          canResolve={canManage}
+                          onReview={() => setReviewRow(row)}
+                          onResolve={() =>
+                            openResolve(
+                              [row.id],
+                              t('mobile.adminScheduling.conflicts.resolveBody', {
+                                name:
+                                  row.employeeName ||
+                                  t('mobile.adminScheduling.conflicts.emptyDetail'),
+                              }),
+                            )
+                          }
+                        />
+                      ))}
+                    </CappedNestedScroll>
+                    <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                      {t('mobile.adminScheduling.conflicts.caption')}
+                    </AppText>
+                    </>
+                  )}
+                </ScheduleOrdersBoard>
+              )
+            ) : focusColdLoading || atRiskColdLoading ? (
               <ScheduleOrdersBoard
                 title={t(`mobile.adminScheduling.focusFilter.${focus}`)}
                 count={null}
@@ -570,17 +1145,81 @@ export function AdminSchedulingScreen() {
             ) : (
               <ScheduleOrdersBoard
                 title={t(`mobile.adminScheduling.focusFilter.${focus}`)}
+                caption={
+                  focus === 'atRisk' ? t('mobile.adminScheduling.atRisk.caption') : undefined
+                }
                 count={visibleFocusCards.length}
                 search={orderSearch}
                 onSearchChange={setOrderSearch}
+                headerAction={
+                  focus === 'awaitingApproval' && canApprove && approvableTargets.length > 0 ? (
+                    <BoardHeaderAction
+                      label={t('mobile.adminScheduling.sheets.approveAll')}
+                      onPress={() => {
+                        setMutationError(null);
+                        setApproveAllOpen(true);
+                      }}
+                    />
+                  ) : focus === 'atRisk' ? (
+                    <View
+                      style={{
+                        flexDirection: isRTL ? 'row-reverse' : 'row',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <AnimatedPressable
+                        variant="button"
+                        accessibilityRole="button"
+                        accessibilityLabel={t('mobile.adminScheduling.atRisk.helpTitle')}
+                        onPress={() => {
+                          void haptics.selection();
+                          setAtRiskHelpOpen(true);
+                        }}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 14,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: colors.errorSoft,
+                          borderWidth: 1,
+                          borderColor: colors.error,
+                        }}
+                      >
+                        <Ionicons name="information" size={14} color={colors.error} />
+                      </AnimatedPressable>
+                      {canManage && atRisk.length > 0 ? (
+                        <BoardHeaderAction
+                          label={t('mobile.adminScheduling.atRisk.resolveAll')}
+                          emphasis="filled"
+                          onPress={() => {
+                            setAtRiskResolveResult(null);
+                            setAtRiskResolveOpen(true);
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                  ) : null
+                }
+                expanded={ordersExpanded}
+                onToggleExpand={() => setOrdersExpanded((open) => !open)}
+                itemCount={visibleFocusCards.length}
               >
                 <CappedNestedScroll
                   itemCount={visibleFocusCards.length}
-                  rowEstimate={FLOOR_ROW_ESTIMATE}
+                  rowEstimate={focus === 'atRisk' ? AT_RISK_ROW_ESTIMATE : FLOOR_ROW_ESTIMATE}
                   gap={theme.spacing.sm}
+                  expanded={ordersExpanded}
                 >
                   {visibleFocusCards.map((card) => (
-                    <ScheduleOrderRow key={card.id} card={card} onPress={() => openActions(card)} />
+                    <ScheduleOrderRow
+                      key={card.id}
+                      card={card}
+                      onPress={() => openActions(card)}
+                      onAtRiskAction={() => runAtRiskAction(card)}
+                      canReview={canManage}
+                    />
                   ))}
                 </CappedNestedScroll>
               </ScheduleOrdersBoard>
@@ -595,7 +1234,11 @@ export function AdminSchedulingScreen() {
               <CalendarLegend />
               <MonthCalendar
                 value={selectedDay}
-                onSelect={setSelectedDay}
+                onSelect={(ymd) => {
+                  void haptics.selection();
+                  setSelectedDay(ymd);
+                  setOrdersExpanded(false);
+                }}
                 monthCursor={cursor}
                 onMonthChange={(next) => {
                   setCursor(next);
@@ -609,44 +1252,83 @@ export function AdminSchedulingScreen() {
                 variant="admin"
                 showAccentRail={false}
               />
-            </View>
-
-            <View style={{ gap: theme.spacing.sm, opacity: calendarUpdating ? 0.72 : 1 }}>
-              <AnimatedPressable
-                variant="button"
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.adminScheduling.dayCapacity.edit')}
-                onPress={() => {
-                  void haptics.selection();
-                  setMutationError(null);
-                  setDayExceptionOpen(true);
-                }}
+              <View
                 style={{
-                  alignSelf: isRTL ? 'flex-end' : 'flex-start',
-                  minHeight: 36,
-                  paddingHorizontal: theme.spacing.md,
-                  borderRadius: theme.radius.full,
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.brandSoft,
-                  borderWidth: 1,
-                  borderColor: colors.brand,
+                  gap: theme.spacing.sm,
                 }}
               >
-                <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
-                  {t('mobile.adminScheduling.dayCapacity.edit')}
-                </AppText>
-              </AnimatedPressable>
+                {canAdjustHours ? (
+                  <AnimatedPressable
+                    variant="button"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('mobile.adminScheduling.dayCapacity.edit')}
+                    onPress={() => {
+                      void haptics.selection();
+                      setMutationError(null);
+                      setDayExceptionOpen(true);
+                    }}
+                    style={{
+                      minHeight: 36,
+                      paddingHorizontal: theme.spacing.md,
+                      borderRadius: theme.radius.full,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: colors.brandSoft,
+                      borderWidth: 1,
+                      borderColor: colors.brand,
+                    }}
+                  >
+                    <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
+                      {t('mobile.adminScheduling.dayCapacity.edit')}
+                    </AppText>
+                  </AnimatedPressable>
+                ) : null}
+                <Divider compact style={{ flex: 1, paddingHorizontal: 0 }} />
+              </View>
+            </View>
+
+            <FactoryCapacitySection
+              ymd={selectedDay}
+              ordersCount={dayOrders.length}
+              atRiskCount={dayAtRiskCount}
+              conflictCount={dayConflictCount}
+              onJumpToday={() => {
+                setSelectedDay(today);
+                setCursor(initialCursorFromValue(today));
+              }}
+            />
+
+            <Divider />
+
+            <View style={{ gap: theme.spacing.sm, opacity: calendarUpdating ? 0.72 : 1 }}>
               {selectedDayInfo && !selectedDayInfo.isWorking ? (
                 <ScheduleOrdersBoard
                   title={t('mobile.adminScheduling.dayOrdersTitle', {
                     date: formatDate(locale, selectedDay),
                   })}
-                  count={0}
+                  count={selectedDayInfo.pinnedOnClosedDayCount > 0 ? selectedDayInfo.pinnedOnClosedDayCount : 0}
                   search={orderSearch}
                   onSearchChange={setOrderSearch}
                 >
-                  <EmptyState title={t('mobile.adminScheduling.dayClosed')} />
+                  {selectedDayInfo.pinnedOnClosedDayCount > 0 ? (
+                    <EmptyState
+                      title={t('mobile.adminScheduling.replan.pinnedClosedDay')}
+                      description={tPlural(
+                        'mobile.adminScheduling.replan.pinnedClosedDayBody',
+                        selectedDayInfo.pinnedOnClosedDayCount,
+                      )}
+                      actionLabel={t('mobile.adminScheduling.replan.review')}
+                      onAction={() => {
+                        const first = dayOrders[0];
+                        if (first) openActions(first);
+                        else setFocus('conflicts');
+                      }}
+                    />
+                  ) : (
+                    <EmptyState title={t('mobile.adminScheduling.dayClosed')} />
+                  )}
                 </ScheduleOrdersBoard>
               ) : dayOrders.length === 0 ? (
                 <ScheduleOrdersBoard
@@ -678,17 +1360,22 @@ export function AdminSchedulingScreen() {
                   count={visibleDayOrders.length}
                   search={orderSearch}
                   onSearchChange={setOrderSearch}
+                  expanded={ordersExpanded}
+                  onToggleExpand={() => setOrdersExpanded((open) => !open)}
+                  itemCount={visibleDayOrders.length}
                 >
                   <CappedNestedScroll
                     itemCount={visibleDayOrders.length}
                     rowEstimate={FLOOR_ROW_ESTIMATE}
                     gap={theme.spacing.sm}
+                    expanded={ordersExpanded}
                   >
                     {visibleDayOrders.map((card) => (
                       <ScheduleOrderRow
                         key={card.id}
                         card={card}
                         onPress={() => openActions(card)}
+                        canReview={canManage}
                       />
                     ))}
                   </CappedNestedScroll>
@@ -765,12 +1452,217 @@ export function AdminSchedulingScreen() {
         hasException={Boolean(selectedDayException)}
         defaultShiftStart={calendarMeta?.shiftStart ?? '08:00'}
         defaultShiftEnd={calendarMeta?.shiftEnd ?? '16:00'}
-        loading={dayExceptionMutation.isPending}
+        currentOvertimeEnd={
+          selectedDayException?.type === 'EXTRA_SHIFT' ? selectedDayException.shiftEnd : null
+        }
+        loading={dayExceptionMutation.isPending && dayExceptionOpen}
         errorMessage={mutationError}
         onOpenDay={() => dayExceptionMutation.mutate({ kind: 'open' })}
         onCloseDay={() => dayExceptionMutation.mutate({ kind: 'close' })}
         onOvertime={(end) => dayExceptionMutation.mutate({ kind: 'overtime', end })}
         onClearException={() => dayExceptionMutation.mutate({ kind: 'clear' })}
+      />
+
+      <ApproveAllSchedulesSheet
+        open={approveAllOpen}
+        onClose={() => setApproveAllOpen(false)}
+        count={approvableTargets.length}
+        loading={bulkBusy}
+        errorMessage={mutationError}
+        onConfirm={() => {
+          void runApproveAll();
+        }}
+      />
+
+      <ResolveConflictSheet
+        open={resolveOpen}
+        onClose={() => {
+          setResolveOpen(false);
+          setResolveDraft(null);
+          resolveIdsRef.current = [];
+          resolveAllRef.current = false;
+        }}
+        title={t('mobile.adminScheduling.conflicts.resolveTitle')}
+        body={resolveDraft?.body ?? t('mobile.adminScheduling.conflicts.resolveNoTargets')}
+        loading={bulkBusy}
+        errorMessage={mutationError}
+        onConfirm={() => {
+          void runResolveConflicts(resolveDraft?.ids ?? resolveIdsRef.current);
+        }}
+      />
+
+      <ConflictHelpSheet open={conflictHelpOpen} onClose={() => setConflictHelpOpen(false)} />
+      <AtRiskHelpSheet open={atRiskHelpOpen} onClose={() => setAtRiskHelpOpen(false)} />
+      <AtRiskDetailSheet
+        open={atRiskDetailOpen && Boolean(selectedCard?.riskStatus)}
+        onClose={() => setAtRiskDetailOpen(false)}
+        onClosed={() => {
+          const next = pendingAtRiskSheetRef.current;
+          pendingAtRiskSheetRef.current = null;
+          if (next === 'recalculate') setRecalculateOpen(true);
+          if (next === 'changeDate') setChangeDateOpen(true);
+        }}
+        orderNumber={selectedCard?.number ?? ''}
+        productTitle={
+          selectedCard && selectedCard.title !== selectedCard.number ? selectedCard.title : selectedCard?.number
+        }
+        dealerName={selectedCard?.dealerName}
+        imageUrl={selectedCard?.imageUrl}
+        statusLabel={t(selectAtRiskStatusKey(selectedCard?.riskStatus))}
+        riskStatus={selectedCard?.riskStatus}
+        reasonLabel={selectedCard ? t(selectAtRiskReasonKey(selectedCard)) : ''}
+        actionLabel={t(selectAtRiskActionKey(selectedCard?.recommendedAction))}
+        actionIcon={atRiskActionIcon(selectedCard?.recommendedAction)}
+        daysLateLabel={
+          selectedCard
+            ? (() => {
+                const promised = selectedCard.committedDeliveryDate ?? selectedCard.requiredDeliveryDate;
+                const projected =
+                  selectedCard.projectedCompletion ??
+                  selectedCard.earliestAvailableDate ??
+                  selectedCard.suggestedDeliveryDate;
+                const days = selectDaysLate(promised, projected);
+                return days != null ? tPlural('mobile.adminScheduling.atRisk.daysLate', days) : null;
+              })()
+            : null
+        }
+        requested={selectedCard?.requiredDeliveryDate ? formatDate(locale, selectedCard.requiredDeliveryDate) : null}
+        suggested={selectedCard?.suggestedDeliveryDate ? formatDate(locale, selectedCard.suggestedDeliveryDate) : null}
+        committed={selectedCard?.committedDeliveryDate ? formatDate(locale, selectedCard.committedDeliveryDate) : null}
+        projected={
+          selectedCard?.projectedCompletion || selectedCard?.earliestAvailableDate
+            ? formatDate(locale, selectedCard.projectedCompletion ?? selectedCard.earliestAvailableDate ?? '')
+            : null
+        }
+        earliestFeasible={
+          selectedCard?.earliestFeasibleDate ? formatDate(locale, selectedCard.earliestFeasibleDate) : null
+        }
+        stageName={selectedCard?.stageName}
+        requiredWip={selectedCard?.requiredWip}
+        producedBy={selectedCard?.producedBy}
+        currentStage={selectedCard?.currentStage}
+        missingMaterial={selectedCard?.missingMaterial}
+        stageAtCapacity={selectedCard?.stageAtCapacity}
+        requestedInfeasible={
+          selectedCard?.requestedDateFeasible === false && !selectedCard?.committedDeliveryDate
+        }
+        canAct={canManage && selectedCard?.recommendedAction != null && selectedCard.recommendedAction !== 'NONE'}
+        onAction={() => {
+          if (selectedCard) runAtRiskAction(selectedCard);
+        }}
+      />
+      <ResolveAllAtRiskSheet
+        open={atRiskResolveOpen}
+        onClose={() => {
+          setAtRiskResolveOpen(false);
+          setAtRiskResolveResult(null);
+        }}
+        loading={bulkBusy}
+        errorMessage={mutationError}
+        result={
+          atRiskResolveResult
+            ? {
+                resolvedAutomatically: atRiskResolveResult.resolvedAutomatically,
+                stillNeedsAttention: atRiskResolveResult.stillNeedsAttention,
+                alreadyOnTrack: atRiskResolveResult.alreadyOnTrack,
+                remaining: atRiskResolveResult.remaining,
+                reasonGroups: selectAtRiskReasonGroups(atRiskResolveResult.results).map((group) => ({
+                  key: group.key,
+                  count: group.count,
+                  label: t(group.key),
+                })),
+              }
+            : null
+        }
+        onConfirm={() => {
+          void runResolveAllAtRisk();
+        }}
+      />
+
+      <ConflictReviewSheet
+        open={Boolean(reviewRow)}
+        onClose={() => setReviewRow(null)}
+        typeLabel={
+          reviewRow
+            ? t(selectConflictTypeKey(reviewRow.type))
+            : t('mobile.adminScheduling.conflicts.typeOverlap')
+        }
+        workerName={
+          reviewRow?.employeeName || t('mobile.adminScheduling.conflicts.emptyDetail')
+        }
+        task1={{
+          title: reviewRow?.allocationA.productName ?? '',
+          number: reviewRow?.allocationA.orderNumber ?? '',
+          stage: reviewRow?.allocationA.stageName ?? '',
+          window: reviewRow
+            ? formatTimeRange(locale, reviewRow.allocationA.start, reviewRow.allocationA.end)
+            : '',
+          priority: reviewRow && selectShowPriority(reviewRow.allocationA.priority, reviewRow.allocationB.priority)
+            ? priorityLabel(reviewRow.allocationA.priority, t)
+            : null,
+          delivery: reviewRow?.allocationA.committedDeliveryDate
+            ? formatDate(locale, reviewRow.allocationA.committedDeliveryDate)
+            : reviewRow?.allocationA.requestedDeliveryDate
+              ? formatDate(locale, reviewRow.allocationA.requestedDeliveryDate)
+              : null,
+        }}
+        task2={{
+          title: reviewRow?.allocationB.productName ?? '',
+          number: reviewRow?.allocationB.orderNumber ?? '',
+          stage: reviewRow?.allocationB.stageName ?? '',
+          window: reviewRow
+            ? formatTimeRange(locale, reviewRow.allocationB.start, reviewRow.allocationB.end)
+            : '',
+          priority: reviewRow && selectShowPriority(reviewRow.allocationA.priority, reviewRow.allocationB.priority)
+            ? priorityLabel(reviewRow.allocationB.priority, t)
+            : null,
+          delivery: reviewRow?.allocationB.committedDeliveryDate
+            ? formatDate(locale, reviewRow.allocationB.committedDeliveryDate)
+            : reviewRow?.allocationB.requestedDeliveryDate
+              ? formatDate(locale, reviewRow.allocationB.requestedDeliveryDate)
+              : null,
+        }}
+        overlapWindow={
+          reviewRow
+            ? formatTimeRange(locale, reviewRow.overlapStart, reviewRow.overlapEnd)
+            : ''
+        }
+        suggested={
+          reviewRow
+            ? t('mobile.adminScheduling.conflicts.resolveBody', {
+                name:
+                  reviewRow.employeeName || t('mobile.adminScheduling.conflicts.emptyDetail'),
+              })
+            : null
+        }
+        overlapDuration={
+          reviewRow ? formatDuration(locale, reviewRow.overlapMinutes) : ''
+        }
+        errorMessage={mutationError}
+        loading={bulkBusy}
+        canResolve={canManage}
+        onResolve={
+          reviewRow
+            ? () => {
+                resolveAllRef.current = false;
+                resolveIdsRef.current = [reviewRow.id];
+                void runResolveConflicts([reviewRow.id]);
+              }
+            : undefined
+        }
+        onReviewSchedule={
+          reviewRow
+            ? () => {
+                const card = conflictOrderCards.find(
+                  (item) =>
+                    item.productionOrderId === reviewRow.allocationA.productionOrderId ||
+                    item.productionOrderId === reviewRow.allocationB.productionOrderId,
+                );
+                setReviewRow(null);
+                if (card) openActions(card);
+              }
+            : undefined
+        }
       />
     </AppScreen>
   );
@@ -864,15 +1756,17 @@ function StatChip({
         ...(fullWidth
           ? {
               width: '100%',
+              flexGrow: 0,
+              flexBasis: '100%',
               flexDirection: isRTL ? 'row-reverse' : 'row',
               alignItems: 'center',
               gap: theme.spacing.sm,
             }
           : {
-              width: '48%',
               flexGrow: 1,
+              flexShrink: 1,
+              flexBasis: '47%',
               minWidth: '46%',
-              maxWidth: '48%',
               gap: 4,
             }),
         ...orderBoardShadow(colorScheme),
@@ -920,8 +1814,9 @@ function StatChip({
         <AppText
           variant="heading"
           weight="semibold"
+          dir="ltr"
           style={{
-            ...(fullWidth ? null : { flex: 1, textAlign: isRTL ? 'left' : 'right' }),
+            ...(fullWidth ? null : { flex: 1, textAlign: 'right' }),
             color: hot ? accent : colors.textPrimary,
             fontVariant: ['tabular-nums'],
             letterSpacing: -0.3,
@@ -962,16 +1857,23 @@ function priorityLabel(priority: string, t: (key: string) => string): string {
 function ScheduleOrderRow({
   card,
   onPress,
+  canReview,
+  onResolve,
+  onAtRiskAction,
 }: {
   card: AdminScheduleCardModel;
   onPress: () => void;
+  canReview?: boolean;
+  onResolve?: () => void;
+  onAtRiskAction?: () => void;
 }) {
-  const { t, isRTL, formatDate, locale } = useLocale();
+  const { t, tPlural, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const priority = (card.priority ?? '').toUpperCase();
   const urgent = priority === 'URGENT' || priority === 'HIGH';
+  const atRisk = Boolean(card.riskStatus);
   const alerted = card.hasConflict || card.materialRisk;
   const accent = card.hasConflict
     ? colors.error
@@ -982,35 +1884,24 @@ function ScheduleOrderRow({
         : colors.brand;
 
   const productTitle = card.title !== card.number ? card.title : card.number;
-  const plannedStartLabel = card.plannedStart ? formatDate(card.plannedStart) : null;
-  const plannedEndLabel = card.plannedEnd ? formatDate(card.plannedEnd) : null;
-  const plannedLabel =
-    plannedStartLabel && plannedEndLabel && plannedEndLabel !== plannedStartLabel
-      ? t('mobile.adminScheduling.plannedWindow', {
-          start: plannedStartLabel,
-          end: plannedEndLabel,
-        })
-      : plannedStartLabel
-        ? t('mobile.adminScheduling.plannedFor', { date: plannedStartLabel })
-        : null;
+  const a11y = `${card.number} ${productTitle}`;
 
-  const requiredLabel = card.requiredDeliveryDate
-    ? t('mobile.adminScheduling.requiredBy', {
-        date: formatDate(card.requiredDeliveryDate),
-      })
-    : null;
-  const suggestedLabel =
-    !plannedLabel && card.suggestedDeliveryDate
-      ? t('mobile.adminScheduling.suggestedBy', {
-          date: formatDate(card.suggestedDeliveryDate),
-        })
-      : null;
+  if (atRisk) {
+    return (
+      <AtRiskOrderCard
+        card={card}
+        onPress={onPress}
+        onAction={onAtRiskAction}
+        canAct={canReview}
+      />
+    );
+  }
 
   return (
     <AnimatedPressable
       variant="card"
       accessibilityRole="button"
-      accessibilityLabel={`${card.number} ${productTitle}`}
+      accessibilityLabel={a11y}
       onPress={() => {
         void haptics.selection();
         onPress();
@@ -1122,47 +2013,20 @@ function ScheduleOrderRow({
             </AppText>
           ) : null}
 
-          {plannedLabel ? (
-            <AppText
-              variant="caption"
-              color="muted"
-              numberOfLines={2}
-              style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
-            >
-              {plannedLabel}
-            </AppText>
-          ) : null}
-
-          {requiredLabel ? (
-            <AppText
-              variant="caption"
-              color="muted"
-              numberOfLines={1}
-              style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
-            >
-              {requiredLabel}
-            </AppText>
-          ) : null}
-
-          {suggestedLabel ? (
-            <AppText
-              variant="caption"
-              color="muted"
-              numberOfLines={1}
-              style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
-            >
-              {suggestedLabel}
-            </AppText>
-          ) : null}
+          <ScheduleExplanation
+            source={scheduleSourceFromCard(card)}
+            variant="compact"
+            canReview={canReview}
+            onReview={onPress}
+          />
 
           {card.quantity != null ? (
             <AppText
               variant="caption"
               weight="semibold"
-              dir="ltr"
               style={{ width: '100%', textAlign: isRTL ? 'right' : 'left' }}
             >
-              {t('mobile.adminScheduling.qty', { count: card.quantity })}
+              {tPlural('mobile.adminScheduling.qty', card.quantity, { count: card.quantity })}
             </AppText>
           ) : null}
         </View>
@@ -1215,6 +2079,32 @@ function ScheduleOrderRow({
                   </AppText>
                 </View>
               ) : null}
+              {onResolve ? (
+                <AnimatedPressable
+                  variant="button"
+                  accessibilityRole="button"
+                  accessibilityLabel={t('mobile.adminScheduling.conflicts.resolve')}
+                  hitSlop={8}
+                  onPress={() => {
+                    void haptics.selection();
+                    onResolve();
+                  }}
+                  style={{
+                    minHeight: 32,
+                    paddingHorizontal: theme.spacing.md,
+                    borderRadius: theme.radius.full,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: colors.brandSoft,
+                    borderWidth: 1,
+                    borderColor: colors.brand,
+                  }}
+                >
+                  <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
+                    {t('mobile.adminScheduling.conflicts.resolve')}
+                  </AppText>
+                </AnimatedPressable>
+              ) : null}
               {card.materialRisk ? (
                 <View
                   style={{
@@ -1241,17 +2131,6 @@ function ScheduleOrderRow({
               ) : null}
             </View>
           ) : null}
-
-          {card.reason ? (
-            <AppText
-              variant="caption"
-              color="secondary"
-              numberOfLines={3}
-              style={{ textAlign: isRTL ? 'right' : 'left', lineHeight: 18 }}
-            >
-              {card.reason}
-            </AppText>
-          ) : null}
         </View>
       ) : (
         <View style={{ height: theme.spacing.sm }} />
@@ -1260,22 +2139,419 @@ function ScheduleOrderRow({
   );
 }
 
+function MetaChip({
+  label,
+  ink,
+  wash,
+  border,
+  ltr = false,
+}: {
+  label: string;
+  ink: string;
+  wash: string;
+  border: string;
+  ltr?: boolean;
+}) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 999,
+        backgroundColor: wash,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: border,
+        maxWidth: '100%',
+      }}
+    >
+      <AppText
+        variant="caption"
+        weight="semibold"
+        numberOfLines={1}
+        dir={ltr ? 'ltr' : 'auto'}
+        style={{ color: ink, fontSize: 10, lineHeight: 13 }}
+      >
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
+function ConflictFocusRow({
+  row,
+  canResolve,
+  onResolve,
+  onReview,
+}: {
+  row: ConflictRowModel;
+  canResolve?: boolean;
+  onResolve?: () => void;
+  onReview?: () => void;
+}) {
+  const { t, isRTL, locale } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const name = row.employeeName || t('mobile.adminScheduling.conflicts.emptyDetail');
+  const typeLabel = t(selectConflictTypeKey(row.type));
+  const stage = row.stageName || row.allocationA.stageName || row.allocationB.stageName;
+  const windowA = formatTimeRange(locale, row.allocationA.start, row.allocationA.end);
+  const windowB = formatTimeRange(locale, row.allocationB.start, row.allocationB.end);
+  const overlap = formatTimeRange(locale, row.overlapStart, row.overlapEnd);
+  const duration = formatDuration(locale, row.overlapMinutes);
+  const showPriority = selectShowPriority(row.allocationA.priority, row.allocationB.priority);
+
+  return (
+    <View
+      accessibilityLabel={t('mobile.adminScheduling.conflicts.workerOverlap', { name })}
+      style={{
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: colors.error,
+        backgroundColor: colors.surface,
+        overflow: 'hidden',
+        ...orderBoardShadow(colorScheme),
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          width: 3,
+          backgroundColor: colors.error,
+        }}
+      />
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          gap: 10,
+          paddingHorizontal: theme.spacing.md,
+          paddingTop: theme.spacing.sm + 2,
+          paddingBottom: 8,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.md + 4 }
+            : { paddingLeft: theme.spacing.md + 4 }),
+        }}
+      >
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.errorSoft,
+            borderWidth: 1,
+            borderColor: colors.error,
+          }}
+        >
+          <AppText
+            variant="caption"
+            weight="semibold"
+            style={{ color: colors.error, fontSize: 13, letterSpacing: locale === 'ar' ? 0 : 0.3 }}
+          >
+            {workerInitials(name)}
+          </AppText>
+        </View>
+        <View style={{ flex: 1, minWidth: 0, gap: 3, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+          <AppText
+            variant="label"
+            weight={titleWeight}
+            numberOfLines={1}
+            dir="auto"
+            style={{ textAlign: isRTL ? 'right' : 'left', width: '100%' }}
+          >
+            {name}
+          </AppText>
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              gap: 4,
+              flexWrap: 'wrap',
+            }}
+          >
+            <MetaChip
+              label={typeLabel}
+              ink={colors.error}
+              wash={colors.errorSoft}
+              border={colors.error}
+            />
+            {stage ? (
+              <MetaChip
+                label={stage}
+                ink={colors.textSecondary}
+                wash={colors.surfaceSecondary}
+                border={colors.border}
+              />
+            ) : null}
+          </View>
+        </View>
+      </View>
+
+      <View
+        style={{
+          gap: 8,
+          paddingHorizontal: theme.spacing.md,
+          paddingBottom: theme.spacing.sm + 2,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.md + 4 }
+            : { paddingLeft: theme.spacing.md + 4 }),
+        }}
+      >
+        <View style={{ gap: 6 }}>
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            {row.allocationA.orderNumber ? (
+            <MetaChip
+              label={row.allocationA.orderNumber}
+              ink={colors.brand}
+              wash={colors.brandSoft}
+              border={colors.brand}
+              ltr
+            />
+            ) : null}
+            <AppText variant="caption" weight="semibold" dir="ltr" style={{ fontSize: 11 }}>
+              {windowA}
+            </AppText>
+          </View>
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            {row.allocationB.orderNumber ? (
+            <MetaChip
+              label={row.allocationB.orderNumber}
+              ink={colors.brand}
+              wash={colors.brandSoft}
+              border={colors.brand}
+              ltr
+            />
+            ) : null}
+            <AppText variant="caption" weight="semibold" dir="ltr" style={{ fontSize: 11 }}>
+              {windowB}
+            </AppText>
+          </View>
+        </View>
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 6,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              borderRadius: 999,
+              backgroundColor: colors.errorSoft,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.error,
+              maxWidth: '100%',
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight="semibold"
+              style={{ color: colors.error, fontSize: 10, lineHeight: 13 }}
+            >
+              {t('mobile.adminScheduling.conflicts.overlap')}
+            </AppText>
+            <AppText
+              variant="caption"
+              weight="semibold"
+              dir="ltr"
+              style={{ color: colors.error, fontSize: 10, lineHeight: 13 }}
+            >
+              {overlap}
+            </AppText>
+          </View>
+          <MetaChip
+            label={duration}
+            ink={colors.warning}
+            wash={colors.warningSoft}
+            border={colors.warning}
+          />
+          {showPriority ? (
+            <MetaChip
+              label={priorityLabel(row.allocationA.priority, t)}
+              ink={colors.textSecondary}
+              wash={colors.surfaceSecondary}
+              border={colors.border}
+            />
+          ) : null}
+        </View>
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          {onReview ? (
+            <AnimatedPressable
+              variant="button"
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.adminScheduling.conflicts.review')}
+              onPress={() => {
+                void haptics.selection();
+                onReview();
+              }}
+              style={{
+                minHeight: 32,
+                paddingHorizontal: 12,
+                borderRadius: theme.radius.full,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.surfaceSecondary,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <AppText variant="caption" weight="semibold" style={{ fontSize: 11 }}>
+                {t('mobile.adminScheduling.conflicts.review')}
+              </AppText>
+            </AnimatedPressable>
+          ) : null}
+          {canResolve && onResolve ? (
+            <AnimatedPressable
+              variant="button"
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.adminScheduling.conflicts.resolve')}
+              onPress={() => {
+                void haptics.selection();
+                onResolve();
+              }}
+              style={{
+                minHeight: 32,
+                paddingHorizontal: 12,
+                borderRadius: theme.radius.full,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.brandSoft,
+                borderWidth: 1,
+                borderColor: colors.brand,
+              }}
+            >
+              <AppText
+                variant="caption"
+                weight="semibold"
+                style={{ color: colors.brand, fontSize: 11 }}
+              >
+                {t('mobile.adminScheduling.conflicts.resolve')}
+              </AppText>
+            </AnimatedPressable>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function BoardHeaderAction({
+  label,
+  onPress,
+  emphasis = 'soft',
+}: {
+  label: string;
+  onPress: () => void;
+  emphasis?: 'soft' | 'filled';
+}) {
+  const { colors, theme } = useTheme();
+  const filled = emphasis === 'filled';
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={{
+        minHeight: 28,
+        paddingHorizontal: 10,
+        borderRadius: theme.radius.full,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: filled ? colors.brand : colors.brandSoft,
+        borderWidth: filled ? 0 : 1,
+        borderColor: colors.brand,
+      }}
+    >
+      <AppText
+        variant="caption"
+        weight="semibold"
+        style={{ color: filled ? colors.onBrand : colors.brand, fontSize: 11 }}
+      >
+        {label}
+      </AppText>
+    </AnimatedPressable>
+  );
+}
+
 function ScheduleOrdersBoard({
   title,
+  caption,
   count,
   search,
   onSearchChange,
+  headerAction,
+  expanded,
+  onToggleExpand,
+  itemCount,
+  showSearch = true,
+  tone = 'brand',
+  expandKind = 'orders',
   children,
 }: {
   title: string;
+  caption?: string;
   count: number | null;
   search: string;
   onSearchChange: (value: string) => void;
+  headerAction?: ReactNode;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  itemCount?: number;
+  showSearch?: boolean;
+  tone?: 'brand' | 'danger';
+  expandKind?: 'orders' | 'overlaps';
   children: ReactNode;
 }) {
-  const { locale, isRTL, t } = useLocale();
+  const { locale, isRTL, t, tPlural } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const total = itemCount ?? count ?? 0;
+  const showExpand = Boolean(onToggleExpand && total > FLOOR_LIST_VISIBLE_ROWS);
+  const accent = tone === 'danger' ? colors.error : colors.brand;
+  const accentSoft = tone === 'danger' ? colors.errorSoft : colors.brandSoft;
+  const expandMore =
+    expandKind === 'overlaps'
+      ? tPlural('mobile.adminScheduling.conflicts.viewAllOverlaps', total)
+      : tPlural('mobile.adminScheduling.viewAllOrders', total);
+  const expandFewer =
+    expandKind === 'overlaps'
+      ? t('mobile.adminScheduling.conflicts.showFewerOverlaps')
+      : t('mobile.adminScheduling.showFewerOrders');
 
   return (
     <View
@@ -1295,8 +2571,8 @@ function ScheduleOrdersBoard({
           bottom: 0,
           ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
-          backgroundColor: colors.brand,
-          opacity: 0.55,
+          backgroundColor: accent,
+          opacity: tone === 'danger' ? 1 : 0.55,
         }}
       />
       <View
@@ -1324,12 +2600,13 @@ function ScheduleOrdersBoard({
             textTransform: locale === 'ar' ? 'none' : 'uppercase',
             letterSpacing: locale === 'ar' ? 0 : 0.7,
             fontSize: 11,
-            color: colors.brand,
+            color: accent,
             textAlign: isRTL ? 'right' : 'left',
           }}
         >
           {title}
         </AppText>
+        {headerAction}
         {count != null ? (
           <View
             style={{
@@ -1337,9 +2614,9 @@ function ScheduleOrdersBoard({
               paddingHorizontal: 8,
               paddingVertical: 3,
               borderRadius: theme.radius.full,
-              backgroundColor: colors.brandSoft,
+              backgroundColor: accentSoft,
               borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.brand,
+              borderColor: accent,
               alignItems: 'center',
             }}
           >
@@ -1347,50 +2624,82 @@ function ScheduleOrdersBoard({
               variant="caption"
               weight="semibold"
               dir="ltr"
-              style={{ color: colors.brand, fontVariant: ['tabular-nums'], fontSize: 12 }}
+              style={{ color: accent, fontVariant: ['tabular-nums'], fontSize: 12 }}
             >
               {String(count)}
             </AppText>
           </View>
         ) : null}
       </View>
-
-      <View
-        style={{
-          paddingHorizontal: theme.spacing.md,
-          paddingTop: theme.spacing.sm,
-          paddingBottom: theme.spacing.sm,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
-          backgroundColor: colors.surface,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.border,
-        }}
-      >
-        <SearchBarShell>
-          <AppTextInput
-            value={search}
-            onChangeText={onSearchChange}
-            placeholder={t('mobile.adminScheduling.searchPlaceholder')}
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-            accessibilityLabel={t('mobile.adminScheduling.searchPlaceholder')}
+      {caption ? (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            gap: 8,
+            paddingHorizontal: theme.spacing.md,
+            paddingTop: theme.spacing.sm + 4,
+            paddingBottom: theme.spacing.sm + 4,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.md + 4 }
+              : { paddingLeft: theme.spacing.md + 4 }),
+            backgroundColor: colors.surface,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: colors.border,
+          }}
+        >
+          <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+          <AppText
+            variant="caption"
+            color="secondary"
             style={{
               flex: 1,
-              minWidth: 0,
-              paddingVertical: theme.spacing.sm,
-              fontSize: 16,
-              color: colors.textPrimary,
               textAlign: isRTL ? 'right' : 'left',
-              ...resolveAppFontStyle(locale, { variant: 'body' }),
             }}
-          />
-        </SearchBarShell>
-      </View>
+          >
+            {caption}
+          </AppText>
+        </View>
+      ) : null}
+
+      {showSearch ? (
+        <View
+          style={{
+            paddingHorizontal: theme.spacing.md,
+            paddingTop: theme.spacing.sm,
+            paddingBottom: theme.spacing.sm,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.md + 4 }
+              : { paddingLeft: theme.spacing.md + 4 }),
+            backgroundColor: colors.surface,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: colors.border,
+          }}
+        >
+          <SearchBarShell>
+            <AppTextInput
+              value={search}
+              onChangeText={onSearchChange}
+              placeholder={t('mobile.adminScheduling.searchPlaceholder')}
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              accessibilityLabel={t('mobile.adminScheduling.searchPlaceholder')}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                paddingVertical: theme.spacing.sm,
+                fontSize: 16,
+                color: colors.textPrimary,
+                textAlign: isRTL ? 'right' : 'left',
+                ...resolveAppFontStyle(locale, { variant: 'body' }),
+              }}
+            />
+          </SearchBarShell>
+        </View>
+      ) : null}
 
       <View
         style={{
@@ -1404,8 +2713,15 @@ function ScheduleOrdersBoard({
         {children}
       </View>
 
-      {count != null && count > FLOOR_LIST_VISIBLE_ROWS ? (
-        <View
+      {showExpand ? (
+        <AnimatedPressable
+          variant="button"
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? expandFewer : expandMore}
+          onPress={() => {
+            void haptics.selection();
+            onToggleExpand?.();
+          }}
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'center',
@@ -1417,11 +2733,11 @@ function ScheduleOrdersBoard({
             backgroundColor: colors.surface,
           }}
         >
-          <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
           <AppText variant="caption" color="muted" style={{ fontSize: 11 }}>
-            {t('mobile.adminScheduling.scrollForMore')}
+            {expanded ? expandFewer : expandMore}
           </AppText>
-        </View>
+        </AnimatedPressable>
       ) : null}
     </View>
   );
@@ -1432,16 +2748,18 @@ function CappedNestedScroll({
   rowEstimate,
   gap,
   visibleRows = FLOOR_LIST_VISIBLE_ROWS,
+  expanded,
   children,
 }: {
   itemCount: number;
   rowEstimate: number;
   gap: number;
   visibleRows?: number;
+  expanded?: boolean;
   children: ReactNode;
 }) {
   const { colors, theme } = useTheme();
-  const scrollable = itemCount > visibleRows;
+  const scrollable = !expanded && itemCount > visibleRows;
   const capHeight = visibleRows * rowEstimate + Math.max(0, visibleRows - 1) * gap;
 
   if (!scrollable) {

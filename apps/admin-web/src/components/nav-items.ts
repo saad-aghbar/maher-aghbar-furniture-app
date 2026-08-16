@@ -82,12 +82,6 @@ export const navItems: NavItem[] = [
     anyPermissions: ['production.workflow.read'],
   },
   {
-    href: '/ai-chat',
-    key: 'aiChat',
-    icon: MessageSquare,
-    anyPermissions: ['ai-chat.read'],
-  },
-  {
     href: '/inventory',
     key: 'inventory',
     icon: Boxes,
@@ -121,6 +115,12 @@ export const navItems: NavItem[] = [
 
 /** Pinned to the bottom of the sidebar. */
 export const navFooterItems: NavItem[] = [
+  {
+    href: '/ai-chat',
+    key: 'aiChat',
+    icon: MessageSquare,
+    anyPermissions: ['ai-chat.read'],
+  },
   {
     href: '/settings',
     key: 'settings',

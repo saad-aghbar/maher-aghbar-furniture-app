@@ -22,8 +22,8 @@ type Props = {
   counts: DealerFocusCounts;
 };
 
-/** Four stages in a fixed 2×2 — nothing off-screen, no horizontal scroll. */
-const STAGE_ROWS: Exclude<StatusChipKey, 'all'>[][] = [
+/** Four stages in a fixed 2×2 — drafts sit under All as a full-width tile. */
+const STAGE_ROWS: Exclude<StatusChipKey, 'all' | 'drafts'>[][] = [
   ['pending', 'production'],
   ['ready', 'delivered'],
 ];
@@ -39,6 +39,7 @@ function accentFor(
     success: string;
   },
 ): string {
+  if (key === 'drafts') return colors.brand;
   if (key === 'pending') return colors.warning;
   if (key === 'production') return colors.info;
   if (key === 'ready') return colors.brand;
@@ -57,12 +58,14 @@ function softWash(
   dark: boolean,
 ): string {
   if (dark) {
+    if (key === 'drafts') return 'rgba(168,144,108,0.22)';
     if (key === 'pending') return 'rgba(196,137,122,0.18)';
     if (key === 'production') return 'rgba(122,148,170,0.18)';
     if (key === 'ready') return 'rgba(168,144,108,0.22)';
     if (key === 'delivered') return 'rgba(122,170,148,0.18)';
     return 'rgba(168,144,108,0.20)';
   }
+  if (key === 'drafts') return colors.brandSoft;
   if (key === 'pending') return colors.warningSoft;
   if (key === 'production') return colors.infoSoft;
   if (key === 'ready') return colors.brandSoft;
@@ -72,6 +75,7 @@ function softWash(
 
 function countFor(key: StatusChipKey, counts: DealerFocusCounts): number {
   if (key === 'all') return counts.total;
+  if (key === 'drafts') return counts.drafts;
   return counts[key];
 }
 
@@ -301,6 +305,15 @@ export function DealerOrdersFocusRail({ value, onChange, counts }: Props) {
           focused={value === 'all'}
           wide
           onPress={() => select('all')}
+        />
+
+        <FocusTile
+          segment="drafts"
+          label={t('mobile.orders.chips.drafts')}
+          count={countFor('drafts', counts)}
+          focused={value === 'drafts'}
+          wide
+          onPress={() => select('drafts')}
         />
 
         {STAGE_ROWS.map((row) => (

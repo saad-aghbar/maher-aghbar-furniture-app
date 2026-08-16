@@ -10,11 +10,83 @@ import type {
   OccupancyInterval,
   PlannedAllocation,
   PlannerOrderInput,
+  PlannerStageInput,
   SchedulePlanResult,
   WorkerCandidate,
 } from './types';
-import { assignWorker, listEligibleWorkers } from './worker-assignment';
+import { listEligibleWorkers } from './worker-assignment';
 import type { WorkingCalendar } from './working-calendar';
+
+export function resourceCapacityKey(stageDefinitionId: string, slot: number): string {
+  return `resource:${stageDefinitionId}:${slot}`;
+}
+
+export function parseResourceCapacityKey(
+  id: string,
+): { stageDefinitionId: string; slot: number } | null {
+  if (!id.startsWith('resource:')) return null;
+  const lastColon = id.lastIndexOf(':');
+  if (lastColon <= 'resource:'.length) return null;
+  const slot = Number(id.slice(lastColon + 1));
+  if (!Number.isInteger(slot) || slot < 0) return null;
+  return { stageDefinitionId: id.slice('resource:'.length, lastColon), slot };
+}
+
+function placementCandidates(
+  stage: PlannerStageInput,
+  workers: WorkerCandidate[],
+  capacity: CapacityTracker,
+): { eligible: WorkerCandidate[]; reason: string | null } {
+  const mode = stage.schedulingResourceMode ?? 'WORKER_CONSTRAINED';
+  if (mode === 'RESOURCE_CONSTRAINED') {
+    const slots = Math.max(0, Math.floor(Number(stage.resourceSlots) || 0));
+    if (slots < 1) {
+      return { eligible: [], reason: 'NO_RESOURCE_CAPACITY' };
+    }
+    const synthetic: WorkerCandidate[] = Array.from({ length: slots }, (_, slot) => ({
+      id: resourceCapacityKey(stage.stageDefinitionId, slot),
+      isActive: true,
+      departmentCode: stage.departmentCode,
+      skillStageDefinitionIds: [stage.stageDefinitionId],
+    }));
+    return {
+      eligible: listEligibleWorkers({
+        workers: synthetic,
+        departmentCode: stage.departmentCode,
+        stageDefinitionId: stage.stageDefinitionId,
+        preferredEmployeeId: stage.preferredEmployeeId,
+        capacity,
+      }),
+      reason: null,
+    };
+  }
+  const eligible = listEligibleWorkers({
+    workers,
+    departmentCode: stage.departmentCode,
+    stageDefinitionId: stage.stageDefinitionId,
+    preferredEmployeeId: stage.preferredEmployeeId,
+    capacity,
+  });
+  if (eligible.length === 0) {
+    return { eligible: [], reason: 'NO_ELIGIBLE_WORKER' };
+  }
+  return { eligible, reason: null };
+}
+
+function allocationResource(workerId: string | null): {
+  resourceType: PlannedAllocation['resourceType'];
+  employeeId: string | null;
+  resourceSlot: number | null;
+} {
+  if (!workerId) {
+    return { resourceType: 'DEPARTMENT', employeeId: null, resourceSlot: null };
+  }
+  const parsed = parseResourceCapacityKey(workerId);
+  if (parsed) {
+    return { resourceType: 'DEPARTMENT', employeeId: null, resourceSlot: parsed.slot };
+  }
+  return { resourceType: 'EMPLOYEE', employeeId: workerId, resourceSlot: null };
+}
 
 export interface PlannerContext {
   calendar: WorkingCalendar;
@@ -45,15 +117,8 @@ function placeForwardStage(args: {
   const { order, stage, earliestStart, calendar, workers, capacity, horizon } = args;
 
   if (stage.isPinned && stage.pinnedStart && stage.pinnedEnd) {
-    const employeeId =
-      stage.preferredEmployeeId ??
-      assignWorker({
-        workers,
-        departmentCode: stage.departmentCode,
-        stageDefinitionId: stage.stageDefinitionId,
-        capacity,
-      })?.id ??
-      null;
+    const { eligible } = placementCandidates(stage, workers, capacity);
+    const employeeId = stage.preferredEmployeeId ?? eligible[0]?.id ?? null;
     if (employeeId) {
       capacity.forceReserve({
         employeeId,
@@ -62,48 +127,27 @@ function placeForwardStage(args: {
         allocationId: `${order.id}:${stage.code}`,
       });
     }
+    const res = allocationResource(employeeId);
     return {
       orderId: order.id,
       stageCode: stage.code,
       stageDefinitionId: stage.stageDefinitionId,
       productionTaskId: stage.productionTaskId ?? null,
       stageInstanceId: stage.stageInstanceId ?? null,
-      resourceType: employeeId ? 'EMPLOYEE' : 'DEPARTMENT',
-      employeeId,
+      resourceType: res.resourceType,
+      employeeId: res.employeeId,
       departmentCode: stage.departmentCode,
       plannedStart: stage.pinnedStart,
       plannedEnd: stage.pinnedEnd,
       estimatedMinutes: stage.estimatedMinutes,
       isPinned: true,
+      resourceSlot: res.resourceSlot,
     };
   }
 
-  const eligible = listEligibleWorkers({
-    workers,
-    departmentCode: stage.departmentCode,
-    stageDefinitionId: stage.stageDefinitionId,
-    preferredEmployeeId: stage.preferredEmployeeId,
-    capacity,
-  });
-
+  const { eligible } = placementCandidates(stage, workers, capacity);
   if (eligible.length === 0) {
-    // Department-only booking without a named worker
-    const start = calendar.nextWorkingInstant(earliestStart);
-    const end = calendar.addWorkingMinutes(start, stage.estimatedMinutes);
-    return {
-      orderId: order.id,
-      stageCode: stage.code,
-      stageDefinitionId: stage.stageDefinitionId,
-      productionTaskId: stage.productionTaskId ?? null,
-      stageInstanceId: stage.stageInstanceId ?? null,
-      resourceType: 'DEPARTMENT',
-      employeeId: null,
-      departmentCode: stage.departmentCode,
-      plannedStart: start,
-      plannedEnd: end,
-      estimatedMinutes: stage.estimatedMinutes,
-      isPinned: !!stage.isPinned,
-    };
+    return null;
   }
 
   let best: { workerId: string; start: Date; end: Date } | null = null;
@@ -136,19 +180,21 @@ function placeForwardStage(args: {
     allocationId: `${order.id}:${stage.code}`,
   });
 
+  const res = allocationResource(best.workerId);
   return {
     orderId: order.id,
     stageCode: stage.code,
     stageDefinitionId: stage.stageDefinitionId,
     productionTaskId: stage.productionTaskId ?? null,
     stageInstanceId: stage.stageInstanceId ?? null,
-    resourceType: 'EMPLOYEE',
-    employeeId: best.workerId,
+    resourceType: res.resourceType,
+    employeeId: res.employeeId,
     departmentCode: stage.departmentCode,
     plannedStart: best.start,
     plannedEnd: best.end,
     estimatedMinutes: stage.estimatedMinutes,
     isPinned: !!stage.isPinned,
+    resourceSlot: res.resourceSlot,
   };
 }
 
@@ -177,7 +223,7 @@ function scheduleOrderForward(
       }
       const stage = order.stages.find((s) => s.code === code)!;
       const mergeAt = mergeWaitInstant(code, parentEnds, graph);
-      const earliest = maxDate([baseStart, mergeAt]);
+      const earliest = maxDate([baseStart, mergeAt, stage.notBefore]);
 
       const placed = placeForwardStage({
         order,
@@ -189,7 +235,10 @@ function scheduleOrderForward(
         horizon,
       });
       if (!placed) {
-        throw new Error(`Unable to place stage ${code} for order ${order.id}`);
+        const { reason } = placementCandidates(stage, ctx.workers, capacity);
+        throw new Error(
+          `Unable to place stage ${code} for order ${order.id}:${reason ?? 'NO_SLOT'}`,
+        );
       }
       allocations.push(placed);
       parentEnds.set(code, placed.plannedEnd);
@@ -233,6 +282,7 @@ export function forwardSchedule(
     earliestCompletion,
     requestedDateFeasible: true,
     usedBackward: false,
+    planningMode: 'FORWARD',
   };
 }
 
@@ -248,15 +298,8 @@ function placeBackwardStage(args: {
   const { order, stage, latestEnd, calendar, workers, capacity, notBefore } = args;
 
   if (stage.isPinned && stage.pinnedStart && stage.pinnedEnd) {
-    const employeeId =
-      stage.preferredEmployeeId ??
-      assignWorker({
-        workers,
-        departmentCode: stage.departmentCode,
-        stageDefinitionId: stage.stageDefinitionId,
-        capacity,
-      })?.id ??
-      null;
+    const { eligible } = placementCandidates(stage, workers, capacity);
+    const employeeId = stage.preferredEmployeeId ?? eligible[0]?.id ?? null;
     if (employeeId) {
       capacity.forceReserve({
         employeeId,
@@ -265,29 +308,28 @@ function placeBackwardStage(args: {
         allocationId: `${order.id}:${stage.code}`,
       });
     }
+    const res = allocationResource(employeeId);
     return {
       orderId: order.id,
       stageCode: stage.code,
       stageDefinitionId: stage.stageDefinitionId,
       productionTaskId: stage.productionTaskId ?? null,
       stageInstanceId: stage.stageInstanceId ?? null,
-      resourceType: employeeId ? 'EMPLOYEE' : 'DEPARTMENT',
-      employeeId,
+      resourceType: res.resourceType,
+      employeeId: res.employeeId,
       departmentCode: stage.departmentCode,
       plannedStart: stage.pinnedStart,
       plannedEnd: stage.pinnedEnd,
       estimatedMinutes: stage.estimatedMinutes,
       isPinned: true,
+      resourceSlot: res.resourceSlot,
     };
   }
 
-  const eligible = listEligibleWorkers({
-    workers,
-    departmentCode: stage.departmentCode,
-    stageDefinitionId: stage.stageDefinitionId,
-    preferredEmployeeId: stage.preferredEmployeeId,
-    capacity,
-  });
+  const { eligible } = placementCandidates(stage, workers, capacity);
+  if (eligible.length === 0) {
+    return null;
+  }
 
   const endAnchor = calendar.previousWorkingInstant(latestEnd);
   let start = calendar.subtractWorkingMinutes(endAnchor, stage.estimatedMinutes);
@@ -296,23 +338,6 @@ function placeBackwardStage(args: {
   // Nudge earlier until no overlap / before notBefore fails
   for (let i = 0; i < 5_000; i++) {
     if (start.getTime() < notBefore.getTime()) return null;
-
-    if (eligible.length === 0) {
-      return {
-        orderId: order.id,
-        stageCode: stage.code,
-        stageDefinitionId: stage.stageDefinitionId,
-        productionTaskId: stage.productionTaskId ?? null,
-        stageInstanceId: stage.stageInstanceId ?? null,
-        resourceType: 'DEPARTMENT',
-        employeeId: null,
-        departmentCode: stage.departmentCode,
-        plannedStart: start,
-        plannedEnd: end,
-        estimatedMinutes: stage.estimatedMinutes,
-        isPinned: !!stage.isPinned,
-      };
-    }
 
     // Prefer least-loaded eligible that has no overlap in this window
     const free = eligible.find((w) => !capacity.hasOverlap(w.id, start, end));
@@ -323,19 +348,21 @@ function placeBackwardStage(args: {
         end,
         allocationId: `${order.id}:${stage.code}`,
       });
+      const res = allocationResource(free.id);
       return {
         orderId: order.id,
         stageCode: stage.code,
         stageDefinitionId: stage.stageDefinitionId,
         productionTaskId: stage.productionTaskId ?? null,
         stageInstanceId: stage.stageInstanceId ?? null,
-        resourceType: 'EMPLOYEE',
-        employeeId: free.id,
+        resourceType: res.resourceType,
+        employeeId: res.employeeId,
         departmentCode: stage.departmentCode,
         plannedStart: start,
         plannedEnd: end,
         estimatedMinutes: stage.estimatedMinutes,
         isPinned: !!stage.isPinned,
+        resourceSlot: res.resourceSlot,
       };
     }
 
@@ -382,6 +409,7 @@ function scheduleOrderBackward(
   for (const layer of layers) {
     for (const code of layer) {
       const stage = order.stages.find((s) => s.code === code)!;
+      const stageNotBefore = maxDate([notBefore, stage.notBefore]);
       const dependents = graph.dependents.get(code) ?? [];
       let latestEnd = targetCompletion;
       if (dependents.length > 0) {
@@ -401,7 +429,7 @@ function scheduleOrderBackward(
         calendar: ctx.calendar,
         workers: ctx.workers,
         capacity,
-        notBefore,
+        notBefore: stageNotBefore,
       });
       if (!placed) return null;
 
@@ -451,6 +479,9 @@ export function backwardSchedule(
   const capacity = new CapacityTracker(ctx.existingOccupancy ?? []);
   const allocations: PlannedAllocation[] = [];
   let allFeasible = true;
+  let usedBackward = false;
+  let sawRequested = false;
+  let sawForwardFallback = false;
 
   for (const order of ordered) {
     if (!order.requestedDeliveryDate) {
@@ -458,9 +489,10 @@ export function backwardSchedule(
       continue;
     }
 
+    sawRequested = true;
     const buffer = order.bufferMinutes ?? 0;
     const target = ctx.calendar.subtractWorkingMinutes(
-      order.requestedDeliveryDate,
+      order.latestCompletionTarget ?? order.requestedDeliveryDate,
       buffer,
     );
 
@@ -468,15 +500,19 @@ export function backwardSchedule(
     const backwardPlaced = scheduleOrderBackward(order, ctx, trialCapacity, target);
     if (!backwardPlaced) {
       allFeasible = false;
+      sawForwardFallback = true;
       allocations.push(...scheduleOrderForward(order, ctx, capacity));
       continue;
     }
 
-    // Commit trial reservations into main capacity
+    usedBackward = true;
     for (const a of backwardPlaced) {
-      if (a.employeeId) {
+      const trackerId =
+        a.employeeId ??
+        (a.resourceSlot != null ? resourceCapacityKey(a.stageDefinitionId, a.resourceSlot) : null);
+      if (trackerId) {
         capacity.forceReserve({
-          employeeId: a.employeeId,
+          employeeId: trackerId,
           start: a.plannedStart,
           end: a.plannedEnd,
           allocationId: `${a.orderId}:${a.stageCode}`,
@@ -494,10 +530,17 @@ export function backwardSchedule(
           allocations[0]!.plannedEnd,
         );
 
+  const planningMode = !sawRequested
+    ? 'FORWARD'
+    : sawForwardFallback || !usedBackward
+      ? 'BACKWARD_FALLBACK_FORWARD'
+      : 'BACKWARD';
+
   return {
     allocations,
     earliestCompletion,
-    requestedDateFeasible: allFeasible,
-    usedBackward: allFeasible,
+    requestedDateFeasible: sawRequested ? allFeasible : true,
+    usedBackward: planningMode === 'BACKWARD',
+    planningMode,
   };
 }

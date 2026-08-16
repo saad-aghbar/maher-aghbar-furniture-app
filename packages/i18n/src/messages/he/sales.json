@@ -75,5 +75,7 @@
   "sectionInProductionHint": "הזמנות שנמצאות כעת בייצור",
   "sectionDone": "הושלמו",
   "sectionDoneHint": "מוכנות למשלוח, נמסרו או הושלמו",
-  "sectionEmpty": "אין הזמנות בחלק זה"
+  "sectionEmpty": "אין הזמנות בחלק זה",
+  "dealerDeliveryDate": "אספקה",
+  "noDeliveryDateYet": "התאריך יאושר בהמשך"
 }

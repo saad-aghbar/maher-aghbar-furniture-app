@@ -1,14 +1,20 @@
-import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadFile } from '@/api/modules/uploads';
 import { getApiBaseUrl } from '@/api/config';
+import { emitToast, toastCopy } from '@/components/feedback/Toast';
 
 type Translate = (key: string) => string;
 
 async function ensureLibraryPermission(t: Translate) {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
-    Alert.alert(t('mobile.inventory.photoPermissionTitle'), t('mobile.inventory.photoPermissionBody'));
+    emitToast({
+      variant: 'warning',
+      message: toastCopy(
+        t('mobile.inventory.photoPermissionTitle'),
+        t('mobile.inventory.photoPermissionBody'),
+      ),
+    });
     return false;
   }
   return true;

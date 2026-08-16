@@ -118,4 +118,97 @@ describe('WorkingCalendar (Asia/Amman)', () => {
     expect(intervals[1]!.start.toISOString()).toBe(amman(2026, 8, 9, 13, 0).toISOString());
     expect(intervals[1]!.end.toISOString()).toBe(amman(2026, 8, 9, 16, 0).toISOString());
   });
+
+  it('C: Saturday→Sunday allocation counts only Sunday working intersection', () => {
+    const cal = calendar();
+    expect(
+      cal.overlapWorkingMinutesOnLocalDay(
+        amman(2026, 8, 29, 8, 55),
+        amman(2026, 8, 30, 8, 30),
+        '2026-08-30',
+      ),
+    ).toBe(30);
+    expect(
+      cal.overlapWorkingMinutesOnLocalDay(
+        amman(2026, 8, 29, 8, 55),
+        amman(2026, 8, 30, 8, 30),
+        '2026-08-29',
+      ),
+    ).toBe(365);
+  });
+
+  it('D: lunch is excluded from an 11:00–14:00 allocation', () => {
+    const cal = calendar();
+    expect(
+      cal.overlapWorkingMinutesOnLocalDay(
+        amman(2026, 8, 30, 11, 0),
+        amman(2026, 8, 30, 14, 0),
+        '2026-08-30',
+      ),
+    ).toBe(120);
+  });
+
+  it('E: closed Friday contributes no working minutes', () => {
+    const cal = calendar();
+    expect(cal.intervalsForLocalYmd('2026-08-07')).toEqual([]);
+    expect(
+      cal.overlapWorkingMinutesOnLocalDay(
+        amman(2026, 8, 7, 8, 0),
+        amman(2026, 8, 7, 16, 0),
+        '2026-08-07',
+      ),
+    ).toBe(0);
+  });
+
+  it('F: EXTRA_SHIFT minutes count and lunch still does not', () => {
+    const cal = calendar({
+      exceptions: [
+        {
+          date: amman(2026, 8, 7, 12, 0),
+          type: 'EXTRA_SHIFT',
+          shiftStart: '08:00',
+          shiftEnd: '20:00',
+        },
+      ],
+    });
+    expect(
+      cal.overlapWorkingMinutesOnLocalDay(
+        amman(2026, 8, 7, 8, 0),
+        amman(2026, 8, 7, 20, 0),
+        '2026-08-07',
+      ),
+    ).toBe(660);
+  });
+
+  it('G: factory-local YMD, not UTC midnight, decides the day', () => {
+    const cal = calendar();
+    const earlySundayAmman = amman(2026, 8, 30, 1, 0);
+    expect(earlySundayAmman.toISOString()).toBe('2026-08-29T22:00:00.000Z');
+    expect(
+      cal.overlapWorkingMinutesOnLocalDay(
+        earlySundayAmman,
+        amman(2026, 8, 30, 2, 0),
+        '2026-08-30',
+      ),
+    ).toBe(0);
+    expect(
+      cal.overlapWorkingMinutesOnLocalDay(
+        earlySundayAmman,
+        amman(2026, 8, 30, 2, 0),
+        '2026-08-29',
+      ),
+    ).toBe(0);
+  });
+
+  it('H: multi-day task does not count overnight', () => {
+    const cal = calendar();
+    const start = amman(2026, 8, 29, 15, 0);
+    const end = amman(2026, 8, 30, 9, 0);
+    expect(cal.overlapWorkingMinutesOnLocalDay(start, end, '2026-08-29')).toBe(60);
+    expect(cal.overlapWorkingMinutesOnLocalDay(start, end, '2026-08-30')).toBe(60);
+    expect(
+      cal.overlapWorkingMinutesOnLocalDay(start, end, '2026-08-29') +
+        cal.overlapWorkingMinutesOnLocalDay(start, end, '2026-08-30'),
+    ).toBe(120);
+  });
 });

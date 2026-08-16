@@ -28,9 +28,13 @@ export function selectChangeDateCta(
 
 export type OrderPromiseSummary = {
   promiseState: SchedulePromiseState | string;
+  customerStatus?: string | null;
   committedDeliveryDate: string | null;
   requestedDeliveryDate: string | null;
   suggestedDeliveryDate: string | null;
+  projectedDeliveryDate: string | null;
+  actualDeliveryDate: string | null;
+  compactDates: boolean;
   /** No committed date yet — show the suggested date labeled as an estimate. */
   showEstimateOnly: boolean;
 };
@@ -41,10 +45,14 @@ export function selectOrderPromiseSummary(
 ): OrderPromiseSummary | null {
   if (!schedule) return null;
   return {
-    promiseState: schedule.promiseState,
+    promiseState: schedule.customerStatus ?? schedule.promiseState,
+    customerStatus: schedule.customerStatus ?? null,
     committedDeliveryDate: schedule.committedDeliveryDate,
     requestedDeliveryDate: schedule.requestedDeliveryDate,
     suggestedDeliveryDate: schedule.suggestedDeliveryDate,
+    projectedDeliveryDate: schedule.projectedDeliveryDate ?? null,
+    actualDeliveryDate: schedule.actualDeliveryDate ?? null,
+    compactDates: Boolean(schedule.compactDates),
     showEstimateOnly: !schedule.committedDeliveryDate && Boolean(schedule.suggestedDeliveryDate),
   };
 }

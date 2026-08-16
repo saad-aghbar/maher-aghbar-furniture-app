@@ -31,7 +31,7 @@ export function ProgressBar({
   const reduce = useReducedMotion();
   const { colors, theme } = useTheme();
   const clamped = Math.max(0, Math.min(1, progress));
-  const width = useSharedValue(clamped);
+  const width = useSharedValue(0);
 
   useEffect(() => {
     const d = withMotionDuration(durationMs, reduce);

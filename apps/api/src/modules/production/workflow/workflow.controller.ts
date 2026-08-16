@@ -68,6 +68,11 @@ export class CreateStageDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() requiresPhotos?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsString() responsibleDepartment?: string;
   @ApiPropertyOptional() @IsOptional() @IsArray() @IsString({ each: true }) workerIds?: string[];
+  @ApiPropertyOptional({ enum: ['WORKER_CONSTRAINED', 'RESOURCE_CONSTRAINED'] })
+  @IsOptional()
+  @IsIn(['WORKER_CONSTRAINED', 'RESOURCE_CONSTRAINED'])
+  schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() resourceSlots?: number;
 }
 
 export class UpdateStageDto {
@@ -80,6 +85,11 @@ export class UpdateStageDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() requiresPhotos?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsString() responsibleDepartment?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({ enum: ['WORKER_CONSTRAINED', 'RESOURCE_CONSTRAINED'] })
+  @IsOptional()
+  @IsIn(['WORKER_CONSTRAINED', 'RESOURCE_CONSTRAINED'])
+  schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() resourceSlots?: number;
 }
 
 export class AddNodeDto {
@@ -342,6 +352,8 @@ export class WorkflowController {
         responsibleDepartment: dto.responsibleDepartment,
         dependsOnCodes: [],
         isActive: true,
+        schedulingResourceMode: dto.schedulingResourceMode ?? 'WORKER_CONSTRAINED',
+        resourceSlots: dto.resourceSlots ?? 1,
       },
     });
 

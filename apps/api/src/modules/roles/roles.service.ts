@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Prisma, RoleKind } from '@maher/database';
 import {
@@ -11,6 +12,7 @@ import {
   groupedPermissionCatalog,
   isAssignableToStaff,
   PERMISSIONS,
+  SYSTEM_STAFF_PRESETS,
   type Permission,
 } from '@maher/permissions';
 import type { AuthUser } from '@maher/types';
@@ -32,14 +34,69 @@ export type StaffTypeWrite = {
 };
 
 @Injectable()
-export class RolesService {
+export class RolesService implements OnModuleInit {
+  private ensurePresetsInflight: Promise<void> | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
+
+  async onModuleInit() {
+    await this.ensureSystemStaffPresets();
+  }
+
+  /**
+   * Permanent staff presets (e.g. Warehouse Management) must always exist,
+   * stay `isSystem`, and keep catalog permissions. Safe to call repeatedly.
+   */
+  async ensureSystemStaffPresets() {
+    if (this.ensurePresetsInflight) return this.ensurePresetsInflight;
+    this.ensurePresetsInflight = this.runEnsureSystemStaffPresets().finally(() => {
+      this.ensurePresetsInflight = null;
+    });
+    return this.ensurePresetsInflight;
+  }
+
+  private async runEnsureSystemStaffPresets() {
+    for (const preset of Object.values(SYSTEM_STAFF_PRESETS)) {
+      const role = await this.prisma.role.upsert({
+        where: { code: preset.code },
+        update: {
+          nameAr: preset.nameAr,
+          nameEn: preset.nameEn,
+          nameHe: preset.nameHe,
+          descriptionEn: preset.descriptionEn,
+          descriptionAr: preset.descriptionAr,
+          descriptionHe: preset.descriptionHe,
+          kind: 'STAFF',
+          isSystem: true,
+          isActive: true,
+          iconKey: preset.iconKey,
+        },
+        create: {
+          code: preset.code,
+          nameAr: preset.nameAr,
+          nameEn: preset.nameEn,
+          nameHe: preset.nameHe,
+          descriptionEn: preset.descriptionEn,
+          descriptionAr: preset.descriptionAr,
+          descriptionHe: preset.descriptionHe,
+          kind: 'STAFF',
+          isSystem: true,
+          isActive: true,
+          iconKey: preset.iconKey,
+        },
+      });
+      await this.syncPresetPermissions(role.id, [...preset.permissionCodes]);
+    }
+  }
 
   permissionCatalog(assignableToStaffOnly = false) {
     return groupedPermissionCatalog({ assignableToStaffOnly });
   }
 
-  listRoles(query?: { kind?: RoleKind; isActive?: boolean }) {
+  async listRoles(query?: { kind?: RoleKind; isActive?: boolean }) {
+    if (!query?.kind || query.kind === 'STAFF') {
+      await this.ensureSystemStaffPresets();
+    }
     return this.prisma.role.findMany({
       where: {
         ...(query?.kind ? { kind: query.kind } : {}),
@@ -142,6 +199,12 @@ export class RolesService {
 
   async updateStaffType(actor: AuthUser, id: string, input: StaffTypeWrite) {
     const existing = await this.requireStaffType(id);
+    if (existing.isSystem) {
+      throw new BadRequestException({
+        code: 'PROTECTED_ROLE',
+        message: 'System staff presets are permanent. Duplicate them to customize permissions.',
+      });
+    }
     const previousCodes = existing.permissions.map((rp) => rp.permission.code);
     const permissionCodes =
       input.permissionCodes === undefined
@@ -254,6 +317,12 @@ export class RolesService {
       include: { permissions: { include: { permission: true } } },
     });
     if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Role not found.' });
+    if (existing.isSystem) {
+      throw new BadRequestException({
+        code: 'PROTECTED_ROLE',
+        message: 'System-critical roles cannot be edited.',
+      });
+    }
     const permissionCodes =
       input.permissionCodes === undefined
         ? undefined
@@ -358,6 +427,25 @@ export class RolesService {
       }
     }
     return expanded;
+  }
+
+  private async syncPresetPermissions(roleId: string, codes: string[]) {
+    const uniqueCodes = [...new Set(codes)];
+    const perms = await this.prisma.permission.findMany({
+      where: { code: { in: uniqueCodes } },
+    });
+    const uniquePermIds = [...new Set(perms.map((p) => p.id))];
+    await this.prisma.$transaction([
+      this.prisma.rolePermission.deleteMany({ where: { roleId } }),
+      ...(uniquePermIds.length
+        ? [
+            this.prisma.rolePermission.createMany({
+              data: uniquePermIds.map((permissionId) => ({ roleId, permissionId })),
+              skipDuplicates: true,
+            }),
+          ]
+        : []),
+    ]);
   }
 
   private async setPermissions(roleId: string, codes: string[]) {

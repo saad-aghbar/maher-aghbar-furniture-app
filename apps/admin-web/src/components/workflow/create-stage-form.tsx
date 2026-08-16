@@ -13,6 +13,8 @@ export type CreateStageValues = {
   hours: string;
   requiresInspection: boolean;
   requiresPhotos: boolean;
+  schedulingResourceMode: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
+  resourceSlots: string;
 };
 
 export const emptyCreateStageValues = (): CreateStageValues => ({
@@ -24,6 +26,8 @@ export const emptyCreateStageValues = (): CreateStageValues => ({
   hours: '',
   requiresInspection: false,
   requiresPhotos: false,
+  schedulingResourceMode: 'WORKER_CONSTRAINED',
+  resourceSlots: '1',
 });
 
 type Props = {
@@ -87,6 +91,37 @@ export function CreateStageForm({ value, onChange, showFlags = true }: Props) {
             />
             {t('workflow.requiresPhotos')}
           </label>
+          <fieldset className="grid gap-2">
+            <legend className="text-sm font-medium text-text-primary">
+              {t('workflow.howScheduled')}
+            </legend>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                checked={value.schedulingResourceMode === 'WORKER_CONSTRAINED'}
+                onChange={() => patch({ schedulingResourceMode: 'WORKER_CONSTRAINED' })}
+              />
+              {t('workflow.scheduleByWorkers')}
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                checked={value.schedulingResourceMode === 'RESOURCE_CONSTRAINED'}
+                onChange={() => patch({ schedulingResourceMode: 'RESOURCE_CONSTRAINED' })}
+              />
+              {t('workflow.scheduleByResource')}
+            </label>
+            {value.schedulingResourceMode === 'RESOURCE_CONSTRAINED' ? (
+              <Input
+                label={t('workflow.resourceSlots')}
+                type="number"
+                min={1}
+                step="1"
+                value={value.resourceSlots}
+                onChange={(e) => patch({ resourceSlots: e.target.value })}
+              />
+            ) : null}
+          </fieldset>
         </>
       ) : null}
     </div>

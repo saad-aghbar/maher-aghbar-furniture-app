@@ -73,12 +73,18 @@ export function shouldFetchSalesAdminHome(user: AuthUser | null | undefined): bo
   return can(user, 'report.sales.read');
 }
 
+function isCustomerIdentity(user: AuthUser): boolean {
+  if (user.customerId) return true;
+  if (user.roles.includes('CUSTOMER')) return true;
+  return (user.rolesDetailed ?? []).some((r) => r.code === 'CUSTOMER' || r.kind === 'CUSTOMER');
+}
+
 /**
  * Which web portal this user should land on after a shared login.
  * Based on effective permissions + customer linkage — not only role name.
  */
 export function resolveAppSurface(user: AuthUser): AppSurface {
-  if (user.customerId) return 'customer';
+  if (isCustomerIdentity(user)) return 'customer';
 
   const isFloor = canAny(user, [
     'production-task.update-own',
@@ -121,7 +127,7 @@ export function resolveWebHomePath(user: AuthUser): string {
 /** Primary mobile home persona from permissions. */
 export function resolveHomePersona(user: AuthUser | null | undefined): HomePersona {
   if (!user) return 'generic';
-  if (user.customerId && can(user, 'request.create')) return 'customer';
+  if (isCustomerIdentity(user) && can(user, 'request.create')) return 'customer';
   if (can(user, 'user.manage') || can(user, 'role.manage')) return 'admin';
   if (canAny(user, ['report.sales.read', 'report.production.read', 'report.financial.read'])) {
     if (can(user, 'audit.read') || can(user, 'settings.manage')) return 'management';

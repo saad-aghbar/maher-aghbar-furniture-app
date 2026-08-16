@@ -333,6 +333,18 @@ export default function CustomerDashboard() {
       })),
   });
 
+  const ownDeliveries = useQuery({
+    queryKey: ['customer-own-deliveries'],
+    queryFn: () =>
+      apiFetch<{
+        summary?: { thisWeek?: number; mayBeDelayed?: number };
+        data?: Array<{ salesOrderId: string; calendarDate?: string | null }>;
+      }>('/api/v1/scheduling/own-deliveries').catch(() => ({
+        summary: { thisWeek: 0, mayBeDelayed: 0 },
+        data: [],
+      })),
+  });
+
   const invoices = useQuery({
     queryKey: ['dealer-dash-invoices'],
     queryFn: async () => {
@@ -373,11 +385,13 @@ export default function CustomerDashboard() {
     const inProduction = sos.filter(
       (s) => IN_PRODUCTION_SO.has(s.status) || (s.progressPercent ?? 0) > 0,
     ).length;
-    const nearing = sos.filter((s) => {
-      if (!s.requiredDeliveryDate || DONE_SO.has(s.status) || s.status === 'CANCELLED') return false;
-      const d = new Date(s.requiredDeliveryDate).getTime() - Date.now();
-      return d >= 0 && d <= 7 * 24 * 60 * 60 * 1000;
-    }).length;
+    const nearing =
+      ownDeliveries.data?.summary?.thisWeek ??
+      sos.filter((s) => {
+        if (!s.requiredDeliveryDate || DONE_SO.has(s.status) || s.status === 'CANCELLED') return false;
+        const d = new Date(s.requiredDeliveryDate).getTime() - Date.now();
+        return d >= 0 && d <= 7 * 24 * 60 * 60 * 1000;
+      }).length;
     const done = sos.filter((s) => DONE_SO.has(s.status)).length;
     const openInv = inv.filter((i) =>
       ['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'].includes(i.status),
@@ -412,7 +426,7 @@ export default function CustomerDashboard() {
       returnsTotal,
       hub: tracking.length ? tracking : hub,
     };
-  }, [requests.data, salesOrders.data, invoices.data, returns.data]);
+  }, [requests.data, salesOrders.data, invoices.data, returns.data, ownDeliveries.data]);
 
   const journeyShares = useMemo(() => {
     const parts = [stats.rfqOpen, stats.inProduction, stats.nearing, stats.done] as const;

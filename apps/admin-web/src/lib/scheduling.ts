@@ -185,6 +185,7 @@ export interface FactoryCalendarSettings {
   workingWeekdays: number[];
   shiftStart: string;
   shiftEnd: string;
+  deliveryBufferWorkingDays?: number;
   exceptions?: FactoryCalendarException[];
   replanned?: number;
 }

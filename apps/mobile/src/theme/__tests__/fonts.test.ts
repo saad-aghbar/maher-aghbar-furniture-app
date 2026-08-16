@@ -80,4 +80,9 @@ describe('applyAppTypeface', () => {
     expect(next.letterSpacing).toBe(0);
     expect(next.fontWeight).toBeUndefined();
   });
+
+  it('keeps Rubik for Latin punctuation runs in Arabic UI', () => {
+    const next = applyAppTypeface('ar', { fontSize: 12 }, { face: 'latin', weight: 'semibold' });
+    expect(next.fontFamily).toBe(RUBIK.semibold);
+  });
 });

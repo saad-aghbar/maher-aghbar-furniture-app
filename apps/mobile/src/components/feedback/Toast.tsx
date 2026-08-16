@@ -19,6 +19,10 @@ import {
   type ShowToastInput,
   type ToastItem,
 } from './toastQueue';
+import { registerToastListener } from './toastBridge';
+
+export type { ShowToastInput } from './toastQueue';
+export { emitToast, toastCopy } from './toastBridge';
 
 type ToastContextValue = {
   showToast: (input: ShowToastInput) => void;
@@ -72,6 +76,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const showToast = useCallback((input: ShowToastInput) => {
     setQueue((q) => enqueueToast(q, input));
   }, []);
+
+  useEffect(() => {
+    registerToastListener(showToast);
+    return () => registerToastListener(null);
+  }, [showToast]);
 
   const onDismiss = useCallback((id: string) => {
     setQueue((q) => dismissToast(q, id));

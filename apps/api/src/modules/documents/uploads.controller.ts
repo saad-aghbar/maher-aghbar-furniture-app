@@ -163,6 +163,16 @@ export class UploadsController {
       params.taskId,
     );
 
+    // Stale mobile drafts may send a wiped requestId after reseed — don't FK-fail the upload.
+    let requestId = params.requestId?.trim() || undefined;
+    if (requestId) {
+      const rfq = await this.prisma.requestForQuotation.findFirst({
+        where: { id: requestId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!rfq) requestId = undefined;
+    }
+
     const isProductImage = resolvedCategory === 'PRODUCT_IMAGE';
 
     const doc = await this.prisma.document.create({
@@ -180,7 +190,7 @@ export class UploadsController {
           : ((params.visibility as DocumentVisibility | undefined) ?? DocumentVisibility.INTERNAL),
         uploadedById: params.user.id,
         customerId: params.user.customerId ?? undefined,
-        requestId: params.requestId || undefined,
+        requestId,
         productionOrderId: resolvedProductionOrderId,
       },
     });

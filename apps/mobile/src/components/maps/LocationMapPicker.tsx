@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Platform,
   View,
@@ -25,6 +24,7 @@ import Animated, {
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { useLocationMapVisibility } from '@/components/maps/LocationMapVisibility';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
@@ -211,6 +211,7 @@ export function LocationMapPicker({
 }: LocationMapPickerProps) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const reduce = useReducedMotion();
   const { setOpen: setMapVisible } = useLocationMapVisibility();
@@ -255,14 +256,17 @@ export function LocationMapPicker({
     if (current.granted) return true;
     const asked = await Location.requestForegroundPermissionsAsync();
     if (!asked.granted) {
-      Alert.alert(
-        t('mobile.newOrder.locationPermissionTitle'),
-        t('mobile.newOrder.locationPermissionBody'),
-      );
+      showToast({
+        variant: 'warning',
+        message: toastCopy(
+          t('mobile.newOrder.locationPermissionTitle'),
+          t('mobile.newOrder.locationPermissionBody'),
+        ),
+      });
       return false;
     }
     return true;
-  }, [t]);
+  }, [showToast, t]);
 
   const locateCurrent = useCallback(async () => {
     setBusy(true);
@@ -279,14 +283,17 @@ export function LocationMapPicker({
       dropPin(next);
       setRegion(regionFrom(next));
     } catch {
-      Alert.alert(
-        t('mobile.newOrder.locationErrorTitle'),
-        t('mobile.newOrder.locationErrorBody'),
-      );
+      showToast({
+        variant: 'error',
+        message: toastCopy(
+          t('mobile.newOrder.locationErrorTitle'),
+          t('mobile.newOrder.locationErrorBody'),
+        ),
+      });
     } finally {
       setBusy(false);
     }
-  }, [dropPin, requestPermission, t]);
+  }, [dropPin, requestPermission, showToast, t]);
 
   return (
     <Modal
@@ -513,10 +520,13 @@ export function LocationMapPicker({
                 loading={busy}
                 onPress={() => {
                   if (!coords) {
-                    Alert.alert(
-                      t('mobile.newOrder.locationRequiredTitle'),
-                      t('mobile.newOrder.locationRequiredBody'),
-                    );
+                    showToast({
+                      variant: 'warning',
+                      message: toastCopy(
+                        t('mobile.newOrder.locationRequiredTitle'),
+                        t('mobile.newOrder.locationRequiredBody'),
+                      ),
+                    });
                     return;
                   }
                   void (async () => {

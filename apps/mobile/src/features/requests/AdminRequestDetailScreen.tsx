@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Linking,
   Pressable,
   ScrollView,
@@ -38,8 +37,10 @@ import {
 } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
+import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
@@ -135,6 +136,7 @@ export function AdminRequestDetailScreen({
   const { user } = useAuth();
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -155,6 +157,7 @@ export function AdminRequestDetailScreen({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<WorkflowConfirm>(null);
+  const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
   const [galleryUris, setGalleryUris] = useState<string[]>([]);
   const [draftLines, setDraftLines] = useState<
     Array<{ key: string; productName: string; quantity: string; notes: string }>
@@ -377,33 +380,39 @@ export function AdminRequestDetailScreen({
     },
   });
 
-  const pickUpload = async () => {
-    const choice = await new Promise<'photo' | 'file' | null>((resolve) => {
-      Alert.alert(t('mobile.adminRequest.upload'), t('mobile.adminRequest.uploadHint'), [
-        { text: t('mobile.adminRequest.cancel'), style: 'cancel', onPress: () => resolve(null) },
-        { text: t('mobile.adminRequest.photo'), onPress: () => resolve('photo') },
-        { text: t('mobile.adminRequest.file'), onPress: () => resolve('file') },
-      ]);
-    });
-    if (!choice) return;
-    if (choice === 'photo') {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) return;
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.85,
-      });
-      if (result.canceled || !result.assets[0]) return;
-      const asset = result.assets[0];
-      uploadMutation.mutate({
-        uri: asset.uri,
-        fileName: asset.fileName ?? `photo-${Date.now()}.jpg`,
-        mimeType: asset.mimeType ?? 'image/jpeg',
+  const pickPhotoUpload = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      showToast({
+        variant: 'warning',
+        message: toastCopy(
+          t('mobile.newOrder.permissionTitle'),
+          t('mobile.newOrder.permissionBody'),
+        ),
       });
       return;
     }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    uploadMutation.mutate({
+      uri: asset.uri,
+      fileName: asset.fileName ?? `photo-${Date.now()}.jpg`,
+      mimeType: asset.mimeType ?? 'image/jpeg',
+    });
+  };
+
+  const pickFileUpload = async () => {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'image/*', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      type: [
+        'application/pdf',
+        'image/*',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ],
       copyToCacheDirectory: true,
     });
     if (result.canceled || !result.assets[0]) return;
@@ -414,6 +423,21 @@ export function AdminRequestDetailScreen({
       mimeType: asset.mimeType ?? 'application/octet-stream',
     });
   };
+
+  const uploadActions: ActionSheetItem[] = [
+    {
+      label: t('mobile.adminRequest.photo'),
+      icon: 'images-outline',
+      deferUntilClosed: true,
+      onPress: () => void pickPhotoUpload(),
+    },
+    {
+      label: t('mobile.adminRequest.file'),
+      icon: 'document-outline',
+      deferUntilClosed: true,
+      onPress: () => void pickFileUpload(),
+    },
+  ];
 
   const openDocument = async (id: string) => {
     try {
@@ -1014,7 +1038,7 @@ export function AdminRequestDetailScreen({
               />
               <PrimaryButton
                 label={t('mobile.adminRequest.upload')}
-                onPress={() => void pickUpload()}
+                onPress={() => setUploadSheetOpen(true)}
                 loading={uploadMutation.isPending}
                 disabled={!canUpdate}
                 style={{ alignSelf: 'stretch', width: '100%' }}
@@ -1117,6 +1141,13 @@ export function AdminRequestDetailScreen({
         ) : null}
       </ScrollView>
 
+      <ActionSheet
+        open={uploadSheetOpen}
+        onClose={() => setUploadSheetOpen(false)}
+        title={t('mobile.adminRequest.upload')}
+        actions={uploadActions}
+        cancelLabel={t('mobile.adminRequest.cancel')}
+      />
       <ConfirmationSheet
         open={confirm === 'needsInfo'}
         onClose={() => setConfirm(null)}

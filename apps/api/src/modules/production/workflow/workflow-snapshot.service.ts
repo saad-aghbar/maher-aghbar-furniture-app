@@ -264,6 +264,8 @@ export class WorkflowSnapshotService {
           inventoryTracking: resolved.tracking,
           consumesRawMaterials: resolved.consumesRawMaterials,
           consumesSemiFinished: resolved.consumesSemiFinished,
+          schedulingResourceMode: n.schedulingResourceMode,
+          resourceSlots: n.resourceSlots,
           outputQtyPerUnit: resolved.qtyPerUnit ?? undefined,
           outputNameAr: resolved.nameAr ?? undefined,
           outputNameEn: resolved.nameEn ?? undefined,

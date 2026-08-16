@@ -1,8 +1,11 @@
 import {
+  adminFactoryLoadDensity,
+  adminFactoryLoadTone,
   adminLoadDensity,
   adminLoadTone,
   buildMonthCells,
   compareYmd,
+  monthLabel,
   monthRangeYmd,
   parseYmd,
   shiftMonth,
@@ -34,6 +37,14 @@ describe('calendarMath', () => {
       from: '2026-08-01',
       to: '2026-08-31',
     });
+  });
+
+  it('localizes the month header without changing English', () => {
+    expect(monthLabel(2026, 7, 'en')).toMatch(/August 2026/);
+    expect(monthLabel(2026, 7)).toMatch(/August 2026/);
+    expect(monthLabel(2026, 7, 'ar')).toMatch(/أغسطس|اغسطس/);
+    expect(monthLabel(2026, 7, 'ar')).not.toMatch(/August/);
+    expect(monthLabel(2026, 7, 'he')).toMatch(/אוג|אב/);
   });
 
   it('compares and ranges YMD strings', () => {
@@ -69,7 +80,25 @@ describe('calendarMath', () => {
     expect(todayYmd(new Date(2026, 7, 11))).toBe('2026-08-11');
   });
 
-  it('maps admin load thresholds deterministically', () => {
+  it('maps admin factory-load % to empty / light / half / busy / closed', () => {
+    expect(adminFactoryLoadTone(0, false)).toBe('closed');
+    expect(adminFactoryLoadTone(81, false)).toBe('closed');
+    expect(adminFactoryLoadTone(0, true)).toBe('empty');
+    expect(adminFactoryLoadTone(null, true)).toBe('empty');
+    expect(adminFactoryLoadTone(29, true)).toBe('light');
+    expect(adminFactoryLoadTone(49, true)).toBe('light');
+    expect(adminFactoryLoadTone(50, true)).toBe('half');
+    expect(adminFactoryLoadTone(84, true)).toBe('half');
+    expect(adminFactoryLoadTone(85, true)).toBe('busy');
+    expect(adminFactoryLoadTone(100, true)).toBe('busy');
+    expect(adminFactoryLoadDensity(0, true)).toBe(0);
+    expect(adminFactoryLoadDensity(29, true)).toBe(1);
+    expect(adminFactoryLoadDensity(50, true)).toBe(2);
+    expect(adminFactoryLoadDensity(85, true)).toBe(3);
+    expect(adminFactoryLoadDensity(40, false)).toBe(0);
+  });
+
+  it('keeps legacy order-count bands for unused helpers', () => {
     expect(adminLoadTone(0, false)).toBe('closed');
     expect(adminLoadTone(0, true)).toBe('empty');
     expect(adminLoadTone(1, true)).toBe('light');

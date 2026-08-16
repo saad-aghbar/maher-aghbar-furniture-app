@@ -79,6 +79,7 @@ export default function SettingsPage() {
   const [workingWeekdays, setWorkingWeekdays] = useState<number[]>([0, 1, 2, 3, 4, 6]);
   const [shiftStart, setShiftStart] = useState('08:00');
   const [shiftEnd, setShiftEnd] = useState('16:00');
+  const [deliveryBufferWorkingDays, setDeliveryBufferWorkingDays] = useState(1);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [exceptionDate, setExceptionDate] = useState('');
   const [exceptionAction, setExceptionAction] = useState<'open' | 'close' | 'overtime'>('open');
@@ -120,6 +121,7 @@ export default function SettingsPage() {
     setWorkingWeekdays(cal.workingWeekdays ?? [0, 1, 2, 3, 4, 6]);
     setShiftStart(cal.shiftStart);
     setShiftEnd(cal.shiftEnd);
+    setDeliveryBufferWorkingDays(cal.deliveryBufferWorkingDays ?? 1);
   }, [calendarSettingsQuery.data]);
 
   const saveMutation = useMutation({
@@ -185,20 +187,24 @@ export default function SettingsPage() {
 
   const saveCalendarMutation = useMutation({
     mutationFn: () =>
-      apiFetch<{ replanned?: number }>('/api/v1/scheduling/calendar-settings', {
+      apiFetch<{ replanned?: number; replanQueued?: boolean }>('/api/v1/scheduling/calendar-settings', {
         method: 'PATCH',
         body: JSON.stringify({
           timezone: calendarTimezone.trim() || 'Asia/Amman',
           workingWeekdays: [...workingWeekdays].sort((a, b) => a - b),
           shiftStart,
           shiftEnd,
+          deliveryBufferWorkingDays,
         }),
       }),
     onSuccess: async (data) => {
       setCalendarError(null);
-      const n = data.replanned ?? 0;
       setBanner(
-        n > 0 ? tc('calendar.savedReplanned', { count: n }) : tc('calendarSaved'),
+        data.replanQueued
+          ? tc('calendar.recalculating')
+          : (data.replanned ?? 0) > 0
+            ? tc('calendar.savedReplanned', { count: data.replanned })
+            : tc('calendarSaved'),
       );
       await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar-settings'] });
       await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar'] });
@@ -230,7 +236,7 @@ export default function SettingsPage() {
                 shiftEnd,
                 note: 'Opened by admin',
               };
-      return apiFetch<{ replanned?: number }>('/api/v1/scheduling/calendar-settings/exceptions', {
+      return apiFetch<{ replanned?: number; replanQueued?: boolean }>('/api/v1/scheduling/calendar-settings/exceptions', {
         method: 'POST',
         body: JSON.stringify(body),
       });
@@ -238,9 +244,12 @@ export default function SettingsPage() {
     onSuccess: async (data) => {
       setCalendarError(null);
       setExceptionDate('');
-      const n = data.replanned ?? 0;
       setBanner(
-        n > 0 ? tc('calendar.exceptions.savedReplanned', { count: n }) : tc('calendar.exceptions.saved'),
+        data.replanQueued
+          ? tc('calendar.exceptions.recalculating')
+          : (data.replanned ?? 0) > 0
+            ? tc('calendar.exceptions.savedReplanned', { count: data.replanned })
+            : tc('calendar.exceptions.saved'),
       );
       await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar-settings'] });
       await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar'] });
@@ -250,15 +259,18 @@ export default function SettingsPage() {
 
   const deleteExceptionMutation = useMutation({
     mutationFn: (date: string) =>
-      apiFetch<{ replanned?: number }>(
+      apiFetch<{ replanned?: number; replanQueued?: boolean }>(
         `/api/v1/scheduling/calendar-settings/exceptions/${encodeURIComponent(date.slice(0, 10))}`,
         { method: 'DELETE' },
       ),
     onSuccess: async (data) => {
       setCalendarError(null);
-      const n = data.replanned ?? 0;
       setBanner(
-        n > 0 ? tc('calendar.exceptions.clearedReplanned', { count: n }) : tc('calendar.exceptions.cleared'),
+        data.replanQueued
+          ? tc('calendar.exceptions.clearedRecalculating')
+          : (data.replanned ?? 0) > 0
+            ? tc('calendar.exceptions.clearedReplanned', { count: data.replanned })
+            : tc('calendar.exceptions.cleared'),
       );
       await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar-settings'] });
       await queryClient.invalidateQueries({ queryKey: ['scheduling-calendar'] });
@@ -640,7 +652,19 @@ export default function SettingsPage() {
               value={shiftEnd}
               onChange={(e) => setShiftEnd(e.target.value)}
             />
+            <Input
+              label={tc('deliveryBufferWorkingDays')}
+              type="number"
+              min={0}
+              max={10}
+              dir="ltr"
+              value={String(deliveryBufferWorkingDays)}
+              onChange={(e) => setDeliveryBufferWorkingDays(Number(e.target.value) || 0)}
+            />
           </div>
+          <p className="-mt-1 text-xs text-[var(--maher-text-secondary)]">
+            {tc('deliveryBufferWorkingDaysHint')}
+          </p>
           <div>
             <p className="mb-2 text-sm font-medium text-[var(--maher-text-primary)]">
               {tc('workingWeekdays')}

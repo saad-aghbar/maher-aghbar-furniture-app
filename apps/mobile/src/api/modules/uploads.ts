@@ -49,6 +49,13 @@ export type UploadProgressHandlers = {
   signal?: AbortSignal;
 };
 
+/** Hermes / RN has no DOMException — use a plain Error with AbortError name. */
+function abortError(message = 'Upload cancelled'): Error {
+  const err = new Error(message);
+  err.name = 'AbortError';
+  return err;
+}
+
 /**
  * Multipart upload with optional progress + abort (XMLHttpRequest).
  */
@@ -63,10 +70,17 @@ export async function uploadFile(
   if (params.idempotencyKey) qs.set('idempotencyKey', params.idempotencyKey);
 
   const form = new FormData();
+  const mimeType = params.mimeType.trim().toLowerCase();
+  const normalizedMime =
+    mimeType === 'image/jpg' || mimeType === 'image/pjpeg'
+      ? 'image/jpeg'
+      : mimeType === 'image/x-png'
+        ? 'image/png'
+        : mimeType || 'application/octet-stream';
   form.append('file', {
     uri: params.uri,
     name: params.fileName,
-    type: params.mimeType,
+    type: normalizedMime,
   } as unknown as Blob);
 
   const token = await getAccessToken();
@@ -79,8 +93,15 @@ export async function uploadFile(
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
     xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable || !handlers?.onProgress) return;
-      handlers.onProgress(Math.max(0, Math.min(1, event.loaded / event.total)));
+      if (!handlers?.onProgress) return;
+      if (event.lengthComputable && event.total > 0) {
+        handlers.onProgress(Math.max(0, Math.min(1, event.loaded / event.total)));
+        return;
+      }
+      // Some RN runtimes omit total — still advance past the initial 5% marker.
+      if (event.loaded > 0) {
+        handlers.onProgress(Math.min(0.9, 0.08 + event.loaded / (event.loaded + 750_000)));
+      }
     };
 
     xhr.onload = () => {
@@ -92,16 +113,26 @@ export async function uploadFile(
         }
         return;
       }
-      reject(new Error(xhr.responseText || `Upload failed (${xhr.status})`));
+      let message = `Upload failed (${xhr.status})`;
+      try {
+        const body = JSON.parse(xhr.responseText) as {
+          message?: string;
+          error?: { message?: string };
+        };
+        message = body.message || body.error?.message || message;
+      } catch {
+        if (xhr.responseText?.trim()) message = xhr.responseText.trim().slice(0, 200);
+      }
+      reject(new Error(message));
     };
 
     xhr.onerror = () => reject(new Error('Upload failed'));
-    xhr.onabort = () => reject(new DOMException('Upload cancelled', 'AbortError'));
+    xhr.onabort = () => reject(abortError());
 
     const onAbort = () => xhr.abort();
     if (handlers?.signal) {
       if (handlers.signal.aborted) {
-        xhr.abort();
+        reject(abortError());
         return;
       }
       handlers.signal.addEventListener('abort', onAbort, { once: true });

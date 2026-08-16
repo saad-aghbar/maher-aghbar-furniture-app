@@ -530,8 +530,11 @@ export class ProductionService {
         },
       });
       if (order.salesOrderId) {
-        await tx.salesOrder.update({
-          where: { id: order.salesOrderId },
+        await tx.salesOrder.updateMany({
+          where: {
+            id: order.salesOrderId,
+            status: { not: 'WAITING_FOR_MATERIALS' },
+          },
           data: { status: 'IN_PRODUCTION' },
         });
       }

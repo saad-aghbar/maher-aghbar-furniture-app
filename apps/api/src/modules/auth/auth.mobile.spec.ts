@@ -43,10 +43,12 @@ describe('AuthService mobile auth', () => {
   let service: AuthService;
   let prisma: {
     user: { findFirst: jest.Mock; findFirstOrThrow: jest.Mock; update: jest.Mock; findUniqueOrThrow: jest.Mock };
+    customer: { create: jest.Mock };
     session: { create: jest.Mock; findFirst: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
     auditEvent: { create: jest.Mock };
   };
   let jwt: { signAsync: jest.Mock };
+  let sequences: { next: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -55,6 +57,9 @@ describe('AuthService mobile auth', () => {
         findFirstOrThrow: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
         findUniqueOrThrow: jest.fn(),
+      },
+      customer: {
+        create: jest.fn().mockResolvedValue({ id: 'cus-healed' }),
       },
       session: {
         create: jest.fn().mockResolvedValue({ id: 'sess-new' }),
@@ -69,7 +74,14 @@ describe('AuthService mobile auth', () => {
     jwt = {
       signAsync: jest.fn().mockResolvedValue('access.jwt.token'),
     };
-    service = new AuthService(prisma as unknown as PrismaService, jwt as unknown as JwtService);
+    sequences = {
+      next: jest.fn().mockResolvedValue('CUST-2026-00001'),
+    };
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      jwt as unknown as JwtService,
+      sequences as never,
+    );
   });
 
   function mockLoadAuthUser() {
@@ -309,6 +321,7 @@ describe('AuthService mobile auth', () => {
     const dealer = await service.me('dealer-1');
     expect(dealer.portalPassword).toBe('123');
     expect(dealer.customerId).toBe('cus-1');
+    expect(prisma.customer.create).not.toHaveBeenCalled();
 
     prisma.user.findFirstOrThrow.mockResolvedValue(
       baseUser({
@@ -370,6 +383,41 @@ describe('AuthService mobile auth', () => {
       service.updateMe('user-1', { firstName: 'Sam', lastName: 'Lee' }),
     ).rejects.toMatchObject({ response: { code: 'PROFILE_LOCKED' } });
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('me heals CUSTOMER users missing a linked dealer customerId', async () => {
+    prisma.user.findFirstOrThrow.mockResolvedValue(
+      baseUser({
+        id: 'orphan-1',
+        username: 'nile',
+        firstName: 'Nile',
+        lastName: 'Nile',
+        customerId: null,
+        roles: [
+          {
+            role: {
+              code: 'CUSTOMER',
+              kind: 'CUSTOMER',
+              permissions: [{ permission: { code: 'request.create' } }],
+            },
+          },
+        ],
+      }),
+    );
+    prisma.user.findUniqueOrThrow.mockResolvedValue({
+      mfaEnabled: false,
+      mfaSecret: null,
+      portalPasswordEnc: null,
+    });
+
+    const me = await service.me('orphan-1');
+    expect(sequences.next).toHaveBeenCalled();
+    expect(prisma.customer.create).toHaveBeenCalled();
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'orphan-1' },
+      data: { customerId: 'cus-healed' },
+    });
+    expect(me.customerId).toBe('cus-healed');
   });
 
   it('changePassword rejects staff accounts', async () => {

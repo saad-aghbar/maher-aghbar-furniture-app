@@ -12,6 +12,7 @@ import { useTheme } from '@/theme';
 
 export type StatusChipKey =
   | 'all'
+  | 'drafts'
   | 'pending'
   | 'production'
   | 'ready'
@@ -22,7 +23,14 @@ type OrdersFilterChipsProps = {
   onChange: (value: StatusChipKey) => void;
 };
 
-const CHIPS: StatusChipKey[] = ['all', 'pending', 'production', 'ready', 'delivered'];
+const CHIPS: StatusChipKey[] = [
+  'all',
+  'drafts',
+  'pending',
+  'production',
+  'ready',
+  'delivered',
+];
 
 const SHELL_PAD_Y = 6;
 const SHELL_PAD_X = 6;
@@ -33,16 +41,38 @@ const CHIP_GAP = 2;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
-const FILL_LIGHT = ['#F3EEE5', '#EEEAE4', '#F2E8E4', '#E9EBE3', '#E8EEEA'] as const;
-const BORDER_LIGHT = ['#8F7A58', '#6E6254', '#7A4538', '#5A6348', '#4A6B58'] as const;
+const FILL_LIGHT = [
+  '#F3EEE5',
+  '#EEE8E0',
+  '#EEEAE4',
+  '#F2E8E4',
+  '#E9EBE3',
+  '#E8EEEA',
+] as const;
+const BORDER_LIGHT = [
+  '#8F7A58',
+  '#7A6B52',
+  '#6E6254',
+  '#7A4538',
+  '#5A6348',
+  '#4A6B58',
+] as const;
 const FILL_DARK = [
   'rgba(168,144,108,0.18)',
+  'rgba(168,148,120,0.20)',
   'rgba(181,164,140,0.20)',
   'rgba(196,137,122,0.18)',
   'rgba(154,170,122,0.18)',
   'rgba(122,170,148,0.18)',
 ] as const;
-const BORDER_DARK = ['#A8906C', '#B5A48C', '#C4897A', '#9AAA7A', '#7AAA94'] as const;
+const BORDER_DARK = [
+  '#A8906C',
+  '#A89878',
+  '#B5A48C',
+  '#C4897A',
+  '#9AAA7A',
+  '#7AAA94',
+] as const;
 
 type ChipLayout = { x: number; width: number };
 
@@ -58,6 +88,7 @@ function accentFor(
   focused: boolean,
 ): string {
   if (!focused) return colors.textSecondary;
+  if (chip === 'drafts') return colors.brand;
   if (chip === 'pending') return colors.warning;
   if (chip === 'production') return colors.info;
   if (chip === 'ready') return colors.brand;

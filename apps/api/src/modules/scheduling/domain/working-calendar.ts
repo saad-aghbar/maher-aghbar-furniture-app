@@ -48,6 +48,54 @@ function localDateKey(year: number, month: number, day: number): string {
   return `${year}-${pad2(month)}-${pad2(day)}`;
 }
 
+export function parseYmd(ymd: string): { year: number; month: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return { year, month, day };
+}
+
+export function addDaysYmd(ymd: string, days: number): string {
+  const parsed = parseYmd(ymd);
+  if (!parsed) {
+    throw new Error(`Invalid YYYY-MM-DD value: ${ymd}`);
+  }
+  const utc = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day + days));
+  return localDateKey(utc.getUTCFullYear(), utc.getUTCMonth() + 1, utc.getUTCDate());
+}
+
+export function eachYmdInclusive(fromYmd: string, toYmd: string): string[] {
+  if (fromYmd > toYmd) return [];
+  const out: string[] = [];
+  let cursor = fromYmd;
+  for (let guard = 0; guard < 400 && cursor <= toYmd; guard += 1) {
+    out.push(cursor);
+    cursor = addDaysYmd(cursor, 1);
+  }
+  return out;
+}
+
+/** Minutes where `[start, end)` overlaps any working interval. Lunch and nights are excluded. */
+export function overlapWorkingMinutes(
+  start: Date,
+  end: Date,
+  intervals: readonly WorkingInterval[],
+): number {
+  const s = start.getTime();
+  const e = end.getTime();
+  if (!(e > s)) return 0;
+  let minutes = 0;
+  for (const interval of intervals) {
+    const a = Math.max(s, interval.start.getTime());
+    const b = Math.min(e, interval.end.getTime());
+    if (b > a) minutes += (b - a) / 60_000;
+  }
+  return minutes;
+}
+
 function getLocalParts(date: Date, timeZone: string): LocalParts {
   const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -185,6 +233,42 @@ export class WorkingCalendar {
     for (const ex of input.exceptions ?? []) {
       this.exceptionsByDate.set(exceptionDateKey(ex, this.timezone), ex);
     }
+  }
+
+  localInstant(ymd: string, hour = 12, minute = 0, second = 0): Date {
+    const parsed = parseYmd(ymd);
+    if (!parsed) {
+      throw new Error(`Invalid YYYY-MM-DD value: ${ymd}`);
+    }
+    return zonedLocalToUtc(
+      parsed.year,
+      parsed.month,
+      parsed.day,
+      hour,
+      minute,
+      second,
+      this.timezone,
+    );
+  }
+
+  intervalsForLocalYmd(ymd: string): WorkingInterval[] {
+    return this.intervalsForLocalDay(this.localInstant(ymd, 12, 0));
+  }
+
+  /** Factory-local `[fromYmd 00:00, toYmd+1 00:00)` in UTC instants. */
+  localRangeBounds(fromYmd: string, toYmd: string): { start: Date; endExclusive: Date } {
+    return {
+      start: this.localInstant(fromYmd, 0, 0),
+      endExclusive: this.localInstant(addDaysYmd(toYmd, 1), 0, 0),
+    };
+  }
+
+  expandWorkingIntervalsForYmdRange(fromYmd: string, toYmd: string): WorkingInterval[] {
+    return eachYmdInclusive(fromYmd, toYmd).flatMap((ymd) => this.intervalsForLocalYmd(ymd));
+  }
+
+  overlapWorkingMinutesOnLocalDay(start: Date, end: Date, ymd: string): number {
+    return overlapWorkingMinutes(start, end, this.intervalsForLocalYmd(ymd));
   }
 
   /** Working intervals for the local calendar day of `day`. */
@@ -403,5 +487,42 @@ export class WorkingCalendar {
     }
 
     throw new Error('Unable to subtract working minutes within search horizon');
+  }
+
+  /** Shift-end of the local working day containing `instant` (or previous working day if closed). */
+  endOfWorkingDay(instant: Date): Date {
+    const intervals = this.intervalsForLocalDay(instant);
+    if (intervals.length > 0) {
+      return new Date(intervals[intervals.length - 1]!.end.getTime());
+    }
+    const prev = this.previousWorkingInstant(instant);
+    const prevIntervals = this.intervalsForLocalDay(new Date(prev.getTime() - 1));
+    if (prevIntervals.length > 0) {
+      return new Date(prevIntervals[prevIntervals.length - 1]!.end.getTime());
+    }
+    return prev;
+  }
+
+  /**
+   * Latest allowed production completion for a requested delivery date.
+   * `bufferWorkingDays=1` → end of shift on the previous working day (delivery day reserved).
+   * `bufferWorkingDays=0` → end of shift on the delivery day if it is working.
+   */
+  latestProductionCompletion(requested: Date, bufferWorkingDays: number): Date {
+    const parts = getLocalParts(requested, this.timezone);
+    const deliveryMidnight = zonedLocalToUtc(parts.year, parts.month, parts.day, 0, 0, 0, this.timezone);
+    const days = Math.max(0, Math.floor(bufferWorkingDays));
+    if (days === 0) {
+      return this.endOfWorkingDay(
+        this.intervalsForLocalDay(deliveryMidnight).length > 0
+          ? deliveryMidnight
+          : this.previousWorkingInstant(deliveryMidnight),
+      );
+    }
+    let end = this.endOfWorkingDay(this.previousWorkingInstant(deliveryMidnight));
+    for (let i = 1; i < days; i++) {
+      end = this.endOfWorkingDay(this.previousWorkingInstant(new Date(end.getTime() - 1)));
+    }
+    return end;
   }
 }

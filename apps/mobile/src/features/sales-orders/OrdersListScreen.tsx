@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { listRequests } from '@/api/modules/requests';
@@ -83,6 +83,7 @@ export function OrdersListScreen({
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
+  const params = useLocalSearchParams<{ focus?: string | string[] }>();
   const allowed = can(user, 'sales-order.read');
   const canReadRequests = can(user, 'request.read');
   const composition = ORDERS_COMPOSITION;
@@ -101,6 +102,11 @@ export function OrdersListScreen({
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
   const [draft, setDraft] = useState<OrdersFilterDraft>(defaultDraft);
   const [applied, setApplied] = useState<OrdersFilterDraft>(defaultDraft);
+
+  useEffect(() => {
+    const raw = Array.isArray(params.focus) ? params.focus[0] : params.focus;
+    if (raw === 'drafts') setStatusChip('drafts');
+  }, [params.focus]);
 
   useEffect(() => {
     const id = setTimeout(() => setQ(searchInput.trim()), 300);

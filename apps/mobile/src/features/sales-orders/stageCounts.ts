@@ -4,8 +4,9 @@ export type OrdersStageKey = 'pending' | 'production' | 'ready';
 
 export type OrdersStageFocus = OrdersStageKey | 'all';
 
+export type OrderClassifyResult = OrdersStageKey | 'delivered' | 'drafts';
+
 const PENDING = new Set([
-  'DRAFT',
   'CONFIRMED',
   'WAITING_FOR_PAYMENT',
   'WAITING_FOR_MATERIALS',
@@ -28,8 +29,9 @@ export type StageCountable = {
   deliveryDate?: string | null;
 };
 
-export function classifyOrderStage(item: StageCountable): OrdersStageKey | 'delivered' {
+export function classifyOrderStage(item: StageCountable): OrderClassifyResult {
   const status = item.status.toUpperCase();
+  if (status === 'DRAFT') return 'drafts';
   if (READY.has(status)) return 'ready';
   if (PRODUCTION.has(status)) return 'production';
   if (PENDING.has(status)) return 'pending';
@@ -45,20 +47,22 @@ export function countOrderStages(items: StageCountable[]): Record<OrdersStageKey
   };
   for (const item of items) {
     const stage = classifyOrderStage(item);
-    if (stage === 'delivered') continue;
+    if (stage === 'delivered' || stage === 'drafts') continue;
     counts[stage] += 1;
   }
   return counts;
 }
 
-/** Dealer focus rail buckets — includes delivered + total. */
+/** Dealer focus rail buckets — includes drafts, delivered + total. */
 export type DealerFocusCounts = Record<OrdersStageKey, number> & {
+  drafts: number;
   delivered: number;
   total: number;
 };
 
 export function countDealerFocusBuckets(items: StageCountable[]): DealerFocusCounts {
   const counts: DealerFocusCounts = {
+    drafts: 0,
     pending: 0,
     production: 0,
     ready: 0,
@@ -99,7 +103,7 @@ export function stageKeyToChip(stage: OrdersStageKey): StatusChipKey {
   return stage;
 }
 
-/** Map status filter → spine focus (delivered clears the lane). */
+/** Map status filter → spine focus (delivered/drafts clear the lane). */
 export function chipToStageFocus(chip: StatusChipKey): OrdersStageFocus {
   if (chip === 'pending' || chip === 'production' || chip === 'ready') {
     return chip;

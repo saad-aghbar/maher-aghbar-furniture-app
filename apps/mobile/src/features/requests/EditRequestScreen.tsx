@@ -1,14 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Linking,
   Pressable,
   ScrollView,
   View,
 } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
@@ -19,6 +16,7 @@ import {
 } from '@/api/modules/customers';
 import {
   getRequest,
+  submitRequest,
   updateRequest,
   type RequestPriority,
 } from '@/api/modules/requests';
@@ -29,17 +27,17 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
+import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { LockedTextField } from '@/components/forms/LockedTextField';
 import { PhoneField } from '@/components/forms/PhoneField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { LocationMapPicker } from '@/components/maps/LocationMapPicker';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, FormShake, haptics, ListItemEnter } from '@/motion';
+import { FormShake, haptics, ListItemEnter } from '@/motion';
 import { DEALER_TAB_BAR_CLEARANCE, SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useAvailabilityQuery } from '@/features/scheduling/query';
@@ -57,6 +55,7 @@ import { NewOrderDimensionsEditor } from './components/NewOrderDimensionsEditor'
 import { NewOrderPriorityBar } from './components/NewOrderPriorityBar';
 import { SavedAddressPickerSheet } from './components/SavedAddressPickerSheet';
 import { SaveAddressSheet } from './components/SaveAddressSheet';
+import { UploadsStep } from './components/UploadsStep';
 import {
   emptyDimensionFields,
   formatDimensionsNotes,
@@ -72,9 +71,32 @@ import {
   isValidOptionalDate,
   isValidOptionalPhone,
 } from './newOrderValidation';
+import {
+  isPdfMime,
+  type AttachmentCategory,
+  type AttachmentKind,
+  type PendingAttachment,
+} from './pendingAttachment';
 import { selectDeliveryAvailability, toDeliveryYmd } from './selectDeliveryAvailability';
-import type { RequestItem } from './types';
+import type { RequestDocument, RequestItem } from './types';
 
+function categoryFromDoc(doc: RequestDocument): AttachmentCategory {
+  const cat = (doc.category ?? '').toUpperCase();
+  if (cat === 'HANDWRITTEN_ORDER') return 'HANDWRITTEN_ORDER';
+  if (cat === 'ORDER_DOCUMENT') return 'ORDER_DOCUMENT';
+  if (cat === 'ORDER_IMAGE') return 'ORDER_IMAGE';
+  const mime = (doc.mimeType ?? '').toLowerCase();
+  if (isPdfMime(mime) || mime.includes('pdf') || /\.pdf$/i.test(doc.fileName ?? '')) {
+    return 'ORDER_DOCUMENT';
+  }
+  return 'ORDER_IMAGE';
+}
+
+function kindFromCategory(category: AttachmentCategory): AttachmentKind {
+  if (category === 'HANDWRITTEN_ORDER') return 'handwritten';
+  if (category === 'ORDER_DOCUMENT') return 'pdf';
+  return 'gallery';
+}
 function formatRemaining(
   ms: number,
   t: (k: string, p?: Record<string, string | number>) => string,
@@ -136,14 +158,15 @@ export function EditRequestScreen({
   const { user } = useAuth();
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const { showToast } = useToast();
   const router = useRouter();
   const queryClient = useQueryClient();
   const allowed = can(user, 'request.read');
   const canUpdate = can(user, 'request.update');
+  const canUpload = can(user, 'document.manage');
   const isAdmin = variant === 'admin';
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const stickyBottom = isAdmin ? SURFACE_TAB_BAR_CLEARANCE : DEALER_TAB_BAR_CLEARANCE;
-  const stickyPad = stickyBottom + 120;
 
   const query = useQuery({
     queryKey: queryKeys.requests.detail(requestId),
@@ -155,12 +178,15 @@ export function EditRequestScreen({
   const detail = query.data;
   const policy = detail?.editPolicy;
   const item = detail?.items?.[0];
+  const isDraft = detail?.status === 'DRAFT';
   const addressCustomerId = user?.customerId ?? detail?.customer?.id ?? null;
   const canReadAddresses = Boolean(addressCustomerId && can(user, 'customer.read'));
   const canSaveAddresses = Boolean(addressCustomerId && can(user, 'address.manage'));
+  const stickyPad = stickyBottom + (isDraft && canUpdate ? 180 : 120);
 
   const [shake, setShake] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [mapOpen, setMapOpen] = useState(false);
@@ -170,8 +196,13 @@ export function EditRequestScreen({
   const [saveAddressError, setSaveAddressError] = useState<string | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<CustomerAddress[]>([]);
   const [galleryUris, setGalleryUris] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [deliveryNotes, setDeliveryNotes] = useState('');
-
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  const uploadAbort = useRef<AbortController | null>(null);
+  const uploadInFlight = useRef(false);
+  const uploadQueueTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [externalOrderNumber, setExternalOrderNumber] = useState('');
   const [priority, setPriority] = useState<RequestPriority>('NORMAL');
   const [endCustomerName, setEndCustomerName] = useState('');
@@ -280,31 +311,59 @@ export function EditRequestScreen({
 
   useEffect(() => {
     let cancelled = false;
-    async function loadGallery() {
+    async function hydrateAttachments() {
       if (!detail) {
+        setAttachments([]);
         setGalleryUris([]);
         return;
       }
       const uris: string[] = [];
       const hero = resolveOrderMediaUri(detail.imageUrl);
       if (hero) uris.push(hero);
+
+      const localPending = attachmentsRef.current.filter(
+        (a) =>
+          !a.documentId &&
+          (a.status === 'ready' ||
+            a.status === 'uploading' ||
+            a.status === 'error' ||
+            a.status === 'cancelled'),
+      );
+
+      const mapped: PendingAttachment[] = [];
       for (const doc of detail.documents ?? []) {
-        const mime = (doc.mimeType ?? '').toLowerCase();
+        const mime = (doc.mimeType ?? 'application/octet-stream').toLowerCase();
         const name = (doc.fileName ?? '').toLowerCase();
         const isImage =
           mime.startsWith('image/') ||
           /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/.test(name);
-        if (!isImage) continue;
+        let uri = '';
         try {
-          const url = await resolveDocumentUrl(doc.id);
-          if (!uris.includes(url)) uris.push(url);
+          uri = await resolveDocumentUrl(doc.id);
+          if (isImage && uri && !uris.includes(uri)) uris.push(uri);
         } catch {
           // skip failed signed URLs
         }
+        const category = categoryFromDoc(doc);
+        mapped.push({
+          id: doc.id,
+          uri: uri || 'file://placeholder',
+          fileName: doc.fileName,
+          mimeType: doc.mimeType ?? 'application/octet-stream',
+          category,
+          kind: kindFromCategory(category),
+          status: 'uploaded',
+          progress: 1,
+          documentId: doc.id,
+        });
       }
-      if (!cancelled) setGalleryUris(uris);
+
+      if (!cancelled) {
+        setGalleryUris(uris);
+        setAttachments([...mapped, ...localPending]);
+      }
     }
-    void loadGallery();
+    void hydrateAttachments();
     return () => {
       cancelled = true;
     };
@@ -368,127 +427,191 @@ export function EditRequestScreen({
     await query.refetch();
   };
 
-  const uploadMutation = useMutation({
-    mutationFn: async (args: { uri: string; fileName: string; mimeType: string }) =>
-      uploadFile({
-        uri: args.uri,
-        fileName: args.fileName,
-        mimeType: args.mimeType,
-        category: 'RFQ_ATTACHMENT',
-        requestId,
-      }),
-    onSuccess: async () => {
-      void haptics.confirmMedium();
-      await invalidate();
-    },
-    onError: (err) => {
+  const patchAttachment = (id: string, patch: Partial<PendingAttachment>) => {
+    setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  };
+
+  const uploadOne = async (file: PendingAttachment, signal: AbortSignal) => {
+    patchAttachment(file.id, { status: 'uploading', progress: 0.05, errorMessage: undefined });
+    try {
+      const uploaded = await uploadFile(
+        {
+          uri: file.uri,
+          fileName: file.fileName,
+          mimeType: file.mimeType,
+          category: file.category,
+          requestId,
+        },
+        {
+          signal,
+          onProgress: (ratio) => patchAttachment(file.id, { progress: ratio }),
+        },
+      );
+      patchAttachment(file.id, {
+        status: 'uploaded',
+        progress: 1,
+        storageKey: uploaded.document.storageKey,
+        documentId: uploaded.document.id,
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        patchAttachment(file.id, { status: 'cancelled', progress: 0 });
+        return false;
+      }
+      patchAttachment(file.id, {
+        status: 'error',
+        progress: 0,
+        errorMessage: err instanceof Error ? err.message : t('mobile.requestEdit.uploadFailed'),
+      });
       setError(err instanceof Error ? err.message : t('mobile.requestEdit.uploadFailed'));
-      void haptics.error();
-    },
-  });
-
-  const attachPhoto = async () => {
-    if (fieldsLocked) return;
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      setError(t('mobile.requestEdit.photoPermission'));
-      return;
+      return false;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.85,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    uploadMutation.mutate({
-      uri: asset.uri,
-      fileName: asset.fileName ?? `photo-${Date.now()}.jpg`,
-      mimeType: asset.mimeType ?? 'image/jpeg',
-    });
   };
 
-  const attachDocument = async () => {
-    if (fieldsLocked) return;
-    const result = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      multiple: false,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    uploadMutation.mutate({
-      uri: asset.uri,
-      fileName: asset.name,
-      mimeType: asset.mimeType ?? 'application/octet-stream',
-    });
+  const uploadAll = async () => {
+    if (!canUpload) return true;
+    const pending = attachmentsRef.current.filter(
+      (a) => a.status === 'ready' || a.status === 'error' || a.status === 'cancelled',
+    );
+    if (!pending.length) return true;
+    if (uploadInFlight.current) {
+      uploadAbort.current?.abort();
+    }
+    const controller = new AbortController();
+    uploadAbort.current = controller;
+    uploadInFlight.current = true;
+    setUploading(true);
+    try {
+      for (const file of pending) {
+        if (controller.signal.aborted) break;
+        await uploadOne(file, controller.signal);
+      }
+      const failed = attachmentsRef.current.some((a) => a.status === 'error');
+      if (!failed) {
+        setError(null);
+        await invalidate();
+      }
+      return !failed;
+    } finally {
+      uploadInFlight.current = false;
+      setUploading(false);
+    }
   };
 
-  const save = async () => {
+  const cancelUploads = () => {
+    uploadAbort.current?.abort();
+    uploadInFlight.current = false;
+    setUploading(false);
+    setAttachments((prev) =>
+      prev.map((a) =>
+        a.status === 'uploading' ? { ...a, status: 'cancelled', progress: 0 } : a,
+      ),
+    );
+  };
+
+  const retryOne = (id: string) => {
+    const file = attachmentsRef.current.find((a) => a.id === id);
+    if (!file) return;
+    patchAttachment(id, { status: 'ready', progress: 0, errorMessage: undefined });
+    void (async () => {
+      uploadAbort.current?.abort();
+      const controller = new AbortController();
+      uploadAbort.current = controller;
+      setUploading(true);
+      await uploadOne({ ...file, status: 'ready', progress: 0 }, controller.signal);
+      setUploading(false);
+      if (attachmentsRef.current.every((a) => a.status === 'uploaded' || a.id !== id)) {
+        await invalidate();
+      }
+    })();
+  };
+
+  const overallProgress =
+    attachments.length === 0
+      ? 0
+      : attachments.reduce((sum, a) => sum + (a.status === 'uploaded' ? 1 : a.progress), 0) /
+        attachments.length;
+
+  const persistFields = async () => {
     if (!canUpdate || !detail) return;
     if (orderLocked) {
       setError(orderReason);
       setShake((n) => n + 1);
       void haptics.error();
-      return;
+      throw new Error(orderReason);
     }
     if (endCustomerPhone.trim() && !isValidOptionalPhone(endCustomerPhone)) {
       setError(t('mobile.newOrder.errors.phoneInvalid'));
       setShake((n) => n + 1);
       void haptics.error();
-      return;
+      throw new Error(t('mobile.newOrder.errors.phoneInvalid'));
     }
     if (requiredDeliveryDate.trim() && !isValidOptionalDate(requiredDeliveryDate)) {
       setError(t('mobile.newOrder.errors.dateInvalid'));
       setShake((n) => n + 1);
       void haptics.error();
-      return;
+      throw new Error(t('mobile.newOrder.errors.dateInvalid'));
     }
 
+    const dimensionsNotes = formatDimensionsNotes(dimensions);
+    const customMeasurements = toRequestCustomMeasurements(
+      dimensions,
+      t('mobile.newOrder.dimSeat'),
+    );
+    const notesBlob =
+      composeRequestNotes({
+        deliveryNotes,
+        dimensionsNotes: '',
+        orderNotes,
+      })?.trim() || undefined;
+    await updateRequest(detail.id, {
+      externalOrderNumber: externalOrderNumber.trim() || undefined,
+      priority,
+      endCustomerName: endCustomerName.trim() || undefined,
+      endCustomerPhone: endCustomerPhone.trim() || undefined,
+      deliveryAddress: deliveryAddress.trim() || undefined,
+      deliveryLat,
+      deliveryLng,
+      requiredDeliveryDate: requiredDeliveryDate.trim() || undefined,
+      notes: notesBlob,
+      items: [
+        {
+          productName: item?.productName || detail.title || detail.number,
+          productId: item?.productId || undefined,
+          quantity: Number(quantity) || 1,
+          fabric: fabricLocked
+            ? item?.fabricType ?? item?.fabric ?? undefined
+            : fabric.trim() || undefined,
+          color: fabricLocked ? item?.fabricColor ?? item?.color ?? undefined : undefined,
+          description: fabricLocked
+            ? item?.description ?? undefined
+            : fabricDescription.trim() || undefined,
+          notes: dimensionsNotes || undefined,
+          width: parseDimNumber(dimensions.width),
+          height: parseDimNumber(dimensions.height),
+          depth: parseDimNumber(dimensions.depth),
+          customMeasurements: customMeasurements.length ? customMeasurements : undefined,
+        },
+      ],
+    });
+  };
+
+  const save = async () => {
+    if (!canUpdate || !detail) return;
     setBusy(true);
     setError(null);
     try {
-      const dimensionsNotes = formatDimensionsNotes(dimensions);
-      const customMeasurements = toRequestCustomMeasurements(
-        dimensions,
-        t('mobile.newOrder.dimSeat'),
-      );
-      const notesBlob =
-        composeRequestNotes({
-          deliveryNotes,
-          dimensionsNotes: '',
-          orderNotes,
-        })?.trim() || undefined;
-      await updateRequest(detail.id, {
-        externalOrderNumber: externalOrderNumber.trim() || undefined,
-        priority,
-        endCustomerName: endCustomerName.trim() || undefined,
-        endCustomerPhone: endCustomerPhone.trim() || undefined,
-        deliveryAddress: deliveryAddress.trim() || undefined,
-        deliveryLat,
-        deliveryLng,
-        requiredDeliveryDate: requiredDeliveryDate.trim() || undefined,
-        notes: notesBlob,
-        items: [
-          {
-            productName: item?.productName || detail.title || detail.number,
-            productId: item?.productId || undefined,
-            quantity: Number(quantity) || 1,
-            fabric: fabricLocked
-              ? item?.fabricType ?? item?.fabric ?? undefined
-              : fabric.trim() || undefined,
-            color: fabricLocked ? item?.fabricColor ?? item?.color ?? undefined : undefined,
-            description: fabricLocked
-              ? item?.description ?? undefined
-              : fabricDescription.trim() || undefined,
-            notes: dimensionsNotes || undefined,
-            width: parseDimNumber(dimensions.width),
-            height: parseDimNumber(dimensions.height),
-            depth: parseDimNumber(dimensions.depth),
-            customMeasurements: customMeasurements.length ? customMeasurements : undefined,
-          },
-        ],
-      });
+      await persistFields();
+      await uploadAll();
       void haptics.confirmMedium();
-      Alert.alert(t('mobile.requestEdit.savedTitle'), t('mobile.requestEdit.savedBody'));
+      showToast({
+        variant: 'success',
+        message: toastCopy(
+          t('mobile.requestEdit.savedTitle'),
+          t('mobile.requestEdit.savedBody'),
+        ),
+      });
       await invalidate();
     } catch (err) {
       if (
@@ -497,8 +620,52 @@ export function EditRequestScreen({
       ) {
         setError(err.message);
         await query.refetch();
-      } else {
+      } else if (!(err instanceof Error && err.message === orderReason)) {
         setError(err instanceof Error ? err.message : t('mobile.requestEdit.saveFailed'));
+      }
+      setShake((n) => n + 1);
+      void haptics.error();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitDraft = async () => {
+    if (!canUpdate || !detail || !isDraft || busy || uploading) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await persistFields();
+      const uploadsOk = await uploadAll();
+      if (!uploadsOk) {
+        setError(t('mobile.requestEdit.submitFailed'));
+        setShake((n) => n + 1);
+        void haptics.error();
+        return;
+      }
+      const submitted = await submitRequest(detail.id);
+      void haptics.confirmMedium();
+      showToast({
+        variant: 'success',
+        message: toastCopy(
+          t('mobile.requestEdit.submittedTitle'),
+          t('mobile.requestEdit.submittedBody', { number: submitted.number }),
+        ),
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.requests.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.salesOrders.all }),
+      ]);
+      router.replace('/(app)/(customer)/(tabs)/orders' as never);
+    } catch (err) {
+      if (
+        isApiError(err) &&
+        (err.code === 'ORDER_LOCKED' || err.code === 'FABRIC_LOCKED' || err.status === 409)
+      ) {
+        setError(err.message);
+        await query.refetch();
+      } else {
+        setError(err instanceof Error ? err.message : t('mobile.requestEdit.submitFailed'));
       }
       setShake((n) => n + 1);
       void haptics.error();
@@ -791,7 +958,30 @@ export function EditRequestScreen({
                     icon="attach-outline"
                     label={t('mobile.requestEdit.sectionAttachments')}
                   />
-                  {(detail.documents ?? []).length === 0 ? (
+                  {!fieldsLocked ? (
+                    <UploadsStep
+                      attachments={attachments}
+                      onChange={(next) => {
+                        attachmentsRef.current = next;
+                        setAttachments(next);
+                      }}
+                      canUpload={canUpload}
+                      error={error}
+                      overallProgress={overallProgress}
+                      uploading={uploading}
+                      onUploadAll={() => void uploadAll()}
+                      onAttachmentsQueued={() => {
+                        if (uploadQueueTimer.current) clearTimeout(uploadQueueTimer.current);
+                        uploadQueueTimer.current = setTimeout(() => {
+                          uploadQueueTimer.current = null;
+                          void uploadAll();
+                        }, 250);
+                      }}
+                      onCancelUploads={cancelUploads}
+                      onRetry={retryOne}
+                      showTitle={false}
+                    />
+                  ) : (detail.documents ?? []).length === 0 ? (
                     <AppText variant="caption" color="muted">
                       {t('mobile.requestEdit.attachmentsEmpty')}
                     </AppText>
@@ -821,81 +1011,6 @@ export function EditRequestScreen({
                       </Pressable>
                     ))
                   )}
-                  {!fieldsLocked ? (
-                    <View
-                      style={{
-                        flexDirection: isRTL ? 'row-reverse' : 'row',
-                        gap: theme.spacing.sm,
-                        marginTop: theme.spacing.sm,
-                      }}
-                    >
-                      {(
-                        [
-                          {
-                            key: 'photo',
-                            icon: 'image-outline' as const,
-                            label: t('mobile.requestEdit.attachPhoto'),
-                            onPress: () => void attachPhoto(),
-                          },
-                          {
-                            key: 'file',
-                            icon: 'document-outline' as const,
-                            label: t('mobile.requestEdit.attachFile'),
-                            onPress: () => void attachDocument(),
-                          },
-                        ] as const
-                      ).map((action) => (
-                        <AnimatedPressable
-                          key={action.key}
-                          variant="button"
-                          accessibilityRole="button"
-                          accessibilityLabel={action.label}
-                          disabled={uploadMutation.isPending}
-                          onPress={() => {
-                            void haptics.selection();
-                            action.onPress();
-                          }}
-                          style={{
-                            flex: 1,
-                            minHeight: theme.sizes.touch.min,
-                            borderRadius: theme.radius.lg,
-                            borderWidth: 1,
-                            borderColor: colors.borderStrong,
-                            backgroundColor: colors.brandSoft,
-                            paddingVertical: theme.spacing.md,
-                            paddingHorizontal: theme.spacing.sm,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 6,
-                            opacity: uploadMutation.isPending ? 0.55 : 1,
-                          }}
-                        >
-                          <View
-                            style={{
-                              width: 36,
-                              height: 36,
-                              borderRadius: 18,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: colors.surface,
-                              borderWidth: 1,
-                              borderColor: colors.border,
-                            }}
-                          >
-                            <Ionicons name={action.icon} size={18} color={colors.brand} />
-                          </View>
-                          <AppText
-                            variant="caption"
-                            weight="semibold"
-                            style={{ color: colors.brand, textAlign: 'center' }}
-                            numberOfLines={1}
-                          >
-                            {action.label}
-                          </AppText>
-                        </AnimatedPressable>
-                      ))}
-                    </View>
-                  ) : null}
                 </OrderBoardCard>
               </ListItemEnter>
 
@@ -943,11 +1058,21 @@ export function EditRequestScreen({
                 <PrimaryButton
                   label={t('mobile.requestEdit.save')}
                   onPress={() => void save()}
-                  loading={busy}
-                  disabled={!canUpdate || orderLocked}
+                  loading={busy && !uploading}
+                  disabled={!canUpdate || orderLocked || uploading}
                 />
               </View>
             </View>
+            {isDraft && canUpdate && !orderLocked ? (
+              <View style={{ marginTop: theme.spacing.sm }}>
+                <PrimaryButton
+                  label={t('mobile.requestEdit.submit')}
+                  onPress={() => void submitDraft()}
+                  loading={busy}
+                  disabled={busy || uploading}
+                />
+              </View>
+            ) : null}
           </View>
         </View>
       </View>

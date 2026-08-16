@@ -85,5 +85,10 @@
   "REQUIRES_REVIEW": "يحتاج مراجعة",
   "RETURN_TO_STOCK": "أُعيد للمخزون",
   "REWORK": "إعادة تصنيع",
-  "SCRAP": "خردة"
+  "SCRAP": "خردة",
+  "LATE": "متأخر",
+  "AWAITING_CONFIRMATION": "بانتظار التأكيد",
+  "CONFIRMED_ON_TRACK": "في الموعد",
+  "MAY_BE_DELAYED": "قد يتأخر التسليم",
+  "DELAYED": "متأخر"
 }

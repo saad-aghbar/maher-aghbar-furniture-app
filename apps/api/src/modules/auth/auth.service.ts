@@ -10,6 +10,7 @@ import { createHash, randomBytes } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { Locale } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
+import { SequenceService } from '../../common/sequence.service';
 import { LoginDto, MobileLoginDto, UpdateMeDto } from './dto/auth.dto';
 import type { AuthUser } from '@maher/types';
 import type { Response } from 'express';
@@ -25,12 +26,14 @@ import {
   canEditOwnProfile,
   canManageOwnMfa,
 } from '../../common/helpers/account-self-serve.util';
+import { provisionLinkedDealerCustomer } from '../../common/helpers/provision-dealer-customer.util';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly sequences: SequenceService,
   ) {}
 
   private hashToken(token: string) {
@@ -49,6 +52,19 @@ export class AuthService {
       },
     });
     const roles = user.roles.map((r) => r.role.code);
+    let customerId = user.customerId ?? undefined;
+    // Heal CUSTOMER-role users created via Users without a linked dealer record.
+    if (!customerId && roles.includes('CUSTOMER')) {
+      customerId = await provisionLinkedDealerCustomer(this.prisma, this.sequences, {
+        userId: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        email: user.email,
+        preferredLanguage: user.preferredLanguage,
+        createdById: user.id,
+      });
+    }
     const permissions = effectivePermissionCodes(
       roles,
       user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code)),
@@ -72,7 +88,7 @@ export class AuthService {
       rolesDetailed,
       permissions,
       preferredLanguage: user.preferredLanguage,
-      customerId: user.customerId ?? undefined,
+      customerId,
     };
   }
 

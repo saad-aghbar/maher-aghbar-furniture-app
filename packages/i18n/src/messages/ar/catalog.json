@@ -687,9 +687,12 @@
   "schedulingBufferPercent": "هامش أمان الجدولة %",
   "shiftStart": "بداية الدوام",
   "shiftEnd": "نهاية الدوام",
+  "deliveryBufferWorkingDays": "هامش التسليم (أيام عمل)",
+  "deliveryBufferWorkingDaysHint": "ينتهي الإنتاج قبل تاريخ التسليم المطلوب بهذا العدد من أيام العمل. 1 يعني أن الطلبية جاهزة في يوم العمل السابق.",
   "workingWeekdays": "أيام العمل",
   "calendar": {
     "savedReplanned": "تم حفظ تقويم الإنتاج. أُعيد تخطيط {count} طلبات.",
+    "recalculating": "تم حفظ تقويم الإنتاج. جارٍ إعادة حساب الجدول.",
     "workingDaysHint": "المصنع مغلق يوم الجمعة افتراضياً. السبت يوم عمل عادي.",
     "exceptions": {
       "title": "استثناءات الأيام",
@@ -707,6 +710,8 @@
       "savedReplanned": "تم حفظ الاستثناء. أُعيد تخطيط {count} طلبات.",
       "cleared": "تمت إزالة الاستثناء.",
       "clearedReplanned": "تمت إزالة الاستثناء. أُعيد تخطيط {count} طلبات.",
+      "recalculating": "تم حفظ الاستثناء. جارٍ إعادة حساب الجدول.",
+      "clearedRecalculating": "تمت إزالة الاستثناء. جارٍ إعادة حساب الجدول.",
       "dateInvalid": "اختر تاريخاً صالحاً.",
       "typeOpen": "يوم مفتوح",
       "typeClosed": "مغلق",

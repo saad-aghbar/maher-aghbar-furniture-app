@@ -1,6 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Linking,
   Pressable,
   RefreshControl,
@@ -33,7 +32,7 @@ import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { useToast } from '@/components/feedback/Toast';
+import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { DatePickerField } from '@/components/calendar';
 import { LockedTextField } from '@/components/forms/LockedTextField';
 import { CopyNotesButton } from '@/components/forms/CopyNotesButton';
@@ -284,10 +283,13 @@ export function OrderDetailScreen({
             try {
               await openInvoicePdf(vm.invoices[0]!.id, opts);
             } catch {
-              Alert.alert(
-                t('mobile.orderDetail.invoiceErrorTitle'),
-                t('mobile.orderDetail.invoiceErrorBody'),
-              );
+              showToast({
+                variant: 'error',
+                message: toastCopy(
+                  t('mobile.orderDetail.invoiceErrorTitle'),
+                  t('mobile.orderDetail.invoiceErrorBody'),
+                ),
+              });
             }
           })();
         },
@@ -301,16 +303,19 @@ export function OrderDetailScreen({
           void resolveDocumentUrl(vm.documents[0]!.id)
             .then((url) => Linking.openURL(url))
             .catch(() => {
-              Alert.alert(
-                t('mobile.orderDetail.attachmentErrorTitle'),
-                t('mobile.orderDetail.attachmentErrorBody'),
-              );
+              showToast({
+                variant: 'error',
+                message: toastCopy(
+                  t('mobile.orderDetail.attachmentErrorTitle'),
+                  t('mobile.orderDetail.attachmentErrorBody'),
+                ),
+              });
             });
         },
       });
     }
     return items;
-  }, [vm, canInvoice, canDocument, t, pickPdfOptions]);
+  }, [vm, canInvoice, canDocument, t, pickPdfOptions, showToast]);
 
   function runStatusAction(kind: ConfirmKind, reason?: string) {
     if (!kind || forceState) return;
@@ -913,10 +918,13 @@ export function OrderDetailScreen({
                       void resolveDocumentUrl(doc.id)
                         .then((url) => Linking.openURL(url))
                         .catch(() => {
-                          Alert.alert(
-                            t('mobile.orderDetail.attachmentErrorTitle'),
-                            t('mobile.orderDetail.attachmentErrorBody'),
-                          );
+                          showToast({
+                            variant: 'error',
+                            message: toastCopy(
+                              t('mobile.orderDetail.attachmentErrorTitle'),
+                              t('mobile.orderDetail.attachmentErrorBody'),
+                            ),
+                          });
                         });
                     }}
                     style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}

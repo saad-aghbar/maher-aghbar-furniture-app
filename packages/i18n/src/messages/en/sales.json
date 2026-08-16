@@ -75,5 +75,7 @@
   "sectionInProductionHint": "Orders currently being manufactured",
   "sectionDone": "Done",
   "sectionDoneHint": "Ready for delivery, delivered, or completed",
-  "sectionEmpty": "No orders in this section"
+  "sectionEmpty": "No orders in this section",
+  "dealerDeliveryDate": "Delivery",
+  "noDeliveryDateYet": "Date to be confirmed"
 }

@@ -380,7 +380,6 @@ export class StagePipelineService {
               in: [
                 'CONFIRMED',
                 'READY_FOR_PRODUCTION',
-                'WAITING_FOR_MATERIALS',
                 'WAITING_FOR_PAYMENT',
               ],
             },

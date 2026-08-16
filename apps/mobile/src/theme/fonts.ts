@@ -159,7 +159,12 @@ function weightTokenFromFamily(family: string | undefined): FontWeightToken | un
 export function applyAppTypeface(
   locale: string,
   style?: StyleProp<TextStyle>,
-  opts: { weight?: FontWeightToken; variant?: TypographyVariantName } = {},
+  opts: {
+    weight?: FontWeightToken;
+    variant?: TypographyVariantName;
+    /** Latin punctuation (e.g. `/`) must use Rubik — KO Sans omits or hides it. */
+    face?: 'app' | 'latin';
+  } = {},
 ): TextStyle {
   const flat = (StyleSheet.flatten(style) ?? {}) as TextStyle;
   if (isMonoFamily(flat.fontFamily)) return flat;
@@ -172,9 +177,10 @@ export function applyAppTypeface(
     'regular';
 
   const { fontWeight: _fontWeight, fontFamily: _fontFamily, ...rest } = flat;
+  const typeLocale = opts.face === 'latin' ? 'en' : locale;
   return {
     ...rest,
-    ...resolveAppFontStyle(locale, { weight: token }),
+    ...resolveAppFontStyle(typeLocale, { weight: token }),
   };
 }
 

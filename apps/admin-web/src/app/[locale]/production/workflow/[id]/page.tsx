@@ -134,6 +134,11 @@ export default function WorkflowBuilderPage({ params }: { params: { id: string }
             estimatedHours: Number.isFinite(hours) ? hours : undefined,
             requiresInspection: args.create.requiresInspection,
             requiresPhotos: args.create.requiresPhotos,
+            schedulingResourceMode: args.create.schedulingResourceMode,
+            resourceSlots:
+              args.create.schedulingResourceMode === 'RESOURCE_CONSTRAINED'
+                ? Number(args.create.resourceSlots) || 1
+                : undefined,
           }),
         });
         stageId = created.id;

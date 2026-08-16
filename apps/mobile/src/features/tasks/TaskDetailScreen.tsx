@@ -7,7 +7,6 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  Alert,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -357,7 +356,7 @@ export function TaskDetailScreen({
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert(t('mobile.tasks.galleryPermission'));
+        showToast({ variant: 'warning', message: t('mobile.tasks.galleryPermission') });
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({

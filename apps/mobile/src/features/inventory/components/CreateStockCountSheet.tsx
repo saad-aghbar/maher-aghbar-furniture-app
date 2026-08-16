@@ -3,6 +3,7 @@ import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
@@ -207,11 +208,12 @@ export function CreateStockCountSheet({
               </AppText>
             </Pressable>
 
-            <TextField
+            <QtyStepperField
               label={t('mobile.inventory.countedQty')}
               value={qty}
               onChangeText={setQty}
-              keyboardType="decimal-pad"
+              min={0}
+              placeholder="0"
             />
             <TextField
               label={t('mobile.inventory.notes')}

@@ -1,3 +1,6 @@
+import { formatMonthYear } from '@/i18n/format';
+import type { Locale } from '@maher/types';
+
 /** Pure calendar helpers shared by MonthCalendar and scheduling selectors. */
 
 export type CalendarCursor = { y: number; m: number };
@@ -19,6 +22,9 @@ export type DayMeta = {
   disabled?: boolean;
   /** Highlight as earliest available (dealer). */
   isEarliest?: boolean;
+  /** Dealer delivery calendar — not color-only. */
+  markers?: Array<'confirmed' | 'proposed' | 'attention'>;
+  count?: number;
 };
 
 export function todayYmd(now: Date = new Date()): string {
@@ -43,12 +49,9 @@ export function parseYmd(value: string): CalendarCursor & { d: number } | null {
   return { y, m: mo - 1, d };
 }
 
-export function monthLabel(year: number, monthIndex: number): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    month: 'long',
-    year: 'numeric',
-    numberingSystem: 'latn',
-  }).format(new Date(year, monthIndex, 1));
+export function monthLabel(year: number, monthIndex: number, locale: string = 'en'): string {
+  const typed: Locale = locale === 'ar' || locale === 'he' ? locale : 'en';
+  return formatMonthYear(typed, year, monthIndex);
 }
 
 /** Monday-first month cells (null = padding). */
@@ -115,9 +118,34 @@ export function nextDateRange(
 export const WEEKDAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] as const;
 
 /**
- * Admin load thresholds (deterministic):
- * closed → empty(0) → light(1–2) → half(3–5) → busy(6+)
+ * Admin month-board colors from factory load % (same bands as Factory Capacity):
+ * closed → empty(0%) → light(1–49%) → half(50–84%) → busy(85–100%)
  */
+export function adminFactoryLoadTone(
+  loadPercent: number | null | undefined,
+  isWorking: boolean,
+): DayTone {
+  if (!isWorking) return 'closed';
+  const pct = loadPercent ?? 0;
+  if (pct <= 0) return 'empty';
+  if (pct < 50) return 'light';
+  if (pct < 85) return 'half';
+  return 'busy';
+}
+
+export function adminFactoryLoadDensity(
+  loadPercent: number | null | undefined,
+  isWorking: boolean,
+): number {
+  if (!isWorking) return 0;
+  const pct = loadPercent ?? 0;
+  if (pct <= 0) return 0;
+  if (pct < 50) return 1;
+  if (pct < 85) return 2;
+  return 3;
+}
+
+/** @deprecated Order-count bands. Admin calendar uses adminFactoryLoadTone. */
 export function adminLoadTone(orderCount: number, isWorking: boolean): DayTone {
   if (!isWorking) return 'closed';
   if (orderCount <= 0) return 'empty';

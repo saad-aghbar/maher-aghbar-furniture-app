@@ -12,6 +12,8 @@ describe('ROLE_PERMISSIONS', () => {
       'schedule.manage',
       'schedule.approve',
       'schedule.settings.manage',
+      'schedule.capacity.read',
+      'schedule.read',
     ]));
   });
 

@@ -75,6 +75,7 @@ export function useDepartmentsQuery(enabled: boolean, q?: string) {
 
 function invalidateUsers(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: queryKeys.users.all });
+  void qc.invalidateQueries({ queryKey: queryKeys.scheduling.all });
 }
 
 export function useCreateUserMutation() {

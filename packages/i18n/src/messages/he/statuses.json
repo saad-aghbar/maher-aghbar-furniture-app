@@ -85,5 +85,10 @@
   "REQUIRES_REVIEW": "דורש בדיקה",
   "RETURN_TO_STOCK": "הוחזר למלאי",
   "REWORK": "עיבוד מחדש",
-  "SCRAP": "גרוטאה"
+  "SCRAP": "גרוטאה",
+  "LATE": "באיחור",
+  "AWAITING_CONFIRMATION": "ממתין לאישור",
+  "CONFIRMED_ON_TRACK": "בזמן",
+  "MAY_BE_DELAYED": "ייתכן עיכוב באספקה",
+  "DELAYED": "באיחור"
 }

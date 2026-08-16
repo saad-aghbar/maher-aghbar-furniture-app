@@ -5,57 +5,62 @@ import { Link } from '@/i18n/navigation';
 import { StatusBadge } from '@maher/ui';
 import { useTranslations } from 'next-intl';
 
-interface DeliveryRow {
+interface DealerDeliveryRow {
   id: string;
-  number: string;
-  status: string;
-  deliveryAddress?: string;
-  deliveryDate?: string;
-  salesOrder?: { id: string; number: string };
+  salesOrderId: string;
+  salesOrderNumber: string;
+  productName?: { name?: string; nameEn?: string | null; nameAr?: string | null };
+  calendarDate?: string | null;
+  customerStatus?: string;
+  committedDeliveryDate?: string | null;
 }
 
 export default function DeliveriesPage() {
   const t = useTranslations('navigation');
+  const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
+  const td = useTranslations('production.dealerDelivery');
 
   return (
-    <ListPage<DeliveryRow>
+    <ListPage<DealerDeliveryRow>
       title={t('deliveries')}
       description={tCommon('deliveriesSubtitle')}
-      queryKey={['customer-deliveries']}
-      fetchPath="/api/v1/deliveries?pageSize=50"
+      queryKey={['customer-own-deliveries']}
+      fetchPath="/api/v1/scheduling/own-deliveries"
       emptyTitle={tCommon('noDeliveries')}
       emptyDescription={tCommon('noDeliveriesHint')}
       columns={[
         {
           key: 'number',
-          header: t('deliveries'),
-          render: (row) =>
-            row.salesOrder ? (
-              <Link
-                href={`/orders/${row.salesOrder.id}`}
-                className="font-medium text-brand hover:underline"
-              >
-                {row.number}
-              </Link>
-            ) : (
-              row.number
-            ),
+          header: tSales('number'),
+          render: (row) => (
+            <Link
+              href={`/orders/${row.salesOrderId}`}
+              className="font-medium text-brand hover:underline"
+            >
+              <span dir="ltr">{row.salesOrderNumber}</span>
+            </Link>
+          ),
         },
         {
-          key: 'address',
-          header: tCommon('address'),
-          render: (row) => row.deliveryAddress ?? '—',
+          key: 'product',
+          header: tSales('description'),
+          render: (row) =>
+            row.productName?.nameAr || row.productName?.nameEn || row.productName?.name || '—',
         },
         {
           key: 'date',
-          header: tCommon('date'),
-          render: (row) => row.deliveryDate?.slice(0, 10) ?? '—',
+          header: td('confirmed'),
+          render: (row) => (
+            <span dir="ltr">
+              {row.calendarDate ?? row.committedDeliveryDate?.slice(0, 10) ?? '—'}
+            </span>
+          ),
         },
         {
           key: 'status',
           header: tCommon('status'),
-          render: (row) => <StatusBadge status={row.status} />,
+          render: (row) => <StatusBadge status={row.customerStatus ?? ''} />,
         },
       ]}
     />

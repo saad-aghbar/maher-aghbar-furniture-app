@@ -20,6 +20,8 @@ export type CompilerStageDef = {
   requiresInspection: boolean;
   requiresPhotos: boolean;
   responsibleDepartment?: string | null;
+  schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED' | null;
+  resourceSlots?: number | null;
 };
 
 export type CompilerNode = {
@@ -38,6 +40,8 @@ export type CompilerNode = {
   inventoryTracking?: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED' | null;
   consumesRawMaterials?: boolean | null;
   consumesSemiFinished?: boolean | null;
+  schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED' | null;
+  resourceSlots?: number | null;
   outputQtyPerUnit?: number | null;
   outputNameAr?: string | null;
   outputNameEn?: string | null;
@@ -90,6 +94,8 @@ export type CompiledNode = {
   inventoryTracking: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
   consumesRawMaterials: boolean;
   consumesSemiFinished: boolean;
+  schedulingResourceMode: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
+  resourceSlots: number;
   outputQtyPerUnit: number | null;
   outputNameAr: string | null;
   outputNameEn: string | null;
@@ -209,6 +215,11 @@ export function compileWorkflow(input: {
       inventoryTracking: node.inventoryTracking ?? 'NONE',
       consumesRawMaterials: Boolean(node.consumesRawMaterials),
       consumesSemiFinished: Boolean(node.consumesSemiFinished),
+      schedulingResourceMode:
+        node.schedulingResourceMode ??
+        node.stage.schedulingResourceMode ??
+        'WORKER_CONSTRAINED',
+      resourceSlots: node.resourceSlots ?? node.stage.resourceSlots ?? 1,
       outputQtyPerUnit: node.outputQtyPerUnit ?? null,
       outputNameAr: node.outputNameAr ?? null,
       outputNameEn: node.outputNameEn ?? null,

@@ -36,6 +36,7 @@ import {
 } from './components/PriorityDeliverySheets';
 import { ProductionListSkeleton } from './components/ProductionSkeleton';
 import { ProductionMaterialsCard } from './components/ProductionMaterialsCard';
+import { AdminScheduleStrip } from './components/AdminScheduleStrip';
 import { ProductionTaskCard } from './components/ProductionTaskCard';
 import { ProductionTaskSheet } from './components/ProductionTaskSheet';
 import {
@@ -408,6 +409,10 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
                   </View>
                 </View>
               </View>
+            </HeaderEnter>
+
+            <HeaderEnter reduce={reduce} delay={80}>
+              <AdminScheduleStrip productionOrderId={detail.id} />
             </HeaderEnter>
 
             <HeaderEnter reduce={reduce} delay={120}>

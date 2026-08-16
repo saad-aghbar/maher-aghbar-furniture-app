@@ -27,8 +27,15 @@ describe('orders stageCounts', () => {
     expect(matchesStatusChip({ status: 'IN_PRODUCTION' }, 'production')).toBe(true);
     expect(matchesStatusChip({ status: 'READY_FOR_DELIVERY' }, 'ready')).toBe(true);
     expect(matchesStatusChip({ status: 'DELIVERED' }, 'delivered')).toBe(true);
+    expect(matchesStatusChip({ status: 'DRAFT' }, 'drafts')).toBe(true);
+    expect(matchesStatusChip({ status: 'DRAFT' }, 'pending')).toBe(false);
     expect(matchesStatusChip({ status: 'CONFIRMED' }, 'production')).toBe(false);
     expect(matchesStatusChip({ status: 'CONFIRMED' }, 'all')).toBe(true);
+  });
+
+  it('classifies draft separately from pending', () => {
+    expect(classifyOrderStage({ status: 'DRAFT' })).toBe('drafts');
+    expect(classifyOrderStage({ status: 'SUBMITTED' })).toBe('pending');
   });
 
   it('counts stages and filters client-side without collapsing other lanes', () => {

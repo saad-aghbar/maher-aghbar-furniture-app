@@ -30,4 +30,17 @@ describe('filterAdminOverflowModules', () => {
     const more = filterAdminOverflowModules(user, 'more');
     expect(more.map((m) => m.key)).toEqual(['products']);
   });
+
+  it('shows scheduling when staff has schedule.capacity.read', () => {
+    const user = withPerms('schedule.capacity.read');
+    const more = filterAdminOverflowModules(user, 'more');
+    expect(more.some((m) => m.key === 'scheduling')).toBe(true);
+  });
+
+  it('hides scheduling from users without schedule.read or schedule.capacity.read', () => {
+    const dealer = withPerms('schedule.read.own', 'schedule.availability.own');
+    const worker = withPerms('production-task.update-own');
+    expect(filterAdminOverflowModules(dealer, 'more').some((m) => m.key === 'scheduling')).toBe(false);
+    expect(filterAdminOverflowModules(worker, 'more').some((m) => m.key === 'scheduling')).toBe(false);
+  });
 });

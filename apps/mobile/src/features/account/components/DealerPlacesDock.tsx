@@ -24,6 +24,8 @@ type PlaceTileDef = {
   hintKey: string;
   href: Href;
   permission: Permission;
+  wide?: boolean;
+  tone?: 'paper' | 'ink';
 };
 
 const PLACES: PlaceTileDef[] = [
@@ -42,6 +44,16 @@ const PLACES: PlaceTileDef[] = [
     hintKey: 'mobile.dealerAccount.placeStatementHint',
     href: '/(app)/(customer)/account/statement' as Href,
     permission: 'statement.read',
+  },
+  {
+    key: 'calendar',
+    icon: 'calendar-outline',
+    labelKey: 'mobile.dealerAccount.calendarTitle',
+    hintKey: 'mobile.dealerAccount.placeCalendarHint',
+    href: '/(app)/(customer)/account/calendar' as Href,
+    permission: 'schedule.read.own',
+    wide: true,
+    tone: 'ink',
   },
   {
     key: 'returns',
@@ -72,7 +84,8 @@ export function DealerPlacesDock() {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const pad = theme.spacing.lg;
   const gap = theme.spacing.sm;
-  const halfW = (width - pad * 2 - gap) / 2;
+  const fullW = width - pad * 2;
+  const halfW = (fullW - gap) / 2;
 
   const places = useMemo(
     () => PLACES.filter((p) => can(user, p.permission)),
@@ -120,7 +133,7 @@ export function DealerPlacesDock() {
             key={place.key}
             place={place}
             index={index}
-            width={halfW}
+            width={place.wide ? fullW : halfW}
             onPress={() => {
               void haptics.confirmLight();
               router.push(place.href);
@@ -144,10 +157,15 @@ function PlaceTile({
   onPress: () => void;
 }) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const enter = useSharedValue(reduce ? 1 : 0);
+  const ink = place.tone === 'ink';
+  const inkBg = colorScheme === 'dark' ? colors.surfaceSecondary : '#2F2924';
+  const fg = ink ? '#F5F1EA' : colors.textPrimary;
+  const muted = ink ? 'rgba(245,241,234,0.62)' : colors.textMuted;
+  const iconTint = ink ? '#D4C4A8' : colors.brand;
 
   useEffect(() => {
     if (reduce) {
@@ -178,13 +196,13 @@ function PlaceTile({
         style={{
           minHeight: 112,
           borderRadius: theme.radius.xl,
-          borderWidth: 1,
+          borderWidth: ink ? 0 : 1,
           borderColor: colors.borderStrong,
-          backgroundColor: colors.surface,
+          backgroundColor: ink ? inkBg : colors.surface,
           padding: theme.spacing.md,
           gap: theme.spacing.sm,
           overflow: 'hidden',
-          ...theme.elevation.card,
+          ...(ink ? theme.elevation.raised : theme.elevation.card),
         }}
       >
         <View
@@ -199,31 +217,30 @@ function PlaceTile({
               width: 40,
               height: 40,
               borderRadius: 12,
-              backgroundColor: colors.surfaceSecondary,
-              borderWidth: 1,
+              backgroundColor: ink ? 'rgba(255,255,255,0.08)' : colors.surfaceSecondary,
+              borderWidth: ink ? 0 : 1,
               borderColor: colors.border,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Ionicons name={place.icon} size={20} color={colors.brand} />
+            <Ionicons name={place.icon} size={20} color={iconTint} />
           </View>
           <Ionicons
             name={isRTL ? 'arrow-back' : 'arrow-forward'}
             size={16}
-            color={colors.textMuted}
+            color={muted}
           />
         </View>
         <View style={{ gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-          <AppText variant="label" weight={titleWeight} numberOfLines={1}>
+          <AppText variant="label" weight={titleWeight} numberOfLines={1} style={{ color: fg }}>
             {t(place.labelKey)}
           </AppText>
           <AppText
             variant="caption"
-            color="muted"
             weight="regular"
             numberOfLines={2}
-            style={{ fontSize: 11, lineHeight: 14 }}
+            style={{ fontSize: 11, lineHeight: 14, color: muted }}
           >
             {t(place.hintKey)}
           </AppText>

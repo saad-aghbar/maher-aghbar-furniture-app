@@ -79,6 +79,8 @@ export function StaffTypeEditorScreen({ id }: Props) {
     } satisfies FormState);
   }, [detailQuery.data]);
 
+  const readOnly = Boolean(!isNew && detailQuery.data?.isSystem);
+
   const catalog = useMemo(() => groupedPermissionCatalog({ assignableToStaffOnly: true }), []);
   const needle = search.trim().toLowerCase();
   const visible = useMemo(
@@ -98,6 +100,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
 
   const onSubmit = async () => {
     setError(null);
+    if (readOnly) return;
     if (!form.nameEn.trim() || !form.nameAr.trim()) {
       setError(t('validation.nameRequired'));
       return;
@@ -162,7 +165,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
           numberOfLines={1}
           style={{ paddingHorizontal: theme.sizes.touch.min + theme.spacing.sm }}
         >
-          {isNew ? t('users.newStaffType') : t('users.editStaffType')}
+          {isNew ? t('users.newStaffType') : readOnly ? t('users.view') : t('users.editStaffType')}
         </AppText>
       </View>
 
@@ -178,29 +181,43 @@ export function StaffTypeEditorScreen({ id }: Props) {
           color="secondary"
           style={{ textAlign: isRTL ? 'right' : 'left' }}
         >
-          {t('users.staffTypesDescription')}
+          {readOnly ? t('users.systemPresetReadOnly') : t('users.staffTypesDescription')}
         </AppText>
         <UserFormSection icon="text-outline" label={t('users.name')} titleWeight={titleWeight}>
-          <TextField label={t('users.nameEn')} value={form.nameEn} onChangeText={(v) => setForm((f) => ({ ...f, nameEn: v }))} />
-          <TextField label={t('users.nameAr')} value={form.nameAr} onChangeText={(v) => setForm((f) => ({ ...f, nameAr: v }))} />
+          <TextField
+            label={t('users.nameEn')}
+            value={form.nameEn}
+            editable={!readOnly}
+            onChangeText={(v) => setForm((f) => ({ ...f, nameEn: v }))}
+          />
+          <TextField
+            label={t('users.nameAr')}
+            value={form.nameAr}
+            editable={!readOnly}
+            onChangeText={(v) => setForm((f) => ({ ...f, nameAr: v }))}
+          />
           <TextField
             label={`${t('users.nameHe')} (${t('users.optional')})`}
             value={form.nameHe}
+            editable={!readOnly}
             onChangeText={(v) => setForm((f) => ({ ...f, nameHe: v }))}
           />
           <TextField
             label={`${t('users.descriptionEn')} (${t('users.optional')})`}
             value={form.descriptionEn}
+            editable={!readOnly}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionEn: v }))}
           />
           <TextField
             label={`${t('users.descriptionAr')} (${t('users.optional')})`}
             value={form.descriptionAr}
+            editable={!readOnly}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionAr: v }))}
           />
           <TextField
             label={`${t('users.descriptionHe')} (${t('users.optional')})`}
             value={form.descriptionHe}
+            editable={!readOnly}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionHe: v }))}
           />
         </UserFormSection>
@@ -263,7 +280,9 @@ export function StaffTypeEditorScreen({ id }: Props) {
                   <AnimatedPressable
                     key={perm.code}
                     variant="button"
+                    disabled={readOnly}
                     onPress={() => {
+                      if (readOnly) return;
                       void haptics.selection();
                       setForm((f) => {
                         const next = checked
@@ -279,6 +298,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
                       paddingHorizontal: theme.spacing.md,
                       paddingVertical: theme.spacing.md,
                       backgroundColor: checked ? colors.brandSoft : 'transparent',
+                      opacity: readOnly ? 0.85 : 1,
                     }}
                   >
                     <View
@@ -313,12 +333,14 @@ export function StaffTypeEditorScreen({ id }: Props) {
         </UserFormSection>
 
         {error ? <UserFormError message={error} /> : null}
-        <UserFormFooter
-          confirmLabel={t('common.save')}
-          onConfirm={() => void onSubmit()}
-          onCancel={() => router.back()}
-          loading={createMutation.isPending || updateMutation.isPending}
-        />
+        {!readOnly ? (
+          <UserFormFooter
+            confirmLabel={t('common.save')}
+            onConfirm={() => void onSubmit()}
+            onCancel={() => router.back()}
+            loading={createMutation.isPending || updateMutation.isPending}
+          />
+        ) : null}
       </ScrollView>
     </AppScreen>
   );

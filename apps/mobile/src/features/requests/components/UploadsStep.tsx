@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
-import { useToast } from '@/components/feedback/Toast';
+import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { DealerUploadGrid, type DealerUploadItem } from '@/features/dealer-ui/DealerUploadGrid';
 import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCameraProvider';
@@ -19,6 +19,7 @@ import {
   type AttachmentKind,
   type PendingAttachment,
 } from '../pendingAttachment';
+import { normalizeUploadMime, presentAfterUiSettle } from '../presentAfterUiSettle';
 
 type UploadsStepProps = {
   attachments: PendingAttachment[];
@@ -31,14 +32,22 @@ type UploadsStepProps = {
   onUploadAll: () => void;
   onCancelUploads: () => void;
   onRetry: (id: string) => void;
+  /** Called after new local files are queued — parent can start upload immediately. */
+  onAttachmentsQueued?: () => void;
   /** When false, omit section title (parent provides combined step title). */
   showTitle?: boolean;
 };
 
-async function ensureLibraryPermission(t: (k: string) => string) {
+async function ensureLibraryPermission(
+  t: (k: string) => string,
+  showToast: (input: { variant?: 'warning' | 'error' | 'success' | 'info'; message: string }) => void,
+) {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
-    Alert.alert(t('mobile.newOrder.permissionTitle'), t('mobile.newOrder.permissionBody'));
+    showToast({
+      variant: 'warning',
+      message: toastCopy(t('mobile.newOrder.permissionTitle'), t('mobile.newOrder.permissionBody')),
+    });
     return false;
   }
   return true;
@@ -53,17 +62,27 @@ function toAttachment(
   },
   kind: AttachmentKind,
 ): PendingAttachment {
-  const mime = asset.mimeType ?? (kind === 'pdf' ? 'application/pdf' : 'image/jpeg');
+  const mime = normalizeUploadMime(asset.mimeType, asset.uri, asset.fileName);
   const category =
     kind === 'handwritten'
       ? 'HANDWRITTEN_ORDER'
       : kind === 'pdf' || isPdfMime(mime)
         ? 'ORDER_DOCUMENT'
         : 'ORDER_IMAGE';
+  const ext =
+    mime === 'application/pdf'
+      ? 'pdf'
+      : mime === 'image/png'
+        ? 'png'
+        : mime === 'image/webp'
+          ? 'webp'
+          : mime === 'image/heic'
+            ? 'heic'
+            : 'jpg';
   return {
     id: newAttachmentId(),
     uri: asset.uri,
-    fileName: asset.fileName ?? `file-${Date.now()}`,
+    fileName: asset.fileName?.includes('.') ? asset.fileName : `file-${Date.now()}.${ext}`,
     mimeType: mime,
     category,
     kind: kind === 'pdf' || isPdfMime(mime) ? 'pdf' : kind,
@@ -81,7 +100,9 @@ function toDealerItem(file: PendingAttachment): DealerUploadItem {
       ? 'uploading'
       : file.status === 'error'
         ? 'failed'
-        : 'ready';
+        : file.status === 'uploaded'
+          ? 'uploaded'
+          : 'ready';
   return {
     id: file.id,
     uri: file.uri,
@@ -103,6 +124,7 @@ export function UploadsStep({
   onUploadAll,
   onCancelUploads,
   onRetry,
+  onAttachmentsQueued,
   showTitle = true,
 }: UploadsStepProps) {
   const { t, isRTL } = useLocale();
@@ -110,57 +132,76 @@ export function UploadsStep({
   const { showToast } = useToast();
   const { openAccessoryCamera } = useAccessoryCamera();
   const [handwrittenSheetOpen, setHandwrittenSheetOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
 
   const add = (items: PendingAttachment[]) => {
     if (!items.length) return;
-    onChange([...attachmentsRef.current, ...items]);
+    const next = [...attachmentsRef.current, ...items];
+    attachmentsRef.current = next;
+    onChange(next);
     void haptics.selection();
+    onAttachmentsQueued?.();
   };
 
   const remove = (id: string) => {
-    onChange(attachmentsRef.current.filter((a) => a.id !== id));
+    const next = attachmentsRef.current.filter((a) => a.id !== id);
+    attachmentsRef.current = next;
+    onChange(next);
     void haptics.selection();
   };
 
-  const failPick = () => {
+  const failPick = (detail?: string) => {
     void haptics.error();
-    showToast({ variant: 'error', message: t('mobile.newOrder.pickFailed') });
+    showToast({
+      variant: 'error',
+      message: detail?.trim() || t('mobile.newOrder.pickFailed'),
+    });
   };
 
   const pickGallery = async (kind: AttachmentKind, multi: boolean) => {
+    if (picking) return;
+    setPicking(true);
     try {
-      if (!(await ensureLibraryPermission(t))) return;
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.85,
-        // Editing + scroll/modal hosts often flash-dismiss the library on iOS.
-        allowsEditing: false,
-        exif: false,
-        allowsMultipleSelection: multi,
-        selectionLimit: multi ? 8 : 1,
-      });
+      if (!(await ensureLibraryPermission(t, showToast))) return;
+      const result = await presentAfterUiSettle(() =>
+        ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality: 0.85,
+          // Editing + scroll/modal hosts often flash-dismiss the library on iOS.
+          allowsEditing: false,
+          exif: false,
+          allowsMultipleSelection: multi,
+          selectionLimit: multi ? 8 : 1,
+        }),
+      );
       if (result.canceled || !result.assets?.length) return;
       add(result.assets.map((a) => toAttachment(a, kind)));
-    } catch {
-      failPick();
+    } catch (err) {
+      failPick(err instanceof Error ? err.message : undefined);
+    } finally {
+      setPicking(false);
     }
   };
 
   /** Branded in-app camera — same AccessoryCamera flow as admin inventory / products. */
   const pickCamera = async (kind: AttachmentKind) => {
+    if (picking) return;
+    setPicking(true);
     try {
       const handwritten = kind === 'handwritten';
-      const uri = await openAccessoryCamera({
-        title: handwritten
-          ? t('mobile.newOrder.handwrittenTakeTitle')
-          : t('mobile.newOrder.takePhotoTitle'),
-        hint: handwritten
-          ? t('mobile.newOrder.handwrittenTakeHint')
-          : t('mobile.newOrder.takePhotoHint'),
-        aspectRatio: 4 / 3,
-      });
+      const uri = await presentAfterUiSettle(() =>
+        openAccessoryCamera({
+          title: handwritten
+            ? t('mobile.newOrder.handwrittenTakeTitle')
+            : t('mobile.newOrder.takePhotoTitle'),
+          hint: handwritten
+            ? t('mobile.newOrder.handwrittenTakeHint')
+            : t('mobile.newOrder.takePhotoHint'),
+          aspectRatio: 4 / 3,
+        }),
+      );
       if (!uri) return;
       add([
         toAttachment(
@@ -172,17 +213,32 @@ export function UploadsStep({
           kind,
         ),
       ]);
-    } catch {
-      failPick();
+    } catch (err) {
+      failPick(err instanceof Error ? err.message : undefined);
+    } finally {
+      setPicking(false);
     }
   };
 
   const pickDocument = async () => {
+    if (picking) return;
+    setPicking(true);
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
-        multiple: true,
-        copyToCacheDirectory: true,
+      const result = await presentAfterUiSettle(async () => {
+        try {
+          return await DocumentPicker.getDocumentAsync({
+            type: ['application/pdf', 'image/*'],
+            multiple: true,
+            copyToCacheDirectory: true,
+          });
+        } catch {
+          // Some platforms reject multi-select — fall back to a single file.
+          return DocumentPicker.getDocumentAsync({
+            type: ['application/pdf', 'image/*'],
+            multiple: false,
+            copyToCacheDirectory: true,
+          });
+        }
       });
       if (result.canceled || !result.assets?.length) return;
       add(
@@ -200,8 +256,10 @@ export function UploadsStep({
           ),
         ),
       );
-    } catch {
-      failPick();
+    } catch (err) {
+      failPick(err instanceof Error ? err.message : undefined);
+    } finally {
+      setPicking(false);
     }
   };
 
@@ -222,6 +280,12 @@ export function UploadsStep({
 
   const aiKey = aiStateMessageKey(aiState);
   const gridItems = attachments.map(toDealerItem);
+  const pendingCount = attachments.filter(
+    (a) => a.status === 'ready' || a.status === 'error' || a.status === 'cancelled',
+  ).length;
+  const uploadedCount = attachments.filter((a) => a.status === 'uploaded').length;
+  const allUploaded = attachments.length > 0 && pendingCount === 0 && !uploading;
+  const showUploadControls = attachments.length > 0 && (uploading || pendingCount > 0);
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
@@ -272,7 +336,7 @@ export function UploadsStep({
         </AppText>
       ) : null}
 
-      {attachments.length > 0 ? (
+      {showUploadControls ? (
         <View style={{ gap: theme.spacing.sm }}>
           <AppText variant="label" color="secondary">
             {t('mobile.newOrder.overallProgress')}
@@ -297,6 +361,12 @@ export function UploadsStep({
             )}
           </View>
         </View>
+      ) : null}
+
+      {allUploaded ? (
+        <AppText variant="caption" color="brand" weight="medium">
+          {t('mobile.newOrder.attachmentsUploaded', { count: uploadedCount })}
+        </AppText>
       ) : null}
 
       {error ? (

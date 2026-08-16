@@ -13,6 +13,8 @@ export {
   WEEKDAY_LABELS,
   adminLoadTone,
   adminLoadDensity,
+  adminFactoryLoadTone,
+  adminFactoryLoadDensity,
   type CalendarCursor,
   type DayTone,
   type DayMeta,

@@ -6,6 +6,7 @@ import {
   Get,
   NotFoundException,
   BadRequestException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -41,6 +42,9 @@ import {
 } from './users.guards';
 import { rolesOmitDepartment, stageSkillsForAssignedRoles } from './employee-assignment';
 import { encryptPortalPassword } from '../../common/helpers/secret-box';
+import { SequenceService } from '../../common/sequence.service';
+import { provisionLinkedDealerCustomer, roleCodesIncludeCustomer } from '../../common/helpers/provision-dealer-customer.util';
+import { SchedulingService } from '../scheduling/scheduling.service';
 
 function splitCodes(value: unknown): string[] | undefined {
   if (value == null || value === '') return undefined;
@@ -222,12 +226,18 @@ const userSelect = {
 @ApiTags('users')
 @Controller()
 export class UsersController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sequences: SequenceService,
+    @Optional() private readonly scheduling?: SchedulingService,
+  ) {}
 
   private async syncWorkerSkills(userId: string, stageDefinitionIds: string[] | undefined) {
     if (stageDefinitionIds === undefined) return;
     const desired = new Set(stageDefinitionIds);
     const existing = await this.prisma.workerSkill.findMany({ where: { userId } });
+    let added = false;
+    let removed = false;
     for (const skill of existing) {
       if (!desired.has(skill.stageDefinitionId)) {
         if (skill.isActive) {
@@ -235,12 +245,14 @@ export class UsersController {
             where: { id: skill.id },
             data: { isActive: false },
           });
+          removed = true;
         }
       } else if (!skill.isActive) {
         await this.prisma.workerSkill.update({
           where: { id: skill.id },
           data: { isActive: true },
         });
+        added = true;
       }
       desired.delete(skill.stageDefinitionId);
     }
@@ -248,6 +260,10 @@ export class UsersController {
       await this.prisma.workerSkill.create({
         data: { userId, stageDefinitionId, isActive: true },
       });
+      added = true;
+    }
+    if (added || removed) {
+      this.scheduling?.enqueueEmployeeReplan(userId, added && !removed ? 'increase' : 'decrease');
     }
   }
 
@@ -395,7 +411,7 @@ export class UsersController {
       dto.stageDefinitionIds,
     );
 
-    const user = await this.prisma.user.create({
+    let user = await this.prisma.user.create({
       data: {
         username,
         email,
@@ -414,6 +430,22 @@ export class UsersController {
       },
       select: userSelect,
     });
+
+    if (roleCodesIncludeCustomer(assignedRoles) && !user.customerId) {
+      await provisionLinkedDealerCustomer(this.prisma, this.sequences, {
+        userId: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        email: user.email,
+        preferredLanguage: user.preferredLanguage,
+        createdById: actor.id,
+      });
+      user = await this.prisma.user.findFirstOrThrow({
+        where: { id: user.id },
+        select: userSelect,
+      });
+    }
 
     await this.syncWorkerSkills(user.id, skillIds);
 
@@ -523,6 +555,21 @@ export class UsersController {
       ? encryptPortalPassword(dto.password)
       : undefined;
 
+    let customerIdPatch: string | null | undefined = dto.customerId;
+    const effectiveCustomerId =
+      customerIdPatch === undefined ? existing.customerId : customerIdPatch;
+    if (roleCodesIncludeCustomer(assignedRoles) && !effectiveCustomerId) {
+      customerIdPatch = await provisionLinkedDealerCustomer(this.prisma, this.sequences, {
+        userId: id,
+        firstName: dto.firstName ?? existing.firstName,
+        lastName: dto.lastName ?? existing.lastName,
+        phone: dto.phone ?? existing.phone,
+        email: dto.email ?? existing.email,
+        preferredLanguage: dto.preferredLanguage ?? existing.preferredLanguage,
+        createdById: actor.id,
+      });
+    }
+
     const user = await this.prisma.user.update({
       where: { id },
       data: {
@@ -532,7 +579,7 @@ export class UsersController {
         email: dto.email?.toLowerCase(),
         phone: dto.phone,
         preferredLanguage: dto.preferredLanguage,
-        customerId: dto.customerId === undefined ? undefined : dto.customerId,
+        ...(customerIdPatch === undefined ? {} : { customerId: customerIdPatch }),
         ...(departmentId === undefined
           ? {}
           : { departmentId }),
@@ -555,6 +602,11 @@ export class UsersController {
       dto.stageDefinitionIds,
     );
     await this.syncWorkerSkills(id, skillIds);
+    if (dto.isActive !== undefined && dto.isActive !== existing.isActive) {
+      this.scheduling?.enqueueEmployeeReplan(id, dto.isActive ? 'increase' : 'decrease');
+    } else if (dto.roleIds !== undefined && dto.stageDefinitionIds === undefined) {
+      this.scheduling?.enqueueEmployeeReplan(id, 'decrease');
+    }
 
     await this.prisma.auditEvent.create({
       data: {

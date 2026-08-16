@@ -14,6 +14,14 @@ interface OwnOrderSchedule {
   requestedDeliveryDate: string | null;
   suggestedDeliveryDate: string | null;
   committedDeliveryDate: string | null;
+  projectedDeliveryDate?: string | null;
+  actualDeliveryDate?: string | null;
+  calendarDate?: string | null;
+  customerStatus?: string;
+  requiresDealerAttention?: boolean;
+  customerSafeReason?: string | null;
+  compactDates?: boolean;
+  delayDays?: number | null;
   canUpdateDeliveryDate: boolean;
   canRequestDateChange: boolean;
   dateChangeLocked: boolean;
@@ -26,12 +34,12 @@ function toDateOnly(value: string | null | undefined) {
 }
 
 /**
- * Dealer-safe production schedule summary for a single production order.
- * Never shows assigned workers, departments, or capacity — only the
- * commercial promise state and requested/suggested/committed dates.
+ * Dealer-safe delivery summary for a single production order.
+ * Never shows assigned workers, departments, or capacity.
  */
 export function ProductionScheduleCard({ productionOrderId }: { productionOrderId: string }) {
   const tp = useTranslations('production');
+  const td = useTranslations('production.dealerDelivery');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
@@ -81,7 +89,7 @@ export function ProductionScheduleCard({ productionOrderId }: { productionOrderI
 
   if (isLoading) {
     return (
-      <Card title={tp('schedulingSection')} className="maher-form-section">
+      <Card title={td('section')} className="maher-form-section">
         <Skeleton className="h-24 w-full rounded-xl" />
       </Card>
     );
@@ -91,40 +99,73 @@ export function ProductionScheduleCard({ productionOrderId }: { productionOrderI
     return null;
   }
 
+  const status = data.customerStatus ?? data.promiseState;
+  const requested = toDateOnly(data.requestedDeliveryDate);
+  const suggested = toDateOnly(data.suggestedDeliveryDate);
+  const committed = toDateOnly(data.committedDeliveryDate);
+  const projected = toDateOnly(data.projectedDeliveryDate);
+  const awaiting = status === 'AWAITING_CONFIRMATION';
+  const compact = Boolean(data.compactDates && committed);
+
   return (
-    <Card
-      title={tp('schedulingSection')}
-      description={tp('schedulingSectionHint')}
-      className="maher-form-section"
-    >
+    <Card title={td('section')} description={td('sectionHint')} className="maher-form-section">
       <div className="space-y-4">
         {banner ? <Alert variant="success">{banner}</Alert> : null}
         {error ? <Alert variant="error">{error}</Alert> : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge status={data.promiseState} />
+          <StatusBadge status={status} />
         </div>
 
-        <dl className="grid gap-3 sm:grid-cols-3">
-          <div>
-            <dt className="text-xs text-text-tertiary">{tp('requestedDate')}</dt>
-            <dd className="mt-0.5 text-sm font-medium" dir="ltr">
-              {toDateOnly(data.requestedDeliveryDate) ?? '—'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-tertiary">{tp('suggestedDate')}</dt>
-            <dd className="mt-0.5 text-sm font-medium" dir="ltr">
-              {toDateOnly(data.suggestedDeliveryDate) ?? '—'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-text-tertiary">{tp('committedDate')}</dt>
-            <dd className="mt-0.5 text-sm font-medium" dir="ltr">
-              {toDateOnly(data.committedDeliveryDate) ?? '—'}
-            </dd>
-          </div>
-        </dl>
+        {compact ? (
+          <p className="text-sm font-medium">
+            {td('compactOnTrack', { date: committed })}
+          </p>
+        ) : awaiting ? (
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-text-tertiary">{td('requested')}</dt>
+              <dd className="mt-0.5 text-sm font-medium" dir="ltr">
+                {requested ?? '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-tertiary">{td('earliest')}</dt>
+              <dd className="mt-0.5 text-sm font-medium" dir="ltr">
+                {suggested ?? '—'}
+              </dd>
+            </div>
+            <p className="sm:col-span-2 text-xs text-text-secondary">{td('newDateProposed')}</p>
+          </dl>
+        ) : (
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-tertiary text-text-tertiary">{td('confirmed')}</dt>
+              <dd className="mt-0.5 text-sm font-medium" dir="ltr">
+                {committed ?? '—'}
+              </dd>
+            </div>
+            {projected && projected !== committed ? (
+              <div>
+                <dt className="text-xs text-text-tertiary">{td('currentExpected')}</dt>
+                <dd className="mt-0.5 text-sm font-medium" dir="ltr">
+                  {projected}
+                </dd>
+              </div>
+            ) : null}
+            {requested && requested !== committed ? (
+              <div>
+                <dt className="text-xs text-text-tertiary">{td('requested')}</dt>
+                <dd className="mt-0.5 text-sm font-medium" dir="ltr">
+                  {requested}
+                </dd>
+              </div>
+            ) : null}
+            {data.customerSafeReason ? (
+              <p className="sm:col-span-2 text-xs text-text-secondary">{td('productionDelay')}</p>
+            ) : null}
+          </dl>
+        )}
 
         {data.dateChangeLocked ? (
           <Alert variant="info">

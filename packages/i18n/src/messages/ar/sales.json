@@ -75,5 +75,7 @@
   "sectionInProductionHint": "طلبيات تُصنَّع حالياً في المصنع",
   "sectionDone": "منتهية",
   "sectionDoneHint": "جاهزة للتسليم أو تم تسليمها أو اكتملت",
-  "sectionEmpty": "لا طلبيات في هذا القسم"
+  "sectionEmpty": "لا طلبيات في هذا القسم",
+  "dealerDeliveryDate": "التسليم",
+  "noDeliveryDateYet": "يُؤكد التاريخ لاحقاً"
 }

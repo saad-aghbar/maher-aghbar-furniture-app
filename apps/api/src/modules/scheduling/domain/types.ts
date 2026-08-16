@@ -23,6 +23,7 @@ export type SchedulePromiseState =
   | 'AWAITING_APPROVAL'
   | 'CONFIRMED'
   | 'AT_RISK'
+  | 'LATE'
   | 'RESCHEDULED'
   | 'COMPLETED';
 
@@ -44,6 +45,10 @@ export type FactoryCalendarExceptionType = 'HOLIDAY' | 'SHUTDOWN' | 'EXTRA_SHIFT
 export type ValidationSeverity = 'VALID' | 'WARNING' | 'CONFLICT';
 
 export type ScheduleResourceType = 'EMPLOYEE' | 'DEPARTMENT';
+
+export type SchedulingResourceMode = 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
+
+export type SchedulePlanningMode = 'FORWARD' | 'BACKWARD' | 'BACKWARD_FALLBACK_FORWARD';
 
 export type DealerChangeAction = 'canUpdateDirect' | 'canChangeRequest' | 'locked';
 
@@ -93,6 +98,7 @@ export interface OccupancyInterval {
   start: Date;
   end: Date;
   allocationId?: string;
+  productionOrderId?: string;
 }
 
 export interface WorkerCandidate {
@@ -113,10 +119,19 @@ export interface BomDefaults {
 
 export type InventoryKey = 'fabricMeters' | 'woodUnits' | 'foamBlocks';
 
+export interface IncomingSupply {
+  qty: number;
+  /** Known arrival instant. Incoming without a date does not cover a deficit. */
+  readyAt: Date;
+}
+
 export interface InventoryAvailability {
   available: number;
-  /** Known date when insufficient stock becomes available. Never invent this. */
+  /** Pool reservedQty. Used to credit this order's own reservation at generate. */
+  reserved?: number;
+  /** Legacy single known date. Prefer `incoming` when dated receipts exist. */
   readyAt?: Date | null;
+  incoming?: IncomingSupply[];
 }
 
 export interface MaterialReadinessResult {
@@ -148,6 +163,11 @@ export interface PlannerStageInput {
   pinnedStart?: Date | null;
   pinnedEnd?: Date | null;
   preferredEmployeeId?: string | null;
+  schedulingResourceMode?: SchedulingResourceMode;
+  /** Parallel slots when RESOURCE_CONSTRAINED. 0 or missing → unschedulable. */
+  resourceSlots?: number | null;
+  /** Stage-level notBefore (materials / WIP). */
+  notBefore?: Date | null;
 }
 
 export interface PlannerOrderInput {
@@ -157,6 +177,8 @@ export interface PlannerOrderInput {
   isPinned?: boolean;
   committedDeliveryDate?: Date | null;
   requestedDeliveryDate?: Date | null;
+  /** End-of-shift after delivery working-day buffer; backward target before bufferPercent. */
+  latestCompletionTarget?: Date | null;
   createdAt: Date;
   materialReadyAt?: Date | null;
   productionReadyAt?: Date | null;
@@ -177,6 +199,7 @@ export interface PlannedAllocation {
   plannedEnd: Date;
   estimatedMinutes: number;
   isPinned: boolean;
+  resourceSlot?: number | null;
 }
 
 export interface SchedulePlanResult {
@@ -184,6 +207,8 @@ export interface SchedulePlanResult {
   earliestCompletion: Date | null;
   requestedDateFeasible: boolean;
   usedBackward: boolean;
+  planningMode: SchedulePlanningMode;
+  unschedulableReason?: string | null;
 }
 
 export interface ValidationIssue {

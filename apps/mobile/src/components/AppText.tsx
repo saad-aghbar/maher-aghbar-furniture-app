@@ -17,6 +17,8 @@ type AppTextProps = TextProps & {
    * the block still sits on the reading-start edge in Arabic).
    */
   dir?: 'auto' | 'ltr' | 'rtl';
+  /** Rubik even in Arabic — needed for `/` and other Latin punctuation. */
+  face?: 'app' | 'latin';
 };
 
 /**
@@ -30,6 +32,7 @@ export function AppText({
   weight,
   align = 'auto',
   dir = 'auto',
+  face = 'app',
   style,
   ...rest
 }: AppTextProps) {
@@ -70,12 +73,13 @@ export function AppText({
     // Win over Latin optical tracking passed via `style` (e.g. letterSpacing: -1.1).
     locale === 'ar' ? { letterSpacing: 0 } : null,
   ];
-  const typed = applyAppTypeface(locale, composed, { weight, variant });
+  const typed = applyAppTypeface(locale, composed, { weight, variant, face });
+  const metrics = face === 'latin' ? undefined : resolveArabicTextMetrics(locale, typed);
 
   return (
     <Text
       {...rest}
-      style={[typed, resolveArabicTextMetrics(locale, typed)]}
+      style={[typed, metrics]}
     />
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Keyboard, Pressable, StyleSheet, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,6 +12,7 @@ import {
 } from '@/api/modules/customers';
 import {
   createRequest,
+  getRequest,
   submitRequest,
   updateRequest,
   type CreateRequestInput,
@@ -162,6 +163,7 @@ export function NewOrderScreen() {
   const [error, setError] = useState<string | null>(null);
   const [draftSaved, setDraftSaved] = useState<{ id: string; number: string } | null>(null);
   const [submittedNumber, setSubmittedNumber] = useState<string | null>(null);
+  const [draftSavedNumber, setDraftSavedNumber] = useState<string | null>(null);
   const [successKey, setSuccessKey] = useState(0);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
 
@@ -175,6 +177,8 @@ export function NewOrderScreen() {
   const skipLocalSave = useRef(true);
   const submitLock = useRef(false);
   const uploadAbort = useRef<AbortController | null>(null);
+  const uploadQueueTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const uploadInFlight = useRef(false);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const resolvedNameRef = useRef('');
@@ -204,6 +208,16 @@ export function NewOrderScreen() {
       const local = await loadLocalDraft();
       if (cancelled) return;
 
+      const restoreServerDraft = async (id: string, number: string) => {
+        try {
+          await getRequest(id);
+          if (!cancelled) setDraftSaved({ id, number });
+        } catch {
+          // Draft RFQ was wiped (e.g. db:seed:demo) — keep form fields, drop stale id.
+          if (!cancelled) setDraftSaved(null);
+        }
+      };
+
       // Catalog deep-link product/qty is applied in a separate effect so it
       // also runs when New Order was already mounted (tabs keep screens alive).
       if (local && !fromCatalog) {
@@ -231,7 +245,7 @@ export function NewOrderScreen() {
         setDeliveryLng(local.deliveryLng);
         setRequiredDeliveryDate(local.requiredDeliveryDate || '');
         if (local.serverDraftId && local.serverDraftNumber) {
-          setDraftSaved({ id: local.serverDraftId, number: local.serverDraftNumber });
+          await restoreServerDraft(local.serverDraftId, local.serverDraftNumber);
         }
       } else if (local && fromCatalog) {
         // Keep non-product draft fields so returning dealers don't retype delivery/etc.
@@ -255,7 +269,7 @@ export function NewOrderScreen() {
         setDeliveryLng(local.deliveryLng);
         setRequiredDeliveryDate(local.requiredDeliveryDate || '');
         if (local.serverDraftId && local.serverDraftNumber) {
-          setDraftSaved({ id: local.serverDraftId, number: local.serverDraftNumber });
+          await restoreServerDraft(local.serverDraftId, local.serverDraftNumber);
         }
       }
 
@@ -307,7 +321,7 @@ export function NewOrderScreen() {
   }, [productQuery.data, hydrated, locale]);
 
   useEffect(() => {
-    if (!hydrated || skipLocalSave.current || submittedNumber) return;
+    if (!hydrated || skipLocalSave.current || submittedNumber || draftSavedNumber) return;
     const payload: NewOrderLocalDraft = {
       version: 3,
       step,
@@ -362,6 +376,7 @@ export function NewOrderScreen() {
     requiredDeliveryDate,
     draftSaved,
     submittedNumber,
+    draftSavedNumber,
   ]);
 
   useEffect(() => {
@@ -627,12 +642,7 @@ export function NewOrderScreen() {
       if (file.category === 'HANDWRITTEN_ORDER') void runAiFor(next);
       return true;
     } catch (err) {
-      if (
-        (typeof DOMException !== 'undefined' &&
-          err instanceof DOMException &&
-          err.name === 'AbortError') ||
-        (err instanceof Error && err.name === 'AbortError')
-      ) {
+      if (err instanceof Error && err.name === 'AbortError') {
         patchAttachment(file.id, { status: 'cancelled', progress: 0 });
         if (file.category === 'HANDWRITTEN_ORDER') setAiState('idle');
         return false;
@@ -643,6 +653,7 @@ export function NewOrderScreen() {
         errorMessage: err instanceof Error ? err.message : 'Upload failed',
       });
       if (file.category === 'HANDWRITTEN_ORDER') setAiState('failed');
+      setError(err instanceof Error ? err.message : t('mobile.newOrder.uploadFailed'));
       return false;
     }
   };
@@ -654,9 +665,13 @@ export function NewOrderScreen() {
     );
     if (!pending.length) return true;
 
-    uploadAbort.current?.abort();
+    // Abort only an in-flight batch — avoid AbortError on a cold start.
+    if (uploadInFlight.current) {
+      uploadAbort.current?.abort();
+    }
     const controller = new AbortController();
     uploadAbort.current = controller;
+    uploadInFlight.current = true;
     setUploading(true);
     setError(null);
     try {
@@ -665,14 +680,17 @@ export function NewOrderScreen() {
         await uploadOne(file, requestId, controller.signal);
       }
       const failed = attachmentsRef.current.some((a) => a.status === 'error');
+      if (!failed) setError(null);
       return !failed;
     } finally {
+      uploadInFlight.current = false;
       setUploading(false);
     }
   };
 
   const cancelUploads = () => {
     uploadAbort.current?.abort();
+    uploadInFlight.current = false;
     setUploading(false);
     setAttachments((prev) =>
       prev.map((a) =>
@@ -775,11 +793,15 @@ export function NewOrderScreen() {
       }
       await uploadAll(created.id);
       await linkAi(created.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.requests.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.salesOrders.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.reports.dealerHome() }),
+      ]);
+      await clearLocalDraft();
+      setDraftSavedNumber(created.number);
+      setSuccessKey((k) => k + 1);
       void haptics.confirmMedium();
-      Alert.alert(
-        t('mobile.newOrder.draftSavedTitle'),
-        t('mobile.newOrder.draftSavedBody', { number: created.number }),
-      );
     } catch (err) {
       fail(
         err instanceof Error && err.message
@@ -845,6 +867,7 @@ export function NewOrderScreen() {
   const resetForm = () => {
     submitLock.current = false;
     setSubmittedNumber(null);
+    setDraftSavedNumber(null);
     setDraftSaved(null);
     setStep(1);
     setProductId('');
@@ -891,7 +914,8 @@ export function NewOrderScreen() {
 
   const slideDir = isRTL ? 'left' : 'right';
   const dealer = dealerTokens(colors);
-  const dockMode = newOrderDockMode({ step, submitted: Boolean(submittedNumber) });
+  const successVisible = Boolean(submittedNumber || draftSavedNumber);
+  const dockMode = newOrderDockMode({ step, submitted: successVisible });
   const scrollPad = newOrderDockScrollPad(theme.spacing.md);
   const dockDisabled = busy || uploading;
 
@@ -922,7 +946,7 @@ export function NewOrderScreen() {
         contentContainerStyle={{
           paddingBottom: keyboardOpen
             ? theme.spacing.md
-            : submittedNumber
+            : successVisible
               ? theme.spacing['3xl']
               : scrollPad,
         }}
@@ -948,15 +972,18 @@ export function NewOrderScreen() {
               >
                 {t('mobile.newOrder.title')}
               </AppText>
-              {!submittedNumber ? <NewOrderStageRail step={step} /> : null}
+              {!successVisible ? <NewOrderStageRail step={step} /> : null}
             </View>
           </View>
         }
       >
         <FormShake shakeKey={shake} haptic={false}>
-          <FadeIn key={`fade-${step}-${submittedNumber ?? 'form'}`}>
-            <SlideIn key={`slide-${step}-${submittedNumber ?? 'form'}`} direction={slideDir}>
-              {step === 1 && !submittedNumber ? (
+          <FadeIn key={`fade-${step}-${submittedNumber ?? draftSavedNumber ?? 'form'}`}>
+            <SlideIn
+              key={`slide-${step}-${submittedNumber ?? draftSavedNumber ?? 'form'}`}
+              direction={slideDir}
+            >
+              {step === 1 && !successVisible ? (
                 <DealerGlassCard>
                   <DealerSectionHeader
                     title={stepTitles[1]}
@@ -1104,7 +1131,7 @@ export function NewOrderScreen() {
                 </DealerGlassCard>
               ) : null}
 
-              {step === 2 && !submittedNumber ? (
+              {step === 2 && !successVisible ? (
                 <View style={{ gap: theme.spacing.md }}>
                   {resolvedName || productId ? (
                     <DealerGlassCard
@@ -1249,7 +1276,7 @@ export function NewOrderScreen() {
                 </View>
               ) : null}
 
-              {step === 3 && !submittedNumber ? (
+              {step === 3 && !successVisible ? (
                 <DealerGlassCard contentStyle={{ gap: theme.spacing.lg }}>
                   <DealerSectionHeader
                     title={stepTitles[3]}
@@ -1337,7 +1364,7 @@ export function NewOrderScreen() {
                 </DealerGlassCard>
               ) : null}
 
-              {step === 4 && !submittedNumber ? (
+              {step === 4 && !successVisible ? (
                 <View style={{ gap: theme.spacing.lg }}>
                   <DealerGlassCard>
                     <DealerSectionHeader
@@ -1346,13 +1373,23 @@ export function NewOrderScreen() {
                     />
                     <UploadsStep
                       attachments={attachments}
-                      onChange={setAttachments}
+                      onChange={(next) => {
+                        attachmentsRef.current = next;
+                        setAttachments(next);
+                      }}
                       canUpload={canUpload}
                       aiState={aiState}
-                      error={null}
+                      error={error}
                       overallProgress={overallProgress}
                       uploading={uploading}
                       onUploadAll={() => void uploadAll(draftSaved?.id)}
+                      onAttachmentsQueued={() => {
+                        if (uploadQueueTimer.current) clearTimeout(uploadQueueTimer.current);
+                        uploadQueueTimer.current = setTimeout(() => {
+                          uploadQueueTimer.current = null;
+                          void uploadAll(draftSaved?.id);
+                        }, 250);
+                      }}
                       onCancelUploads={cancelUploads}
                       onRetry={retryOne}
                       showTitle={false}
@@ -1400,7 +1437,7 @@ export function NewOrderScreen() {
                 </View>
               ) : null}
 
-              {submittedNumber ? (
+              {successVisible ? (
                 <DealerGlassCard>
                   <ReviewStep
                     summary={{
@@ -1416,7 +1453,7 @@ export function NewOrderScreen() {
                       dealerPo:
                         resolveExternalOrderNumber(
                           externalOrderNumber,
-                          draftSaved?.number ?? submittedNumber,
+                          draftSaved?.number ?? submittedNumber ?? draftSavedNumber,
                         ) ?? '—',
                       quantity,
                       priority: t(`mobile.newOrder.priorities.${priority}`),
@@ -1430,12 +1467,18 @@ export function NewOrderScreen() {
                     error={error}
                     busy={false}
                     submittedNumber={submittedNumber}
+                    draftSavedNumber={draftSavedNumber}
                     successKey={successKey}
                     onBack={goBack}
                     onSaveDraft={() => undefined}
                     onSubmit={() => undefined}
                     onViewOrders={() =>
-                      router.replace('/(app)/(customer)/(tabs)/orders')
+                      router.replace('/(app)/(customer)/(tabs)/orders' as never)
+                    }
+                    onViewDrafts={() =>
+                      router.replace(
+                        '/(app)/(customer)/(tabs)/orders?focus=drafts' as never,
+                      )
                     }
                     onCreateAnother={resetForm}
                   />

@@ -3,6 +3,7 @@ import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
@@ -114,6 +115,7 @@ export function CreateTransferSheet({
   }
 
   const selected = item ? selectInventoryPickRow(item, fromId, locale) : null;
+  const available = item ? warehouseScopedQty(item, fromId).freeQty : undefined;
 
   return (
     <>
@@ -206,11 +208,13 @@ export function CreateTransferSheet({
               </AppText>
             </Pressable>
 
-            <TextField
+            <QtyStepperField
               label={t('mobile.inventory.transferQty')}
               value={qty}
               onChangeText={setQty}
-              keyboardType="decimal-pad"
+              min={0.01}
+              max={available != null && available > 0 ? available : undefined}
+              placeholder="1"
             />
             <TextField
               label={t('mobile.inventory.notes')}

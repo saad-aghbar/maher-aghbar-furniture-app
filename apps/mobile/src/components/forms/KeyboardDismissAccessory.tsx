@@ -105,7 +105,9 @@ function OverlayHost({
   if (!inModal && Platform.OS === 'ios') {
     return (
       <FullWindowOverlay unstable_accessibilityContainerViewIsModal={false}>
-        <View>{children}</View>
+        <View style={styles.overlayRoot} pointerEvents="box-none">
+          {children}
+        </View>
       </FullWindowOverlay>
     );
   }
@@ -153,6 +155,10 @@ export function KeyboardDismissAccessory({ inModal = false }: Props) {
 }
 
 const styles = StyleSheet.create({
+  overlayRoot: {
+    ...StyleSheet.absoluteFillObject,
+    flex: 1,
+  },
   host: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',

@@ -160,3 +160,69 @@ describe('RolesService.removeStaffType', () => {
     });
   });
 });
+
+describe('RolesService.updateStaffType', () => {
+  it('blocks editing a system preset', async () => {
+    const prisma = {
+      role: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'st-sys',
+          code: 'WAREHOUSE_MANAGEMENT',
+          kind: 'STAFF',
+          isSystem: true,
+          permissions: [],
+        }),
+        update: jest.fn(),
+      },
+      rolePermission: { deleteMany: jest.fn(), createMany: jest.fn() },
+      auditEvent: { create: jest.fn() },
+    } as unknown as PrismaService;
+    const service = new RolesService(prisma);
+    await expect(
+      service.updateStaffType(actor(['role.manage']), 'st-sys', {
+        nameEn: 'Warehouse Management',
+        nameAr: 'إدارة المستودعات',
+        permissionCodes: ['inventory.read'],
+      }),
+    ).rejects.toMatchObject({ response: { code: 'PROTECTED_ROLE' } });
+    expect(prisma.role.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('RolesService.ensureSystemStaffPresets', () => {
+  it('upserts Warehouse Management as an active system staff type', async () => {
+    const upsert = jest.fn().mockResolvedValue({ id: 'wh-1', code: 'WAREHOUSE_MANAGEMENT' });
+    const prisma = {
+      role: { upsert },
+      permission: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'p1', code: 'inventory.read' },
+          { id: 'p2', code: 'warehouse.read' },
+        ]),
+      },
+      rolePermission: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+    } as unknown as PrismaService;
+    const service = new RolesService(prisma);
+    await service.ensureSystemStaffPresets();
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { code: 'WAREHOUSE_MANAGEMENT' },
+        create: expect.objectContaining({
+          code: 'WAREHOUSE_MANAGEMENT',
+          kind: 'STAFF',
+          isSystem: true,
+          isActive: true,
+        }),
+        update: expect.objectContaining({
+          kind: 'STAFF',
+          isSystem: true,
+          isActive: true,
+        }),
+      }),
+    );
+    expect(prisma.rolePermission.createMany).toHaveBeenCalled();
+  });
+});

@@ -83,6 +83,8 @@ const STAGE_PATCH_FIELDS = [
   'requiresPhotos',
   'responsibleDepartment',
   'isActive',
+  'schedulingResourceMode',
+  'resourceSlots',
 ] as const;
 
 /** Strip `code` and any unknown fields so rename never mutates the stored identifier. */

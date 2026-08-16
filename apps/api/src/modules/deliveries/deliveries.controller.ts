@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -20,6 +21,7 @@ import type { AuthUser } from '@maher/types';
 import { InvoicesService } from '../invoices/invoices.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 
 const DELIVERY_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   PLANNED: [DeliveryStatus.READY, DeliveryStatus.CANCELLED, DeliveryStatus.FAILED],
@@ -230,8 +232,8 @@ export class DeliveriesController {
 
   @Get(':id')
   @RequirePermissions('delivery.read')
-  get(@Param('id') id: string) {
-    return this.prisma.delivery.findUniqueOrThrow({
+  async get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const delivery = await this.prisma.delivery.findUnique({
       where: { id },
       include: {
         customer: {
@@ -263,6 +265,14 @@ export class DeliveriesController {
         },
       },
     });
+    if (!delivery || !assertCustomerOwns(user, delivery.customerId)) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Delivery not found.' });
+    }
+    if (user.customerId) {
+      const { driver: _driver, ...rest } = delivery;
+      return rest;
+    }
+    return delivery;
   }
 
   @Patch(':id/location')
@@ -373,6 +383,31 @@ export class DeliveriesController {
         .notifyCustomerUsers(existing.customerId, {
           templateCode: 'DELIVERY_APPROACHING',
           vars: { number: delivery.number },
+          linkUrl: `/sales-orders/${existing.salesOrderId ?? ''}`,
+        })
+        .catch(() => undefined);
+    }
+
+    if (dto.status === DeliveryStatus.DELIVERED) {
+      const so = existing.salesOrderId
+        ? await this.prisma.salesOrder.findUnique({
+            where: { id: existing.salesOrderId },
+            select: { number: true },
+          })
+        : null;
+      const date = delivery.updatedAt.toISOString().slice(0, 10);
+      const completed = await this.prisma.notificationTemplate.findUnique({
+        where: { code: 'DELIVERY_COMPLETED' },
+        select: { code: true },
+      }).catch(() => null);
+      await this.notifications
+        .notifyCustomerUsers(existing.customerId, {
+          templateCode: completed?.code ?? 'DELIVERY_DATE_UPDATED',
+          vars: {
+            orderNumber: so?.number ?? delivery.number,
+            number: so?.number ?? delivery.number,
+            date,
+          },
           linkUrl: `/sales-orders/${existing.salesOrderId ?? ''}`,
         })
         .catch(() => undefined);

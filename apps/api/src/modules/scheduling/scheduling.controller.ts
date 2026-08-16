@@ -9,12 +9,15 @@ import {
   CalendarExceptionDto,
   DealerDateChangeDto,
   ListCalendarQuery,
+  ListCapacityQuery,
+  ListOwnDeliveriesQuery,
   PatchAllocationDto,
   PinDto,
   ProductionCalendarDto,
   ProductionProfileDto,
   ProductStageEstimatesDto,
   RecalculateDto,
+  ResolveConflictDto,
 } from './dto/scheduling.dto';
 import { SchedulingService } from './scheduling.service';
 
@@ -59,16 +62,43 @@ export class SchedulingController {
     return this.scheduling.deleteException(date, user.id);
   }
 
-  @RequirePermissions('schedule.capacity.read')
-  @Get('capacity')
-  capacity(@Query('from') from: string, @Query('to') to: string) {
-    return this.scheduling.listCapacity(from, to);
+  @RequirePermissions('schedule.read')
+  @Get('replan-runs/:id')
+  getReplanRun(@Param('id') id: string) {
+    return this.scheduling.getReplanRun(id);
   }
 
   @RequirePermissions('schedule.capacity.read')
+  @Get('capacity')
+  capacity(@Query() query: ListCapacityQuery) {
+    return this.scheduling.listCapacity(query.from, query.to, {
+      granularity: query.granularity,
+      includeWorkers: query.includeWorkers,
+    });
+  }
+
+  @RequireAnyPermissions('schedule.read', 'schedule.capacity.read')
   @Get('conflicts')
   conflicts() {
     return this.scheduling.listConflicts();
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('conflicts/resolve-all')
+  resolveAllConflicts(@CurrentUser() user: AuthUser) {
+    return this.scheduling.resolveAllConflicts(user);
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('conflicts/resolve')
+  resolveConflictBody(@Body() dto: ResolveConflictDto, @CurrentUser() user: AuthUser) {
+    return this.scheduling.resolveConflict(dto.conflictId, user);
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('conflicts/:conflictId/resolve')
+  resolveConflict(@Param('conflictId') conflictId: string, @CurrentUser() user: AuthUser) {
+    return this.scheduling.resolveConflict(decodeURIComponent(conflictId), user);
   }
 
   @RequirePermissions('schedule.read')
@@ -77,10 +107,31 @@ export class SchedulingController {
     return this.scheduling.listAtRisk();
   }
 
+  @RequirePermissions('schedule.manage')
+  @Post('at-risk/resolve-all')
+  resolveAllAtRisk(@CurrentUser() user: AuthUser) {
+    return this.scheduling.resolveAllAtRisk(user);
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('at-risk/:productionOrderId/resolve')
+  resolveAtRisk(
+    @Param('productionOrderId') productionOrderId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.scheduling.resolveAtRisk(productionOrderId, user);
+  }
+
   @RequirePermissions('schedule.read')
   @Get('dashboard')
   dashboard() {
     return this.scheduling.dashboardSummary();
+  }
+
+  @RequirePermissions('schedule.read.own')
+  @Get('own-deliveries')
+  listOwnDeliveries(@Query() query: ListOwnDeliveriesQuery, @CurrentUser() user: AuthUser) {
+    return this.scheduling.listOwnDeliveries(user, { from: query.from, to: query.to });
   }
 
   @RequireAnyPermissions('schedule.read', 'schedule.read.own')

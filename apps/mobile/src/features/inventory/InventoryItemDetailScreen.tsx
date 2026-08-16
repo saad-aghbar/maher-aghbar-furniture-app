@@ -1,6 +1,6 @@
 import type { Href } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, FlatList, Image, Platform, Pressable, RefreshControl, View } from 'react-native';
+import { FlatList, Image, Platform, Pressable, RefreshControl, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { can } from '@maher/permissions';
@@ -172,7 +172,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
       }
     } catch {
       void haptics.error();
-      Alert.alert(t('mobile.inventory.photoUploadFailed'));
+      showToast({ variant: 'error', message: t('mobile.inventory.photoUploadFailed') });
       setPhotoBusy(false);
     }
   }
@@ -191,7 +191,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
       }
     } catch {
       void haptics.error();
-      Alert.alert(t('mobile.inventory.photoUploadFailed'));
+      showToast({ variant: 'error', message: t('mobile.inventory.photoUploadFailed') });
       setPhotoBusy(false);
     }
   }

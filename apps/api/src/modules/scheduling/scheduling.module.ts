@@ -8,6 +8,6 @@ import { SchedulingService } from './scheduling.service';
   imports: [NotificationsModule],
   controllers: [SchedulingController],
   providers: [SchedulingService, SchedulingQueueService],
-  exports: [SchedulingService],
+  exports: [SchedulingService, SchedulingQueueService],
 })
 export class SchedulingModule {}

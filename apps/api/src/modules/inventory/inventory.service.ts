@@ -29,6 +29,7 @@ import { roundMoney } from '../../common/helpers/money.util';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
 import { PurchasingService } from '../purchasing/purchasing.service';
+import { SchedulingQueueService } from '../scheduling/scheduling-queue';
 import { stripInventoryCostFields, stripInventoryCostList } from './inventory-cost.util';
 import { aggregateStockQty, withStockQty } from '../../common/helpers/inventory-qty.util';
 
@@ -53,6 +54,8 @@ export class InventoryService {
     private readonly sequences: SequenceService,
     @Inject(forwardRef(() => PurchasingService))
     private readonly purchasing: PurchasingService,
+    @Inject(forwardRef(() => SchedulingQueueService))
+    private readonly schedulingQueue?: SchedulingQueueService,
   ) {}
 
   async listGroups(permissions?: string[]) {
@@ -636,6 +639,7 @@ export class InventoryService {
       userId,
     });
     await this.purchasing.maybeAutoReorderAfterStockChange(dto.inventoryItemId, userId);
+    await this.retryWaitingMaterialOrders(userId).catch(() => undefined);
     return result;
   }
 
@@ -1541,6 +1545,7 @@ export class InventoryService {
       where: { status: 'WAITING_FOR_MATERIALS', archivedAt: null },
       select: { id: true },
     });
+    const waitingIds = waiting.map((so) => so.id);
     for (const so of waiting) {
       const result = await this.tryReserveForSalesOrder(so.id, userId);
       if (!result.ready) continue;
@@ -1552,6 +1557,37 @@ export class InventoryService {
         where: { salesOrderId: so.id, status: 'WAITING_FOR_MATERIALS' },
         data: { status: 'PLANNED' },
       });
+    }
+    await this.enqueueMaterialArrivalReplans(waitingIds);
+  }
+
+  private async enqueueMaterialArrivalReplans(waitingSalesOrderIds: string[]) {
+    if (!this.schedulingQueue) return;
+    const fromWaiting = waitingSalesOrderIds.length
+      ? await this.prisma.productionOrder.findMany({
+          where: { salesOrderId: { in: waitingSalesOrderIds } },
+          select: { id: true },
+        })
+      : [];
+    const stillWaiting = await this.prisma.productionOrder.findMany({
+      where: { status: 'WAITING_FOR_MATERIALS' },
+      select: { id: true },
+    });
+    const constrained = await this.prisma.productionSchedule.findMany({
+      where: {
+        status: { in: ['DRAFT', 'PROPOSED', 'APPROVED', 'NEEDS_REVIEW'] },
+        OR: [{ unschedulableReason: 'MATERIAL_NOT_READY' }, { materialReadyAt: { not: null } }],
+      },
+      select: { productionOrderId: true },
+    });
+    const ids = new Set<string>();
+    for (const row of fromWaiting) ids.add(row.id);
+    for (const row of stillWaiting) ids.add(row.id);
+    for (const row of constrained) ids.add(row.productionOrderId);
+    for (const productionOrderId of ids) {
+      this.schedulingQueue
+        .enqueue('REPLAN', { productionOrderId, event: 'material-arrival' })
+        .catch(() => undefined);
     }
   }
 }

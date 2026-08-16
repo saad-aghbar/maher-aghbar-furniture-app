@@ -40,6 +40,8 @@ type StageRow = {
   requiresPhotos: boolean;
   responsibleDepartment?: string | null;
   isActive: boolean;
+  schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED' | null;
+  resourceSlots?: number | null;
 };
 
 type Filter = 'all' | 'active' | 'inactive' | 'inspection' | 'photos';
@@ -76,6 +78,11 @@ export default function WorkflowStageLibraryPage() {
           estimatedHours: Number.isFinite(hours) ? hours : undefined,
           requiresInspection: create.requiresInspection,
           requiresPhotos: create.requiresPhotos,
+          schedulingResourceMode: create.schedulingResourceMode,
+          resourceSlots:
+            create.schedulingResourceMode === 'RESOURCE_CONSTRAINED'
+              ? Number(create.resourceSlots) || 1
+              : undefined,
         }),
       });
     },
@@ -206,6 +213,8 @@ export default function WorkflowStageLibraryPage() {
                   hours: row.estimatedHours != null ? String(row.estimatedHours) : '',
                   requiresInspection: row.requiresInspection,
                   requiresPhotos: row.requiresPhotos,
+                  schedulingResourceMode: row.schedulingResourceMode ?? 'WORKER_CONSTRAINED',
+                  resourceSlots: String(row.resourceSlots ?? 1),
                 });
               }}
               className="rounded-2xl border border-[var(--maher-border)] bg-[var(--maher-surface)] p-4 text-start transition hover:border-brand/40"
@@ -223,6 +232,11 @@ export default function WorkflowStageLibraryPage() {
                 ) : null}
                 {row.requiresInspection ? <Badge>{t('workflow.requiresInspection')}</Badge> : null}
                 {row.requiresPhotos ? <Badge>{t('workflow.requiresPhotos')}</Badge> : null}
+                <Badge>
+                  {row.schedulingResourceMode === 'RESOURCE_CONSTRAINED'
+                    ? t('workflow.scheduleByResource')
+                    : t('workflow.scheduleByWorkers')}
+                </Badge>
               </div>
             </button>
           ))}
@@ -282,6 +296,11 @@ export default function WorkflowStageLibraryPage() {
                       estimatedHours: Number.isFinite(hours) ? hours : null,
                       requiresInspection: edit.requiresInspection,
                       requiresPhotos: edit.requiresPhotos,
+                      schedulingResourceMode: edit.schedulingResourceMode,
+                      resourceSlots:
+                        edit.schedulingResourceMode === 'RESOURCE_CONSTRAINED'
+                          ? Number(edit.resourceSlots) || 1
+                          : 1,
                     },
                   });
                 }}

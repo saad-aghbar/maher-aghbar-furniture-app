@@ -26,6 +26,7 @@ const STAFF_TYPE_KEYS = [
   'users.duplicateStaffType',
   'users.optional',
   'users.systemPreset',
+  'users.systemPresetReadOnly',
   'users.custom',
   'users.permissions',
   'users.searchPermissions',

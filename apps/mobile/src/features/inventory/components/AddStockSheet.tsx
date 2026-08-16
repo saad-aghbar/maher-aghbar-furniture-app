@@ -4,6 +4,7 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { CodeField } from '@/components/forms/CodeField';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
@@ -312,14 +313,14 @@ export function AddStockSheet({
             }
           />
 
-          <TextField
+          <QtyStepperField
             label={t('mobile.inventory.quantity', { unit })}
             value={qty}
             onChangeText={(text) => {
               setQty(text);
               if (error) setError(null);
             }}
-            keyboardType="decimal-pad"
+            min={0.01}
             placeholder="1"
           />
 

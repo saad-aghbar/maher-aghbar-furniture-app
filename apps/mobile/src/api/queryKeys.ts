@@ -176,10 +176,15 @@ export const queryKeys = {
       [...queryKeys.scheduling.all, 'availability', filters] as const,
     orderSchedule: (productionOrderId: string) =>
       [...queryKeys.scheduling.all, 'order', productionOrderId] as const,
+    ownDeliveries: (filters: unknown = {}) =>
+      [...queryKeys.scheduling.all, 'own-deliveries', filters] as const,
     dashboard: () => [...queryKeys.scheduling.all, 'dashboard'] as const,
     atRisk: () => [...queryKeys.scheduling.all, 'at-risk'] as const,
     calendar: (filters: unknown = {}) =>
       [...queryKeys.scheduling.all, 'calendar', filters] as const,
+    capacity: (filters: unknown = {}) =>
+      [...queryKeys.scheduling.all, 'capacity', filters] as const,
+    conflicts: () => [...queryKeys.scheduling.all, 'conflicts'] as const,
     productProfile: (productId: string) =>
       [...queryKeys.scheduling.all, 'product-profile', productId] as const,
     productStageEstimates: (productId: string) =>

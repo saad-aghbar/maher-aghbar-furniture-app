@@ -354,8 +354,20 @@ enum SchedulePromiseState {
   AWAITING_APPROVAL
   CONFIRMED
   AT_RISK
+  LATE
   RESCHEDULED
   COMPLETED
+}
+
+enum SchedulingResourceMode {
+  WORKER_CONSTRAINED
+  RESOURCE_CONSTRAINED
+}
+
+enum SchedulePlanningMode {
+  FORWARD
+  BACKWARD
+  BACKWARD_FALLBACK_FORWARD
 }
 
 enum ManufacturingComplexity {
@@ -1583,6 +1595,10 @@ model ProductionStageDefinition {
   responsibleDepartment String?
   /// Stage codes that must be COMPLETED before this stage can become READY
   dependsOnCodes        String[] @default([])
+  /// Workers (default) vs explicit shared resource. Never inferred from missing workers.
+  schedulingResourceMode SchedulingResourceMode @default(WORKER_CONSTRAINED)
+  /// Parallel slots for RESOURCE_CONSTRAINED stages. 0 = unschedulable (fail closed).
+  resourceSlots         Int      @default(1)
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -2341,6 +2357,8 @@ model FactoryCalendar {
   workingWeekdays  Int[]    @default([0, 1, 2, 3, 4, 6])
   shiftStart       String   @default("08:00")
   shiftEnd         String   @default("16:00")
+  /// Working days production must finish before the requested delivery date.
+  deliveryBufferWorkingDays Int @default(1)
   /// [{ start: "12:00", end: "13:00" }]
   breaks           Json?
   overtimeConfig   Json?
@@ -2369,6 +2387,31 @@ model FactoryCalendarException {
   @@map("factory_calendar_exceptions")
 }
 
+enum SchedulingReplanRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/** Async factory/calendar replan job result — pollable because the queue drops completed jobs. */
+model SchedulingReplanRun {
+  id          String                    @id @default(uuid())
+  status      SchedulingReplanRunStatus @default(QUEUED)
+  actorId     String?
+  changeType  String
+  reason      String?
+  payload     Json?
+  result      Json?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@index([status, createdAt])
+  @@map("scheduling_replan_runs")
+}
+
 model ProductionSchedule {
   id                        String               @id @default(uuid())
   productionOrderId         String
@@ -2377,6 +2420,9 @@ model ProductionSchedule {
   status                    ScheduleStatus       @default(DRAFT)
   promiseState              SchedulePromiseState @default(ESTIMATED)
   requestedDeliveryDate     DateTime?
+  requestedDateFeasible     Boolean?
+  planningMode              SchedulePlanningMode @default(FORWARD)
+  unschedulableReason       String?
   earliestAvailableDate     DateTime?
   suggestedDeliveryDate     DateTime?
   committedCompletionDate   DateTime?
@@ -2420,6 +2466,8 @@ model ScheduleAllocation {
   employee          User?                @relation("AllocationEmployee", fields: [employeeId], references: [id])
   departmentId      String?
   department        Department?          @relation("AllocationDepartment", fields: [departmentId], references: [id])
+  /// Slot index for RESOURCE_CONSTRAINED occupancy (0..resourceSlots-1).
+  resourceSlot      Int?
   plannedStart      DateTime
   plannedEnd        DateTime
   estimatedMinutes  Int
@@ -2568,6 +2616,8 @@ model ProductionWorkflowNode {
   inventoryTracking            InventoryTracking @default(NONE)
   consumesRawMaterials         Boolean           @default(false)
   consumesSemiFinished         Boolean           @default(false)
+  schedulingResourceMode       SchedulingResourceMode?
+  resourceSlots                Int?
   outputQtyPerUnit             Decimal?          @db.Decimal(18, 3)
   outputNameAr                 String?
   outputNameEn                 String?
@@ -2688,6 +2738,8 @@ model ProductionOrderWorkflowSnapshotNode {
   inventoryTracking     InventoryTracking @default(NONE)
   consumesRawMaterials  Boolean  @default(false)
   consumesSemiFinished  Boolean  @default(false)
+  schedulingResourceMode SchedulingResourceMode @default(WORKER_CONSTRAINED)
+  resourceSlots         Int      @default(1)
   outputQtyPerUnit      Decimal? @db.Decimal(18, 3)
   outputNameAr          String?
   outputNameEn          String?

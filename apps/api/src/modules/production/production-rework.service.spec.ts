@@ -74,6 +74,66 @@ describe('ProductionReworkService', () => {
     expect(originalTask.actualCompletion).toEqual(new Date('2026-01-01'));
   });
 
+  it('enqueues targeted REPLAN after a new rework task and does not generate on the request path', async () => {
+    const tx = {
+      reworkRequest: {
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'rw-1',
+            productionOrderId: 'po-1',
+            status: 'AWAITING_STAGE',
+            description: 'QC fail',
+            notes: null,
+          })
+          .mockResolvedValueOnce({
+            id: 'rw-1',
+            productionOrderId: 'po-1',
+            tasks: [{ id: 'rework-task', isRework: true }],
+            reentryStageInstance: { stageDefinition: { nameEn: 'Upholstery' } },
+          }),
+        update: jest.fn(),
+      },
+      productionStageInstance: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'uph-1',
+          stageDefinitionId: 'sd-uph',
+          stageDefinition: { code: 'UPHOLSTERY', nameEn: 'Upholstery' },
+          tasks: [{ estimatedMinutes: 60 }],
+        }),
+        update: jest.fn(),
+      },
+      productionTask: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'rework-task' }),
+        update: jest.fn(),
+      },
+      productionOrder: { update: jest.fn() },
+      auditEvent: { create: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    } as unknown as PrismaService;
+    const scheduling = {
+      enqueueTargetedReplan: jest.fn().mockResolvedValue(undefined),
+      generateForProductionOrder: jest.fn(),
+    };
+    const service = new ProductionReworkService(
+      prisma,
+      { next: jest.fn().mockResolvedValue('TSK-9') } as unknown as SequenceService,
+      scheduling as never,
+    );
+
+    await service.startRework({
+      reworkId: 'rw-1',
+      stageInstanceId: 'uph-1',
+      userId: 'admin-1',
+    });
+
+    expect(scheduling.enqueueTargetedReplan).toHaveBeenCalledWith('po-1', 'rework-start', 'rework-task');
+    expect(scheduling.generateForProductionOrder).not.toHaveBeenCalled();
+  });
+
   it('rejects a stage that does not belong to the production order', async () => {
     const tx = {
       reworkRequest: {

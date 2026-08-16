@@ -56,6 +56,15 @@ interface SalesOrderRow {
   quotation?: { request?: { externalOrderNumber?: string | null } | null } | null;
 }
 
+interface DealerDeliveryRow {
+  id?: string;
+  salesOrderId: string;
+  calendarDate?: string | null;
+  customerStatus?: string;
+  compactDates?: boolean;
+  committedDeliveryDate?: string | null;
+}
+
 type SectionKey = 'preProduction' | 'inProduction' | 'done';
 
 type HubRow =
@@ -134,6 +143,7 @@ function OrderCard({
   imageUrl,
   tSales,
   tCommon,
+  delivery,
 }: {
   row: HubRow;
   detailHref: string;
@@ -141,6 +151,7 @@ function OrderCard({
   imageUrl: string | null;
   tSales: ReturnType<typeof useTranslations>;
   tCommon: ReturnType<typeof useTranslations>;
+  delivery?: DealerDeliveryRow;
 }) {
   const dealerNo = dealerOrderNumber(row);
   const progress =
@@ -211,6 +222,14 @@ function OrderCard({
         {endCustomer ? (
           <p className="truncate text-[11px] text-text-tertiary">{endCustomer}</p>
         ) : null}
+        {delivery?.calendarDate || delivery?.customerStatus ? (
+          <p className="truncate text-[11px] text-text-secondary">
+            {delivery.customerStatus ? <StatusBadge status={delivery.customerStatus} /> : null}
+            {delivery.calendarDate ? (
+              <Ltr className="ms-1">{delivery.calendarDate}</Ltr>
+            ) : null}
+          </p>
+        ) : null}
 
         <div className="mt-auto flex items-center justify-end maher-card-rule-t pt-2">
           <Link href={detailHref}>
@@ -250,6 +269,24 @@ export default function OrdersPage() {
       return Array.isArray(json) ? json : (json.data ?? []);
     },
   });
+
+  const deliveriesQuery = useQuery({
+    queryKey: ['customer-own-deliveries'],
+    queryFn: async () => {
+      const json = await apiFetch<{ data?: DealerDeliveryRow[] } | DealerDeliveryRow[]>(
+        '/api/v1/scheduling/own-deliveries',
+      );
+      return Array.isArray(json) ? json : (json.data ?? []);
+    },
+  });
+
+  const deliveryByOrderId = useMemo(() => {
+    const map = new Map<string, DealerDeliveryRow>();
+    for (const row of deliveriesQuery.data ?? []) {
+      map.set(row.salesOrderId, row);
+    }
+    return map;
+  }, [deliveriesQuery.data]);
 
   const rows = useMemo<HubRow[]>(() => {
     const salesOrders: HubRow[] = (salesOrdersQuery.data ?? []).map((row) => ({
@@ -437,6 +474,7 @@ export default function OrdersPage() {
               }
               tSales={t}
               tCommon={tCommon}
+              delivery={row.kind === 'sales_order' ? deliveryByOrderId.get(row.id) : undefined}
             />
           ))}
         </StaggerGrid>

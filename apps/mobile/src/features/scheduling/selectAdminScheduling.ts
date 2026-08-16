@@ -1,9 +1,16 @@
 import { localizedName } from '@maher/i18n';
 import type { Locale } from '@maher/types';
-import type { AtRiskOrder, CalendarDay, ScheduleOrderCard, SchedulingDashboard } from '@/api/modules/scheduling';
+import type {
+  AtRiskOrder,
+  AtRiskRecommendedAction,
+  CalendarDay,
+  CanonicalRiskStatus,
+  ScheduleOrderCard,
+  SchedulingDashboard,
+} from '@/api/modules/scheduling';
 import {
-  adminLoadDensity,
-  adminLoadTone,
+  adminFactoryLoadDensity,
+  adminFactoryLoadTone,
   type DayMeta,
 } from '@/components/calendar';
 
@@ -15,19 +22,33 @@ export type AdminScheduleStat = {
 
 export type ScheduleFocusKey = AdminScheduleStat['key'];
 
+/** Chip count for Conflicts: unique active operational overlaps only. */
+export function selectConflictBarCount(
+  uniqueConflicts: { length: number } | number | undefined,
+): number {
+  if (typeof uniqueConflicts === 'number') return uniqueConflicts;
+  return uniqueConflicts?.length ?? 0;
+}
+
 /** Stat chips for the top of the admin scheduling dashboard. */
-export function selectDashboardStats(dashboard: SchedulingDashboard | undefined): AdminScheduleStat[] {
+export function selectDashboardStats(
+  dashboard: SchedulingDashboard | undefined,
+  opts?: { atRiskCount?: number; conflictCount?: number; awaitingApprovalCount?: number },
+): AdminScheduleStat[] {
   if (!dashboard) return [];
+  const atRisk = opts?.atRiskCount ?? dashboard.atRisk;
+  const conflicts = opts?.conflictCount ?? dashboard.conflicts;
+  const awaiting = opts?.awaitingApprovalCount ?? dashboard.awaitingApproval;
   return [
     { key: 'today', value: dashboard.todayCount, tone: 'neutral' },
     { key: 'week', value: dashboard.weekCount, tone: 'neutral' },
     {
       key: 'awaitingApproval',
-      value: dashboard.awaitingApproval,
-      tone: dashboard.awaitingApproval > 0 ? 'warning' : 'neutral',
+      value: awaiting,
+      tone: awaiting > 0 ? 'warning' : 'neutral',
     },
-    { key: 'atRisk', value: dashboard.atRisk, tone: dashboard.atRisk > 0 ? 'danger' : 'neutral' },
-    { key: 'conflicts', value: dashboard.conflicts, tone: dashboard.conflicts > 0 ? 'danger' : 'neutral' },
+    { key: 'atRisk', value: atRisk, tone: atRisk > 0 ? 'danger' : 'neutral' },
+    { key: 'conflicts', value: conflicts, tone: conflicts > 0 ? 'danger' : 'neutral' },
   ];
 }
 
@@ -90,6 +111,7 @@ export type MonthDayMetaModel = {
   isWorking: boolean;
   orderCount: number;
   load: MonthDayLoad;
+  pinnedOnClosedDayCount: number;
 };
 
 function orderIntersectsDay(order: ScheduleOrderCard, ymd: string): boolean {
@@ -114,27 +136,31 @@ export function countOrdersForDay(
 }
 
 /**
- * Per-day load for the admin month board.
- * closed → empty(0) → light(1–2) → half(3–5) → busy(6+)
+ * Per-day load for the admin month board from factory load %
+ * (working-minute allocated / available), not order count.
+ * closed → empty(0%) → light(1–49%) → half(50–84%) → busy(85–100%)
  */
 export function selectMonthDayMeta(
   days: CalendarDay[] | undefined,
   orders: ScheduleOrderCard[] | undefined,
+  factoryLoadByDay: Record<string, number | null> = {},
 ): Record<string, MonthDayMetaModel & { dayMeta: DayMeta }> {
   const out: Record<string, MonthDayMetaModel & { dayMeta: DayMeta }> = {};
   if (!days?.length) return out;
   for (const day of days) {
     const ymd = day.date.slice(0, 10);
     const orderCount = countOrdersForDay(orders, ymd);
-    const tone = adminLoadTone(orderCount, day.isWorking);
+    const loadPercent = factoryLoadByDay[ymd];
+    const tone = adminFactoryLoadTone(loadPercent, day.isWorking);
     const load = tone as MonthDayLoad;
     out[ymd] = {
       isWorking: day.isWorking,
       orderCount,
       load,
+      pinnedOnClosedDayCount: day.isWorking ? 0 : (day.pinnedOnClosedDayCount ?? 0),
       dayMeta: {
         tone,
-        density: adminLoadDensity(orderCount, day.isWorking),
+        density: adminFactoryLoadDensity(loadPercent, day.isWorking),
         disabled: !day.isWorking,
       },
     };
@@ -203,8 +229,9 @@ export function selectConflictCards(
 export function selectAdminCalendarDayMeta(
   days: CalendarDay[] | undefined,
   orders: ScheduleOrderCard[] | undefined,
+  factoryLoadByDay: Record<string, number | null> = {},
 ): Record<string, DayMeta> {
-  const month = selectMonthDayMeta(days, orders);
+  const month = selectMonthDayMeta(days, orders, factoryLoadByDay);
   const out: Record<string, DayMeta> = {};
   for (const [ymd, row] of Object.entries(month)) {
     out[ymd] = row.dayMeta;
@@ -232,6 +259,30 @@ export type AdminScheduleCardModel = {
   scheduleVersion: number | null;
   requiredDeliveryDate: string | null;
   suggestedDeliveryDate: string | null;
+  committedDeliveryDate?: string | null;
+  earliestAvailableDate?: string | null;
+  requestedDateFeasible?: boolean | null;
+  unschedulableReason?: string | null;
+  requiresAdminEstimateReview?: boolean;
+  planningMode?: string | null;
+  materialReadyAt?: string | null;
+  committedCompletionDate?: string | null;
+  productionDeadline?: string | null;
+  deliveryBufferWorkingDays?: number | null;
+  riskStatus?: CanonicalRiskStatus | string | null;
+  reasonCode?: string | null;
+  reasonLabel?: string | null;
+  recommendedAction?: AtRiskRecommendedAction | string | null;
+  recoverableAutomatically?: boolean;
+  projectedCompletion?: string | null;
+  earliestFeasibleDate?: string | null;
+  stageName?: string | null;
+  requiredWip?: string | null;
+  producedBy?: string | null;
+  currentStage?: string | null;
+  missingMaterial?: string | null;
+  stageAtCapacity?: string | null;
+  productId?: string | null;
 };
 
 function asLocale(locale: string): Locale {
@@ -265,12 +316,22 @@ function toScheduleCard(order: ScheduleOrderCard, locale: string): AdminSchedule
     hasConflict: Boolean(order.hasConflict),
     reason: order.conflictReason ?? null,
     scheduleVersion: order.version ?? null,
-    requiredDeliveryDate: null,
-    suggestedDeliveryDate: null,
+    requiredDeliveryDate: order.requestedDeliveryDate ?? null,
+    suggestedDeliveryDate: order.suggestedDeliveryDate ?? null,
+    committedDeliveryDate: order.committedDeliveryDate ?? null,
+    earliestAvailableDate: order.earliestAvailableDate ?? null,
+    requestedDateFeasible: order.requestedDateFeasible ?? null,
+    unschedulableReason: order.unschedulableReason ?? null,
+    requiresAdminEstimateReview: Boolean(order.requiresAdminEstimateReview),
+    planningMode: order.planningMode ?? null,
+    materialReadyAt: order.materialReadyAt ?? null,
+    committedCompletionDate: order.committedCompletionDate ?? null,
+    productionDeadline: order.productionDeadline ?? null,
+    deliveryBufferWorkingDays: order.deliveryBufferWorkingDays ?? null,
   };
 }
 
-const APPROVAL_STATUSES = new Set(['PROPOSED', 'NEEDS_REVIEW']);
+const APPROVAL_STATUSES = new Set(['PROPOSED']);
 
 /** Orders whose latest schedule needs an admin decision — sourced from the calendar window. */
 export function selectApprovalsWaiting(
@@ -289,7 +350,7 @@ export function selectApprovalsWaiting(
   return result.sort((a, b) => (a.plannedStart ?? '').localeCompare(b.plannedStart ?? ''));
 }
 
-/** May-be-late orders (material risk, needs review, or admin-estimate-review) from the dedicated endpoint. */
+/** May-be-late orders from GET /scheduling/at-risk (canonical LATE | AT_RISK | BLOCKED). */
 export function selectAtRiskCards(
   atRisk: AtRiskOrder[] | undefined,
   locale = 'en',
@@ -320,21 +381,168 @@ export function selectAtRiskCards(
     materialRisk: order.materialRisk,
     hasConflict: false,
     reason: order.reason,
-    scheduleVersion: null,
-    requiredDeliveryDate: order.requiredDeliveryDate,
+    scheduleVersion: order.scheduleVersion ?? order.version ?? null,
+    riskStatus: order.riskStatus ?? null,
+    reasonCode: order.reasonCode ?? null,
+    reasonLabel: order.reasonLabel ?? null,
+    recommendedAction: order.recommendedAction ?? null,
+    recoverableAutomatically: Boolean(order.recoverableAutomatically),
+    projectedCompletion: order.projectedCompletion ?? order.earliestAvailableDate ?? null,
+    earliestFeasibleDate: order.earliestFeasibleDate ?? order.earliestAvailableDate ?? null,
+    stageName: order.stageName ?? null,
+    requiredWip: order.requiredWip ?? null,
+    producedBy: order.producedBy ?? null,
+    currentStage: order.currentStage ?? null,
+    missingMaterial: order.missingMaterial ?? null,
+    stageAtCapacity: order.stageAtCapacity ?? null,
+    productId: order.productId ?? null,
+    requiredDeliveryDate: order.requestedDeliveryDate ?? order.requiredDeliveryDate,
     suggestedDeliveryDate: order.suggestedDeliveryDate,
+    committedDeliveryDate: order.committedDeliveryDate ?? null,
+    earliestAvailableDate: order.earliestAvailableDate ?? null,
+    requestedDateFeasible: order.requestedDateFeasible ?? null,
+    unschedulableReason: order.unschedulableReason ?? null,
+    requiresAdminEstimateReview: Boolean(order.requiresAdminEstimateReview),
+    planningMode: order.planningMode ?? null,
+    materialReadyAt: order.materialReadyAt ?? null,
+    committedCompletionDate: order.committedCompletionDate ?? null,
+    productionDeadline: order.productionDeadline ?? null,
+    deliveryBufferWorkingDays: order.deliveryBufferWorkingDays ?? null,
   }));
+}
+
+export type ApprovableScheduleTarget = {
+  productionOrderId: string;
+  version: number;
+};
+
+/** Approve-all only includes PROPOSED cards that still have a version. */
+export function selectApprovableScheduleTargets(
+  cards: AdminScheduleCardModel[],
+): ApprovableScheduleTarget[] {
+  const seen = new Set<string>();
+  const out: ApprovableScheduleTarget[] = [];
+  for (const card of cards) {
+    if (card.scheduleVersion == null) continue;
+    if (!APPROVAL_STATUSES.has(card.status ?? '')) continue;
+    if (seen.has(card.productionOrderId)) continue;
+    seen.add(card.productionOrderId);
+    out.push({ productionOrderId: card.productionOrderId, version: card.scheduleVersion });
+  }
+  return out;
+}
+
+export function scheduleSourceFromCard(card: AdminScheduleCardModel) {
+  return {
+    requestedDeliveryDate: card.requiredDeliveryDate,
+    suggestedDeliveryDate: card.suggestedDeliveryDate,
+    committedDeliveryDate: card.committedDeliveryDate,
+    earliestAvailableDate: card.earliestAvailableDate,
+    requestedDateFeasible: card.requestedDateFeasible,
+    unschedulableReason: card.unschedulableReason,
+    materialRisk: card.materialRisk,
+    requiresAdminEstimateReview: card.requiresAdminEstimateReview,
+    scheduleStatus: card.status,
+    promiseState: card.promiseState,
+    planningMode: card.planningMode,
+    materialReadyAt: card.materialReadyAt,
+    committedCompletionDate: card.committedCompletionDate,
+    productionDeadline: card.productionDeadline,
+    deliveryBufferWorkingDays: card.deliveryBufferWorkingDays,
+    plannedStart: card.plannedStart,
+    plannedEnd: card.plannedEnd,
+    riskStatus: card.riskStatus,
+    reasonCode: card.reasonCode,
+  };
+}
+
+export function selectAtRiskStatusKey(status?: string | null): string {
+  if (status === 'LATE') return 'mobile.adminScheduling.atRisk.statusLate';
+  if (status === 'BLOCKED') return 'mobile.adminScheduling.blocked.title';
+  return 'mobile.adminScheduling.atRisk.statusMayBeLate';
+}
+
+export function selectAtRiskActionKey(action?: string | null): string {
+  switch (action) {
+    case 'RECALCULATE':
+      return 'mobile.adminScheduling.sheets.recalculateTitle';
+    case 'REVIEW_ESTIMATES':
+      return 'mobile.adminScheduling.atRisk.reviewEstimates';
+    case 'VIEW_PRODUCTION':
+      return 'mobile.adminScheduling.atRisk.viewProduction';
+    case 'MANAGE_WORKERS':
+      return 'mobile.adminScheduling.atRisk.manageWorkers';
+    case 'REVIEW_COMMITMENT':
+      return 'mobile.adminScheduling.atRisk.reviewCommitment';
+    case 'VIEW_MATERIALS':
+      return 'mobile.adminScheduling.atRisk.viewMaterials';
+    default:
+      return 'mobile.adminScheduling.atRisk.recommendedAction';
+  }
+}
+
+export function selectAtRiskReasonKey(card: AdminScheduleCardModel): string {
+  if (card.reasonLabel) return card.reasonLabel;
+  if (card.reasonCode === 'DURATION_ESTIMATE_REVIEW') return 'mobile.adminScheduling.reasons.estimateReview';
+  if (card.reasonCode === 'COMMITTED_DATE_TOO_EARLY') return 'mobile.adminScheduling.atRisk.committedCannotBeMet';
+  if (card.reasonCode === 'LATE') return 'mobile.adminScheduling.atRisk.statusLate';
+  if (card.unschedulableReason) {
+    const mapped: Record<string, string> = {
+      NO_ELIGIBLE_WORKER: 'mobile.adminScheduling.reasons.noEligibleWorker',
+      MATERIAL_NOT_READY: 'mobile.adminScheduling.reasons.materialNotReady',
+      WIP_NOT_READY: 'mobile.adminScheduling.reasons.wipNotReady',
+      NO_RESOURCE_CAPACITY: 'mobile.adminScheduling.reasons.capacity',
+    };
+    return mapped[card.unschedulableReason] ?? 'mobile.adminScheduling.reasons.unknown';
+  }
+  return 'mobile.adminScheduling.reasons.unknown';
+}
+
+/** Group remaining resolve-all reasons so list keys stay unique. */
+export function selectAtRiskReasonGroups(
+  rows: Array<{ stillNeedsAttention?: boolean; reasonLabel?: string | null }>,
+): Array<{ key: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.stillNeedsAttention || !row.reasonLabel) continue;
+    counts.set(row.reasonLabel, (counts.get(row.reasonLabel) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([key, count]) => ({ key, count }));
+}
+
+export function selectDaysLate(promisedIso?: string | null, projectedIso?: string | null): number | null {
+  if (!promisedIso || !projectedIso) return null;
+  const promised = promisedIso.slice(0, 10);
+  const projected = projectedIso.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(promised) || !/^\d{4}-\d{2}-\d{2}$/.test(projected)) return null;
+  const [py, pm, pd] = promised.split('-').map(Number);
+  const [ty, tm, td] = projected.split('-').map(Number);
+  const delta = Math.round(
+    (Date.UTC(ty!, (tm ?? 1) - 1, td ?? 1) - Date.UTC(py!, (pm ?? 1) - 1, pd ?? 1)) / 86_400_000,
+  );
+  return delta > 0 ? delta : null;
 }
 
 export type AdminScheduleActionMode = 'approve' | 'changeDate' | 'recalculate';
 
 /** Which actions make sense for a given card — approve requires a known schedule version. */
-export function selectAvailableActions(card: AdminScheduleCardModel): AdminScheduleActionMode[] {
+export function selectAvailableActions(
+  card: AdminScheduleCardModel,
+  perms?: { canApprove?: boolean; canManage?: boolean },
+): AdminScheduleActionMode[] {
   const actions: AdminScheduleActionMode[] = [];
-  if (card.scheduleVersion != null && APPROVAL_STATUSES.has(card.status ?? '')) {
+  const canApprove = perms?.canApprove !== false;
+  const canManage = perms?.canManage !== false;
+  if (canApprove && card.scheduleVersion != null && APPROVAL_STATUSES.has(card.status ?? '')) {
     actions.push('approve');
   }
-  actions.push('changeDate', 'recalculate');
+  if (canManage && card.recommendedAction === 'RECALCULATE') {
+    actions.push('recalculate');
+  } else if (canManage && card.recommendedAction === 'REVIEW_COMMITMENT') {
+    actions.push('changeDate');
+  } else if (canManage && !card.riskStatus) {
+    actions.push('changeDate', 'recalculate');
+  }
   return actions;
 }
 

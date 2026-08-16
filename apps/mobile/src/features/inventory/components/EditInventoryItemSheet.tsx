@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { CodeField } from '@/components/forms/CodeField';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
@@ -181,18 +182,20 @@ export function EditInventoryItemSheet({
             onEdit={measureEditor.openEdit}
             onRemove={measureEditor.removeAt}
           />
-          <TextField
+          <QtyStepperField
             label={t('mobile.inventory.minStock')}
             value={minStock}
             onChangeText={setMinStock}
-            keyboardType="decimal-pad"
+            min={0}
+            placeholder="0"
           />
           {canEditCost ? (
-            <TextField
+            <QtyStepperField
               label={t('mobile.inventory.standardCost')}
               value={standardCost}
               onChangeText={setStandardCost}
-              keyboardType="decimal-pad"
+              min={0}
+              placeholder="0"
             />
           ) : null}
           <CodeField

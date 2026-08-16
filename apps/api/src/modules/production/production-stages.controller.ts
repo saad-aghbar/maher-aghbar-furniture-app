@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   NotFoundException,
+  Optional,
   Param,
   Patch,
   Post,
@@ -14,6 +15,7 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -27,6 +29,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
 import { buildDependencyGraph, detectCycles } from '../scheduling/domain';
+import { SchedulingService } from '../scheduling/scheduling.service';
 import type { AuthUser } from '@maher/types';
 
 class StageDto {
@@ -41,6 +44,10 @@ class StageDto {
   @IsOptional() @IsString() responsibleDepartment?: string;
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional()
+  @IsIn(['WORKER_CONSTRAINED', 'RESOURCE_CONSTRAINED'])
+  schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
+  @IsOptional() @Type(() => Number) @IsNumber() resourceSlots?: number;
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   dependsOnCodes?: string[];
@@ -49,7 +56,10 @@ class StageDto {
 @ApiTags('production-stages')
 @Controller('production-stages')
 export class ProductionStagesController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly scheduling?: SchedulingService,
+  ) {}
 
   @Get()
   @RequirePermissions('production-order.update')
@@ -106,9 +116,9 @@ export class ProductionStagesController {
     @Body() dto: Partial<StageDto>,
     @CurrentUser() user: AuthUser,
   ) {
+    const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
     if (dto.code || dto.dependsOnCodes) {
-      const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
-      if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
       await this.assertNoCycle(dto.code ?? existing.code, dto.dependsOnCodes ?? existing.dependsOnCodes, id);
     }
     const row = await this.prisma.productionStageDefinition.update({ where: { id }, data: dto });
@@ -121,6 +131,14 @@ export class ProductionStagesController {
         newValues: row as unknown as Prisma.InputJsonValue,
       },
     });
+    if (dto.resourceSlots != null && dto.resourceSlots !== (existing.resourceSlots ?? 1)) {
+      const capacityDelta = dto.resourceSlots > (existing.resourceSlots ?? 1) ? 'increase' : 'decrease';
+      await this.scheduling?.enqueueFactoryReplan(user.id, {
+        changeType: 'resource-slots-updated',
+        capacityDelta,
+        reason: `resource-slots:${existing.code}`,
+      });
+    }
     return row;
   }
 

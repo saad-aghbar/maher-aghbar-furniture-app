@@ -1,3 +1,4 @@
+import { invalidateKeys } from '@/api/queryKeys';
 import type {
   AtRiskOrder,
   CalendarDay,
@@ -7,7 +8,12 @@ import type {
 import {
   selectApprovalsWaiting,
   selectAtRiskCards,
+  selectAtRiskReasonGroups,
+  selectAtRiskStatusKey,
   selectAvailableActions,
+  selectDaysLate,
+  selectApprovableScheduleTargets,
+  selectConflictBarCount,
   selectConflictCards,
   selectDashboardStats,
   selectMonthDayMeta,
@@ -66,6 +72,27 @@ describe('selectDashboardStats', () => {
     expect(stats.find((s) => s.key === 'atRisk')).toMatchObject({ value: 2, tone: 'danger' });
     expect(stats.find((s) => s.key === 'conflicts')).toMatchObject({ value: 0, tone: 'neutral' });
   });
+
+  it('prefers at-risk, conflict, and awaiting-approval list lengths for chip counts', () => {
+    const stats = selectDashboardStats(dashboard, {
+      atRiskCount: 4,
+      conflictCount: 3,
+      awaitingApprovalCount: 23,
+    });
+    expect(stats.find((s) => s.key === 'atRisk')).toMatchObject({ value: 4, tone: 'danger' });
+    expect(stats.find((s) => s.key === 'conflicts')).toMatchObject({ value: 3, tone: 'danger' });
+    expect(stats.find((s) => s.key === 'awaitingApproval')).toMatchObject({
+      value: 23,
+      tone: 'warning',
+    });
+  });
+
+  it('counts unique active conflicts only — never orders plus pairs', () => {
+    expect(selectConflictBarCount([{}, {}, {}])).toBe(3);
+    expect(selectConflictBarCount(3)).toBe(3);
+    expect(selectConflictBarCount(undefined)).toBe(0);
+    expect(selectConflictBarCount([])).toBe(0);
+  });
 });
 
 describe('selectWeekStrip', () => {
@@ -110,14 +137,14 @@ describe('selectApprovalsWaiting', () => {
     expect(selectApprovalsWaiting(undefined)).toEqual([]);
   });
 
-  it('filters to PROPOSED/NEEDS_REVIEW statuses only', () => {
+  it('filters to PROPOSED schedules only', () => {
     const orders = [
       orderCard({ status: 'PROPOSED' }),
       orderCard({ id: 'sc-2', productionOrderId: 'po-2', status: 'APPROVED' }),
       orderCard({ id: 'sc-3', productionOrderId: 'po-3', status: 'NEEDS_REVIEW' }),
     ];
     const result = selectApprovalsWaiting(orders);
-    expect(result.map((r) => r.productionOrderId)).toEqual(['po-1', 'po-3']);
+    expect(result.map((r) => r.productionOrderId)).toEqual(['po-1']);
   });
 
   it('deduplicates by productionOrderId, keeping the first occurrence', () => {
@@ -177,6 +204,9 @@ describe('selectAtRiskCards', () => {
         productNameAr: 'كرسي',
         imageUrl: '/api/v1/files/armchair.jpg',
         dealerName: 'Acme',
+        scheduleVersion: 4,
+        riskStatus: 'BLOCKED',
+        recommendedAction: 'VIEW_MATERIALS',
       },
     ];
     const result = selectAtRiskCards(atRisk, 'en');
@@ -191,7 +221,9 @@ describe('selectAtRiskCards', () => {
       reason: 'Material shortage',
       requiredDeliveryDate: '2026-09-01',
       suggestedDeliveryDate: '2026-09-05',
-      scheduleVersion: null,
+      scheduleVersion: 4,
+      riskStatus: 'BLOCKED',
+      recommendedAction: 'VIEW_MATERIALS',
     });
   });
 });
@@ -241,6 +273,30 @@ describe('selectOrdersInRange / selectConflictCards', () => {
       }),
     ];
     expect(selectOrdersForDay(orders, '2026-08-11')[0]?.imageUrl).toBe('/api/v1/files/table.jpg');
+  });
+
+  it('passes schedule dates through instead of zeroing them', () => {
+    const orders = [
+      orderCard({
+        plannedStart: '2026-08-11T08:00:00.000Z',
+        requestedDeliveryDate: '2026-08-20',
+        suggestedDeliveryDate: '2026-08-22',
+        committedDeliveryDate: '2026-08-21',
+        earliestAvailableDate: '2026-08-22',
+        requestedDateFeasible: false,
+        unschedulableReason: null,
+        planningMode: 'BACKWARD',
+        materialReadyAt: '2026-08-18',
+        productionDeadline: '2026-08-19T16:00:00.000Z',
+        deliveryBufferWorkingDays: 1,
+      }),
+    ];
+    const card = selectOrdersForDay(orders, '2026-08-11')[0]!;
+    expect(card.requiredDeliveryDate).toBe('2026-08-20');
+    expect(card.suggestedDeliveryDate).toBe('2026-08-22');
+    expect(card.committedDeliveryDate).toBe('2026-08-21');
+    expect(card.productionDeadline).toBe('2026-08-19T16:00:00.000Z');
+    expect(card.deliveryBufferWorkingDays).toBe(1);
   });
 });
 
@@ -325,8 +381,61 @@ describe('selectAvailableActions', () => {
     };
   }
 
+  it('hides approve without schedule.approve and mutations without schedule.manage', () => {
+    expect(selectAvailableActions(card(), { canApprove: false, canManage: true })).toEqual([
+      'changeDate',
+      'recalculate',
+    ]);
+    expect(selectAvailableActions(card(), { canApprove: true, canManage: false })).toEqual([
+      'approve',
+    ]);
+  });
+
   it('offers approve when a schedule version exists and status needs approval', () => {
     expect(selectAvailableActions(card())).toEqual(['approve', 'changeDate', 'recalculate']);
+  });
+
+  it('targets only PROPOSED cards that have a version for approve-all', () => {
+    const targets = selectApprovableScheduleTargets([
+      card({ status: 'PROPOSED', scheduleVersion: 2, productionOrderId: 'po-1' }),
+      card({ status: 'NEEDS_REVIEW', scheduleVersion: 3, productionOrderId: 'po-2', id: '2' }),
+      card({ status: 'APPROVED', scheduleVersion: 4, productionOrderId: 'po-3', id: '3' }),
+      card({ status: 'PROPOSED', scheduleVersion: null, productionOrderId: 'po-4', id: '4' }),
+    ]);
+    expect(targets).toEqual([{ productionOrderId: 'po-1', version: 2 }]);
+  });
+
+  it('maps display status and days late for at-risk cards', () => {
+    expect(selectAtRiskStatusKey('LATE')).toBe('mobile.adminScheduling.atRisk.statusLate');
+    expect(selectAtRiskStatusKey('BLOCKED')).toBe('mobile.adminScheduling.blocked.title');
+    expect(selectDaysLate('2026-08-29', '2026-09-01')).toBe(3);
+    expect(selectDaysLate('2026-09-01', '2026-08-29')).toBeNull();
+  });
+
+  it('groups duplicate resolve-all reasons with unique keys', () => {
+    expect(
+      selectAtRiskReasonGroups([
+        { stillNeedsAttention: true, reasonLabel: 'mobile.adminScheduling.atRisk.committedCannotBeMet' },
+        { stillNeedsAttention: true, reasonLabel: 'mobile.adminScheduling.atRisk.committedCannotBeMet' },
+        { stillNeedsAttention: true, reasonLabel: 'mobile.adminScheduling.reasons.wipNotReady' },
+        { stillNeedsAttention: false, reasonLabel: 'mobile.adminScheduling.atRisk.committedCannotBeMet' },
+        { stillNeedsAttention: true, reasonLabel: null },
+      ]),
+    ).toEqual([
+      { key: 'mobile.adminScheduling.atRisk.committedCannotBeMet', count: 2 },
+      { key: 'mobile.adminScheduling.reasons.wipNotReady', count: 1 },
+    ]);
+  });
+
+  it('limits at-risk card actions to the recommended action', () => {
+    expect(
+      selectAvailableActions(card({ riskStatus: 'AT_RISK', recommendedAction: 'RECALCULATE' })),
+    ).toEqual(['approve', 'recalculate']);
+    expect(
+      selectAvailableActions(
+        card({ status: 'APPROVED', riskStatus: 'LATE', recommendedAction: 'REVIEW_COMMITMENT' }),
+      ),
+    ).toEqual(['changeDate']);
   });
 
   it('omits approve when there is no schedule version yet (at-risk cards)', () => {
@@ -356,12 +465,11 @@ describe('selectMonthDayMeta', () => {
     expect(selectMonthDayMeta(undefined, [])).toEqual({});
   });
 
-  it('applies closed / empty / light / half / busy load thresholds', () => {
+  it('colors days from factory load %, not order count', () => {
     const orders = [
       orderCard({ id: 'a', productionOrderId: 'po-a', plannedStart: '2026-08-11', plannedEnd: '2026-08-11' }),
       orderCard({ id: 'b', productionOrderId: 'po-b', plannedStart: '2026-08-11', plannedEnd: '2026-08-11' }),
-      // half day: 4 orders
-      ...[1, 2, 3, 4].map((n) =>
+      ...[1, 2, 3, 4, 5, 6].map((n) =>
         orderCard({
           id: `h-${n}`,
           productionOrderId: `po-h-${n}`,
@@ -370,16 +478,23 @@ describe('selectMonthDayMeta', () => {
         }),
       ),
     ];
-    const meta = selectMonthDayMeta(days, orders);
+    const meta = selectMonthDayMeta(days, orders, {
+      '2026-08-10': 0,
+      '2026-08-11': 29,
+      '2026-08-12': null,
+      '2026-08-13': 50,
+    });
     expect(meta['2026-08-10']?.load).toBe('empty');
     expect(meta['2026-08-11']?.load).toBe('light');
     expect(meta['2026-08-11']?.orderCount).toBe(2);
     expect(meta['2026-08-12']?.load).toBe('closed');
     expect(meta['2026-08-12']?.dayMeta.disabled).toBe(true);
+    expect(meta['2026-08-12']?.pinnedOnClosedDayCount).toBe(0);
     expect(meta['2026-08-13']?.load).toBe('half');
+    expect(meta['2026-08-13']?.orderCount).toBe(6);
   });
 
-  it('marks busy at 6+ orders', () => {
+  it('does not color from order count while factory load is unknown', () => {
     const orders = [1, 2, 3, 4, 5, 6].map((n) =>
       orderCard({
         id: `b-${n}`,
@@ -388,7 +503,28 @@ describe('selectMonthDayMeta', () => {
         plannedEnd: '2026-08-10',
       }),
     );
-    expect(selectMonthDayMeta(days, orders)['2026-08-10']?.load).toBe('busy');
+    expect(selectMonthDayMeta(days, orders)['2026-08-10']?.load).toBe('empty');
+  });
+
+  it('marks busy at 85% factory load even with few orders', () => {
+    const orders = [
+      orderCard({
+        id: 'b-1',
+        productionOrderId: 'po-b-1',
+        plannedStart: '2026-08-10',
+        plannedEnd: '2026-08-10',
+      }),
+    ];
+    expect(selectMonthDayMeta(days, orders, { '2026-08-10': 85 })['2026-08-10']?.load).toBe(
+      'busy',
+    );
+  });
+
+  it('passes pinned-on-closed-day counts through for attention UI', () => {
+    const withPinned: CalendarDay[] = [
+      { date: '2026-08-30', isWorking: false, intervals: [], pinnedOnClosedDayCount: 3 },
+    ];
+    expect(selectMonthDayMeta(withPinned, [])['2026-08-30']?.pinnedOnClosedDayCount).toBe(3);
   });
 });
 
@@ -419,5 +555,16 @@ describe('selectOrdersForDay', () => {
       orderCard({ id: 'b', productionOrderId: 'po-1', plannedStart: '2026-08-11' }),
     ];
     expect(selectOrdersForDay(orders, '2026-08-11')).toHaveLength(1);
+  });
+});
+
+describe('schedule cache invalidation', () => {
+  it('invalidates at-risk, dashboard, calendar, and order detail without restart', () => {
+    const keys = invalidateKeys.afterScheduleMutation('po-59');
+    const serialized = keys.map((key) => key.join(':'));
+    expect(serialized.some((key) => key.includes('at-risk'))).toBe(true);
+    expect(serialized.some((key) => key.includes('dashboard'))).toBe(true);
+    expect(serialized.some((key) => key.includes('scheduling'))).toBe(true);
+    expect(serialized.some((key) => key.includes('po-59'))).toBe(true);
   });
 });

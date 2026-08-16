@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, RefreshControl, View } from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -7,7 +7,7 @@ import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { useToast } from '@/components/feedback/Toast';
+import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
@@ -97,10 +97,13 @@ export function InventoryGroupListScreen({
         await openInventoryLabelPdf(item.id, item.sku, opts);
       } catch {
         void haptics.error();
-        Alert.alert(
-          t('mobile.inventory.labelPdfFailedTitle'),
-          t('mobile.inventory.labelPdfFailedBody'),
-        );
+        showToast({
+          variant: 'error',
+          message: toastCopy(
+            t('mobile.inventory.labelPdfFailedTitle'),
+            t('mobile.inventory.labelPdfFailedBody'),
+          ),
+        });
       }
     })();
   }

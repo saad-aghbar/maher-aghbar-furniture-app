@@ -529,6 +529,26 @@ async function main() {
       bodyHe: 'תאריך האספקה הצפוי להזמנה {{orderNumber}} עודכן ל-{{date}}.',
     },
     {
+      code: 'DELIVERY_MAY_BE_DELAYED',
+      channel: 'IN_APP',
+      subjectAr: 'قد يتأخر التسليم',
+      subjectEn: 'Delivery may be delayed',
+      subjectHe: 'ייתכן עיכוב באספקה',
+      bodyAr: 'الإنتاج يستغرق وقتاً أطول من المتوقع لأمر {{orderNumber}}. التاريخ المؤكد يبقى {{date}}.',
+      bodyEn: 'Production is taking longer than expected for order {{orderNumber}}. The confirmed date remains {{date}}.',
+      bodyHe: 'הייצור אורך יותר מהצפוי להזמנה {{orderNumber}}. התאריך המאושר נשאר {{date}}.',
+    },
+    {
+      code: 'DELIVERY_COMPLETED',
+      channel: 'IN_APP',
+      subjectAr: 'تم التسليم',
+      subjectEn: 'Order delivered',
+      subjectHe: 'ההזמנה נמסרה',
+      bodyAr: 'تم تسليم أمر {{orderNumber}} بتاريخ {{date}}.',
+      bodyEn: 'Order {{orderNumber}} was delivered on {{date}}.',
+      bodyHe: 'הזמנה {{orderNumber}} נמסרה בתאריך {{date}}.',
+    },
+    {
       code: 'SCHEDULE_AT_RISK',
       channel: 'IN_APP',
       subjectAr: 'جدول إنتاج معرّض للتأخير',
@@ -592,11 +612,16 @@ async function main() {
   await wipeOperationalData(prisma);
 
   // Drop legacy roles that are no longer in the three-account model.
+  // Keep system staff presets (e.g. WAREHOUSE_MANAGEMENT) — full demo people need them.
+  const preservedRoleCodes = [
+    ...ROLES,
+    ...Object.values(SYSTEM_STAFF_PRESETS).map((p) => p.code),
+  ];
   await prisma.rolePermission.deleteMany({
-    where: { role: { code: { notIn: [...ROLES] } } },
+    where: { role: { code: { notIn: preservedRoleCodes } } },
   });
   await prisma.role.deleteMany({
-    where: { code: { notIn: [...ROLES] } },
+    where: { code: { notIn: preservedRoleCodes } },
   });
 
   const passwordHash = hashSync('123', 12);

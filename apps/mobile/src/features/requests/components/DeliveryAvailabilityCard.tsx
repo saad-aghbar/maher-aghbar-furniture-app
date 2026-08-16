@@ -274,6 +274,9 @@ export function DeliveryAvailabilityCard({
           ) : null}
         </>
       ) : null}
+      <AppText variant="caption" color="muted">
+        {t('mobile.newOrder.delivery.confirmAfterCheck')}
+      </AppText>
     </View>
   );
 }

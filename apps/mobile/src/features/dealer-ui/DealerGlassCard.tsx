@@ -86,7 +86,7 @@ export function DealerGlassCard({
             { backgroundColor: Platform.OS === 'android' ? colors.surface : wash },
           ]}
         />
-        <View style={[{ padding: theme.spacing.lg }, contentStyle]}>{children}</View>
+        <View style={[{ padding: theme.spacing.lg, zIndex: 1 }, contentStyle]}>{children}</View>
       </View>
     </View>
   );

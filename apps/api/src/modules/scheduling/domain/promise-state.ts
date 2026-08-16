@@ -9,6 +9,8 @@ export interface PromiseStateInput {
   productionOrderStatus?: ProductionOrderStatus | null;
   /** Explicit risk flag from material/capacity analysis. */
   atRisk?: boolean;
+  /** Projected completion is after committed/requested delivery. */
+  late?: boolean;
   /** True when an approved promise was moved after commit. */
   wasRescheduled?: boolean;
 }
@@ -18,7 +20,7 @@ export interface PromiseStateInput {
  * Never exposes factory internals — only the commercial promise lens.
  */
 export function mapPromiseState(input: PromiseStateInput): SchedulePromiseState {
-  const { scheduleStatus, productionOrderStatus, atRisk, wasRescheduled } = input;
+  const { scheduleStatus, productionOrderStatus, atRisk, late, wasRescheduled } = input;
 
   if (productionOrderStatus === 'COMPLETED') {
     return 'COMPLETED';
@@ -29,6 +31,7 @@ export function mapPromiseState(input: PromiseStateInput): SchedulePromiseState 
   }
 
   if (scheduleStatus === 'APPROVED') {
+    if (late) return 'LATE';
     if (atRisk) return 'AT_RISK';
     if (wasRescheduled) return 'RESCHEDULED';
     return 'CONFIRMED';

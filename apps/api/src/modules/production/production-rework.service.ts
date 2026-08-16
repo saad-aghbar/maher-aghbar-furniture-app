@@ -60,14 +60,15 @@ export class ProductionReworkService {
             notes: params.notes ?? rework.notes,
           },
         });
-        return tx.reworkRequest.findUniqueOrThrow({
+        const row = await tx.reworkRequest.findUniqueOrThrow({
           where: { id: rework.id },
           include: { tasks: true, reentryStageInstance: { include: { stageDefinition: true } } },
         });
+        return { rework: row, createdTaskId: null as string | null };
       }
 
       const taskNumber = await this.sequences.next('TASK', 'TSK');
-      await tx.productionTask.create({
+      const createdTask = await tx.productionTask.create({
         data: {
           number: taskNumber,
           productionOrderId: rework.productionOrderId,
@@ -122,16 +123,17 @@ export class ProductionReworkService {
         },
       });
 
-      return tx.reworkRequest.findUniqueOrThrow({
+      const row = await tx.reworkRequest.findUniqueOrThrow({
         where: { id: rework.id },
         include: { tasks: true, reentryStageInstance: { include: { stageDefinition: true } } },
       });
-    }).then(async (rework) => {
-      await this.scheduling
-        ?.generateForProductionOrder(rework.productionOrderId, params.userId, {
-          reason: 'Rework re-entry',
-        })
-        .catch(() => undefined);
+      return { rework: row, createdTaskId: createdTask.id as string | null };
+    }).then(async ({ rework, createdTaskId }) => {
+      if (createdTaskId) {
+        await this.scheduling
+          ?.enqueueTargetedReplan(rework.productionOrderId, 'rework-start', createdTaskId)
+          .catch(() => undefined);
+      }
       return rework;
     });
   }
@@ -176,6 +178,7 @@ export class ProductionReworkService {
     userId: string;
     tx?: Tx;
   }) {
+    let createdNew = false;
     const run = async (tx: Tx) => {
       const existing = await tx.reworkRequest.findFirst({
         where: { returnRequestId: params.returnId },
@@ -208,9 +211,18 @@ export class ProductionReworkService {
         where: { id: po.id },
         data: { status: 'ON_HOLD' },
       });
+      createdNew = true;
       return created;
     };
-    if (params.tx) return run(params.tx);
-    return this.prisma.$transaction(run);
+    const afterCommit = async <T extends { productionOrderId: string }>(rework: T) => {
+      if (createdNew) {
+        await this.scheduling
+          ?.enqueueTargetedReplan(rework.productionOrderId, 'rework-return')
+          .catch(() => undefined);
+      }
+      return rework;
+    };
+    if (params.tx) return afterCommit(await run(params.tx));
+    return this.prisma.$transaction(run).then(afterCommit);
   }
 }

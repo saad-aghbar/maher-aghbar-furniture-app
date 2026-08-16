@@ -687,9 +687,12 @@
   "schedulingBufferPercent": "מרווח ביטחון לתזמון %",
   "shiftStart": "תחילת משמרת",
   "shiftEnd": "סיום משמרת",
+  "deliveryBufferWorkingDays": "מרווח אספקה (ימי עבודה)",
+  "deliveryBufferWorkingDaysHint": "הייצור מסתיים מספר ימי עבודה זה לפני תאריך האספקה המבוקש. 1 פירושו שההזמנה מוכנה ביום העבודה הקודם.",
   "workingWeekdays": "ימי עבודה",
   "calendar": {
     "savedReplanned": "לוח השנה נשמר. {count} הזמנות תוזמנו מחדש.",
+    "recalculating": "לוח השנה נשמר. לוח הזמנים מחושב מחדש.",
     "workingDaysHint": "המפעל סגור בימי שישי כברירת מחדל. שבת הוא יום עבודה רגיל.",
     "exceptions": {
       "title": "חריגות יום",
@@ -707,6 +710,8 @@
       "savedReplanned": "חריגת היום נשמרה. {count} הזמנות תוזמנו מחדש.",
       "cleared": "חריגת היום נוקתה.",
       "clearedReplanned": "חריגת היום נוקתה. {count} הזמנות תוזמנו מחדש.",
+      "recalculating": "חריגת היום נשמרה. לוח הזמנים מחושב מחדש.",
+      "clearedRecalculating": "חריגת היום נוקתה. לוח הזמנים מחושב מחדש.",
       "dateInvalid": "בחרו תאריך תקין.",
       "typeOpen": "יום פתוח",
       "typeClosed": "סגור",

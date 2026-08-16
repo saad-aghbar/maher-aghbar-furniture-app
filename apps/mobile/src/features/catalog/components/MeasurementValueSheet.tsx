@@ -9,6 +9,7 @@ import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 
 /** Built-in measurement types — custom types (e.g. pcs) are free-text. */
 export const MEASUREMENT_UNIT_PRESETS = ['cm', 'm', 'mm', 'in', 'pcs'] as const;
@@ -326,7 +327,7 @@ export function MeasurementValuePanel({
   onBack,
   onSelect,
 }: PanelProps) {
-  const { t, isRTL, locale } = useLocale();
+  const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const label = (key: string, fallback: string) => labelOrFallback(t, key, fallback);
   const draft = useUnitDraft(active, unit, 'cm');
@@ -451,38 +452,27 @@ export function MeasurementValuePanel({
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'center',
-            minHeight: theme.sizes.touch.min,
-            paddingHorizontal: theme.spacing.md,
-            borderRadius: theme.radius.xl,
-            borderWidth: 1,
-            borderColor: colors.borderStrong,
-            backgroundColor: colors.surface,
             gap: theme.spacing.sm,
           }}
         >
-          <AppTextInput
+          <QtyStepperField
             value={draftValue}
             onChangeText={setDraftValue}
+            min={0}
             placeholder={label('catalog.customMeasurementPlaceholder', 'e.g. 12')}
-            placeholderTextColor={colors.textMuted}
-            keyboardType="decimal-pad"
-            style={{
-              flex: 1,
-              paddingVertical: theme.spacing.sm,
-              fontSize: 16,
-              color: colors.textPrimary,
-              textAlign: isRTL ? 'right' : 'left',
-              ...resolveAppFontStyle(locale, { variant: 'body' }),
-            }}
+            accessibilityLabel={label('catalog.measurementAmount', 'Amount')}
+            containerStyle={{ flex: 1, width: undefined }}
           />
           <View
             style={{
-              paddingHorizontal: theme.spacing.sm,
-              paddingVertical: 4,
-              borderRadius: theme.radius.md,
+              minHeight: theme.sizes.touch.min,
+              paddingHorizontal: theme.spacing.md,
+              borderRadius: theme.radius.xl,
               backgroundColor: colors.brandSoft,
               borderWidth: 1,
               borderColor: colors.border,
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
             <AppText

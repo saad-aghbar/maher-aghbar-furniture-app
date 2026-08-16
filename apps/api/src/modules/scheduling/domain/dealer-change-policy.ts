@@ -23,6 +23,7 @@ const IN_PRODUCTION: ReadonlySet<ProductionOrderStatus> = new Set([
 const APPROVED_PROMISE: ReadonlySet<SchedulePromiseState> = new Set([
   'CONFIRMED',
   'AT_RISK',
+  'LATE',
   'RESCHEDULED',
 ]);
 

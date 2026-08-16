@@ -35,6 +35,8 @@ type ReviewStepProps = {
   error?: string | null;
   busy: boolean;
   submittedNumber?: string | null;
+  /** When set, shows the draft-saved success card (same layout as order placed). */
+  draftSavedNumber?: string | null;
   successKey?: string | number;
   /** When false, omit section title (parent provides combined step title). */
   showTitle?: boolean;
@@ -44,6 +46,7 @@ type ReviewStepProps = {
   onSaveDraft: () => void;
   onSubmit: () => void;
   onViewOrders: () => void;
+  onViewDrafts?: () => void;
   onCreateAnother: () => void;
 };
 
@@ -79,6 +82,7 @@ export function ReviewStep({
   error,
   busy,
   submittedNumber,
+  draftSavedNumber,
   successKey,
   showTitle = true,
   hideActions = false,
@@ -86,14 +90,18 @@ export function ReviewStep({
   onSaveDraft,
   onSubmit,
   onViewOrders,
+  onViewDrafts,
   onCreateAnother,
 }: ReviewStepProps) {
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
 
-  if (submittedNumber) {
+  const successNumber = submittedNumber || draftSavedNumber || null;
+  const successIsDraft = Boolean(draftSavedNumber) && !submittedNumber;
+
+  if (successNumber) {
     return (
-      <SuccessBurst triggerKey={successKey ?? submittedNumber}>
+      <SuccessBurst triggerKey={successKey ?? successNumber}>
         <View
           style={{
             gap: theme.spacing.lg,
@@ -116,14 +124,22 @@ export function ReviewStep({
             </AppText>
           </View>
           <AppText variant="title" weight="semibold" style={{ textAlign: 'center' }}>
-            {t('mobile.newOrder.submittedTitle')}
+            {successIsDraft
+              ? t('mobile.newOrder.draftSavedTitle')
+              : t('mobile.newOrder.submittedTitle')}
           </AppText>
           <AppText variant="body" color="secondary" style={{ textAlign: 'center' }}>
-            {t('mobile.newOrder.submittedBody', { number: submittedNumber })}
+            {successIsDraft
+              ? t('mobile.newOrder.draftSavedBody', { number: successNumber })
+              : t('mobile.newOrder.submittedBody', { number: successNumber })}
           </AppText>
           <PrimaryButton
-            label={t('mobile.newOrder.viewOrders')}
-            onPress={onViewOrders}
+            label={
+              successIsDraft
+                ? t('mobile.newOrder.viewDrafts')
+                : t('mobile.newOrder.viewOrders')
+            }
+            onPress={successIsDraft ? (onViewDrafts ?? onViewOrders) : onViewOrders}
             style={{ alignSelf: 'stretch' }}
           />
           <SecondaryButton

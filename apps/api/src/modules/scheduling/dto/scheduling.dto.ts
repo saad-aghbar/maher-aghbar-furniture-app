@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -80,6 +80,14 @@ export class RecalculateDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+}
+
+export class ResolveConflictDto {
+  @ApiProperty({ description: 'Pair id: min(allocationId):max(allocationId)' })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  conflictId!: string;
 }
 
 export class PatchAllocationDto {
@@ -228,6 +236,14 @@ export class ProductionCalendarDto {
   @ValidateNested({ each: true })
   @Type(() => TimeOfDayRangeDto)
   breaks?: TimeOfDayRangeDto[];
+
+  @ApiPropertyOptional({ description: 'Working days production must finish before requested delivery.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10)
+  deliveryBufferWorkingDays?: number;
 }
 
 export class ProductionProfileDto {
@@ -358,6 +374,27 @@ export class ProductStageEstimatesDto {
   items!: ProductStageEstimateInputDto[];
 }
 
+export class ListCapacityQuery {
+  @ApiProperty()
+  @IsString()
+  from!: string;
+
+  @ApiProperty()
+  @IsString()
+  to!: string;
+
+  @ApiPropertyOptional({ enum: ['day', 'range'] })
+  @IsOptional()
+  @IsIn(['day', 'range'])
+  granularity?: 'day' | 'range';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  includeWorkers?: boolean;
+}
+
 export class ListCalendarQuery {
   @ApiProperty()
   @IsString()
@@ -372,3 +409,31 @@ export class ListCalendarQuery {
   @IsIn(['day', 'week', 'month'])
   view?: 'day' | 'week' | 'month';
 }
+
+export class ListOwnDeliveriesQuery {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  to?: string;
+}
+
+/** Calendar order cards include requested/suggested/committed dates plus productionDeadline (read-only). */
+export type CalendarOrderCardPresentation = {
+  requestedDeliveryDate?: Date | string | null;
+  suggestedDeliveryDate?: Date | string | null;
+  committedDeliveryDate?: Date | string | null;
+  earliestAvailableDate?: Date | string | null;
+  requestedDateFeasible?: boolean | null;
+  unschedulableReason?: string | null;
+  planningMode?: string | null;
+  requiresAdminEstimateReview?: boolean;
+  materialReadyAt?: Date | string | null;
+  committedCompletionDate?: Date | string | null;
+  productionDeadline?: string | null;
+  deliveryBufferWorkingDays?: number | null;
+};

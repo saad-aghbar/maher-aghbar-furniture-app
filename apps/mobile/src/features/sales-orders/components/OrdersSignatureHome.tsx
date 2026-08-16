@@ -308,8 +308,16 @@ export function OrdersSignatureHome({
       onEndReachedThreshold={0.4}
       ListEmptyComponent={
         <EmptyState
-          title={t('mobile.orders.emptyTitle')}
-          description={t('mobile.orders.emptyBody')}
+          title={
+            statusChip === 'drafts'
+              ? t('mobile.orders.emptyDraftsTitle')
+              : t('mobile.orders.emptyTitle')
+          }
+          description={
+            statusChip === 'drafts'
+              ? t('mobile.orders.emptyDraftsBody')
+              : t('mobile.orders.emptyBody')
+          }
         />
       }
       ListFooterComponent={

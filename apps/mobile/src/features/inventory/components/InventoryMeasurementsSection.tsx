@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { useToast } from '@/components/feedback/Toast';
+import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import {
@@ -281,10 +282,14 @@ export function InventoryMeasurementEditorSheet({
             value={draft.nameAr}
             onChangeText={(v) => setDraft((m) => ({ ...m, nameAr: v }))}
           />
-          <View style={{ gap: theme.spacing.xs }}>
-            <AppText variant="label" color="secondary">
-              {t('catalog.measurementValue')}
-            </AppText>
+          <View style={{ gap: theme.spacing.sm }}>
+            <QtyStepperField
+              label={t('catalog.measurementValue')}
+              value={draft.value}
+              onChangeText={(v) => setDraft((m) => ({ ...m, value: v }))}
+              min={0}
+              placeholder="0"
+            />
             <View
               style={{
                 flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -292,17 +297,10 @@ export function InventoryMeasurementEditorSheet({
                 gap: theme.spacing.sm,
               }}
             >
-              <TextField
-                value={draft.value}
-                onChangeText={(v) => setDraft((m) => ({ ...m, value: v }))}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                containerStyle={{ flex: 1, width: undefined }}
-              />
               <View
                 style={{
                   minWidth: 48,
-                  paddingHorizontal: theme.spacing.sm,
+                  paddingHorizontal: theme.spacing.md,
                   borderRadius: theme.radius.xl,
                   borderWidth: 1,
                   borderColor: colors.borderStrong,
@@ -329,7 +327,7 @@ export function InventoryMeasurementEditorSheet({
                   setMeasureValueSheet(true);
                 }}
                 style={{
-                  minWidth: theme.sizes.touch.min + 8,
+                  flex: 1,
                   minHeight: theme.sizes.touch.min,
                   paddingHorizontal: theme.spacing.md,
                   borderRadius: theme.radius.xl,
@@ -338,7 +336,8 @@ export function InventoryMeasurementEditorSheet({
                   backgroundColor: colors.surface,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 2,
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  gap: 8,
                   overflow: 'hidden',
                   ...orderBoardShadow(colorScheme),
                 }}

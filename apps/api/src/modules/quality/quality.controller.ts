@@ -10,7 +10,16 @@ import { PaginationDto, paginatedMeta, pageSkipTake } from '../../common/dto/pag
 import { StagePipelineService } from '../production/stage-pipeline.service';
 import { ProductionInventoryService } from '../production/production-inventory.service';
 import { ProductionReworkService } from '../production/production-rework.service';
+import { SchedulingService } from '../scheduling/scheduling.service';
 import type { AuthUser } from '@maher/types';
+
+function isQcPass(result: QualityResult | null | undefined) {
+  return result === QualityResult.PASSED || result === QualityResult.PASSED_WITH_NOTES;
+}
+
+function isQcFail(result: QualityResult | null | undefined) {
+  return result === QualityResult.FAILED_REWORK_REQUIRED || result === QualityResult.BLOCKED;
+}
 
 class CreateInspectionDto {
   @IsUUID()
@@ -59,6 +68,7 @@ export class QualityController {
     private readonly pipeline: StagePipelineService,
     private readonly productionInventory: ProductionInventoryService,
     private readonly rework: ProductionReworkService,
+    private readonly scheduling: SchedulingService,
   ) {}
 
   @Get()
@@ -154,7 +164,9 @@ export class QualityController {
     @CurrentUser() user: AuthUser,
   ) {
     const inspection = await this.prisma.qualityInspection.findUniqueOrThrow({ where: { id } });
-    return this.prisma.$transaction(async (tx) => {
+    const previousResult = inspection.result;
+    let firstNewlyCompletedTaskId: string | undefined;
+    const updated = await this.prisma.$transaction(async (tx) => {
       if (dto.checklistResults?.length) {
         for (const item of dto.checklistResults) {
           await tx.qualityInspectionItem.updateMany({
@@ -231,6 +243,7 @@ export class QualityController {
                   actualCompletion: new Date(),
                 },
               });
+              firstNewlyCompletedTaskId ??= task.id;
             }
           }
           await this.productionInventory.onInspectionPassed({
@@ -272,5 +285,17 @@ export class QualityController {
 
       return updated;
     });
+
+    if (isQcPass(dto.result) && !isQcPass(previousResult)) {
+      await this.scheduling.enqueueTargetedReplan(
+        inspection.productionOrderId,
+        'qc-pass',
+        firstNewlyCompletedTaskId,
+      );
+    } else if (isQcFail(dto.result) && !isQcFail(previousResult)) {
+      await this.scheduling.enqueueTargetedReplan(inspection.productionOrderId, 'qc-fail');
+    }
+
+    return updated;
   }
 }

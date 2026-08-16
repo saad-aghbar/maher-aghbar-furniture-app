@@ -43,6 +43,8 @@ type Props = {
   variant?: MonthCalendarVariant;
   /** Show brand accent rail (CompletedDatePicker style). */
   showAccentRail?: boolean;
+  /** Drop outer card chrome when the grid sits inside another board. */
+  embedded?: boolean;
   compact?: boolean;
 };
 
@@ -66,6 +68,7 @@ export function MonthCalendar({
   disableUnavailable = true,
   variant = 'default',
   showAccentRail = true,
+  embedded = false,
   compact = false,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -74,6 +77,7 @@ export function MonthCalendar({
   const cellH = compact ? DAY_CELL_COMPACT : DAY_CELL;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
+  const rail = embedded ? false : showAccentRail;
   const cells = useMemo(
     () => buildMonthCells(monthCursor.y, monthCursor.m),
     [monthCursor.m, monthCursor.y],
@@ -87,18 +91,17 @@ export function MonthCalendar({
   return (
     <View
       style={{
-        borderRadius: theme.radius.xl,
-        borderWidth: 1,
+        borderRadius: embedded ? 0 : theme.radius.xl,
+        borderWidth: embedded ? 0 : 1,
         borderColor: colors.borderStrong,
-        backgroundColor:
-          variant === 'dealer' ? colors.surfaceSecondary : colors.surfaceSecondary,
-        padding: compact ? theme.spacing.sm : theme.spacing.md,
+        backgroundColor: embedded ? 'transparent' : colors.surfaceSecondary,
+        padding: embedded ? 0 : compact ? theme.spacing.sm : theme.spacing.md,
         gap: compact ? theme.spacing.sm : theme.spacing.md,
         overflow: 'hidden',
-        ...orderBoardShadow(colorScheme),
+        ...(embedded ? null : orderBoardShadow(colorScheme)),
       }}
     >
-      {showAccentRail ? (
+      {rail ? (
         <View
           style={{
             position: 'absolute',
@@ -118,8 +121,8 @@ export function MonthCalendar({
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: theme.spacing.sm,
-          paddingLeft: isRTL || !showAccentRail ? 0 : 4,
-          paddingRight: isRTL && showAccentRail ? 4 : 0,
+          paddingLeft: isRTL || !rail ? 0 : 4,
+          paddingRight: isRTL && rail ? 4 : 0,
         }}
       >
         <AnimatedPressable
@@ -143,7 +146,7 @@ export function MonthCalendar({
           numberOfLines={1}
           style={{ flex: 1, color: colors.textPrimary }}
         >
-          {monthLabel(monthCursor.y, monthCursor.m)}
+          {monthLabel(monthCursor.y, monthCursor.m, locale)}
         </AppText>
 
         <AnimatedPressable
@@ -164,8 +167,8 @@ export function MonthCalendar({
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
-          paddingLeft: isRTL || !showAccentRail ? 0 : 4,
-          paddingRight: isRTL && showAccentRail ? 4 : 0,
+          paddingLeft: isRTL || !rail ? 0 : 4,
+          paddingRight: isRTL && rail ? 4 : 0,
         }}
       >
         {WEEKDAY_LABELS.map((day) => (
@@ -188,8 +191,8 @@ export function MonthCalendar({
       <View
         style={{
           gap: 6,
-          paddingLeft: isRTL || !showAccentRail ? 0 : 4,
-          paddingRight: isRTL && showAccentRail ? 4 : 0,
+          paddingLeft: isRTL || !rail ? 0 : 4,
+          paddingRight: isRTL && rail ? 4 : 0,
         }}
       >
         {chunk(cells, 7).map((row, rowIdx) => (
@@ -246,7 +249,13 @@ export function MonthCalendar({
                   disabled={disabled}
                   accessibilityRole="button"
                   accessibilityState={{ selected, disabled }}
-                  accessibilityLabel={ymd}
+                  accessibilityLabel={
+                    meta?.count
+                      ? `${ymd}, ${meta.count}`
+                      : meta?.markers?.length
+                        ? `${ymd}, ${meta.markers.join(', ')}`
+                        : ymd
+                  }
                   onPress={() => {
                     if (disabled) return;
                     void haptics.selection();
@@ -279,7 +288,33 @@ export function MonthCalendar({
                   >
                     {String(day)}
                   </AppText>
-                  {(meta?.density ?? 0) > 0 && !selected ? (
+                  {meta?.markers && meta.markers.length > 0 && !selected ? (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        gap: 2,
+                        height: 4,
+                        alignItems: 'center',
+                      }}
+                    >
+                      {meta.markers.slice(0, 3).map((marker, i) => (
+                        <View
+                          key={`${marker}-${i}`}
+                          style={{
+                            width: 4,
+                            height: 4,
+                            borderRadius: 2,
+                            backgroundColor:
+                              marker === 'attention'
+                                ? colors.warning
+                                : marker === 'proposed'
+                                  ? colors.brand
+                                  : colors.success,
+                          }}
+                        />
+                      ))}
+                    </View>
+                  ) : (meta?.density ?? 0) > 0 && !selected ? (
                     <View
                       style={{
                         flexDirection: 'row',
