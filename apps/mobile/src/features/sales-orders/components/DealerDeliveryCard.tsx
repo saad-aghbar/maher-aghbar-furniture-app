@@ -43,9 +43,11 @@ export function DealerDeliveryCard({ row, onPress, onReviewDate, index = 0, flus
   const status = String(row.customerStatus ?? '');
   const dateYmd = toYmdSlice(compact.dateYmd);
   const requested = toYmdSlice(row.requestedDeliveryDate);
-  const earliest = toYmdSlice(row.suggestedDeliveryDate ?? row.projectedDeliveryDate);
+  const planned = toYmdSlice(row.plannedDeliveryDate);
+  const earliest = toYmdSlice(row.projectedDeliveryDate ?? row.suggestedDeliveryDate);
   const committed = toYmdSlice(row.committedDeliveryDate);
   const projected = toYmdSlice(row.projectedDeliveryDate);
+  const delayed = status === 'MAY_BE_DELAYED' || status === 'DELAYED';
   const showReview =
     status === 'AWAITING_CONFIRMATION' &&
     (row.canUpdateDeliveryDate || row.canRequestDateChange) &&
@@ -62,14 +64,18 @@ export function DealerDeliveryCard({ row, onPress, onReviewDate, index = 0, flus
   });
 
   let dateLine: string | null = null;
-  if (compact.compact && dateYmd) {
+  if (compact.compact && dateYmd && !delayed) {
     dateLine = t('mobile.orders.compactOnTrack', { date: formatDate(dateYmd) });
+  } else if (planned && !committed) {
+    dateLine = `${t('mobile.orders.plannedShort')} ${formatDate(planned)} · ${t('mobile.orders.notConfirmed')}`;
   } else if (status === 'AWAITING_CONFIRMATION') {
-    dateLine = earliest
-      ? `${t('mobile.orders.earliestAvailable')} ${formatDate(earliest)}`
-      : requested
-        ? `${t('mobile.orders.requestedShort')} ${formatDate(requested)}`
-        : t('mobile.orders.newDateProposed');
+    dateLine = planned
+      ? `${t('mobile.orders.plannedShort')} ${formatDate(planned)} · ${t('mobile.orders.notConfirmed')}`
+      : earliest
+        ? `${t('mobile.orders.expectedShort')} ${formatDate(earliest)} · ${t('mobile.orders.notConfirmed')}`
+        : requested
+          ? `${t('mobile.orders.requestedShort')} ${formatDate(requested)} · ${t('mobile.orders.notConfirmed')}`
+          : t('mobile.orders.notConfirmed');
   } else if (committed) {
     dateLine =
       projected && projected !== committed
@@ -159,12 +165,21 @@ export function DealerDeliveryCard({ row, onPress, onReviewDate, index = 0, flus
             </AppText>
             {status === 'AWAITING_CONFIRMATION' ? (
               <AppText variant="caption" color="brand" weight="medium">
-                {t('mobile.orders.newDateProposed')}
+                {t('mobile.orders.notConfirmed')}
               </AppText>
             ) : null}
-            {row.customerSafeReason ? (
+            {delayed ? (
               <AppText variant="caption" color="muted" numberOfLines={2}>
                 {t('mobile.orders.productionDelay')}
+              </AppText>
+            ) : null}
+            {delayed && (row.scheduleUpdating || !projected) ? (
+              <AppText variant="caption" color="muted" numberOfLines={2}>
+                {t('mobile.orders.scheduleUpdating')}
+              </AppText>
+            ) : !delayed && row.customerSafeReason ? (
+              <AppText variant="caption" color="muted" numberOfLines={2}>
+                {t('mobile.orders.scheduleUpdating')}
               </AppText>
             ) : null}
           </View>

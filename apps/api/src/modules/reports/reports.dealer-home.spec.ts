@@ -69,6 +69,9 @@ describe('ReportsService.dealerHome', () => {
     const notificationCount = jest.fn().mockResolvedValue(1);
 
     const prisma = {
+      factoryCalendar: {
+        findFirst: jest.fn().mockResolvedValue({ timezone: 'Asia/Amman' }),
+      },
       salesOrder: {
         count: salesOrderCount,
         findMany: salesOrderFindMany,
@@ -118,12 +121,14 @@ describe('ReportsService.dealerHome', () => {
 
   it('returns dealer-safe payload without cost/worker/stage leaks', async () => {
     const { service, salesOrderFindMany } = makeService();
-    salesOrderFindMany.mockResolvedValueOnce([
+    salesOrderFindMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
       {
         id: 'so1',
         number: 'SO-1',
         status: 'IN_PRODUCTION',
-        requiredDeliveryDate: null,
+        requiredDeliveryDate: new Date('2026-08-20T00:00:00.000Z'),
         externalOrderNumber: null,
         lines: [
           {
@@ -132,7 +137,24 @@ describe('ReportsService.dealerHome', () => {
           },
         ],
         quotation: { request: null },
-        productionOrders: [{ progressPercent: 55 }],
+        productionOrders: [
+          {
+            progressPercent: 55,
+            status: 'IN_PROGRESS',
+            requiredDeliveryDate: new Date('2026-08-20T00:00:00.000Z'),
+            committedDeliveryDate: new Date('2026-08-20T00:00:00.000Z'),
+            schedules: [
+              {
+                status: 'APPROVED',
+                requestedDeliveryDate: new Date('2026-08-20T00:00:00.000Z'),
+                suggestedDeliveryDate: new Date('2026-08-20T00:00:00.000Z'),
+                committedDeliveryDate: new Date('2026-08-20T00:00:00.000Z'),
+                earliestAvailableDate: new Date('2026-08-20T00:00:00.000Z'),
+              },
+            ],
+          },
+        ],
+        deliveries: [],
       },
     ]);
 
@@ -140,6 +162,40 @@ describe('ReportsService.dealerHome', () => {
     expect(result.outstandingBalance).toBeDefined();
     expect(result.recentOrders[0]!.progressPercent).toBe(40);
     expect(result.recentOrders[0]!.progressLabel).toBe('In progress');
+    expect(result.recentOrders[0]!.calendarDate).toBe('2026-08-20');
+    expect(result.recentOrders[0]!.committedDeliveryDate).toBe('2026-08-20');
     assertNoLeaks(result);
+  });
+
+  it('counts nearing from calendarDate (committed), not a slipped projection', async () => {
+    const { service, salesOrderFindMany } = makeService();
+    const committed = new Date('2026-08-19T00:00:00.000Z');
+    const slipped = new Date('2026-08-28T00:00:00.000Z');
+    salesOrderFindMany.mockResolvedValueOnce([
+      {
+        status: 'IN_PRODUCTION',
+        requiredDeliveryDate: committed,
+        quotation: { request: null },
+        productionOrders: [
+          {
+            status: 'IN_PROGRESS',
+            requiredDeliveryDate: committed,
+            committedDeliveryDate: committed,
+            schedules: [
+              {
+                status: 'APPROVED',
+                requestedDeliveryDate: committed,
+                suggestedDeliveryDate: committed,
+                committedDeliveryDate: committed,
+                earliestAvailableDate: slipped,
+              },
+            ],
+          },
+        ],
+        deliveries: [],
+      },
+    ]);
+    const result = await service.dealerHome(dealerA);
+    expect(result.ordersNearingDelivery).toBe(1);
   });
 });

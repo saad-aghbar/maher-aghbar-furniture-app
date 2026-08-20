@@ -2,6 +2,19 @@ import type { PrismaClient } from '@prisma/client';
 
 export const STANDARD_FURNITURE_WORKFLOW_CODE = 'STANDARD_FURNITURE';
 
+/** Canonical factory stage library — leftover codes (e.g. CNC) must not join this graph. */
+export const STANDARD_FURNITURE_STAGE_CODES = [
+  'MATERIAL_PREP',
+  'CARPENTRY',
+  'PAINTING',
+  'FOAM',
+  'UPHOLSTERY',
+  'ASSEMBLY',
+  'INSPECTION',
+  'PACKAGING',
+  'DELIVERY',
+] as const;
+
 /** Hebrew labels for the stage library. Codes stay Latin. */
 export const STAGE_LIBRARY_NAME_HE: Record<string, string> = {
   MATERIAL_PREP: 'הכנת חומרים',
@@ -126,7 +139,10 @@ export async function seedStandardFurnitureWorkflow(prisma: PrismaClient): Promi
 
   if (existingNodeCount === 0) {
     const stageDefs = await prisma.productionStageDefinition.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        code: { in: [...STANDARD_FURNITURE_STAGE_CODES] },
+      },
       orderBy: { sortOrder: 'asc' },
     });
 

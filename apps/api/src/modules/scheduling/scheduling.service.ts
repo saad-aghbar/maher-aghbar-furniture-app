@@ -55,6 +55,7 @@ import {
   classifyScheduleRisk,
   comparePriority,
   isActiveScheduleStatus,
+  publicScheduleReason,
   reasonLabelKey,
   classifyMinutesDelta,
   classifySettingsDelta,
@@ -81,8 +82,11 @@ import {
   type ConflictAllocationInput,
   type DetectedConflict,
   type ScheduleRiskClassification,
+  actualDeliveryValue,
   buildDealerDeliveryView,
+  plannedDeliveryValue,
   customerFacingFingerprint,
+  filterByCalendarDateRange,
   selectDealerNotifyTemplate,
   shouldNotifyCustomerFacing,
   summarizeDealerDeliveries,
@@ -2333,10 +2337,11 @@ export class SchedulingService implements OnModuleInit {
             id: true,
             status: true,
             requiredDeliveryDate: true,
+            quotation: { select: { request: { select: { status: true } } } },
             deliveries: {
               orderBy: { updatedAt: 'desc' },
               take: 1,
-              select: { status: true, updatedAt: true },
+              select: { status: true, deliveryDate: true },
             },
           },
         },
@@ -2356,48 +2361,43 @@ export class SchedulingService implements OnModuleInit {
     const suggested = schedule?.suggestedDeliveryDate ?? null;
     const committed = schedule?.committedDeliveryDate ?? po.committedDeliveryDate ?? null;
     const projected = schedule?.earliestAvailableDate ?? schedule?.suggestedDeliveryDate ?? null;
-    const actual =
-      delivery?.status === 'DELIVERED' ? delivery.updatedAt : null;
-    const view = buildDealerDeliveryView({
+    const projectedDealer = this.projectDealerDelivery({
       salesOrderStatus: po.salesOrder?.status,
-      productionOrderStatus: po.status,
-      deliveryStatus: delivery?.status,
-      requestedYmd: toCalendarYmd(requested, tz),
-      suggestedYmd: toCalendarYmd(suggested, tz),
-      committedYmd: toCalendarYmd(committed, tz),
-      projectedYmd: toCalendarYmd(projected, tz),
-      actualYmd: toCalendarYmd(actual, tz),
+      productionOrder: po,
+      schedule,
+      delivery,
+      requested,
+      suggested,
+      committed,
+      projected,
+      tz,
       todayYmd,
+      requestStatus: po.salesOrder?.quotation?.request?.status,
     });
-    const risk = this.classifyLoadedSchedule(po, schedule);
-    const promiseState = mapPromiseState({
-      scheduleStatus: (schedule?.status as 'DRAFT') ?? 'DRAFT',
-      productionOrderStatus: po.status as 'PLANNED',
-      atRisk: risk.primaryStatus === 'AT_RISK' || risk.primaryStatus === 'BLOCKED',
-      late: risk.primaryStatus === 'LATE',
-    });
-    const policy = resolveDealerChangePolicy({ promiseState, productionOrderStatus: po.status });
 
     return {
       productionOrderId: po.id,
       salesOrderId: po.salesOrder?.id ?? null,
       number: po.number,
-      promiseState,
+      promiseState: projectedDealer.promiseState,
       requestedDeliveryDate: requested,
       suggestedDeliveryDate: suggested,
       committedDeliveryDate: committed,
-      projectedDeliveryDate: projected,
-      actualDeliveryDate: actual,
-      calendarDate: view.calendarDate,
-      customerStatus: view.customerStatus,
-      requiresDealerAttention: view.requiresDealerAttention,
-      customerSafeReason: view.customerSafeReason,
-      compactDates: view.compactDates,
-      delayDays: view.delayDays,
-      canUpdateDeliveryDate: policy.canUpdateDirect,
-      canRequestDateChange: policy.canChangeRequest,
-      dateChangeLocked: policy.locked,
-      dateChangeReason: policy.reason,
+      projectedDeliveryDate: projectedDealer.view.projectedYmd ? projected : null,
+      plannedDeliveryDate: projectedDealer.planned,
+      actualDeliveryDate: projectedDealer.actual,
+      calendarDate: projectedDealer.view.calendarDate,
+      customerStatus: projectedDealer.view.customerStatus,
+      requiresDealerAttention: projectedDealer.view.requiresDealerAttention,
+      actionRequired: projectedDealer.view.actionRequired,
+      customerSafeReason: projectedDealer.view.customerSafeReason,
+      compactDates: projectedDealer.view.compactDates,
+      delayDays: projectedDealer.view.delayDays,
+      scheduleUpdating: projectedDealer.view.scheduleUpdating,
+      canUpdateDeliveryDate: projectedDealer.policy.canUpdateDirect,
+      canRequestDateChange: projectedDealer.policy.canChangeRequest,
+      dateChangeLocked: projectedDealer.policy.locked,
+      dateChangeReason: projectedDealer.policy.reason,
     };
   }
 
@@ -2411,7 +2411,6 @@ export class SchedulingService implements OnModuleInit {
 
     const salesOrders = await this.prisma.salesOrder.findMany({
       where: { customerId: user.customerId, archivedAt: null },
-      take: 200,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -2420,6 +2419,7 @@ export class SchedulingService implements OnModuleInit {
         requiredDeliveryDate: true,
         deliveryAddress: true,
         projectName: true,
+        quotation: { select: { request: { select: { status: true } } } },
         lines: {
           orderBy: { sortOrder: 'asc' },
           take: 1,
@@ -2447,7 +2447,7 @@ export class SchedulingService implements OnModuleInit {
         deliveries: {
           orderBy: { updatedAt: 'desc' },
           take: 1,
-          select: { status: true, updatedAt: true },
+          select: { status: true, deliveryDate: true },
         },
       },
     });
@@ -2461,29 +2461,18 @@ export class SchedulingService implements OnModuleInit {
       const suggested = schedule?.suggestedDeliveryDate ?? null;
       const committed = schedule?.committedDeliveryDate ?? po?.committedDeliveryDate ?? null;
       const projected = schedule?.earliestAvailableDate ?? schedule?.suggestedDeliveryDate ?? null;
-      const actual = delivery?.status === 'DELIVERED' ? delivery.updatedAt : null;
-      const view = buildDealerDeliveryView({
+      const projectedDealer = this.projectDealerDelivery({
         salesOrderStatus: so.status,
-        productionOrderStatus: po?.status,
-        deliveryStatus: delivery?.status,
-        requestedYmd: toCalendarYmd(requested, tz),
-        suggestedYmd: toCalendarYmd(suggested, tz),
-        committedYmd: toCalendarYmd(committed, tz),
-        projectedYmd: toCalendarYmd(projected, tz),
-        actualYmd: toCalendarYmd(actual, tz),
+        productionOrder: po,
+        schedule,
+        delivery,
+        requested,
+        suggested,
+        committed,
+        projected,
+        tz,
         todayYmd,
-      });
-      const promiseState = po
-        ? mapPromiseState({
-            scheduleStatus: (schedule?.status as 'DRAFT') ?? 'DRAFT',
-            productionOrderStatus: po.status as 'PLANNED',
-            atRisk: false,
-            late: view.customerStatus === 'DELAYED',
-          })
-        : 'ESTIMATED';
-      const policy = resolveDealerChangePolicy({
-        promiseState,
-        productionOrderStatus: po?.status ?? 'DRAFT',
+        requestStatus: so.quotation?.request?.status,
       });
       const line = so.lines[0];
       const product = po?.product ?? line?.product ?? null;
@@ -2506,34 +2495,28 @@ export class SchedulingService implements OnModuleInit {
         requestedDeliveryDate: requested,
         suggestedDeliveryDate: suggested,
         committedDeliveryDate: committed,
-        projectedDeliveryDate: projected,
-        actualDeliveryDate: actual,
-        calendarDate: view.calendarDate,
-        customerStatus: view.customerStatus,
-        requiresDealerAttention: view.requiresDealerAttention,
-        customerSafeReason: view.customerSafeReason,
-        compactDates: view.compactDates,
-        delayDays: view.delayDays,
-        canUpdateDeliveryDate: policy.canUpdateDirect,
-        canRequestDateChange: policy.canChangeRequest,
-        dateChangeLocked: policy.locked,
-        dateChangeReason: policy.reason,
+        projectedDeliveryDate: projectedDealer.view.projectedYmd ? projected : null,
+        plannedDeliveryDate: projectedDealer.planned,
+        actualDeliveryDate: projectedDealer.actual,
+        calendarDate: projectedDealer.view.calendarDate,
+        customerStatus: projectedDealer.view.customerStatus,
+        requiresDealerAttention: projectedDealer.view.requiresDealerAttention,
+        actionRequired: projectedDealer.view.actionRequired,
+        customerSafeReason: projectedDealer.view.customerSafeReason,
+        compactDates: projectedDealer.view.compactDates,
+        delayDays: projectedDealer.view.delayDays,
+        scheduleUpdating: projectedDealer.view.scheduleUpdating,
+        canUpdateDeliveryDate: projectedDealer.policy.canUpdateDirect,
+        canRequestDateChange: projectedDealer.policy.canChangeRequest,
+        dateChangeLocked: projectedDealer.policy.locked,
+        dateChangeReason: projectedDealer.policy.reason,
       };
     });
 
     const summary = summarizeDealerDeliveries(rows, todayYmd);
     const from = range?.from?.slice(0, 10);
     const to = range?.to?.slice(0, 10);
-    const data =
-      from || to
-        ? rows.filter((row) => {
-            if (row.requiresDealerAttention && !row.calendarDate) return true;
-            if (!row.calendarDate) return !from && !to;
-            if (from && row.calendarDate < from) return false;
-            if (to && row.calendarDate > to) return false;
-            return true;
-          })
-        : rows;
+    const data = filterByCalendarDateRange(rows, from, to);
 
     return { summary, data, todayYmd };
   }
@@ -2552,10 +2535,11 @@ export class SchedulingService implements OnModuleInit {
           select: {
             status: true,
             requiredDeliveryDate: true,
+            quotation: { select: { request: { select: { status: true } } } },
             deliveries: {
               orderBy: { updatedAt: 'desc' },
               take: 1,
-              select: { status: true, updatedAt: true },
+              select: { status: true, deliveryDate: true },
             },
           },
         },
@@ -2565,36 +2549,31 @@ export class SchedulingService implements OnModuleInit {
     const schedule = await this.prisma.productionSchedule.findFirst({
       where: { productionOrderId: poId },
       orderBy: { version: 'desc' },
-      select: {
-        requestedDeliveryDate: true,
-        suggestedDeliveryDate: true,
-        committedDeliveryDate: true,
-        earliestAvailableDate: true,
-      },
     });
     const delivery = po.salesOrder?.deliveries[0] ?? null;
     const requested = schedule?.requestedDeliveryDate ?? po.requiredDeliveryDate ?? po.salesOrder?.requiredDeliveryDate ?? null;
     const suggested = schedule?.suggestedDeliveryDate ?? null;
     const committed = schedule?.committedDeliveryDate ?? po.committedDeliveryDate ?? null;
     const projected = schedule?.earliestAvailableDate ?? schedule?.suggestedDeliveryDate ?? null;
-    const actual = delivery?.status === 'DELIVERED' ? delivery.updatedAt : null;
-    const view = buildDealerDeliveryView({
+    const projectedDealer = this.projectDealerDelivery({
       salesOrderStatus: po.salesOrder?.status,
-      productionOrderStatus: po.status,
-      deliveryStatus: delivery?.status,
-      requestedYmd: toCalendarYmd(requested, tz),
-      suggestedYmd: toCalendarYmd(suggested, tz),
-      committedYmd: toCalendarYmd(committed, tz),
-      projectedYmd: toCalendarYmd(projected, tz),
-      actualYmd: toCalendarYmd(actual, tz),
+      productionOrder: po,
+      schedule,
+      delivery,
+      requested,
+      suggested,
+      committed,
+      projected,
+      tz,
       todayYmd,
+      requestStatus: po.salesOrder?.quotation?.request?.status,
     });
     return customerFacingFingerprint({
       committedYmd: toCalendarYmd(committed, tz),
       suggestedYmd: toCalendarYmd(suggested, tz),
       projectedYmd: toCalendarYmd(projected, tz),
-      customerStatus: view.customerStatus,
-      actualYmd: toCalendarYmd(actual, tz),
+      customerStatus: projectedDealer.view.customerStatus,
+      actualYmd: toCalendarYmd(projectedDealer.actual, tz),
     });
   }
 
@@ -3442,6 +3421,56 @@ export class SchedulingService implements OnModuleInit {
     };
   }
 
+  private projectDealerDelivery(input: {
+    salesOrderStatus?: string | null;
+    productionOrder?: {
+      status: string;
+      requiredDeliveryDate?: Date | null;
+      committedDeliveryDate?: Date | null;
+    } | null;
+    schedule?: Parameters<SchedulingService['classifyLoadedSchedule']>[1];
+    delivery: { status?: string | null; deliveryDate?: Date | string | null } | null;
+    requested: Date | string | null;
+    suggested: Date | string | null;
+    committed: Date | string | null;
+    projected: Date | string | null;
+    tz: string;
+    todayYmd: string;
+    requestStatus?: string | null;
+  }) {
+    const actual = actualDeliveryValue(input.delivery);
+    const planned = plannedDeliveryValue(input.delivery);
+    const po = input.productionOrder ?? null;
+    const risk = po ? this.classifyLoadedSchedule(po, input.schedule) : null;
+    const view = buildDealerDeliveryView({
+      salesOrderStatus: input.salesOrderStatus,
+      productionOrderStatus: po?.status,
+      deliveryStatus: input.delivery?.status,
+      requestedYmd: toCalendarYmd(input.requested, input.tz),
+      suggestedYmd: toCalendarYmd(input.suggested, input.tz),
+      committedYmd: toCalendarYmd(input.committed, input.tz),
+      projectedYmd: toCalendarYmd(input.projected, input.tz),
+      plannedYmd: toCalendarYmd(planned, input.tz),
+      actualYmd: toCalendarYmd(actual, input.tz),
+      todayYmd: input.todayYmd,
+      riskStatus: risk?.primaryStatus ?? null,
+      requestStatus: input.requestStatus,
+    });
+    const promiseState = po
+      ? mapPromiseState({
+          scheduleStatus: (input.schedule?.status as 'DRAFT') ?? 'DRAFT',
+          productionOrderStatus: po.status as 'PLANNED',
+          atRisk: risk?.primaryStatus === 'AT_RISK' || risk?.primaryStatus === 'BLOCKED',
+          late: risk?.primaryStatus === 'LATE',
+        })
+      : 'ESTIMATED';
+    const policy = resolveDealerChangePolicy({
+      promiseState,
+      productionOrderStatus: (po?.status ?? 'DRAFT') as 'PLANNED',
+    });
+    return { view, actual, planned, promiseState, policy, risk };
+  }
+
   private classifyLoadedSchedule(
     po: { status: string; requiredDeliveryDate?: Date | null; committedDeliveryDate?: Date | null },
     schedule:
@@ -3667,7 +3696,7 @@ export class SchedulingService implements OnModuleInit {
       scheduleStatus: s.status,
       scheduleVersion: s.version,
       version: s.version,
-      reason: s.reason,
+      reason: publicScheduleReason(s.reason),
       materialRisk: s.materialRisk,
       requiresAdminEstimateReview: s.requiresAdminEstimateReview,
       requiredDeliveryDate: order.requiredDeliveryDate,

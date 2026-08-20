@@ -71,7 +71,7 @@ export function MonthCalendar({
   embedded = false,
   compact = false,
 }: Props) {
-  const { t, isRTL, locale } = useLocale();
+  const { t, formatDate, isRTL, locale } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
   const today = todayYmd();
   const cellH = compact ? DAY_CELL_COMPACT : DAY_CELL;
@@ -251,10 +251,24 @@ export function MonthCalendar({
                   accessibilityState={{ selected, disabled }}
                   accessibilityLabel={
                     meta?.count
-                      ? `${ymd}, ${meta.count}`
+                      ? t('mobile.calendar.a11yDayCount', {
+                          date: formatDate(ymd),
+                          count: meta.count,
+                        })
                       : meta?.markers?.length
-                        ? `${ymd}, ${meta.markers.join(', ')}`
-                        : ymd
+                        ? t('mobile.calendar.a11yDayMarkers', {
+                            date: formatDate(ymd),
+                            markers: meta.markers
+                              .map((m) =>
+                                m === 'confirmed'
+                                  ? t('mobile.orders.legendConfirmed')
+                                  : m === 'proposed'
+                                    ? t('mobile.orders.legendExpected')
+                                    : t('mobile.orders.legendMayBeDelayed'),
+                              )
+                              .join(', '),
+                          })
+                        : formatDate(ymd)
                   }
                   onPress={() => {
                     if (disabled) return;

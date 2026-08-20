@@ -6,7 +6,7 @@ export default function CustomerDeliveryCalendarRoute() {
   const { user } = useAuth();
   return (
     <PermissionGate user={user} require="schedule.read.own" mode="all">
-      <DealerDeliveryCalendarScreen />
+      <DealerDeliveryCalendarScreen variant="account" />
     </PermissionGate>
   );
 }

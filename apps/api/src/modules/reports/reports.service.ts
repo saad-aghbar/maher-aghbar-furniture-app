@@ -14,6 +14,15 @@ import { calculateOrderCosts, buildMaterialCostMap } from '../../common/helpers/
 import { mapProgressForDealer } from '../../common/helpers/dealer-progress.util';
 import { roundMoney } from '../../common/helpers/money.util';
 import { buildTaskTimingSummary } from '../../common/helpers/task-timing.util';
+import { classifyScheduleRisk } from '../scheduling/domain/at-risk';
+import {
+  actualDeliveryValue,
+  buildDealerDeliveryView,
+  isNearingCalendarDate,
+  plannedDeliveryValue,
+  toCalendarYmd,
+} from '../scheduling/domain/dealer-delivery';
+import { ymdInTimezone } from '../scheduling/domain/factory-replan';
 
 const OPEN_TASK_STATUSES: TaskStatus[] = [
   TaskStatus.NOT_STARTED,
@@ -50,6 +59,66 @@ function dateRange(from?: string, to?: string): Prisma.DateTimeFilter | undefine
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async listCanonicalMayBeLate(now: Date) {
+    const schedules = await this.prisma.productionSchedule.findMany({
+      where: {
+        status: { in: ['APPROVED', 'PROPOSED', 'NEEDS_REVIEW'] },
+        productionOrder: { status: { notIn: ['CANCELLED', 'COMPLETED'] } },
+      },
+      include: {
+        productionOrder: {
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            requiredDeliveryDate: true,
+            committedDeliveryDate: true,
+            salesOrderId: true,
+          },
+        },
+      },
+    });
+    const latest = new Map<string, (typeof schedules)[number]>();
+    for (const row of schedules) {
+      const prev = latest.get(row.productionOrderId);
+      if (!prev || row.version > prev.version) latest.set(row.productionOrderId, row);
+    }
+    return [...latest.values()]
+      .map((schedule) => ({
+        schedule,
+        classification: classifyScheduleRisk({
+          productionOrderStatus: schedule.productionOrder.status,
+          scheduleStatus: schedule.status,
+          committedDeliveryDate:
+            schedule.committedDeliveryDate ?? schedule.productionOrder.committedDeliveryDate,
+          requestedDeliveryDate:
+            schedule.requestedDeliveryDate ?? schedule.productionOrder.requiredDeliveryDate,
+          projectedCompletion: schedule.earliestAvailableDate ?? schedule.suggestedDeliveryDate,
+          requestedDateFeasible: schedule.requestedDateFeasible,
+          unschedulableReason: schedule.unschedulableReason,
+          requiresAdminEstimateReview: Boolean(schedule.requiresAdminEstimateReview),
+          materialRisk: Boolean(schedule.materialRisk),
+          now,
+        }),
+      }))
+      .filter((row) => row.classification.contributesToMayBeLate);
+  }
+
+  private async pickCanonicalLateSpotlight<T extends Prisma.SalesOrderSelect>(
+    now: Date,
+    select: T,
+  ) {
+    const rows = await this.listCanonicalMayBeLate(now);
+    const preferred =
+      rows.find((row) => row.classification.primaryStatus === 'LATE') ?? rows[0];
+    const salesOrderId = preferred?.schedule.productionOrder.salesOrderId;
+    if (!salesOrderId) return null;
+    return this.prisma.salesOrder.findUnique({
+      where: { id: salesOrderId },
+      select,
+    });
+  }
+
   async dashboard() {
     const now = new Date();
     const soon = new Date();
@@ -60,7 +129,7 @@ export class ReportsService {
       ordersInProduction,
       ordersNearingDelivery,
       completedOrders,
-      delayedOrders,
+      delayedRows,
       openInvoices,
       outstandingAgg,
       dealersActive,
@@ -107,19 +176,7 @@ export class ReportsService {
           status: { in: [SalesOrderStatus.COMPLETED, SalesOrderStatus.DELIVERED] },
         },
       }),
-      this.prisma.salesOrder.count({
-        where: {
-          archivedAt: null,
-          requiredDeliveryDate: { lt: now },
-          status: {
-            notIn: [
-              SalesOrderStatus.COMPLETED,
-              SalesOrderStatus.CANCELLED,
-              SalesOrderStatus.DELIVERED,
-            ],
-          },
-        },
-      }),
+      this.listCanonicalMayBeLate(now),
       this.prisma.invoice.count({
         where: {
           archivedAt: null,
@@ -226,7 +283,7 @@ export class ReportsService {
       ordersInProduction,
       ordersNearingDelivery,
       completedOrders,
-      delayedOrders,
+      delayedOrders: delayedRows.length,
       openInvoices,
       outstandingReceivables: roundMoney(Number(outstandingAgg._sum.outstandingAmount ?? 0)),
       dealersActive,
@@ -371,15 +428,7 @@ export class ReportsService {
             })
           : Promise.resolve([]),
         // Floor spotlight candidates — priority decided after fetch (late > near > production).
-        this.prisma.salesOrder.findFirst({
-          where: {
-            archivedAt: null,
-            requiredDeliveryDate: { lt: now },
-            status: { notIn: closedStatuses },
-          },
-          orderBy: { requiredDeliveryDate: 'asc' },
-          select: spotlightSelect,
-        }),
+        this.pickCanonicalLateSpotlight(now, spotlightSelect),
         this.prisma.salesOrder.findFirst({
           where: {
             archivedAt: null,
@@ -500,8 +549,6 @@ export class ReportsService {
 
     const customerId = user.customerId;
     const now = new Date();
-    const soon = new Date();
-    soon.setDate(soon.getDate() + 7);
 
     const closed: SalesOrderStatus[] = [
       SalesOrderStatus.COMPLETED,
@@ -523,9 +570,10 @@ export class ReportsService {
     const canNotifications = hasPermission(user.permissions ?? [], 'notification.read');
 
     const [
+      calendarRow,
       activeOrders,
       ordersInProduction,
-      ordersNearingDelivery,
+      openForCalendar,
       completedOrders,
       outstandingAgg,
       dueInvoice,
@@ -533,17 +581,38 @@ export class ReportsService {
       recentSalesOrders,
       recentInvoiceRows,
     ] = await Promise.all([
+      this.prisma.factoryCalendar.findFirst({
+        where: { isDefault: true },
+        select: { timezone: true },
+      }),
       this.prisma.salesOrder.count({
         where: { ...baseSo, status: { notIn: closed } },
       }),
       this.prisma.salesOrder.count({
         where: { ...baseSo, status: { in: productionStatuses } },
       }),
-      this.prisma.salesOrder.count({
-        where: {
-          ...baseSo,
-          requiredDeliveryDate: { lte: soon, gte: now },
-          status: { notIn: closed },
+      this.prisma.salesOrder.findMany({
+        where: { ...baseSo, status: { notIn: closed } },
+        select: {
+          status: true,
+          requiredDeliveryDate: true,
+          quotation: { select: { request: { select: { status: true } } } },
+          productionOrders: {
+            where: { archivedAt: null },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              status: true,
+              requiredDeliveryDate: true,
+              committedDeliveryDate: true,
+              schedules: { orderBy: { version: 'desc' }, take: 1 },
+            },
+          },
+          deliveries: {
+            orderBy: { updatedAt: 'desc' },
+            take: 1,
+            select: { status: true, deliveryDate: true },
+          },
         },
       }),
       this.prisma.salesOrder.count({
@@ -605,6 +674,7 @@ export class ReportsService {
             select: {
               request: {
                 select: {
+                  status: true,
                   externalOrderNumber: true,
                   endCustomerName: true,
                   items: {
@@ -617,7 +687,20 @@ export class ReportsService {
             },
           },
           productionOrders: {
-            select: { progressPercent: true },
+            where: { archivedAt: null },
+            orderBy: { createdAt: 'desc' },
+            select: {
+              progressPercent: true,
+              status: true,
+              requiredDeliveryDate: true,
+              committedDeliveryDate: true,
+              schedules: { orderBy: { version: 'desc' }, take: 1 },
+            },
+          },
+          deliveries: {
+            orderBy: { updatedAt: 'desc' },
+            take: 1,
+            select: { status: true, deliveryDate: true },
           },
         },
       }),
@@ -640,6 +723,14 @@ export class ReportsService {
         },
       }),
     ]);
+
+    const tz = calendarRow?.timezone || 'Asia/Amman';
+    const todayYmd = ymdInTimezone(now, tz);
+
+    const ordersNearingDelivery = openForCalendar.filter((so) => {
+      const view = this.dealerDeliveryViewForHome(so, tz, todayYmd);
+      return isNearingCalendarDate(view.calendarDate, todayYmd, 7);
+    }).length;
 
     const outstandingBalance = Number(outstandingAgg._sum.outstandingAmount ?? 0);
     let balanceDueInDays: number | null = null;
@@ -664,6 +755,7 @@ export class ReportsService {
           : 0,
       );
       const coarse = mapProgressForDealer({ progressPercent: rawProgress });
+      const dates = this.dealerDeliveryViewForHome(so, tz, todayYmd);
       return {
         id: so.id,
         number: so.number,
@@ -678,6 +770,14 @@ export class ReportsService {
           null,
         endCustomerName: so.quotation?.request?.endCustomerName ?? null,
         requiredDeliveryDate: so.requiredDeliveryDate?.toISOString() ?? null,
+        requestedDeliveryDate: dates.requestedYmd,
+        suggestedDeliveryDate: dates.suggestedYmd,
+        committedDeliveryDate: dates.committedYmd,
+        projectedDeliveryDate: dates.projectedYmd,
+        plannedDeliveryDate: dates.plannedYmd,
+        actualDeliveryDate: dates.actualYmd,
+        calendarDate: dates.calendarDate,
+        customerStatus: dates.customerStatus,
       };
     });
 
@@ -700,6 +800,80 @@ export class ReportsService {
         dueDate: inv.dueDate?.toISOString() ?? null,
       })),
       generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private dealerDeliveryViewForHome(
+    so: {
+      status: string;
+      requiredDeliveryDate?: Date | null;
+      quotation?: { request?: { status?: string | null } | null } | null;
+      productionOrders?: Array<{
+        status?: string | null;
+        requiredDeliveryDate?: Date | null;
+        committedDeliveryDate?: Date | null;
+        schedules?: Array<{
+          requestedDeliveryDate?: Date | null;
+          suggestedDeliveryDate?: Date | null;
+          committedDeliveryDate?: Date | null;
+          earliestAvailableDate?: Date | null;
+          status?: string | null;
+          requestedDateFeasible?: boolean | null;
+          unschedulableReason?: string | null;
+          requiresAdminEstimateReview?: boolean | null;
+          materialRisk?: boolean | null;
+        }>;
+      }>;
+      deliveries?: Array<{ status?: string | null; deliveryDate?: Date | null }>;
+    },
+    tz: string,
+    todayYmd: string,
+  ) {
+    const po = so.productionOrders?.[0];
+    const schedule = po?.schedules?.[0] ?? null;
+    const delivery = so.deliveries?.[0] ?? null;
+    const requested = schedule?.requestedDeliveryDate ?? po?.requiredDeliveryDate ?? so.requiredDeliveryDate ?? null;
+    const suggested = schedule?.suggestedDeliveryDate ?? null;
+    const committed = schedule?.committedDeliveryDate ?? po?.committedDeliveryDate ?? null;
+    const projected = schedule?.earliestAvailableDate ?? schedule?.suggestedDeliveryDate ?? null;
+    const actual = actualDeliveryValue(delivery);
+    const planned = plannedDeliveryValue(delivery);
+    const risk = po
+      ? classifyScheduleRisk({
+          productionOrderStatus: po.status ?? 'PLANNED',
+          scheduleStatus: schedule?.status ?? null,
+          committedDeliveryDate: committed,
+          requestedDeliveryDate: requested,
+          projectedCompletion: projected,
+          requestedDateFeasible: schedule?.requestedDateFeasible,
+          unschedulableReason: schedule?.unschedulableReason,
+          requiresAdminEstimateReview: Boolean(schedule?.requiresAdminEstimateReview),
+          materialRisk: Boolean(schedule?.materialRisk),
+        })
+      : null;
+    const view = buildDealerDeliveryView({
+      salesOrderStatus: so.status,
+      productionOrderStatus: po?.status,
+      deliveryStatus: delivery?.status,
+      requestedYmd: toCalendarYmd(requested, tz),
+      suggestedYmd: toCalendarYmd(suggested, tz),
+      committedYmd: toCalendarYmd(committed, tz),
+      projectedYmd: toCalendarYmd(projected, tz),
+      plannedYmd: toCalendarYmd(planned, tz),
+      actualYmd: toCalendarYmd(actual, tz),
+      todayYmd,
+      riskStatus: risk?.primaryStatus ?? null,
+      requestStatus: so.quotation?.request?.status,
+    });
+    return {
+      requestedYmd: toCalendarYmd(requested, tz),
+      suggestedYmd: toCalendarYmd(suggested, tz),
+      committedYmd: toCalendarYmd(committed, tz),
+      projectedYmd: view.projectedYmd,
+      plannedYmd: view.plannedYmd,
+      actualYmd: toCalendarYmd(actual, tz),
+      calendarDate: view.calendarDate,
+      customerStatus: view.customerStatus,
     };
   }
 

@@ -39,3 +39,7 @@ packages/database/prisma/*.db-journal
 # Playwright
 test-results
 playwright-report
+
+# Local database dumps (demo reset / developer backups)
+backups/
+

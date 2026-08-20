@@ -656,6 +656,7 @@ function CreateOrderForm() {
 
           <Input
             label={tc('preferredDeliveryDate')}
+            hint={tc('preferredDeliveryDateHint')}
             type="date"
             value={preferredDeliveryDate}
             onChange={(e) => setPreferredDeliveryDate(e.target.value)}

@@ -129,6 +129,245 @@ describe('dealer own schedule + own-deliveries isolation', () => {
     expect(dto).not.toHaveProperty('allocations');
     expect(dto).not.toHaveProperty('unschedulableReason');
   });
+
+  it('uses Delivery.deliveryDate as actual, not updatedAt', async () => {
+    const { service, prisma } = makeService();
+    const deliveredOn = new Date('2026-08-12T00:00:00.000Z');
+    prisma.productionOrder.findFirst.mockResolvedValue({
+      id: 'po-1',
+      number: 'PO-1',
+      status: 'COMPLETED',
+      requiredDeliveryDate: deliveredOn,
+      committedDeliveryDate: deliveredOn,
+      salesOrder: {
+        id: 'so-1',
+        status: 'DELIVERED',
+        requiredDeliveryDate: deliveredOn,
+        quotation: { request: { status: 'QUOTED' } },
+        deliveries: [
+          {
+            status: 'DELIVERED',
+            deliveryDate: deliveredOn,
+            updatedAt: new Date('2026-08-15T12:00:00.000Z'),
+          },
+        ],
+      },
+    });
+    prisma.productionSchedule.findFirst.mockResolvedValue({
+      status: 'APPROVED',
+      requestedDeliveryDate: deliveredOn,
+      suggestedDeliveryDate: deliveredOn,
+      committedDeliveryDate: deliveredOn,
+      earliestAvailableDate: deliveredOn,
+    });
+    const dto = await service.getOwnOrderSchedule('po-1', makeUser());
+    expect(dto.customerStatus).toBe('DELIVERED');
+    expect(dto.calendarDate).toBe('2026-08-12');
+    expect(new Date(dto.actualDeliveryDate as Date).toISOString().slice(0, 10)).toBe('2026-08-12');
+  });
+
+  it('keeps a slipped commitment on Aug 19 and omits it from Aug 21 range', async () => {
+    const { service, prisma } = makeService();
+    const committed = new Date('2026-08-19T00:00:00.000Z');
+    const slipped = new Date('2026-08-21T00:00:00.000Z');
+    prisma.salesOrder.findMany.mockResolvedValue([
+      {
+        id: 'so-19',
+        number: 'SO-2026-00019',
+        status: 'IN_PRODUCTION',
+        requiredDeliveryDate: committed,
+        deliveryAddress: null,
+        projectName: 'Abdali',
+        quotation: { request: null },
+        lines: [],
+        productionOrders: [
+          {
+            id: 'po-19',
+            number: 'PO-19',
+            status: 'IN_PROGRESS',
+            requiredDeliveryDate: committed,
+            committedDeliveryDate: committed,
+            quantity: 1,
+            productDescription: 'Banquette',
+            product: { nameEn: 'Banquette', nameAr: null, nameHe: null, imageUrl: null },
+            schedules: [
+              {
+                status: 'APPROVED',
+                requestedDeliveryDate: committed,
+                suggestedDeliveryDate: committed,
+                committedDeliveryDate: committed,
+                earliestAvailableDate: slipped,
+                requestedDateFeasible: true,
+                materialRisk: false,
+                requiresAdminEstimateReview: false,
+                unschedulableReason: null,
+              },
+            ],
+          },
+        ],
+        deliveries: [],
+      },
+    ]);
+
+    const august = await service.listOwnDeliveries(makeUser(), { from: '2026-08-01', to: '2026-08-31' });
+    expect(august.data).toHaveLength(1);
+    expect(august.data[0]!.calendarDate).toBe('2026-08-19');
+    expect(august.data[0]!.projectedDeliveryDate).toEqual(slipped);
+    expect(august.data[0]!.customerStatus).toBe('MAY_BE_DELAYED');
+    expect(august.data[0]!.requiresDealerAttention).toBe(false);
+
+    const onPromise = await service.listOwnDeliveries(makeUser(), {
+      from: '2026-08-19',
+      to: '2026-08-19',
+    });
+    expect(onPromise.data.map((r: { salesOrderId: string }) => r.salesOrderId)).toEqual(['so-19']);
+
+    const onProjection = await service.listOwnDeliveries(makeUser(), {
+      from: '2026-08-21',
+      to: '2026-08-21',
+    });
+    expect(onProjection.data).toHaveLength(0);
+  });
+
+  it('nulls a stale past projection and keeps DELAYED on committed', async () => {
+    const { service, prisma } = makeService();
+    const requested = new Date('2026-07-28T00:00:00.000Z');
+    const historical = new Date('2026-07-27T00:00:00.000Z');
+    const committed = new Date('2026-08-10T00:00:00.000Z');
+    prisma.salesOrder.findMany.mockResolvedValue([
+      {
+        id: 'so-jabal',
+        number: 'SO-2026-00023',
+        status: 'IN_PRODUCTION',
+        requiredDeliveryDate: requested,
+        deliveryAddress: null,
+        projectName: 'Jabal',
+        quotation: { request: null },
+        lines: [],
+        productionOrders: [
+          {
+            id: 'po-jabal',
+            number: 'PO-22',
+            status: 'IN_PROGRESS',
+            requiredDeliveryDate: requested,
+            committedDeliveryDate: committed,
+            quantity: 1,
+            productDescription: 'Dining',
+            product: { nameEn: 'Dining', nameAr: null, nameHe: null, imageUrl: null },
+            schedules: [
+              {
+                status: 'APPROVED',
+                requestedDeliveryDate: requested,
+                suggestedDeliveryDate: historical,
+                committedDeliveryDate: committed,
+                earliestAvailableDate: historical,
+                requestedDateFeasible: false,
+                materialRisk: false,
+                requiresAdminEstimateReview: false,
+                unschedulableReason: null,
+              },
+            ],
+          },
+        ],
+        deliveries: [],
+      },
+    ]);
+
+    const listed = await service.listOwnDeliveries(makeUser());
+    expect(listed.data[0]!.calendarDate).toBe('2026-08-10');
+    expect(listed.data[0]!.projectedDeliveryDate).toBeNull();
+    expect(listed.data[0]!.customerStatus).toBe('DELAYED');
+    expect(listed.data[0]!.scheduleUpdating).toBe(true);
+    expect(listed.data[0]!.requiresDealerAttention).toBe(false);
+
+    const onCommit = await service.listOwnDeliveries(makeUser(), {
+      from: '2026-08-10',
+      to: '2026-08-10',
+    });
+    expect(onCommit.data.map((r: { salesOrderId: string }) => r.salesOrderId)).toEqual(['so-jabal']);
+
+    const onHistory = await service.listOwnDeliveries(makeUser(), {
+      from: '2026-07-27',
+      to: '2026-07-27',
+    });
+    expect(onHistory.data).toHaveLength(0);
+  });
+
+  it('filters own-deliveries by planned logistics day, not production suggested', async () => {
+    const { service, prisma } = makeService();
+    const requested = new Date('2026-08-19T00:00:00.000Z');
+    const suggested = new Date('2026-08-17T00:00:00.000Z');
+    const planned = new Date('2026-08-19T00:00:00.000Z');
+    prisma.salesOrder.findMany.mockResolvedValue([
+      {
+        id: 'so-balqis',
+        number: 'SO-2026-00019',
+        status: 'READY_FOR_DELIVERY',
+        requiredDeliveryDate: requested,
+        deliveryAddress: null,
+        projectName: 'Abdali',
+        quotation: { request: null },
+        lines: [],
+        productionOrders: [
+          {
+            id: 'po-balqis',
+            number: 'PO-18',
+            status: 'READY_FOR_DELIVERY',
+            requiredDeliveryDate: requested,
+            committedDeliveryDate: null,
+            quantity: 6,
+            productDescription: 'Banquette',
+            product: { nameEn: 'Banquette', nameAr: null, nameHe: null, imageUrl: null },
+            schedules: [
+              {
+                status: 'APPROVED',
+                requestedDeliveryDate: requested,
+                suggestedDeliveryDate: suggested,
+                committedDeliveryDate: null,
+                earliestAvailableDate: suggested,
+                requestedDateFeasible: true,
+                materialRisk: false,
+                requiresAdminEstimateReview: false,
+                unschedulableReason: null,
+              },
+            ],
+          },
+        ],
+        deliveries: [{ status: 'PLANNED', deliveryDate: planned }],
+      },
+    ]);
+
+    const listed = await service.listOwnDeliveries(makeUser());
+    expect(listed.data[0]!.calendarDate).toBe('2026-08-19');
+    expect(listed.data[0]!.plannedDeliveryDate).toEqual(planned);
+    expect(listed.data[0]!.suggestedDeliveryDate).toEqual(suggested);
+    expect(listed.data[0]!.committedDeliveryDate).toBeNull();
+    expect(listed.data[0]!.customerStatus).toBe('READY_FOR_DELIVERY');
+
+    const onTruck = await service.listOwnDeliveries(makeUser(), {
+      from: '2026-08-19',
+      to: '2026-08-19',
+    });
+    expect(onTruck.data.map((r: { salesOrderId: string }) => r.salesOrderId)).toEqual(['so-balqis']);
+
+    const onProduction = await service.listOwnDeliveries(makeUser(), {
+      from: '2026-08-17',
+      to: '2026-08-17',
+    });
+    expect(onProduction.data).toHaveLength(0);
+  });
+
+  it('does not leak another dealer into calendar counts', async () => {
+    const { service, prisma } = makeService();
+    prisma.salesOrder.findMany.mockResolvedValue([]);
+    await service.listOwnDeliveries(makeUser({ customerId: 'customer-oasis' }));
+    expect(prisma.salesOrder.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { customerId: 'customer-oasis', archivedAt: null },
+      }),
+    );
+    expect(prisma.salesOrder.findMany.mock.calls[0][0]).not.toHaveProperty('take');
+  });
 });
 
 describe('dealer fingerprint notify', () => {

@@ -727,7 +727,8 @@
     "fri": "ו׳",
     "sat": "ש׳"
   },
-  "preferredDeliveryDate": "תאריך אספקה מועדף",
+  "preferredDeliveryDate": "תאריך אספקה מבוקש",
+  "preferredDeliveryDateHint": "נאשר את תאריך האספקה לאחר תזמון הייצור.",
   "availabilityTitle": "זמינות ייצור",
   "availabilityUnavailable": "לא הצלחנו להעריך תאריך ייצור עדיין — הצוות שלנו יאשר זאת לאחר בדיקה.",
   "availabilityEarliestDate": "התאריך המוקדם ביותר הזמין",

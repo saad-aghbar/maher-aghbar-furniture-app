@@ -79,8 +79,14 @@ export type DealerHomeOrder = {
   externalOrderNumber: string | null;
   endCustomerName: string | null;
   requiredDeliveryDate: string | null;
-  /** Scheduler-committed date, when a schedule has been approved. */
+  requestedDeliveryDate?: string | null;
+  suggestedDeliveryDate?: string | null;
   committedDeliveryDate?: string | null;
+  projectedDeliveryDate?: string | null;
+  plannedDeliveryDate?: string | null;
+  actualDeliveryDate?: string | null;
+  calendarDate?: string | null;
+  customerStatus?: string | null;
 };
 
 export type DealerHomeInvoice = {

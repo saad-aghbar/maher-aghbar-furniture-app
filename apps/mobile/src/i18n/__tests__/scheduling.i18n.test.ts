@@ -182,6 +182,38 @@ const SCHEDULING_KEYS = [
   'mobile.newOrder.delivery.preliminaryNote',
   'mobile.newOrder.delivery.confirmAfterCheck',
   'mobile.orders.modeOrders',
+  'mobile.orders.modeUpcoming',
+  'mobile.orders.modeCalendar',
+  'mobile.orders.groupToday',
+  'mobile.orders.groupThisWeek',
+  'mobile.tabs.schedule',
+  'mobile.orders.legendExpected',
+  'mobile.orders.legendConfirmed',
+  'mobile.orders.legendMayBeDelayed',
+  'mobile.orders.legendDelivered',
+  'mobile.orders.notConfirmed',
+  'mobile.orders.scheduleUpdating',
+  'mobile.orders.emptyDayTitle',
+  'mobile.orders.emptyDayBody',
+  'mobile.orders.a11yDay',
+  'mobile.orders.expectedShort',
+  'mobile.orders.requestedShort',
+  'mobile.orders.confirmedShort',
+  'mobile.orders.currentExpected',
+  'mobile.orders.plannedShort',
+  'mobile.orderDetail.schedule.projectedDate',
+  'mobile.orderDetail.schedule.expectedDate',
+  'mobile.orderDetail.schedule.actualDate',
+  'production.dealerDelivery.requested',
+  'production.dealerDelivery.expected',
+  'production.dealerDelivery.confirmed',
+  'production.dealerDelivery.currentExpected',
+  'production.dealerDelivery.planned',
+  'production.dealerDelivery.notConfirmed',
+  'production.dealerDelivery.modeUpcoming',
+  'production.dealerDelivery.modeCalendar',
+  'catalog.preferredDeliveryDate',
+  'catalog.preferredDeliveryDateHint',
   'mobile.orders.modeCalendar',
   'mobile.dealerAccount.placeCalendarHint',
   'mobile.dealerAccount.calendarTitle',
@@ -199,6 +231,8 @@ const SCHEDULING_KEYS = [
   'mobile.orders.summaryAwaiting',
   'mobile.orders.summaryDelayed',
   'mobile.orders.groupAttention',
+  'mobile.orders.groupToday',
+  'mobile.orders.groupThisWeek',
   'mobile.orders.groupUpcoming',
   'mobile.orders.groupLater',
   'mobile.orders.groupDelivered',
@@ -532,6 +566,29 @@ describe('scheduling i18n keys', () => {
       }
     });
   }
+
+  it('does not label requested or expected dates as confirmed', () => {
+    const keys = [
+      'production.dealerDelivery.requested',
+      'production.dealerDelivery.expected',
+      'production.dealerDelivery.earliest',
+      'catalog.preferredDeliveryDate',
+      'mobile.orderDetail.schedule.requestedDate',
+      'mobile.orderDetail.schedule.expectedDate',
+      'mobile.orders.expectedShort',
+      'mobile.orders.requestedShort',
+      'mobile.orders.plannedShort',
+      'production.dealerDelivery.planned',
+    ];
+    for (const locale of ['en', 'ar', 'he'] as const) {
+      for (const key of keys) {
+        expect(translate(locale, key)).not.toMatch(/confirm|مؤكد|מאושר/i);
+      }
+    }
+    expect(translate('en', 'production.dealerDelivery.confirmed')).toMatch(/confirm/i);
+    expect(translate('ar', 'production.dealerDelivery.confirmed')).toMatch(/مؤكد/);
+    expect(translate('he', 'production.dealerDelivery.confirmed')).toMatch(/מאושר/);
+  });
 
   it('formats interpolate vars for earliest + plannedFor', () => {
     expect(translate('en', 'mobile.newOrder.delivery.earliest', { date: '18 Sep' })).toBe(

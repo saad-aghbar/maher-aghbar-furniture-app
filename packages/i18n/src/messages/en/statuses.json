@@ -87,8 +87,8 @@
   "REWORK": "Rework",
   "SCRAP": "Scrap",
   "LATE": "Late",
-  "AWAITING_CONFIRMATION": "Awaiting confirmation",
-  "CONFIRMED_ON_TRACK": "On track",
+  "AWAITING_CONFIRMATION": "Requested / Expected · not confirmed",
+  "CONFIRMED_ON_TRACK": "Confirmed · On track",
   "MAY_BE_DELAYED": "May be delayed",
   "DELAYED": "Delayed"
 }

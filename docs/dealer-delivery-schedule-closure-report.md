@@ -1,5 +1,8 @@
 # Dealer delivery schedule — closure report
 
+> **Stale (2026-08-15).** Calendar is no longer inside the Orders tab. Current
+> dealer Schedule work: [dealer-scheduling-calendar-closure-report.md](./dealer-scheduling-calendar-closure-report.md).
+
 Customer-safe dealer deliveries on top of the existing scheduler. Audit:
 [dealer-delivery-schedule-audit.md](./dealer-delivery-schedule-audit.md).
 Live proof: [dealer-delivery-schedule-live-uat.md](./dealer-delivery-schedule-live-uat.md).

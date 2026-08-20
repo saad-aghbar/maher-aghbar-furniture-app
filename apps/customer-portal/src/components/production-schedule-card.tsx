@@ -15,6 +15,7 @@ interface OwnOrderSchedule {
   suggestedDeliveryDate: string | null;
   committedDeliveryDate: string | null;
   projectedDeliveryDate?: string | null;
+  plannedDeliveryDate?: string | null;
   actualDeliveryDate?: string | null;
   calendarDate?: string | null;
   customerStatus?: string;
@@ -22,6 +23,7 @@ interface OwnOrderSchedule {
   customerSafeReason?: string | null;
   compactDates?: boolean;
   delayDays?: number | null;
+  scheduleUpdating?: boolean;
   canUpdateDeliveryDate: boolean;
   canRequestDateChange: boolean;
   dateChangeLocked: boolean;
@@ -104,8 +106,15 @@ export function ProductionScheduleCard({ productionOrderId }: { productionOrderI
   const suggested = toDateOnly(data.suggestedDeliveryDate);
   const committed = toDateOnly(data.committedDeliveryDate);
   const projected = toDateOnly(data.projectedDeliveryDate);
+  const planned = toDateOnly(data.plannedDeliveryDate);
   const awaiting = status === 'AWAITING_CONFIRMATION';
+  const delayed = status === 'MAY_BE_DELAYED' || status === 'DELAYED';
   const compact = Boolean(data.compactDates && committed);
+  const showSuggested =
+    Boolean(suggested) && suggested !== committed && suggested !== planned && Boolean(projected);
+  const showUpdating = delayed
+    ? Boolean(data.scheduleUpdating || !projected)
+    : Boolean(data.customerSafeReason);
 
   return (
     <Card title={td('section')} description={td('sectionHint')} className="maher-form-section">
@@ -117,7 +126,7 @@ export function ProductionScheduleCard({ productionOrderId }: { productionOrderI
           <StatusBadge status={status} />
         </div>
 
-        {compact ? (
+        {compact && committed && !delayed ? (
           <p className="text-sm font-medium">
             {td('compactOnTrack', { date: committed })}
           </p>
@@ -125,44 +134,82 @@ export function ProductionScheduleCard({ productionOrderId }: { productionOrderI
           <dl className="grid gap-3 sm:grid-cols-2">
             <div>
               <dt className="text-xs text-text-tertiary">{td('requested')}</dt>
-              <dd className="mt-0.5 text-sm font-medium" dir="ltr">
-                {requested ?? '—'}
+              <dd className="mt-0.5 text-sm font-medium">
+                <Ltr>{requested ?? '—'}</Ltr>
               </dd>
             </div>
-            <div>
-              <dt className="text-xs text-text-tertiary">{td('earliest')}</dt>
-              <dd className="mt-0.5 text-sm font-medium" dir="ltr">
-                {suggested ?? '—'}
-              </dd>
-            </div>
-            <p className="sm:col-span-2 text-xs text-text-secondary">{td('newDateProposed')}</p>
+            {planned ? (
+              <div>
+                <dt className="text-xs text-text-tertiary">{td('planned')}</dt>
+                <dd className="mt-0.5 text-sm font-medium">
+                  <Ltr>{planned}</Ltr>
+                </dd>
+              </div>
+            ) : showSuggested ? (
+              <div>
+                <dt className="text-xs text-text-tertiary">{td('expected')}</dt>
+                <dd className="mt-0.5 text-sm font-medium">
+                  <Ltr>{suggested}</Ltr>
+                </dd>
+              </div>
+            ) : null}
+            <p className="sm:col-span-2 text-xs text-text-secondary">{td('notConfirmed')}</p>
           </dl>
         ) : (
           <dl className="grid gap-3 sm:grid-cols-2">
             <div>
-              <dt className="text-xs text-tertiary text-text-tertiary">{td('confirmed')}</dt>
-              <dd className="mt-0.5 text-sm font-medium" dir="ltr">
-                {committed ?? '—'}
+              <dt className="text-xs text-text-tertiary">{td('requested')}</dt>
+              <dd className="mt-0.5 text-sm font-medium">
+                <Ltr>{requested ?? '—'}</Ltr>
               </dd>
             </div>
-            {projected && projected !== committed ? (
+            {planned ? (
+              <div>
+                <dt className="text-xs text-text-tertiary">{td('planned')}</dt>
+                <dd className="mt-0.5 text-sm font-medium">
+                  <Ltr>{planned}</Ltr>
+                </dd>
+              </div>
+            ) : null}
+            {showSuggested ? (
+              <div>
+                <dt className="text-xs text-text-tertiary">{td('expected')}</dt>
+                <dd className="mt-0.5 text-sm font-medium">
+                  <Ltr>{suggested}</Ltr>
+                </dd>
+              </div>
+            ) : null}
+            {committed ? (
+              <div>
+                <dt className="text-xs text-text-tertiary">{td('confirmed')}</dt>
+                <dd className="mt-0.5 text-sm font-medium">
+                  <Ltr>{committed}</Ltr>
+                </dd>
+              </div>
+            ) : (
+              <p className="sm:col-span-2 text-xs text-text-secondary">{td('notConfirmed')}</p>
+            )}
+            {projected && projected !== committed && projected !== planned && projected !== suggested ? (
               <div>
                 <dt className="text-xs text-text-tertiary">{td('currentExpected')}</dt>
-                <dd className="mt-0.5 text-sm font-medium" dir="ltr">
-                  {projected}
+                <dd className="mt-0.5 text-sm font-medium">
+                  <Ltr>{projected}</Ltr>
                 </dd>
               </div>
             ) : null}
-            {requested && requested !== committed ? (
+            {toDateOnly(data.actualDeliveryDate) ? (
               <div>
-                <dt className="text-xs text-text-tertiary">{td('requested')}</dt>
-                <dd className="mt-0.5 text-sm font-medium" dir="ltr">
-                  {requested}
+                <dt className="text-xs text-text-tertiary">{td('actual')}</dt>
+                <dd className="mt-0.5 text-sm font-medium">
+                  <Ltr>{toDateOnly(data.actualDeliveryDate)}</Ltr>
                 </dd>
               </div>
             ) : null}
-            {data.customerSafeReason ? (
+            {delayed ? (
               <p className="sm:col-span-2 text-xs text-text-secondary">{td('productionDelay')}</p>
+            ) : null}
+            {showUpdating ? (
+              <p className="sm:col-span-2 text-xs text-text-secondary">{td('scheduleUpdating')}</p>
             ) : null}
           </dl>
         )}

@@ -111,10 +111,25 @@ Restore: re-link `Document.storageKey` if bucket restored; keys are immutable UU
 
 ## Local development
 
-Developers may snapshot local Docker volume ad hoc:
+Developers may snapshot local Docker Postgres ad hoc. Before `pnpm demo:reset` (Checkpoint 3):
 
 ```bash
-docker compose exec postgres pg_dump -U erp maher_erp > backup.sql
+mkdir -p backups
+pg_dump -h 127.0.0.1 -U maher -d maher_erp -Fc -f backups/maher_erp-pre-demo-$(date +%Y%m%d).dump
+# Before a presentation-data repair:
+# pg_dump -h 127.0.0.1 -U maher -d maher_erp -Fc -f backups/maher_erp-pre-repair-$(date +%Y%m%d).dump
 ```
 
-Not a substitute for production procedures.
+Restore:
+
+```bash
+pg_restore -h 127.0.0.1 -U maher -d maher_erp --clean --if-exists backups/maher_erp-pre-demo-YYYYMMDD.dump
+```
+
+Compose equivalent (user `maher`, database `maher_erp` per `infra/docker/docker-compose.yml`):
+
+```bash
+docker compose -f infra/docker/docker-compose.yml exec postgres pg_dump -U maher -Fc maher_erp > backups/maher_erp-pre-demo.dump
+```
+
+`backups/` is gitignored. Not a substitute for production procedures.

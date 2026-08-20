@@ -112,6 +112,7 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
   const t = useTranslations('sales');
   const tCommon = useTranslations('common');
   const tc = useTranslations('catalog');
+  const td = useTranslations('production.dealerDelivery');
 
   const { data, isLoading } = useQuery({
     queryKey: ['order', params.id],
@@ -257,7 +258,7 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
           </div>
           {(data.requiredDeliveryDate || req?.requiredDeliveryDate) && (
             <p className="text-sm text-text-secondary">
-              {t('deliveryDate')}:{' '}
+              {td('requested')}:{' '}
               <Ltr>{(data.requiredDeliveryDate ?? req?.requiredDeliveryDate)?.slice(0, 10)}</Ltr>
             </p>
           )}

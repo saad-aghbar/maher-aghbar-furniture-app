@@ -23,6 +23,8 @@ export function ScheduleOrderRow({
   const tProd = useTranslations('mobile.production');
   const tCommon = useTranslations('common');
 
+  const reasonCopy = humanAtRiskReason(t, card.reason);
+
   const priority = (card.priority ?? '').toUpperCase();
   const urgent = priority === 'URGENT' || priority === 'HIGH';
   const alerted = card.hasConflict || card.materialRisk;
@@ -121,7 +123,7 @@ export function ScheduleOrderRow({
               </Badge>
             ) : null}
           </div>
-          {card.reason ? <p className="text-xs text-[var(--maher-error)]">{card.reason}</p> : null}
+          {reasonCopy ? <p className="text-xs text-[var(--maher-error)]">{reasonCopy}</p> : null}
           <div className="flex flex-wrap items-center gap-2 pt-1.5">
             <Link
               href={`/production/${card.productionOrderId}`}
@@ -164,4 +166,19 @@ export function ScheduleOrderRow({
       </div>
     </article>
   );
+}
+
+function humanAtRiskReason(
+  t: (key: string) => string,
+  raw: string | null | undefined,
+): string | null {
+  if (!raw) return null;
+  if (/^(demo|async|debug|seed):/i.test(raw.trim())) return null;
+  const key = raw.replace(/^mobile\.adminScheduling\./, '');
+  if (key.includes('.')) {
+    const translated = t(key);
+    if (translated && translated !== key && translated !== raw) return translated;
+  }
+  if (/^[A-Z0-9_]+$/.test(raw)) return null;
+  return raw;
 }

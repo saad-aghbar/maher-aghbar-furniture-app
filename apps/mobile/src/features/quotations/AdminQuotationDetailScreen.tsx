@@ -989,6 +989,7 @@ export function AdminQuotationDetailScreen({
       <View style={{ gap: theme.spacing.md }}>
         {body}
         {sheets}
+        {pdfDownloadSheet}
       </View>
     );
   }

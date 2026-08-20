@@ -7,6 +7,7 @@ import { BrandMark, cn, isNavItemActive, useHeaderOverDark } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
+  CalendarDays,
   ChevronDown,
   FileText,
   FolderOpen,
@@ -18,7 +19,6 @@ import {
   Scroll,
   ShoppingBag,
   SquarePen,
-  Truck,
   Undo2,
   User,
 } from 'lucide-react';
@@ -32,7 +32,7 @@ const items = [
   { href: '/catalog', key: 'catalog', icon: ShoppingBag },
   { href: '/orders/new', key: 'createOrder', icon: SquarePen },
   { href: '/orders', key: 'myOrders', icon: Package },
-  { href: '/deliveries', key: 'deliveries', icon: Truck },
+  { href: '/deliveries', key: 'schedule', icon: CalendarDays },
   { href: '/ai-chat', key: 'aiChat', icon: MessageSquare },
   { href: '/invoices', key: 'invoices', icon: Receipt },
   { href: '/statement', key: 'statement', icon: Scroll },

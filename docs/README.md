@@ -28,6 +28,8 @@ Keep these as the living set.
 - [mobile-risk-register.md](mobile-risk-register.md) · [mobile-api-inventory.md](mobile-api-inventory.md)
 - Production scheduling: [production-scheduling.md](production-scheduling.md) · [production-scheduling-architecture.md](production-scheduling-architecture.md) · [production-scheduling-operations.md](production-scheduling-operations.md) · [production-scheduling-admin-guide.md](production-scheduling-admin-guide.md) · [production-scheduling-dealer-guide.md](production-scheduling-dealer-guide.md) · [production-scheduling-troubleshooting.md](production-scheduling-troubleshooting.md) · [production-scheduling-permissions.md](production-scheduling-permissions.md)
 - [inventory-production-integration.md](inventory-production-integration.md) · [workflow-builder-architecture.md](workflow-builder-architecture.md)
+- Demo factory data: [demo-data-system-audit.md](demo-data-system-audit.md) · [demo-screen-data-coverage.md](demo-screen-data-coverage.md) · [father-demo-walkthrough.md](father-demo-walkthrough.md) · [demo-factory-data-closure-report.md](demo-factory-data-closure-report.md) · [father-demo-presentation-readiness.md](father-demo-presentation-readiness.md) · [demo-factory-data-repair-report.md](demo-factory-data-repair-report.md)
+- Dealer Schedule: [dealer-scheduling-calendar-closure-report.md](dealer-scheduling-calendar-closure-report.md)
 
 ## Feature design (still useful)
 

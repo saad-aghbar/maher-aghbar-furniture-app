@@ -6,7 +6,11 @@ import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import type { OwnOrderSchedule } from '@/api/modules/scheduling';
 import { selectChangeDateCta, selectOrderPromiseSummary } from '../selectSchedulePromise';
-import { selectDeliveryTimeline } from '@/features/scheduling/selectDealerDeliveries';
+import {
+  DEALER_DATE_FIELD_LABEL_KEY,
+  selectDealerDateFields,
+  selectDeliveryTimeline,
+} from '@/features/scheduling/selectDealerDeliveries';
 import { OrderBoardCard, OrderSectionHeader } from './OrderBoardCard';
 
 type Props = {
@@ -82,9 +86,18 @@ export function OrderScheduleCard({ schedule, isLoading, onChangeDate }: Props) 
   const requested = summary.requestedDeliveryDate;
   const suggested = summary.suggestedDeliveryDate;
   const projected = summary.projectedDeliveryDate;
+  const planned = summary.plannedDeliveryDate;
   const actual = summary.actualDeliveryDate;
   const awaiting = status === 'AWAITING_CONFIRMATION' || summary.showEstimateOnly;
   const delayed = status === 'MAY_BE_DELAYED' || status === 'DELAYED';
+  const dateFields = selectDealerDateFields({
+    requestedDeliveryDate: requested,
+    suggestedDeliveryDate: suggested,
+    committedDeliveryDate: committed,
+    projectedDeliveryDate: projected,
+    plannedDeliveryDate: planned,
+    actualDeliveryDate: actual,
+  });
   const timeline = selectDeliveryTimeline({
     customerStatus: status,
     committedDeliveryDate: committed,
@@ -98,58 +111,33 @@ export function OrderScheduleCard({ schedule, isLoading, onChangeDate }: Props) 
         trailing={<StatusBadge status={String(status)} dot />}
       />
 
-      {summary.compactDates && committed ? (
+      {summary.compactDates && committed && !delayed ? (
         <FieldValue
           value={t('mobile.orderDetail.schedule.compactOnTrack', {
             date: formatDate(committed),
           })}
         />
-      ) : awaiting ? (
-        <View style={{ gap: theme.spacing.xs }}>
-          <FieldCaption label={t('mobile.orderDetail.schedule.newDateProposed')} />
-          {requested ? (
-            <View style={{ gap: 2 }}>
-              <FieldCaption label={t('mobile.orderDetail.schedule.requestedDate')} />
-              <FieldValue value={formatDate(requested)} muted />
-            </View>
-          ) : null}
-          {suggested ? (
-            <View style={{ gap: 2 }}>
-              <FieldCaption label={t('mobile.orders.earliestAvailable')} />
-              <FieldValue value={formatDate(suggested)} />
-            </View>
-          ) : (
-            <FieldCaption label={t('mobile.orderDetail.schedule.noDateYet')} />
-          )}
-        </View>
       ) : (
         <View style={{ gap: theme.spacing.xs }}>
-          {committed ? (
-            <View style={{ gap: 2 }}>
-              <FieldCaption label={t('mobile.orderDetail.schedule.committedDate')} />
-              <FieldValue value={formatDate(committed)} />
-            </View>
+          {awaiting ? (
+            <FieldCaption label={t('mobile.orders.notConfirmed')} />
           ) : null}
-          {projected && projected.slice(0, 10) !== committed?.slice(0, 10) ? (
-            <View style={{ gap: 2 }}>
-              <FieldCaption label={t('mobile.orderDetail.schedule.projectedDate')} />
-              <FieldValue value={formatDate(projected)} />
+          {dateFields.map((field) => (
+            <View key={field.kind} style={{ gap: 2 }}>
+              <FieldCaption label={t(DEALER_DATE_FIELD_LABEL_KEY[field.kind])} />
+              <FieldValue value={formatDate(field.ymd)} muted={field.kind === 'requested'} />
             </View>
-          ) : null}
-          {actual ? (
-            <View style={{ gap: 2 }}>
-              <FieldCaption label={t('mobile.orderDetail.schedule.actualDate')} />
-              <FieldValue value={formatDate(actual)} />
-            </View>
-          ) : null}
-          {requested && requested.slice(0, 10) !== committed?.slice(0, 10) ? (
-            <View style={{ gap: 2 }}>
-              <FieldCaption label={t('mobile.orderDetail.schedule.requestedDate')} />
-              <FieldValue value={formatDate(requested)} muted />
-            </View>
+          ))}
+          {dateFields.length === 0 ? (
+            <FieldCaption label={t('mobile.orderDetail.schedule.noDateYet')} />
           ) : null}
           {delayed ? (
             <FieldCaption label={t('mobile.orders.productionDelay')} />
+          ) : null}
+          {delayed && (schedule.scheduleUpdating || !projected) ? (
+            <FieldCaption label={t('mobile.orders.scheduleUpdating')} />
+          ) : !delayed && schedule.customerSafeReason ? (
+            <FieldCaption label={t('mobile.orders.scheduleUpdating')} />
           ) : null}
         </View>
       )}

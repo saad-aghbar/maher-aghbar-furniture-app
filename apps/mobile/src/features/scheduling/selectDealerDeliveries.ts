@@ -4,6 +4,7 @@ import type { DayMeta } from '@/components/calendar';
 
 export type DealerDeliveryFilter = 'all' | 'upcoming' | 'attention' | 'delivered';
 export type DealerDeliveryGroupKey = 'attention' | 'upcoming' | 'later' | 'delivered';
+export type UpcomingGroupKey = 'today' | 'thisWeek' | 'later';
 export type DealerSummaryTileKey = 'upcoming' | 'week' | 'awaiting' | 'delayed';
 export type DealerDeliveryTone = 'brand' | 'warning' | 'info' | 'success' | 'muted';
 
@@ -130,6 +131,79 @@ export function groupDealerDeliveries(
   return groups;
 }
 
+/** Upcoming segment: Today (including overdue delayed), this week, later — keyed off calendarDate. */
+export function groupUpcomingByCalendarDate(
+  rows: DealerDeliveryDto[],
+  todayYmd: string,
+): Record<UpcomingGroupKey, DealerDeliveryDto[]> {
+  const weekStart = startOfWeekSunday(todayYmd);
+  const weekEnd = addDaysYmd(weekStart, 6);
+  const groups: Record<UpcomingGroupKey, DealerDeliveryDto[]> = {
+    today: [],
+    thisWeek: [],
+    later: [],
+  };
+  for (const row of rows) {
+    if (row.customerStatus === 'CANCELLED' || row.customerStatus === 'DELIVERED') continue;
+    const date = row.calendarDate;
+    if (!date) continue;
+    if (date <= todayYmd) groups.today.push(row);
+    else if (date <= weekEnd) groups.thisWeek.push(row);
+    else groups.later.push(row);
+  }
+  return groups;
+}
+
+export type DealerDateFieldKind =
+  | 'requested'
+  | 'planned'
+  | 'expected'
+  | 'confirmed'
+  | 'currentExpected'
+  | 'actual';
+
+export function selectDealerDateFields(
+  row: {
+    requestedDeliveryDate?: string | null;
+    suggestedDeliveryDate?: string | null;
+    committedDeliveryDate?: string | null;
+    projectedDeliveryDate?: string | null;
+    plannedDeliveryDate?: string | null;
+    actualDeliveryDate?: string | null;
+  },
+  opts?: { todayYmd?: string | null },
+): Array<{ kind: DealerDateFieldKind; ymd: string }> {
+  const requested = toYmdSlice(row.requestedDeliveryDate);
+  const planned = toYmdSlice(row.plannedDeliveryDate);
+  const suggested = toYmdSlice(row.suggestedDeliveryDate);
+  const committed = toYmdSlice(row.committedDeliveryDate);
+  const projected = toYmdSlice(row.projectedDeliveryDate);
+  const actual = toYmdSlice(row.actualDeliveryDate);
+  const today = opts?.todayYmd ?? null;
+  const fields: Array<{ kind: DealerDateFieldKind; ymd: string }> = [];
+  if (requested) fields.push({ kind: 'requested', ymd: requested });
+  if (planned) fields.push({ kind: 'planned', ymd: planned });
+  const suggestedStale = Boolean(suggested) && (today ? suggested! < today : !projected);
+  if (suggested && suggested !== committed && suggested !== planned && !suggestedStale) {
+    fields.push({ kind: 'expected', ymd: suggested });
+  }
+  if (committed) fields.push({ kind: 'confirmed', ymd: committed });
+  if (projected && projected !== committed && projected !== planned && projected !== suggested) {
+    fields.push({ kind: 'currentExpected', ymd: projected });
+  }
+  if (actual) fields.push({ kind: 'actual', ymd: actual });
+  return fields;
+}
+
+export const DEALER_DATE_FIELD_LABEL_KEY: Record<DealerDateFieldKind, string> = {
+  requested: 'mobile.orderDetail.schedule.requestedDate',
+  planned: 'mobile.orders.plannedShort',
+  expected: 'mobile.orders.expectedShort',
+  confirmed: 'mobile.orderDetail.schedule.committedDate',
+  currentExpected: 'mobile.orderDetail.schedule.projectedDate',
+  actual: 'mobile.orderDetail.schedule.actualDate',
+};
+
 export function selectDealerCalendarDayMeta(
   rows: DealerDeliveryDto[],
 ): Record<string, DayMeta> {
@@ -182,8 +256,9 @@ export function selectCompactCardLine(row: DealerDeliveryDto): {
   compact: boolean;
   dateYmd: string | null;
 } {
+  const delayed = row.customerStatus === 'MAY_BE_DELAYED' || row.customerStatus === 'DELAYED';
   return {
-    compact: Boolean(row.compactDates && row.calendarDate),
+    compact: Boolean(row.compactDates && row.calendarDate && !delayed),
     dateYmd: row.calendarDate,
   };
 }

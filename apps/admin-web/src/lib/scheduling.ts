@@ -132,6 +132,8 @@ export interface AtRiskOrder {
   priority: string;
   scheduleStatus: string;
   reason: string | null;
+  reasonLabel?: string | null;
+  reasonCode?: string | null;
   materialRisk: boolean;
   requiresAdminEstimateReview: boolean;
   requiredDeliveryDate: string | null;

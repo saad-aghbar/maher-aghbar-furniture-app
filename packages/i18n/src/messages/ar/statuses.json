@@ -87,8 +87,8 @@
   "REWORK": "إعادة تصنيع",
   "SCRAP": "خردة",
   "LATE": "متأخر",
-  "AWAITING_CONFIRMATION": "بانتظار التأكيد",
-  "CONFIRMED_ON_TRACK": "في الموعد",
-  "MAY_BE_DELAYED": "قد يتأخر التسليم",
+  "AWAITING_CONFIRMATION": "مطلوب / متوقع · غير مؤكد",
+  "CONFIRMED_ON_TRACK": "مؤكد · في المسار",
+  "MAY_BE_DELAYED": "قد يتأخر",
   "DELAYED": "متأخر"
 }

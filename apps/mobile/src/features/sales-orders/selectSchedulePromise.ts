@@ -33,6 +33,7 @@ export type OrderPromiseSummary = {
   requestedDeliveryDate: string | null;
   suggestedDeliveryDate: string | null;
   projectedDeliveryDate: string | null;
+  plannedDeliveryDate: string | null;
   actualDeliveryDate: string | null;
   compactDates: boolean;
   /** No committed date yet — show the suggested date labeled as an estimate. */
@@ -51,6 +52,7 @@ export function selectOrderPromiseSummary(
     requestedDeliveryDate: schedule.requestedDeliveryDate,
     suggestedDeliveryDate: schedule.suggestedDeliveryDate,
     projectedDeliveryDate: schedule.projectedDeliveryDate ?? null,
+    plannedDeliveryDate: schedule.plannedDeliveryDate ?? null,
     actualDeliveryDate: schedule.actualDeliveryDate ?? null,
     compactDates: Boolean(schedule.compactDates),
     showEstimateOnly: !schedule.committedDeliveryDate && Boolean(schedule.suggestedDeliveryDate),

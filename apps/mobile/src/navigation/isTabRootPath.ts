@@ -9,6 +9,7 @@ const ALL_TAB_NAMES: TabName[] = [
   'production',
   'more',
   'catalog',
+  'schedule',
   'new-order',
   'account',
   'tasks',

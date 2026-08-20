@@ -718,7 +718,8 @@
       "typeOvertime": "Overtime {start}–{end}"
     }
   },
-  "preferredDeliveryDate": "Preferred delivery date",
+  "preferredDeliveryDate": "Requested delivery date",
+  "preferredDeliveryDateHint": "We'll confirm the delivery date after production scheduling.",
   "availabilityTitle": "Production availability",
   "availabilityUnavailable": "We couldn't estimate a production date yet — our team will confirm it after review.",
   "availabilityEarliestDate": "Earliest available date",

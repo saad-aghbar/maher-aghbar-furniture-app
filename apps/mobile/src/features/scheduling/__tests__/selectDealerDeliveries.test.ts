@@ -4,9 +4,11 @@ import {
   filterDealerDeliveries,
   filterFromSummaryKey,
   groupDealerDeliveries,
+  groupUpcomingByCalendarDate,
   ordersOnCalendarDay,
   selectCompactCardLine,
   selectDealerCalendarDayMeta,
+  selectDealerDateFields,
   selectDeliveryTimeline,
 } from '../selectDealerDeliveries';
 import type { DealerDeliveryDto } from '@/api/modules/scheduling';
@@ -30,6 +32,7 @@ function row(overrides: Partial<DealerDeliveryDto> = {}): DealerDeliveryDto {
     customerSafeReason: null,
     compactDates: true,
     delayDays: null,
+    actionRequired: null,
     canUpdateDeliveryDate: false,
     canRequestDateChange: true,
     dateChangeLocked: false,
@@ -59,16 +62,78 @@ describe('selectDealerDeliveries', () => {
   it('keeps calendarDate on committed day when delayed', () => {
     const delayed = row({
       customerStatus: 'MAY_BE_DELAYED',
-      requiresDealerAttention: true,
-      committedDeliveryDate: '2026-08-23',
-      projectedDeliveryDate: '2026-08-25',
-      calendarDate: '2026-08-23',
+      requiresDealerAttention: false,
+      committedDeliveryDate: '2026-08-19',
+      suggestedDeliveryDate: '2026-08-19',
+      requestedDeliveryDate: '2026-08-18',
+      projectedDeliveryDate: '2026-08-21',
+      calendarDate: '2026-08-19',
       compactDates: false,
     });
-    expect(delayed.calendarDate).toBe('2026-08-23');
+    expect(delayed.calendarDate).toBe('2026-08-19');
     const meta = selectDealerCalendarDayMeta([delayed]);
-    expect(meta['2026-08-23']?.markers).toContain('attention');
-    expect(meta['2026-08-25']).toBeUndefined();
+    expect(meta['2026-08-19']?.markers).toContain('attention');
+    expect(meta['2026-08-21']).toBeUndefined();
+    expect(ordersOnCalendarDay([delayed], '2026-08-19')).toHaveLength(1);
+    expect(ordersOnCalendarDay([delayed], '2026-08-21')).toHaveLength(0);
+    expect(selectDealerDateFields(delayed).map((f) => f.kind)).toEqual([
+      'requested',
+      'confirmed',
+      'currentExpected',
+    ]);
+  });
+
+  it('omits a stale projected date and prefers planned logistics over production suggested', () => {
+    expect(
+      selectDealerDateFields(
+        row({
+          requestedDeliveryDate: '2026-07-28',
+          suggestedDeliveryDate: '2026-07-27',
+          committedDeliveryDate: '2026-08-10',
+          projectedDeliveryDate: null,
+          calendarDate: '2026-08-10',
+          customerStatus: 'DELAYED',
+          compactDates: false,
+        }),
+        { todayYmd: '2026-08-16' },
+      ).map((f) => f.kind),
+    ).toEqual(['requested', 'confirmed']);
+    expect(
+      selectDealerDateFields(
+        row({
+          requestedDeliveryDate: '2026-08-19',
+          suggestedDeliveryDate: '2026-08-17',
+          committedDeliveryDate: null,
+          projectedDeliveryDate: '2026-08-17',
+          plannedDeliveryDate: '2026-08-19',
+          calendarDate: '2026-08-19',
+          customerStatus: 'READY_FOR_DELIVERY',
+          compactDates: false,
+        }),
+      ).map((f) => `${f.kind}:${f.ymd}`),
+    ).toEqual(['requested:2026-08-19', 'planned:2026-08-19', 'expected:2026-08-17']);
+  });
+
+  it('groups upcoming by today / this week / later from calendarDate, not projected', () => {
+    const groups = groupUpcomingByCalendarDate(
+      [
+        row({
+          salesOrderId: 'overdue',
+          calendarDate: '2026-08-10',
+          customerStatus: 'DELAYED',
+          committedDeliveryDate: '2026-08-10',
+          projectedDeliveryDate: '2026-08-21',
+        }),
+        row({ salesOrderId: 'today', calendarDate: '2026-08-16' }),
+        row({ salesOrderId: 'week', calendarDate: '2026-08-19' }),
+        row({ salesOrderId: 'later', calendarDate: '2026-09-02' }),
+        row({ salesOrderId: 'done', customerStatus: 'DELIVERED', calendarDate: '2026-08-12' }),
+      ],
+      '2026-08-16',
+    );
+    expect(groups.today.map((r) => r.salesOrderId)).toEqual(['overdue', 'today']);
+    expect(groups.thisWeek.map((r) => r.salesOrderId)).toEqual(['week']);
+    expect(groups.later.map((r) => r.salesOrderId)).toEqual(['later']);
   });
 
   it('compacts identical dates and lists same-day multiples without treating them as conflicts', () => {
@@ -81,13 +146,45 @@ describe('selectDealerDeliveries', () => {
     expect(selectDealerCalendarDayMeta(sameDay)['2026-08-23']?.count).toBe(2);
   });
 
-  it('filters needs-attention independently of upcoming', () => {
+  it('does not use compact on-track copy when the committed date has slipped', () => {
+    expect(
+      selectCompactCardLine(
+        row({
+          compactDates: true,
+          customerStatus: 'MAY_BE_DELAYED',
+          committedDeliveryDate: '2026-08-19',
+          projectedDeliveryDate: '2026-08-21',
+          calendarDate: '2026-08-19',
+        }),
+      ).compact,
+    ).toBe(false);
+  });
+
+  it('filters needs-attention independently of delay and upcoming', () => {
     const rows = [
-      row({ requiresDealerAttention: true, customerStatus: 'DELAYED', calendarDate: '2026-08-10' }),
-      row({ calendarDate: '2026-08-20' }),
+      row({
+        salesOrderId: 'info',
+        requiresDealerAttention: true,
+        actionRequired: { code: 'NEEDS_INFORMATION', labelKey: 'mobile.orders.actionNeedsInformation' },
+        customerStatus: 'AWAITING_CONFIRMATION',
+        calendarDate: '2026-08-10',
+        compactDates: false,
+      }),
+      row({
+        salesOrderId: 'late',
+        requiresDealerAttention: false,
+        customerStatus: 'DELAYED',
+        calendarDate: '2026-08-10',
+        compactDates: false,
+      }),
+      row({ salesOrderId: 'up', calendarDate: '2026-08-20' }),
     ];
-    expect(filterDealerDeliveries(rows, 'attention', '2026-08-16')).toHaveLength(1);
-    expect(filterDealerDeliveries(rows, 'upcoming', '2026-08-16')).toHaveLength(1);
+    expect(filterDealerDeliveries(rows, 'attention', '2026-08-16').map((r) => r.salesOrderId)).toEqual([
+      'info',
+    ]);
+    expect(filterDealerDeliveries(rows, 'upcoming', '2026-08-16').map((r) => r.salesOrderId)).toEqual([
+      'up',
+    ]);
   });
 
   it('lists the exact orders behind each summary tile', () => {
@@ -105,7 +202,7 @@ describe('selectDealerDeliveries', () => {
       row({
         salesOrderId: 'late',
         customerStatus: 'MAY_BE_DELAYED',
-        requiresDealerAttention: true,
+        requiresDealerAttention: false,
         compactDates: false,
         calendarDate: '2026-08-23',
         projectedDeliveryDate: '2026-08-25',

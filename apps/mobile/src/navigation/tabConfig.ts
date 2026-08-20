@@ -11,6 +11,7 @@ export type TabName =
   | 'catalog'
   | 'new-order'
   | 'account'
+  | 'schedule'
   | 'tasks'
   | 'completed'
   | 'notifications'
@@ -74,6 +75,14 @@ export const customerTabs: TabDef[] = [
   },
   { name: 'account', labelKey: 'account' },
 ];
+
+/** Kept for deep links / Account calendar — not a bottom-tab chip. */
+export const customerScheduleTab: TabDef = {
+  name: 'schedule',
+  labelKey: 'schedule',
+  visible: (u) => can(u, 'schedule.read.own'),
+  require: { permissions: ['schedule.read.own'], mode: 'all' },
+};
 
 /** Kept for deep links / FAB destination — not a bottom-tab chip. */
 export const customerNewOrderTab: TabDef = {

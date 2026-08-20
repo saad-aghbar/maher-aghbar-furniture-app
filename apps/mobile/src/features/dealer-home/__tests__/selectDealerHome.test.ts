@@ -91,13 +91,24 @@ describe('toDealerHomeOrderCard delivery date', () => {
     expect(card.deliveryDate).toBe(dealerHomeSuccessFixture.recentOrders[0]!.requiredDeliveryDate);
   });
 
-  it('prefers the scheduler-committed date once one exists', () => {
+  it('uses calendarDate as the primary home date and does not treat requested as confirmed', () => {
     const card = toDealerHomeOrderCard({
       ...dealerHomeSuccessFixture.recentOrders[0]!,
-      committedDeliveryDate: '2026-09-10T00:00:00.000Z',
+      calendarDate: '2026-08-19',
+      committedDeliveryDate: '2026-08-19',
+      projectedDeliveryDate: '2026-08-21',
+      requestedDeliveryDate: '2026-08-18',
     });
+    expect(card.deliveryDate).toBe('2026-08-19');
     expect(card.isCommittedDate).toBe(true);
-    expect(card.deliveryDate).toBe('2026-09-10T00:00:00.000Z');
+    const requestedOnly = toDealerHomeOrderCard({
+      ...dealerHomeSuccessFixture.recentOrders[0]!,
+      calendarDate: '2026-08-20',
+      committedDeliveryDate: null,
+      requestedDeliveryDate: '2026-08-20',
+    });
+    expect(requestedOnly.isCommittedDate).toBe(false);
+    expect(requestedOnly.deliveryDate).toBe('2026-08-20');
   });
 });
 

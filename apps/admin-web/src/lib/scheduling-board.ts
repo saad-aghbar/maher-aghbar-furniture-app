@@ -300,7 +300,7 @@ export function selectAtRiskCards(
     promiseState: null,
     materialRisk: order.materialRisk,
     hasConflict: false,
-    reason: order.reason,
+    reason: order.reasonLabel ?? order.reason,
     scheduleVersion: null,
     requiredDeliveryDate: order.requiredDeliveryDate,
     suggestedDeliveryDate: order.suggestedDeliveryDate,

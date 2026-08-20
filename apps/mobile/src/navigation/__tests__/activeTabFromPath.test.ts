@@ -36,4 +36,10 @@ describe('activeTabFromPath', () => {
     expect(activeTabFromPath('admin', '/quotations/q-1')).toBe('orders');
     expect(activeTabFromPath('admin', '/(app)/(admin)/quotations/q-1')).toBe('orders');
   });
+
+  it('maps dealer schedule and calendar onto Account, not a tab chip', () => {
+    expect(activeTabFromPath('customer', '/schedule')).toBe('account');
+    expect(activeTabFromPath('customer', '/(app)/(customer)/(tabs)/schedule')).toBe('account');
+    expect(activeTabFromPath('customer', '/(app)/(customer)/account/calendar')).toBe('account');
+  });
 });

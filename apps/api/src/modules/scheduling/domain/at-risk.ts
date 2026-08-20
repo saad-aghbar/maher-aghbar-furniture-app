@@ -84,6 +84,16 @@ export function isMayBeLateStatus(status: CanonicalScheduleStatus): boolean {
   return status === 'LATE' || status === 'AT_RISK' || status === 'BLOCKED';
 }
 
+export function isInternalScheduleReason(reason?: string | null): boolean {
+  if (!reason) return false;
+  return /^(demo|async|debug|seed):/i.test(reason.trim());
+}
+
+export function publicScheduleReason(reason?: string | null): string | null {
+  if (!reason || isInternalScheduleReason(reason)) return null;
+  return reason;
+}
+
 export function reasonLabelKey(code: AtRiskReasonCode | null): string {
   switch (code) {
     case 'NO_ELIGIBLE_WORKER':

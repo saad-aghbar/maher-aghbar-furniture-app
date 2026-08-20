@@ -14,8 +14,13 @@ const ROLE_TO_PERSONA: Record<string, string> = {
   PURCHASING: 'purchasing',
   WAREHOUSE: 'warehouse',
   WAREHOUSE_MANAGEMENT: 'warehouse',
+  PRODUCTION_MANAGEMENT: 'production_supervisor',
+  SCHEDULING: 'management',
   QUALITY: 'quality',
+  QUALITY_CONTROL: 'quality',
   DELIVERY: 'delivery',
+  DELIVERY_OPERATIONS: 'delivery',
+  FINANCE: 'accounting',
   MANAGEMENT: 'management',
 };
 

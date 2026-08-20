@@ -727,7 +727,8 @@
     "fri": "جمعة",
     "sat": "سبت"
   },
-  "preferredDeliveryDate": "تاريخ التسليم المفضل",
+  "preferredDeliveryDate": "تاريخ التسليم المطلوب",
+  "preferredDeliveryDateHint": "سنؤكد تاريخ التسليم بعد جدولة الإنتاج.",
   "availabilityTitle": "توفر الإنتاج",
   "availabilityUnavailable": "لم نتمكن من تقدير تاريخ الإنتاج بعد — سيؤكده فريقنا بعد المراجعة.",
   "availabilityEarliestDate": "أقرب تاريخ متاح",

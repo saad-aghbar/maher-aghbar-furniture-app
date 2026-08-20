@@ -69,7 +69,7 @@
   "employeeTasksEmptyHint": "When a supervisor assigns work, it will appear here.",
   "ordersSubtitle": "Your submitted orders and production progress in one place.",
   "quotesSubtitle": "Review and electronically accept quotations.",
-  "deliveriesSubtitle": "Upcoming and completed deliveries.",
+  "deliveriesSubtitle": "Upcoming deliveries and your delivery calendar.",
   "invoicesSubtitle": "Electronic invoices and balances.",
   "contractsSubtitle": "Agreements linked to your accepted orders.",
   "contractsEmptyHint": "Contracts appear here after you accept a quotation.",

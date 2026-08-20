@@ -12,17 +12,17 @@ async function attachAdminSession(page: {
   expect(loginRes.ok()).toBeTruthy();
 }
 
-async function uatSofaAId(page: { request: { get: Function } }) {
-  const products = await page.request.get(`${API}/api/v1/products?pageSize=50&q=UAT-SOFA-A`);
+async function demoSofaId(page: { request: { get: Function } }) {
+  const products = await page.request.get(`${API}/api/v1/products?pageSize=50&q=SOF-3S-STD`);
   const rows = (await products.json())?.data ?? [];
-  return rows.find((p: { sku?: string }) => p.sku === 'UAT-SOFA-A')?.id as string | undefined;
+  return rows.find((p: { sku?: string }) => p.sku === 'SOF-3S-STD')?.id as string | undefined;
 }
 
 test.describe('Factory Production Setup UI', () => {
   test('admin web EN shows Production Setup without raw enums', async ({ page }) => {
     await attachAdminSession(page);
-    const productId = await uatSofaAId(page);
-    test.skip(!productId, 'UAT-SOFA-A fixture missing');
+    const productId = await demoSofaId(page);
+    test.skip(!productId, 'SOF-3S-STD fixture missing');
 
     await page.goto(`${ADMIN}/en/products/${productId}`, { waitUntil: 'networkidle' });
     await expect(page.getByText(/production setup|إعداد الإنتاج|הגדרת ייצור/i).first()).toBeVisible({
@@ -40,8 +40,8 @@ test.describe('Factory Production Setup UI', () => {
     await page.goto(`${ADMIN}/ar/login`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await attachAdminSession(page);
-    const productId = await uatSofaAId(page);
-    test.skip(!productId, 'UAT-SOFA-A fixture missing');
+    const productId = await demoSofaId(page);
+    test.skip(!productId, 'SOF-3S-STD fixture missing');
     await page.goto(`${ADMIN}/ar/products/${productId}`, { waitUntil: 'networkidle' });
     await expect(page.getByText('إعداد الإنتاج').first()).toBeVisible({ timeout: 20_000 });
     const body = await page.locator('body').innerText();
@@ -52,14 +52,14 @@ test.describe('Factory Production Setup UI', () => {
     await page.goto(`${ADMIN}/he/login`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await attachAdminSession(page);
-    const productId = await uatSofaAId(page);
-    test.skip(!productId, 'UAT-SOFA-A fixture missing');
+    const productId = await demoSofaId(page);
+    test.skip(!productId, 'SOF-3S-STD fixture missing');
     await page.goto(`${ADMIN}/he/products/${productId}`, { waitUntil: 'networkidle' });
     await expect(page.getByText('הגדרת ייצור').first()).toBeVisible({ timeout: 20_000 });
     const body = await page.locator('body').innerText();
     expect(body).not.toMatch(/PRODUCES_SEMI_FINISHED/);
     expect(body).not.toMatch(/production\.setup\./);
     await expect(page.getByText('נגרות').first()).toBeVisible();
-    await expect(page.getByText(/שלדת ספת UAT רגילה/).first()).toBeVisible();
+    await expect(page.getByText(/שלדת ספה סטנדרטית/).first()).toBeVisible();
   });
 });

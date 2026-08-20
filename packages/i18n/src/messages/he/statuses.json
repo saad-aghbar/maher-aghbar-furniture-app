@@ -87,8 +87,8 @@
   "REWORK": "עיבוד מחדש",
   "SCRAP": "גרוטאה",
   "LATE": "באיחור",
-  "AWAITING_CONFIRMATION": "ממתין לאישור",
-  "CONFIRMED_ON_TRACK": "בזמן",
-  "MAY_BE_DELAYED": "ייתכן עיכוב באספקה",
+  "AWAITING_CONFIRMATION": "מבוקש / צפוי · לא אושר",
+  "CONFIRMED_ON_TRACK": "מאושר · במסלול",
+  "MAY_BE_DELAYED": "עלול להתעכב",
   "DELAYED": "באיחור"
 }

@@ -1,9 +1,11 @@
 import {
   classifyScheduleRisk,
   compareAtRiskPriority,
+  isInternalScheduleReason,
   isMayBeLateStatus,
   isProjectedLate,
   isTerminalProductionStatus,
+  publicScheduleReason,
 } from '../at-risk';
 
 const friday = new Date('2026-08-14T12:00:00.000Z');
@@ -174,5 +176,12 @@ describe('isProjectedLate / priority', () => {
       { productionOrderId: 'a', number: 'PO-1', priority: 'URGENT' as const },
     ];
     expect([...rows].sort(compareAtRiskPriority).map((r) => r.number)).toEqual(['PO-1', 'PO-2']);
+  });
+
+  it('strips internal demo/debug reason strings from public copy', () => {
+    expect(isInternalScheduleReason('demo:cedar-italian-velvet')).toBe(true);
+    expect(publicScheduleReason('demo:jabal-dining-late')).toBeNull();
+    expect(publicScheduleReason('WIP_NOT_READY')).toBe('WIP_NOT_READY');
+    expect(publicScheduleReason(null)).toBeNull();
   });
 });

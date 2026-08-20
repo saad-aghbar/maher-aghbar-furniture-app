@@ -37,7 +37,7 @@ describe('tabConfig', () => {
     const dealer: AuthUser = {
       ...base,
       customerId: 'c1',
-      permissions: ['catalog.read', 'request.create', 'sales-order.read'],
+      permissions: ['catalog.read', 'request.create', 'sales-order.read', 'schedule.read.own'],
     };
     expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).toEqual([
       'index',
@@ -47,6 +47,9 @@ describe('tabConfig', () => {
     ]);
     expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).not.toContain(
       'new-order',
+    );
+    expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).not.toContain(
+      'schedule',
     );
 
     const browseOnly: AuthUser = {
@@ -156,11 +159,12 @@ describe('tabConfig', () => {
     const dealer: AuthUser = {
       ...base,
       customerId: 'c1',
-      permissions: ['catalog.read', 'request.create', 'sales-order.read'],
+      permissions: ['catalog.read', 'request.create', 'sales-order.read', 'schedule.read.own'],
     };
     expect(visibleTabsForUser('admin', admin).map((t) => t.name)).toContain('orders');
     expect(visibleTabsForUser('admin', staff).map((t) => t.name)).not.toContain('orders');
     expect(visibleTabsForUser('employee', worker).map((t) => t.name)).not.toContain('inventory');
     expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).not.toContain('inventory');
+    expect(visibleTabsForUser('customer', dealer).map((t) => t.name)).not.toContain('schedule');
   });
 });

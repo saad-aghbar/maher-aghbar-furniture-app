@@ -137,6 +137,7 @@ export type OwnOrderSchedule = {
   suggestedDeliveryDate: string | null;
   committedDeliveryDate: string | null;
   projectedDeliveryDate?: string | null;
+  plannedDeliveryDate?: string | null;
   actualDeliveryDate?: string | null;
   calendarDate?: string | null;
   customerStatus?: CustomerDeliveryStatus | string;
@@ -144,6 +145,8 @@ export type OwnOrderSchedule = {
   customerSafeReason?: string | null;
   compactDates?: boolean;
   delayDays?: number | null;
+  scheduleUpdating?: boolean;
+  actionRequired?: { code: string; labelKey: string } | null;
   canUpdateDeliveryDate: boolean;
   canRequestDateChange: boolean;
   dateChangeLocked: boolean;
@@ -168,6 +171,7 @@ export type DealerDeliveryDto = {
   suggestedDeliveryDate: string | null;
   committedDeliveryDate: string | null;
   projectedDeliveryDate: string | null;
+  plannedDeliveryDate?: string | null;
   actualDeliveryDate: string | null;
   calendarDate: string | null;
   customerStatus: CustomerDeliveryStatus | string;
@@ -175,6 +179,8 @@ export type DealerDeliveryDto = {
   customerSafeReason: string | null;
   compactDates: boolean;
   delayDays: number | null;
+  scheduleUpdating?: boolean;
+  actionRequired?: { code: string; labelKey: string } | null;
   canUpdateDeliveryDate: boolean;
   canRequestDateChange: boolean;
   dateChangeLocked: boolean;
