@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { FlatList, Image, RefreshControl, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can, canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -27,7 +28,7 @@ import {
   useReducedMotion,
 } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import { adminProductionFlowHref } from '@/features/production-flow/flowRoutes';
 import {
@@ -69,6 +70,7 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -159,6 +161,11 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
       : colors.brand;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const boardShadow = theme.elevation.card;
+  /** Same stack inset as order detail so the last stage/task row clears the floating pill. */
+  const listBottomPad =
+    theme.spacing['3xl'] +
+    surfaceTabBarStackInset(insets.bottom, theme.spacing.sm) +
+    theme.spacing['2xl'];
 
   return (
     <AppScreen backFallback={'/(app)/(admin)/(tabs)/production' as Href}>
@@ -166,9 +173,10 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
       <FlatList
         data={taskRows}
         keyExtractor={(item) => item.id}
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: listBottomPad,
           flexGrow: 1,
         }}
         refreshControl={
