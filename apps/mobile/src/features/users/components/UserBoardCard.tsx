@@ -151,8 +151,6 @@ export function UserBoardCard({
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'center',
-          justifyContent: 'flex-start',
-          flexWrap: 'nowrap',
           gap: theme.spacing.sm,
           paddingHorizontal: theme.spacing.md,
           paddingVertical: theme.spacing.md,
@@ -161,23 +159,34 @@ export function UserBoardCard({
           backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <FooterChip
-          label={t('common.edit')}
-          icon="create-outline"
-          onPress={onEdit}
-          emphasis
-        />
-        <FooterChip
-          label={user.isActive ? t('users.deactivate') : t('users.activate')}
-          icon={user.isActive ? 'pause-circle-outline' : 'play-circle-outline'}
-          onPress={onToggleActive}
-          danger={user.isActive}
-        />
-        <FooterChip
-          label={t('users.newPassword')}
-          icon="key-outline"
-          onPress={onSetPassword}
-        />
+        <View
+          style={{
+            flex: 1,
+            minWidth: 0,
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <FooterChip
+            label={t('common.edit')}
+            icon="create-outline"
+            onPress={onEdit}
+            emphasis
+          />
+          <FooterChip
+            label={user.isActive ? t('users.deactivate') : t('users.activate')}
+            icon={user.isActive ? 'pause-circle-outline' : 'play-circle-outline'}
+            onPress={onToggleActive}
+            danger={user.isActive}
+          />
+          <FooterChip
+            label={t('users.newPassword')}
+            icon="key-outline"
+            onPress={onSetPassword}
+          />
+        </View>
         {onDelete ? (
           <AnimatedPressable
             variant="button"
@@ -188,9 +197,9 @@ export function UserBoardCard({
               onDelete();
             }}
             style={{
-              marginStart: isRTL ? 0 : 'auto',
               width: 36,
               height: 36,
+              flexShrink: 0,
               borderRadius: theme.radius.lg,
               alignItems: 'center',
               justifyContent: 'center',
@@ -271,6 +280,7 @@ function FooterChip({
         onPress();
       }}
       style={{
+        flexShrink: 0,
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
         justifyContent: 'center',
