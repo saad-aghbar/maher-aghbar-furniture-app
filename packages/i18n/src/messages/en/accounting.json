@@ -41,6 +41,7 @@
   "tax": "Tax",
   "total": "Total",
   "paidAmount": "Paid",
+  "accountCredit": "Account credit",
   "balance": "Balance",
   "lines": "Invoice lines",
   "noLines": "No line items",

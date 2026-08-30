@@ -34,11 +34,9 @@ type Props = {
   backFallback?: Href;
 };
 
-/** Same side inset as PersistentSurfaceTabBar floating shell. */
-const TAB_BAR_SIDE_INSET_KEY = 'md' as const;
-
 /**
- * Invoice detail — document-forward floor boards with sticky PDF / payment actions.
+ * Invoice detail — document-forward floor boards with PDF / payment actions
+ * after the date card so they cannot cover it.
  */
 export function InvoiceDetailScreen({
   invoiceId,
@@ -99,10 +97,8 @@ export function InvoiceDetailScreen({
 
   const showPay = canPay && model.outstanding > 0 && model.status !== 'CANCELLED';
   const contentPad = theme.spacing.lg;
-  const tabBarInset = theme.spacing[TAB_BAR_SIDE_INSET_KEY];
-  /** Sit clearly above the floating tab shell, not hugging it. */
-  const stickyBottom = SURFACE_TAB_BAR_CLEARANCE + theme.spacing.lg;
-  const stickyPad = stickyBottom + (showPay ? 108 : 72);
+  /** Tab bar clearance only — CTAs sit in the scroll after the date card, not on top of it. */
+  const stickyPad = SURFACE_TAB_BAR_CLEARANCE + theme.spacing['2xl'];
 
   const onPdf = () => {
     void (async () => {
@@ -162,26 +158,6 @@ export function InvoiceDetailScreen({
           <InvoiceMetaBoard model={model} />
         </ListItemEnter>
 
-        <InvoiceLinesBoard model={model} />
-        <InvoicePaymentsBoard
-          model={model}
-          methodLabel={methodLabel}
-          onPaymentPdf={onPaymentPdf}
-        />
-        <InvoiceJofotaraBoard model={model} />
-      </ScrollView>
-
-      {/* Same left/right as floating tab bar shell */}
-      <View
-        pointerEvents="box-none"
-        style={{
-          position: 'absolute',
-          left: tabBarInset,
-          right: tabBarInset,
-          bottom: stickyBottom,
-          zIndex: 30,
-        }}
-      >
         <InvoiceStickyActions
           pdfLabel={t('accounting.downloadPdf')}
           payLabel={showPay ? t('accounting.recordPayment') : undefined}
@@ -194,7 +170,15 @@ export function InvoiceDetailScreen({
               : undefined
           }
         />
-      </View>
+
+        <InvoiceLinesBoard model={model} />
+        <InvoicePaymentsBoard
+          model={model}
+          methodLabel={methodLabel}
+          onPaymentPdf={onPaymentPdf}
+        />
+        <InvoiceJofotaraBoard model={model} />
+      </ScrollView>
 
       {showPay ? (
         <RecordPaymentSheet

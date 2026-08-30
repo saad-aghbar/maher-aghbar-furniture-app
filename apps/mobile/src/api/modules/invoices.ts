@@ -46,6 +46,7 @@ export type Invoice = {
     nameAr?: string | null;
     nameHe?: string | null;
     code?: string | null;
+    creditLimit?: number | string | null;
   } | null;
   lines?: InvoiceLine[];
   salesOrder?: {

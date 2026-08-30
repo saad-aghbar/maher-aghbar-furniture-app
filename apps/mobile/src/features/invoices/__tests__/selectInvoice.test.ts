@@ -171,6 +171,28 @@ describe('selectInvoiceDetail', () => {
     expect(detail.total).toBe(127.6);
   });
 
+  it('does not invent paid-in-full from dealer-scale account credit', () => {
+    const detail = selectInvoiceDetail(
+      {
+        ...baseInv,
+        number: 'INV-2026-00023',
+        status: 'ISSUED',
+        total: '127.6',
+        paidAmount: '0',
+        outstandingAmount: '2255.2',
+        accountCredit: '7000',
+        subtotal: '110',
+        taxTotal: '17.6',
+      },
+      'en',
+    );
+    expect(detail.paid).toBe(0);
+    expect(detail.credit).toBe(7000);
+    expect(detail.outstanding).toBe(127.6);
+    expect(detail.status).toBe('ISSUED');
+    expect(detail.total).toBe(127.6);
+  });
+
   it('subtracts invoice credit from remaining due without inventing paid-in-full', () => {
     const detail = selectInvoiceDetail(
       {
@@ -218,10 +240,10 @@ describe('selectInvoiceDealerChip', () => {
     expect(
       selectInvoiceDealerChip({
         ...baseInv,
-        customer: { id: 'c1', nameEn: 'Nile Interiors', name: 'Nile Interiors' },
-        salesOrder: { id: 'so1', number: 'SO-P11-L', externalOrderNumber: 'P11-L' },
+        customer: { id: 'c1', nameEn: 'Balqis Hospitality', name: 'Balqis Hospitality' },
+        salesOrder: { id: 'so1', number: 'SO-P10-G', externalOrderNumber: 'P10-G' },
       }),
-    ).toEqual({ value: 'P11-L', prefixDealer: false });
+    ).toEqual({ value: 'P10-G', prefixDealer: false });
   });
 
   it('does not prefix Dealer when the API code is the same leftover order code', () => {

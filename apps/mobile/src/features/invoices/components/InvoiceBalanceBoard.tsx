@@ -140,8 +140,8 @@ export function InvoiceBalanceBoard({ model, currencySuffix = 'ILS' }: Props) {
             alignEnd={false}
           />
           <MoneyPill
-            label={t('accounting.total')}
-            value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
+            label={t('accounting.accountCredit')}
+            value={`${moneyLabel(locale, model.credit)} ${currencySuffix}`}
             alignEnd
           />
         </View>
@@ -155,6 +155,10 @@ export function InvoiceBalanceBoard({ model, currencySuffix = 'ILS' }: Props) {
             gap: theme.spacing.sm,
           }}
         >
+          <FootRow
+            label={t('accounting.total')}
+            value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
+          />
           <FootRow
             label={t('accounting.subtotal')}
             value={`${moneyLabel(locale, model.subtotal)} ${currencySuffix}`}

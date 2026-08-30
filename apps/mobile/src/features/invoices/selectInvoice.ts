@@ -87,32 +87,35 @@ function roundMoney(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-/** Credit applied to this invoice only. Dealer/account balance is not credit. */
+/** Credit shown on the invoice board. Dealer-scale figures stay display-only. */
 function invoiceCredit(inv: Invoice): number {
-  return toNum(inv.appliedCredit ?? inv.creditAmount ?? inv.accountCredit);
+  const fromInv = toNum(inv.appliedCredit ?? inv.creditAmount ?? inv.accountCredit);
+  if (fromInv > 0) return fromInv;
+  return toNum(inv.customer?.creditLimit);
 }
 
 /**
- * Remaining due on this invoice: total − paid − credit.
- * Ignore `outstandingAmount` when it cannot be this invoice's remainder
- * (e.g. a dealer AR figure larger than the invoice total).
+ * Remaining due on this invoice: total − paid − invoice-applied credit.
+ * Dealer-scale `outstandingAmount` or account credit is not this invoice's remainder
+ * and must not invent paid-in-full.
  */
 export function invoiceRemainingDue(inv: Invoice): { paid: number; credit: number; outstanding: number } {
   const total = toNum(inv.total);
   const credit = Math.max(0, invoiceCredit(inv));
+  const applied = credit <= total + 0.009 ? credit : 0;
   const reportedDue = hasMoney(inv.outstandingAmount) ? toNum(inv.outstandingAmount) : null;
   const dueLooksLikeInvoice = reportedDue != null && reportedDue <= total + 0.009;
 
   const paid = hasMoney(inv.paidAmount)
     ? toNum(inv.paidAmount)
     : dueLooksLikeInvoice
-      ? Math.max(0, total - (reportedDue ?? 0) - credit)
+      ? Math.max(0, total - (reportedDue ?? 0) - applied)
       : 0;
 
   return {
     paid,
     credit,
-    outstanding: Math.max(0, roundMoney(total - paid - credit)),
+    outstanding: Math.max(0, roundMoney(total - paid - applied)),
   };
 }
 
