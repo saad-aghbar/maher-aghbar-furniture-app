@@ -40,6 +40,7 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
@@ -53,10 +54,11 @@ import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel'
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { AdminQuotationPanel } from '@/features/quotations/AdminQuotationDetailScreen';
+import { RfqStageRail } from '@/features/requests/components/RfqStageRail';
 import {
-  RfqStageRail,
+  rfqStageFromData,
   type RfqWorkspaceStage,
-} from '@/features/requests/components/RfqStageRail';
+} from '@/features/requests/rfqWorkspaceStage';
 
 type Props = {
   requestId: string;
@@ -130,7 +132,7 @@ function MetaCell({
  */
 export function AdminRequestDetailScreen({
   requestId,
-  initialStage = 'request',
+  initialStage,
   initialQuoteId,
 }: Props) {
   const { user } = useAuth();
@@ -145,7 +147,9 @@ export function AdminRequestDetailScreen({
   const canCreateQuote = can(user, 'quotation.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const [stage, setStage] = useState<RfqWorkspaceStage>(initialStage);
+  const [pickedStage, setPickedStage] = useState<RfqWorkspaceStage | undefined>(
+    initialStage,
+  );
   const [activeQuotationId, setActiveQuotationId] = useState<string | null>(
     initialQuoteId ?? null,
   );
@@ -164,7 +168,7 @@ export function AdminRequestDetailScreen({
   >([]);
 
   useEffect(() => {
-    if (initialStage) setStage(initialStage);
+    if (initialStage) setPickedStage(initialStage);
     if (initialQuoteId) setActiveQuotationId(initialQuoteId);
   }, [initialStage, initialQuoteId]);
 
@@ -332,7 +336,7 @@ export function AdminRequestDetailScreen({
       await invalidate();
       await queryClient.invalidateQueries({ queryKey: queryKeys.quotations.all });
       setActiveQuotationId(quote.id);
-      setStage('quotation');
+      setPickedStage('quotation');
     },
     onError: (err) => {
       setMessage(null);
@@ -495,13 +499,14 @@ export function AdminRequestDetailScreen({
   const hasQuote = Boolean(activeQuotationId) || (detail.quotations?.length ?? 0) > 0;
   const hasOrder = Boolean(linkedSalesOrder);
   const quoteId = activeQuotationId ?? detail.quotations?.[0]?.id ?? null;
+  const stage =
+    pickedStage ??
+    rfqStageFromData({ hasQuote, hasOrder, status: detail.status });
 
   const stageBadgeStatus =
-    stage === 'quotation'
-      ? undefined // badge comes from panel header
-      : stage === 'order' && linkedSalesOrder
-        ? linkedSalesOrder.status
-        : detail.status;
+    stage === 'order' && linkedSalesOrder
+      ? linkedSalesOrder.status
+      : detail.status;
 
   let enter = 0;
   const nextIndex = () => enter++;
@@ -523,7 +528,10 @@ export function AdminRequestDetailScreen({
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
           paddingTop: theme.spacing.sm,
-          paddingBottom: theme.spacing['3xl'] + insets.bottom + 72,
+          paddingBottom:
+            theme.spacing['3xl'] +
+            SURFACE_TAB_BAR_CLEARANCE +
+            Math.max(insets.bottom, theme.spacing.sm),
           gap: theme.spacing.md,
         }}
         keyboardShouldPersistTaps="handled"
@@ -550,7 +558,7 @@ export function AdminRequestDetailScreen({
               {dealerName}
             </AppText>
           </View>
-          {stage !== 'quotation' && stageBadgeStatus ? (
+          {stageBadgeStatus ? (
             <View style={{ justifyContent: 'center', alignItems: 'center', maxWidth: '42%' }}>
               <StatusBadge status={stageBadgeStatus} dot />
             </View>
@@ -562,7 +570,7 @@ export function AdminRequestDetailScreen({
           hasQuote={hasQuote}
           hasOrder={hasOrder}
           onChange={(next) => {
-            setStage(next);
+            setPickedStage(next);
             setMessage(null);
             setError(null);
           }}
@@ -611,14 +619,14 @@ export function AdminRequestDetailScreen({
             <AdminQuotationPanel
               quotationId={quoteId}
               embedded
-              onOpenRequest={() => setStage('request')}
+              onOpenRequest={() => setPickedStage('request')}
               onRevised={(id) => {
                 setActiveQuotationId(id);
                 void invalidate();
               }}
               onAccepted={(so) => {
                 setLinkedSalesOrder(so);
-                setStage('order');
+                setPickedStage('order');
                 void invalidate();
               }}
               onLoaded={(info) => {
@@ -649,7 +657,7 @@ export function AdminRequestDetailScreen({
               ) : (
                 <SecondaryButton
                   label={t('mobile.adminRequest.stages.request')}
-                  onPress={() => setStage('request')}
+                  onPress={() => setPickedStage('request')}
                   style={{ alignSelf: 'stretch', width: '100%' }}
                 />
               )}
@@ -694,7 +702,7 @@ export function AdminRequestDetailScreen({
                 </AppText>
                 <SecondaryButton
                   label={t('mobile.adminRequest.stages.quotation')}
-                  onPress={() => setStage('quotation')}
+                  onPress={() => setPickedStage('quotation')}
                   style={{ alignSelf: 'stretch', width: '100%' }}
                 />
               </View>
@@ -1108,7 +1116,7 @@ export function AdminRequestDetailScreen({
                     onPress={() => {
                       void haptics.selection();
                       setActiveQuotationId(q.id);
-                      setStage('quotation');
+                      setPickedStage('quotation');
                     }}
                     style={{
                       flexDirection: isRTL ? 'row-reverse' : 'row',
