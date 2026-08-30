@@ -63,7 +63,7 @@ export function PurchasingHeroActions({
           icon="cart-outline"
           labelKey="mobile.purchasing.actionNewOrder"
           a11yKey="catalog.newPurchaseOrder"
-          tone="soft"
+          tone="solid"
           onPress={onNewOrder}
         />
       ) : null}
@@ -98,11 +98,7 @@ function HeroTile({
       variant="button"
       accessibilityRole="button"
       accessibilityLabel={t(a11yKey)}
-      accessibilityState={{
-        busy: Boolean(loading),
-        disabled: Boolean(loading),
-        selected: false,
-      }}
+      accessibilityState={{ busy: Boolean(loading), disabled: Boolean(loading) }}
       disabled={loading}
       onPress={() => {
         void haptics.selection();

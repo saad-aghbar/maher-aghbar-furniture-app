@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +23,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceListBottomInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { CreatePurchaseOrderSheet } from './components/CreatePurchaseOrderSheet';
 import { CreatePurchaseRequestSheet } from './components/CreatePurchaseRequestSheet';
@@ -106,6 +107,7 @@ export function PurchasingHubScreen() {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -313,7 +315,7 @@ export function PurchasingHubScreen() {
           gap: theme.spacing.md,
           flexGrow: 1,
           paddingBottom:
-            theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + LIST_BOTTOM_EXTRA,
+            theme.spacing['3xl'] + LIST_BOTTOM_EXTRA + surfaceListBottomInset(insets.bottom),
         }}
         refreshControl={
           <RefreshControl
