@@ -94,12 +94,8 @@ export function TextField({
           fontSize: theme.typography.variants.body.fontSize,
           lineHeight: theme.typography.variants.body.lineHeight,
           textAlign: isRTL ? 'right' : 'left',
-<<<<<<< HEAD
-          writingDirection: writingDirectionFor(isRTL),
-=======
           writingDirection:
-            dir === 'ltr' ? 'ltr' : dir === 'rtl' ? 'rtl' : isRTL ? 'rtl' : 'ltr',
->>>>>>> 011969f (Fix Manage account RTL leftovers without changing EN or the tab bar.)
+            dir === 'ltr' ? 'ltr' : dir === 'rtl' ? 'rtl' : writingDirectionFor(isRTL),
           ...resolveAppFontStyle(locale, { variant: 'body' }),
         },
         style,
