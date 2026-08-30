@@ -2,6 +2,7 @@ import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
@@ -36,6 +37,7 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
   const { user } = useAuth();
   const { t, tPlural, locale, isRTL } = useLocale();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -86,7 +88,7 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
       <ScrollView
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
         }}
       >
         <View
@@ -132,7 +134,11 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
                 {line.description}
               </AppText>
               <AppText variant="caption" color="secondary" dir="ltr">
-                {purchaseLineQtyLabel(locale, line.quantity, line.unit)}
+                {purchaseLineQtyLabel(
+                  locale,
+                  line.quantity,
+                  line.unit || line.inventoryItem?.unit,
+                )}
               </AppText>
             </View>
           ))}

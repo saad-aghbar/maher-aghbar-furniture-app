@@ -24,23 +24,11 @@ export function PurchasingFloorBoard({ children, title, style }: Props) {
           borderWidth: 1,
           borderColor: colors.borderStrong,
           backgroundColor: colors.surface,
-          overflow: 'hidden',
           ...orderBoardShadow(colorScheme),
         },
         style,
       ]}
     >
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
-          width: 3,
-          backgroundColor: colors.brand,
-          opacity: 0.55,
-        }}
-      />
       {title ? (
         <View
           style={{

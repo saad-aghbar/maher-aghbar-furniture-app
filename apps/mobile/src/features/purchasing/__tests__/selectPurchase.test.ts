@@ -55,6 +55,8 @@ describe('purchaseLineQtyLabel', () => {
   it('keeps the backend number and unknown units as-is', () => {
     expect(purchaseLineQtyLabel('en', 24, 'm')).toBe('24 m');
     expect(purchaseLineQtyLabel('en', '24', 'block')).toBe('24 blocks');
+    expect(purchaseLineQtyLabel('en', '24.00', 'block')).toBe('24 blocks');
+    expect(purchaseLineQtyLabel('en', 24, 'Block')).toBe('24 blocks');
   });
 });
 

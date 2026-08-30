@@ -63,6 +63,14 @@ export function warehouseFieldCount(warehouse: NamedRef | null | undefined): num
   return warehouse ? 1 : 0;
 }
 
+function qtyDisplay(quantity: number | string | null | undefined): string {
+  if (quantity == null || quantity === '') return '—';
+  const raw = typeof quantity === 'string' ? quantity.trim() : String(quantity);
+  const n = Number(raw);
+  if (Number.isFinite(n) && Math.abs(n - Math.round(n)) < 1e-6) return String(Math.round(n));
+  return raw;
+}
+
 /**
  * Qty + unit copy. Known units use catalog.qtyWithUnit plurals (en/ar/he).
  * Unknown units stay honest to the backend code, e.g. `24 m`.
@@ -72,11 +80,11 @@ export function purchaseLineQtyLabel(
   quantity: number | string | null | undefined,
   unit?: string | null,
 ): string {
-  const qtyText = quantity == null || quantity === '' ? '—' : String(quantity);
+  const qtyText = qtyDisplay(quantity);
   const unitKey = unit?.trim() || 'pcs';
   const n = Number(quantity);
   const count = Number.isFinite(n) ? n : 0;
-  const catalogUnit = unitKey.replace(/[^A-Za-z0-9_]/g, '');
+  const catalogUnit = unitKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
   if (!catalogUnit) return `${qtyText} ${unitKey}`;
   const baseKey = `catalog.qtyWithUnit.${catalogUnit}`;
   const label = translatePlural(asLocale(locale), baseKey, count, { n: qtyText });
