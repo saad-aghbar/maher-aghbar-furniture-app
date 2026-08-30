@@ -2260,6 +2260,7 @@
       "accessories": "Accessories"
     },
     "groupLandmark": {
+      "raw": "Raw",
       "finished": "Finished",
       "semi": "Semi"
     },

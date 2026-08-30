@@ -231,6 +231,8 @@ export function isValidCategoryGroup(value: string): value is InventoryCategoryG
 }
 
 const GROUP_LANDMARK_KEYS: Record<string, string> = {
+  raw: 'mobile.inventory.groupLandmark.raw',
+  materials: 'mobile.inventory.groupLandmark.raw',
   finished: 'mobile.inventory.groupLandmark.finished',
   semi: 'mobile.inventory.groupLandmark.semi',
   semifinished: 'mobile.inventory.groupLandmark.semi',

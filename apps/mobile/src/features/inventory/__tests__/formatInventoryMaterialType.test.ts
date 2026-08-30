@@ -21,13 +21,15 @@ describe('formatInventoryMaterialType', () => {
 describe('inventoryGroupRouteTitle', () => {
   const t = (key: string) => {
     if (key === 'mobile.inventory.groups.fabric') return 'Fabric';
+    if (key === 'mobile.inventory.groupLandmark.raw') return 'Raw';
     if (key === 'mobile.inventory.groupLandmark.finished') return 'Finished';
     if (key === 'mobile.inventory.groupLandmark.semi') return 'Semi';
     if (key === 'mobile.inventory.title') return 'Inventory';
     return key;
   };
 
-  it('uses Finished / Semi landmarks from the route', () => {
+  it('uses Raw / Semi / Finished landmarks from the route', () => {
+    expect(inventoryGroupRouteTitle('raw', t)).toBe('Raw');
     expect(inventoryGroupRouteTitle('finished', t)).toBe('Finished');
     expect(inventoryGroupRouteTitle('semi', t)).toBe('Semi');
     expect(inventoryGroupRouteTitle('semiFinished', t)).toBe('Semi');
