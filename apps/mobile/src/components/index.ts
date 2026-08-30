@@ -44,6 +44,18 @@ export { OfflineBanner } from './feedback/OfflineBanner';
 export { NetworkStatus } from './feedback/NetworkStatus';
 export { LoadingOverlay } from './feedback/LoadingOverlay';
 
+export { ChromeCircleButton, ChromeBadge } from './chrome/ChromeCircleButton';
+export { NotificationBellButton } from './chrome/NotificationBellButton';
+export { HomeWatermark } from './chrome/HomeWatermark';
+export { HomeSearchRow } from './chrome/HomeSearchRow';
+export { HomeHeroHeader, greetingPeriod } from './chrome/HomeHeroHeader';
+export { EntityRow } from './lists/EntityRow';
+export { AttentionCard } from './alerts/AttentionCard';
+export { AttentionSection } from './alerts/AttentionSection';
+export { BrandCheckbox } from './sheets/BrandCheckbox';
+export { SheetRow } from './sheets/SheetRow';
+export { AuthGateScreen } from './auth/AuthGateScreen';
+
 export { BottomSheet } from './sheets/BottomSheet';
 export { ConfirmationSheet } from './sheets/ConfirmationSheet';
 export { ActionSheet } from './sheets/ActionSheet';

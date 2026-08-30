@@ -6,6 +6,7 @@ import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 type ConfirmationSheetProps = {
@@ -29,8 +30,8 @@ export function ConfirmationSheet({
   onClose,
   title,
   message,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  cancelLabel,
   onConfirm,
   destructive = false,
   overlay = false,
@@ -38,9 +39,12 @@ export function ConfirmationSheet({
   reasonPlaceholder,
 }: ConfirmationSheetProps) {
   const { theme } = useTheme();
+  const { t } = useLocale();
   const [reason, setReason] = useState('');
   const withReason = Boolean(reasonLabel);
-  const pill = { borderRadius: theme.radius.xl } as const;
+  const resolvedConfirm = confirmLabel ?? t('common.confirm');
+  const resolvedCancel = cancelLabel ?? t('common.cancel');
+  const pill = { borderRadius: theme.radius.full } as const;
 
   useEffect(() => {
     if (!open) setReason('');
@@ -83,7 +87,7 @@ export function ConfirmationSheet({
         <View style={{ gap: theme.spacing.md }}>
           {destructive ? (
             <DestructiveButton
-              label={confirmLabel}
+              label={resolvedConfirm}
               style={pill}
               onPress={() => {
                 onConfirm(withReason ? reason.trim() || undefined : undefined);
@@ -92,7 +96,7 @@ export function ConfirmationSheet({
             />
           ) : (
             <PrimaryButton
-              label={confirmLabel}
+              label={resolvedConfirm}
               style={pill}
               onPress={() => {
                 onConfirm(withReason ? reason.trim() || undefined : undefined);
@@ -100,7 +104,7 @@ export function ConfirmationSheet({
               }}
             />
           )}
-          <SecondaryButton label={cancelLabel} style={pill} onPress={onClose} />
+          <SecondaryButton label={resolvedCancel} style={pill} onPress={onClose} />
         </View>
       </View>
     </BottomSheet>

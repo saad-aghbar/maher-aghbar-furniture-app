@@ -4,7 +4,7 @@ import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
-import { useTheme } from '@/theme';
+import { attentionChrome, useTheme } from '@/theme';
 import {
   notificationIconFor,
   type NotificationCardModel,
@@ -24,6 +24,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const icon = notificationIconFor(item.type, item.linkUrl);
   const hasLink = Boolean(item.linkUrl);
+  const ink = item.unread ? attentionChrome(colors) : null;
 
   return (
     <AnimatedPressable
@@ -36,10 +37,10 @@ export function NotificationBoardCard({ item, onPress }: Props) {
         onPress();
       }}
       style={{
-        borderRadius: theme.radius.xl,
+        borderRadius: theme.radius.card,
         borderWidth: 1,
-        borderColor: item.unread ? colors.brand : colors.borderStrong,
-        backgroundColor: colors.surface,
+        borderColor: ink ? ink.border : colors.borderStrong,
+        backgroundColor: ink ? ink.surface : colors.surface,
         overflow: 'hidden',
         ...orderBoardShadow(colorScheme),
       }}
@@ -52,7 +53,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
           bottom: 0,
           ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
-          backgroundColor: item.unread ? colors.brand : colors.textMuted,
+          backgroundColor: ink ? ink.accent : colors.textMuted,
           opacity: item.unread ? 0.65 : 0.28,
         }}
       />
@@ -69,8 +70,8 @@ export function NotificationBoardCard({ item, onPress }: Props) {
             ? { paddingRight: theme.spacing.lg + 4 }
             : { paddingLeft: theme.spacing.lg + 4 }),
           borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-          backgroundColor: colors.surfaceSecondary,
+          borderBottomColor: ink ? 'rgba(245,241,234,0.12)' : colors.border,
+          backgroundColor: ink ? 'rgba(245,241,234,0.06)' : colors.surfaceSecondary,
         }}
       >
         <View
@@ -89,27 +90,28 @@ export function NotificationBoardCard({ item, onPress }: Props) {
               borderRadius: 14,
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: item.unread ? colors.brandSoft : colors.surface,
+              backgroundColor: ink ? 'rgba(183,155,123,0.18)' : colors.surface,
               borderWidth: 1,
-              borderColor: colors.border,
+              borderColor: ink ? ink.border : colors.border,
             }}
           >
             <Ionicons
               name={icon}
               size={14}
-              color={item.unread ? colors.brand : colors.textSecondary}
+              color={ink ? ink.accent : colors.textSecondary}
             />
           </View>
           <AppText
             variant="caption"
             weight={item.unread ? titleWeight : 'medium'}
-            color={item.unread ? 'brand' : 'muted'}
+            color={ink ? undefined : 'muted'}
             numberOfLines={1}
             style={{
               flexShrink: 1,
               letterSpacing: locale === 'ar' ? 0 : 0.45,
               textTransform: locale === 'ar' ? 'none' : 'uppercase',
               fontSize: 11,
+              ...(ink ? { color: ink.accent } : null),
             }}
           >
             {item.unread ? t('mobile.notifications.unread') : t('mobile.notifications.read')}
@@ -118,9 +120,9 @@ export function NotificationBoardCard({ item, onPress }: Props) {
 
         <AppText
           variant="caption"
-          color="muted"
+          color={ink ? undefined : 'muted'}
           numberOfLines={1}
-          style={{ flexShrink: 0, fontSize: 11 }}
+          style={{ flexShrink: 0, fontSize: 11, ...(ink ? { color: ink.muted } : null) }}
         >
           {formatDateTime(item.createdAt)}
         </AppText>
@@ -144,6 +146,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
             textAlign: isRTL ? 'right' : 'left',
             fontSize: 16,
             lineHeight: 22,
+            ...(ink ? { color: ink.on } : null),
           }}
         >
           {item.title}
@@ -157,6 +160,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
               textAlign: isRTL ? 'right' : 'left',
               lineHeight: 18,
               fontSize: 13,
+              ...(ink ? { color: ink.muted } : null),
             }}
           >
             {item.body}
@@ -172,6 +176,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
               textAlign: isRTL ? 'right' : 'left',
               marginTop: 2,
               fontSize: 12,
+              ...(ink ? { color: ink.accent } : null),
             }}
           >
             {t('mobile.notifications.openHint')}

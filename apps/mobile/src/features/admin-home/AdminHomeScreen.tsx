@@ -2,7 +2,7 @@ import { type ReactElement, type ReactNode } from 'react';
 import { RefreshControl, type RefreshControlProps } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedScrollHandler } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { can, resolveComposedHomeKind, shouldFetchSalesAdminHome } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -16,6 +16,7 @@ import { queryKeys } from '@/api/queryKeys';
 import { useNotificationsQuery } from '@/features/notifications/query';
 import { normalizeNotificationList, unreadCount } from '@/features/notifications/selectNotification';
 import { AtelierScrollProvider, useAtelierScroll } from './AtelierScrollContext';
+import { HomeSearchRow } from '@/components/chrome/HomeSearchRow';
 import { AdminHomeAtelierDashboard } from './components/AdminHomeAtelierDashboard';
 import { AdminHomeAtelierHero } from './components/AdminHomeAtelierHero';
 import { AdminHomeLivingHero } from './components/AdminHomeLivingHero';
@@ -33,6 +34,19 @@ type AdminHomeScreenProps = {
   forceState?: 'loading' | 'error' | 'empty' | 'offline' | 'success';
   fixture?: AdminHomePayload;
 };
+
+function AdminHomeSearch() {
+  const { t } = useLocale();
+  const router = useRouter();
+  return (
+    <HomeSearchRow
+      placeholder={t('mobile.adminHome.searchPlaceholder')}
+      onSearchPress={() => router.push('/(app)/search' as Href)}
+      filterA11y={t('mobile.adminHome.filterA11y')}
+      onFilterPress={() => router.push('/(app)/(admin)/(tabs)/orders' as Href)}
+    />
+  );
+}
 
 function AtelierScrollShell({
   children,
@@ -135,6 +149,7 @@ function AdminHomeScreenInner({ forceState, fixture }: AdminHomeScreenProps) {
     return (
       <AtelierScrollShell>
         {heroLoading}
+        <AdminHomeSearch />
         <AdminHomeSkeleton />
       </AtelierScrollShell>
     );
@@ -145,6 +160,7 @@ function AdminHomeScreenInner({ forceState, fixture }: AdminHomeScreenProps) {
       <AtelierScrollShell>
         {showOfflineBanner ? <OfflineBanner /> : null}
         {heroLoading}
+        <AdminHomeSearch />
         <ErrorState
           title={t('mobile.adminHome.errorTitle')}
           description={t('mobile.adminHome.errorBody')}
@@ -197,6 +213,7 @@ function AdminHomeScreenInner({ forceState, fixture }: AdminHomeScreenProps) {
       <AtelierScrollShell refreshControl={refresh}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         {hero}
+        <AdminHomeSearch />
         <AppText variant="heading" weight="semibold" style={{ marginTop: theme.spacing.md }}>
           {t('mobile.staffHome.restrictedTitle')}
         </AppText>
@@ -220,6 +237,7 @@ function AdminHomeScreenInner({ forceState, fixture }: AdminHomeScreenProps) {
     <AtelierScrollShell refreshControl={refresh}>
       {showOfflineBanner || forceState === 'offline' ? <OfflineBanner /> : null}
       {hero}
+      <AdminHomeSearch />
       {homeKind === 'sales' ? salesBody : null}
       {homeKind === 'warehouse' || (homeKind === 'sales' && !forceState) ? (
         <AdminHomeOpsInventory />

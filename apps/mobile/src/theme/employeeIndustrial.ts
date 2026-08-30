@@ -2,7 +2,7 @@ import type { ColorScheme, ThemeColors, ThemeElevation, ThemeRadius } from './ty
 
 /**
  * Employee-only industrial production palettes (light + dark).
- * Distinct from admin/dealer parchment (`#E1DFD3`) / liquorice — cool workshop stone vs charcoal.
+ * Distinct from admin/dealer oatmeal (`#F3F0E9`) / liquorice — cool workshop stone vs charcoal.
  */
 
 /** Dark — charcoal floor tool. */
@@ -31,6 +31,9 @@ export const employeeIndustrialDarkColors: ThemeColors = {
   disabled: '#6E675E',
   disabledFill: '#2C2724',
   overlay: 'rgba(0, 0, 0, 0.62)',
+  attention: '#141210',
+  attentionAccent: '#C4A06A',
+  attentionOn: '#F7F4EF',
   calendarLoadEmpty: '#2C2724',
   calendarLoadLight: 'rgba(196, 160, 106, 0.40)',
   calendarLoadHalf: 'rgba(212, 168, 106, 0.55)',
@@ -49,7 +52,7 @@ export const employeeIndustrialLightColors: ThemeColors = {
   border: 'rgba(26, 23, 20, 0.10)',
   borderStrong: 'rgba(26, 23, 20, 0.18)',
   brand: '#8B7049',
-  brandHover: '#776245',
+  brandHover: '#7B6651',
   brandActive: '#5C4A32',
   brandSoft: 'rgba(139, 112, 73, 0.16)',
   onBrand: '#F3F2EE',
@@ -64,6 +67,9 @@ export const employeeIndustrialLightColors: ThemeColors = {
   disabled: '#8A857C',
   disabledFill: '#E7E5DF',
   overlay: 'rgba(26, 23, 20, 0.42)',
+  attention: '#2A2420',
+  attentionAccent: '#B79B7B',
+  attentionOn: '#F7F4EF',
   calendarLoadEmpty: '#FAF9F6',
   calendarLoadLight: '#DDD2BC',
   calendarLoadHalf: '#C9A86A',
@@ -142,6 +148,7 @@ export const employeeIndustrialRadius: ThemeRadius = {
   md: 14,
   lg: 20,
   xl: 28,
+  card: 24,
   full: 9999,
 };
 

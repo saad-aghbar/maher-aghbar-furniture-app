@@ -10,7 +10,7 @@ import Animated, {
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { attentionChrome, useTheme } from '@/theme';
 import { toastChrome } from './toastChrome';
 import type { ToastVariant } from './toastQueue';
 
@@ -78,6 +78,14 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
   const { colors, theme } = useTheme();
   const { t, isRTL, locale } = useLocale();
   const chrome = toastChrome(variant, colors);
+  const attention = attentionChrome(colors);
+  const inkToast = variant === 'error' || variant === 'warning';
+  const cardBg = inkToast ? attention.surface : colors.surface;
+  const cardBorder = inkToast ? attention.border : colors.borderStrong;
+  const titleColor = inkToast ? attention.on : colors.textPrimary;
+  const labelColor = inkToast ? attention.accent : chrome.fg;
+  const iconFg = inkToast ? attention.accent : chrome.fg;
+  const iconSoft = inkToast ? 'rgba(183, 155, 123, 0.18)' : chrome.soft;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const body = (
@@ -97,14 +105,14 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
             width: 36,
             height: 36,
             borderRadius: theme.radius.lg,
-            backgroundColor: chrome.soft,
+            backgroundColor: iconSoft,
             borderWidth: 1,
-            borderColor: colors.border,
+            borderColor: inkToast ? attention.border : colors.border,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <Ionicons name={chrome.icon} size={18} color={chrome.fg} />
+          <Ionicons name={chrome.icon} size={18} color={iconFg} />
         </View>
 
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
@@ -112,7 +120,7 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
             style={{
-              color: chrome.fg,
+              color: labelColor,
               letterSpacing: locale === 'ar' ? 0 : 0.6,
               textTransform: locale === 'ar' ? 'none' : 'uppercase',
               textAlign: isRTL ? 'right' : 'left',
@@ -124,7 +132,7 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
             variant="bodySecondary"
             weight={titleWeight}
             numberOfLines={3}
-            style={{ textAlign: isRTL ? 'right' : 'left' }}
+            style={{ textAlign: isRTL ? 'right' : 'left', color: titleColor }}
           >
             {message}
           </AppText>
@@ -134,7 +142,7 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
           <Ionicons
             name="close"
             size={16}
-            color={colors.textMuted}
+            color={inkToast ? attention.muted : colors.textMuted}
             accessibilityElementsHidden
             importantForAccessibility="no"
           />
@@ -149,17 +157,17 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
   return (
     <View
       style={{
-        borderRadius: theme.radius.xl,
+        borderRadius: theme.radius.card,
         ...theme.elevation.raised,
       }}
     >
       <View
         style={{
           overflow: 'hidden',
-          borderRadius: theme.radius.xl,
-          backgroundColor: colors.surface,
+          borderRadius: theme.radius.card,
+          backgroundColor: cardBg,
           borderWidth: 1,
-          borderColor: colors.borderStrong,
+          borderColor: cardBorder,
         }}
       >
         <View
@@ -169,7 +177,7 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
             top: 0,
             bottom: 0,
             width: 3,
-            backgroundColor: chrome.accent,
+            backgroundColor: inkToast ? attention.accent : chrome.accent,
             opacity: 0.9,
             zIndex: 1,
             ...(isRTL ? { right: 0 } : { left: 0 }),

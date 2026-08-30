@@ -24,7 +24,7 @@ import { AppText } from '@/components/AppText';
 import { DealerNewOrderButton, DEALER_FAB_SIZE } from '@/features/dealer-ui/DealerNewOrderButton';
 import { useLocale } from '@/i18n';
 import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
-import { useTheme } from '@/theme';
+import { tabBarChrome, useTheme } from '@/theme';
 import { can } from '@maher/permissions';
 import { activeTabFromPath } from './activeTabFromPath';
 import { navigateToTab } from './navigateToTab';
@@ -321,10 +321,7 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
 
   if (floating) {
     const dark = colorScheme === 'dark';
-    const shellBg = dark ? 'rgba(42,36,37,0.42)' : 'rgba(255,255,255,0.42)';
-    const shellBorder = dark ? 'rgba(255,255,255,0.14)' : 'rgba(63,52,44,0.12)';
-    const bubbleFill = dark ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.92)';
-    const bubbleBorder = dark ? 'rgba(255,255,255,0.32)' : 'rgba(63,52,44,0.14)';
+    const { shellBg, shellBorder, bubbleFill, bubbleBorder } = tabBarChrome(colorScheme);
 
     /**
      * Flat equal slots so onLayout x/width are relative to the track (pill math).

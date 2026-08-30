@@ -36,10 +36,11 @@ export function ActionSheet({
   onClose,
   title,
   actions,
-  cancelLabel = 'Cancel',
+  cancelLabel,
 }: ActionSheetProps) {
   const { colors, theme, colorScheme } = useTheme();
-  const { isRTL } = useLocale();
+  const { isRTL, t } = useLocale();
+  const resolvedCancel = cancelLabel ?? t('common.cancel');
   const pendingActionRef = useRef<(() => void) | null>(null);
 
   const shadow =
@@ -97,7 +98,7 @@ export function ActionSheet({
                 minHeight: theme.sizes.touch.min,
                 paddingHorizontal: theme.spacing.md,
                 paddingVertical: theme.spacing.md,
-                borderRadius: theme.radius.xl,
+                borderRadius: theme.radius.lg,
                 borderWidth: 1,
                 borderColor: action.destructive ? colors.error : colors.borderStrong,
                 backgroundColor: colors.surface,
@@ -162,7 +163,7 @@ export function ActionSheet({
         <AnimatedPressable
           variant="button"
           accessibilityRole="button"
-          accessibilityLabel={cancelLabel}
+          accessibilityLabel={resolvedCancel}
           onPress={() => {
             void haptics.selection();
             pendingActionRef.current = null;
@@ -172,17 +173,17 @@ export function ActionSheet({
             minHeight: theme.sizes.touch.min,
             paddingHorizontal: theme.spacing.md,
             paddingVertical: theme.spacing.md,
-            borderRadius: theme.radius.xl,
+            borderRadius: theme.radius.lg,
             borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.surfaceSecondary,
+            borderColor: colors.borderStrong,
+            backgroundColor: colors.surface,
             alignItems: 'center',
             justifyContent: 'center',
             marginTop: theme.spacing.xs,
           }}
         >
-          <AppText variant="label" weight="semibold" color="secondary">
-            {cancelLabel}
+          <AppText variant="label" weight="semibold" style={{ color: colors.brand }}>
+            {resolvedCancel}
           </AppText>
         </AnimatedPressable>
       </View>

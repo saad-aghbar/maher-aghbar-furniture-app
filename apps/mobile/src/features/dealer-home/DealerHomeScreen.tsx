@@ -100,6 +100,7 @@ export function DealerHomeScreen({
 
   const chrome = (unread: number) => (
     <DealerHomeHeader
+      greeting={greeting}
       unreadNotifications={unread}
       canOpenNotifications={can(user, 'notification.read')}
     />
@@ -240,7 +241,6 @@ export function DealerHomeScreen({
       {chrome(data.unreadNotifications)}
 
       <DealerHero
-        greeting={greeting}
         imageUris={showcaseUris}
         onOpenCatalog={goCatalog}
         catalogA11yLabel={t('mobile.dealerHome.exploreCatalog')}

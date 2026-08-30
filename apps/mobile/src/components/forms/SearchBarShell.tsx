@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocale } from '@/i18n';
-import { useTheme } from '@/theme';
+import { searchTrackColor, useTheme } from '@/theme';
 
 /** Soft lift for search pills — gentle, not a hard drop shadow. */
 export function searchBarShadow(dark: boolean) {
@@ -58,8 +58,8 @@ export function SearchBarShell({
           minHeight: theme.sizes.touch.min,
           borderRadius: theme.radius.full,
           borderWidth: 1,
-          borderColor: error ? colors.error : colors.borderStrong,
-          backgroundColor: colors.surfaceSecondary,
+          borderColor: error ? colors.error : colors.border,
+          backgroundColor: searchTrackColor(colors, colorScheme),
           overflow: 'hidden',
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'center',
