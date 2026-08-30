@@ -12,6 +12,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ProgressBar } from '@/motion';
 import { useTheme } from '@/theme';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSalesOrderQuery } from '@/features/sales-orders/query';
 import { useProductionOrderQuery } from '@/features/production/query';
 import { useProductionOrderWorkflowQuery } from '@/features/workflow/query';
@@ -70,6 +71,8 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
     Boolean(productionOrderId) && role === 'admin',
   );
   const customizeMinutes = useCustomizeOrderWorkflowMinutesMutation(productionOrderId ?? '');
+  /** Last node + label clear the floating pill; same token as other admin surfaces. */
+  const flowScrollBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
 
   const awaitingTimeApproval = useMemo(() => {
     if (role !== 'admin') return false;
@@ -201,9 +204,10 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
       <AppScreen backFallback={backFallback}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ScrollView
+          style={{ flex: 1 }}
           contentContainerStyle={{
             gap: theme.spacing.lg,
-            paddingBottom: theme.spacing['6xl'] + 48,
+            paddingBottom: flowScrollBottomPad,
           }}
           refreshControl={
             <RefreshControl
@@ -250,10 +254,12 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
     <AppScreen backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.lg,
-          paddingBottom: theme.spacing['6xl'] + 48,
+          paddingBottom: flowScrollBottomPad,
         }}
+        scrollIndicatorInsets={{ bottom: SURFACE_TAB_BAR_CLEARANCE }}
         refreshControl={
           <RefreshControl
             refreshing={query.isRefetching || workflowQuery.isRefetching}
@@ -419,6 +425,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
           >
             <ProductionFlowMap
               stages={model.stages}
+              bottomInset={SURFACE_TAB_BAR_CLEARANCE}
               onStagePress={(stage) => {
                 if (
                   role === 'admin' &&
