@@ -1,10 +1,8 @@
-import { View } from 'react-native';
-import { AppText } from '@/components/AppText';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useLocale } from '@/i18n';
-import { useTheme } from '@/theme';
+import { FloorStatus } from './FloorStatus';
 
 type ErrorStateProps = {
+  landmark?: string;
   title: string;
   description?: string;
   retryLabel?: string;
@@ -12,41 +10,23 @@ type ErrorStateProps = {
 };
 
 export function ErrorState({
+  landmark,
   title,
   description,
   retryLabel,
   onRetry,
 }: ErrorStateProps) {
   const { t } = useLocale();
-  const { theme, colors } = useTheme();
   const resolvedRetry = retryLabel ?? t('common.retry');
 
   return (
-    <View
-      accessibilityRole="alert"
-      style={{
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: theme.spacing['3xl'],
-        paddingHorizontal: theme.spacing.lg,
-        gap: theme.spacing.md,
-      }}
-    >
-      <AppText variant="heading" align="center" style={{ color: colors.error }}>
-        {title}
-      </AppText>
-      {description ? (
-        <AppText variant="bodySecondary" color="secondary" align="center">
-          {description}
-        </AppText>
-      ) : null}
-      {onRetry ? (
-        <SecondaryButton
-          label={resolvedRetry}
-          onPress={onRetry}
-          style={{ marginTop: theme.spacing.sm }}
-        />
-      ) : null}
-    </View>
+    <FloorStatus
+      tone="error"
+      landmark={landmark}
+      title={title}
+      description={description}
+      actionLabel={onRetry ? resolvedRetry : undefined}
+      onAction={onRetry}
+    />
   );
 }

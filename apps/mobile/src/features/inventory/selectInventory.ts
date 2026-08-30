@@ -230,6 +230,28 @@ export function isValidCategoryGroup(value: string): value is InventoryCategoryG
   return value === 'fabric' || value === 'foam' || value === 'wood' || value === 'accessories';
 }
 
+const GROUP_LANDMARK_KEYS: Record<string, string> = {
+  raw: 'mobile.inventory.groupLandmark.raw',
+  materials: 'mobile.inventory.groupLandmark.raw',
+  finished: 'mobile.inventory.groupLandmark.finished',
+  semi: 'mobile.inventory.groupLandmark.semi',
+  semifinished: 'mobile.inventory.groupLandmark.semi',
+  'semi-finished': 'mobile.inventory.groupLandmark.semi',
+};
+
+/** Landmark title for `/inventory/[group]` — Finished, Semi, or the category name. */
+export function inventoryGroupRouteTitle(
+  value: string,
+  t: (key: string) => string,
+): string {
+  const key = value.trim();
+  if (!key) return t('mobile.inventory.title');
+  if (isValidCategoryGroup(key)) return t(`mobile.inventory.groups.${key}`);
+  const landmark = GROUP_LANDMARK_KEYS[key.toLowerCase()];
+  if (landmark) return t(landmark);
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
 export function formatInventoryMaterialType(
   type: string | null | undefined,
   t: (key: string) => string,

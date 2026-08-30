@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
-import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
@@ -18,6 +18,7 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { SemiFinishedLot } from '@/api/modules/inventory';
 import { openInventoryLabelPdf, type InventoryCategoryGroup } from '../api';
 import {
+  inventoryGroupRouteTitle,
   isValidCategoryGroup,
   selectInventoryItemCard,
   type InventoryItemCardModel,
@@ -34,6 +35,7 @@ import {
 } from '../selectInventoryOps';
 import { AddStockSheet, type StockMoveMode } from './AddStockSheet';
 import { InventoryCategoryRail } from './InventoryCategoryRail';
+import { InventoryGroupLoadError } from './InventoryGroupLoadError';
 import { InventoryCompositionChrome } from './InventoryCompositionChrome';
 import { CreateInventoryItemSheet } from './CreateInventoryItemSheet';
 import { CreateStockCountSheet } from './CreateStockCountSheet';
@@ -97,6 +99,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
@@ -331,6 +334,24 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     );
   }
 
+  if (bodyError) {
+    const landmarkKey =
+      lifecycle === 'semiFinished'
+        ? 'semi'
+        : lifecycle === 'finished'
+          ? 'finished'
+          : 'raw';
+    return (
+      <AppScreen>
+        {showOfflineBanner ? <OfflineBanner /> : null}
+        <InventoryGroupLoadError
+          groupTitle={inventoryGroupRouteTitle(landmarkKey, t)}
+          onRetry={() => void activeQuery.refetch()}
+        />
+      </AppScreen>
+    );
+  }
+
   const canCreate =
     section === 'items'
       ? lifecycle === 'materials' && canCreateItem
@@ -356,7 +377,13 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
       <InventoryCompositionChrome
         title={t('mobile.inventory.title')}
-        subtitle={t('mobile.inventory.signatureSubtitle')}
+        subtitle={
+          lifecycle === 'semiFinished'
+            ? t('mobile.inventory.signatureSubtitleSemi')
+            : lifecycle === 'finished'
+              ? t('mobile.inventory.signatureSubtitleFinished')
+              : t('mobile.inventory.signatureSubtitle')
+        }
         lifecycle={lifecycle}
         onLifecycleChange={onLifecycleChange}
         section={section}
@@ -367,6 +394,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
         searchPlaceholder={searchPlaceholder}
         canSync={lifecycle === 'materials' && section === 'items' && canSync}
         syncing={syncMutation.isPending}
+        onRefresh={() => void onRefresh()}
         onSync={
           lifecycle === 'materials' && section === 'items'
             ? () => {
@@ -454,15 +482,6 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   let empty: ReactElement | null = null;
   if (bodyLoading) {
     empty = <InventoryListSkeleton />;
-  } else if (bodyError) {
-    empty = (
-      <ErrorState
-        title={t('mobile.inventory.errorTitle')}
-        description={t('mobile.inventory.errorBody')}
-        retryLabel={t('mobile.inventory.retry')}
-        onRetry={() => void activeQuery.refetch()}
-      />
-    );
   } else if (section === 'items') {
     empty = (
       <EmptyState
@@ -525,11 +544,13 @@ export function InventorySignatureHome({ initialGroup }: Props) {
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
         ref={listRef}
-        data={bodyLoading || bodyError ? [] : listRows}
+        data={bodyLoading ? [] : listRows}
         keyExtractor={(row) => `${row.kind}-${row.model.id}`}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: bodyLoading
+            ? theme.spacing.md + SURFACE_TAB_BAR_CLEARANCE
+            : theme.spacing['4xl'] + SURFACE_TAB_BAR_CLEARANCE + insets.bottom,
           flexGrow: 1,
         }}
         refreshControl={
@@ -593,7 +614,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
               animateEnter={false}
               onPress={() =>
                 router.push(
-                  `/(app)/(admin)/inventory/items/${item.model.id}` as Href,
+                  `/(app)/(admin)/inventory/items/${item.model.id}?lifecycle=finished` as Href,
                 )
               }
             />

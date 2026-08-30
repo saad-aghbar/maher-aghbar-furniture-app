@@ -24,11 +24,28 @@ import { registerToastListener } from './toastBridge';
 export type { ShowToastInput } from './toastQueue';
 export { emitToast, toastCopy } from './toastBridge';
 
+/** Space the floating toast occupies so page content is not covered. */
+export const TOAST_CLEARANCE = 76;
+
 type ToastContextValue = {
   showToast: (input: ShowToastInput) => void;
+  activeToast: ToastItem | null;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
+
+/** Pushes hub content below an active toast. */
+export function ToastClearance() {
+  const { activeToast } = useToast();
+  if (!activeToast) return null;
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no"
+      style={{ height: TOAST_CLEARANCE }}
+    />
+  );
+}
 
 function ToastHost({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string) => void }) {
   const { theme } = useTheme();
@@ -86,8 +103,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setQueue((q) => dismissToast(q, id));
   }, []);
 
-  const value = useMemo(() => ({ showToast }), [showToast]);
   const current = peekToast(queue);
+  const value = useMemo(
+    () => ({ showToast, activeToast: current }),
+    [showToast, current],
+  );
 
   return (
     <ToastContext.Provider value={value}>

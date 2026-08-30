@@ -21,7 +21,7 @@
   "toast": {
     "success": "تم",
     "warning": "يلزم الانتباه",
-    "error": "تعذّر الإكمال",
+    "error": "تعذّر التحميل",
     "info": "تنبيه",
     "dismiss": "إغلاق"
   },
@@ -2090,8 +2090,10 @@
   },
   "inventory": {
     "title": "المخزون",
-    "subtitle": "المواد حسب المجموعة — الأرصدة من المستودع",
-    "signatureSubtitle": "تركيز الفئة والمخزون المنخفض والمواد في مكان واحد",
+    "subtitle": "مواد خام حسب الفئة — أرصدة المستودع",
+    "signatureSubtitle": "مواد خام حسب الفئة — أرصدة المستودع",
+    "signatureSubtitleSemi": "نصف مصنّعة — أرصدة المستودع",
+    "signatureSubtitleFinished": "بضائع جاهزة — أرصدة المستودع",
     "pulseEyebrow": "أرضية المواد",
     "categoryRail": "الفئات",
     "materialsHeading": "{group}",
@@ -2258,6 +2260,11 @@
       "wood": "خشب",
       "accessories": "إكسسوارات"
     },
+    "groupLandmark": {
+      "raw": "المواد",
+      "finished": "الجاهزة",
+      "semi": "نصف مصنّعة"
+    },
     "materialCount": "{count} مواد",
     "lowStockCount": "{count} مخزون منخفض",
     "chipItems": "{count} مواد",
@@ -2354,6 +2361,9 @@
     "emptySearchBody": "جرّب بحثاً مختلفاً.",
     "emptyHistoryTitle": "لا حركات بعد",
     "emptyHistoryBody": "ستظهر هنا سندات الاستلام والصرف والتعديلات.",
+    "finishedOrderTitle": "طلب جاهز",
+    "finishedOrderErrorTitle": "تعذّر تحميل هذا الطلب الجاهز.",
+    "finishedOrderErrorBody": "تظهر هنا الوحدات المعبأة بعد الفحص في المصنع إلى أن تغادر الشاحنة.",
     "errorTitle": "تعذّر تحميل المخزون",
     "errorBody": "تحقق من الاتصال وحاول مرة أخرى.",
     "retry": "إعادة المحاولة",

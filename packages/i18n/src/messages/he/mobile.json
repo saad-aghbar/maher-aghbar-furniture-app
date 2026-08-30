@@ -21,7 +21,7 @@
   "toast": {
     "success": "בוצע",
     "warning": "דורש תשומת לב",
-    "error": "לא ניתן להשלים",
+    "error": "לא ניתן לטעון",
     "info": "הודעה",
     "dismiss": "סגור"
   },
@@ -2090,8 +2090,10 @@
   },
   "inventory": {
     "title": "מלאי",
-    "subtitle": "חומרים לפי קבוצה — יתרות מהמחסן",
-    "signatureSubtitle": "מיקוד קטגוריה, מלאי נמוך וחומרים במקום אחד",
+    "subtitle": "חומרי גלם לפי קטגוריה — יתרות מחסן",
+    "signatureSubtitle": "חומרי גלם לפי קטגוריה — יתרות מחסן",
+    "signatureSubtitleSemi": "חצי מוגמר — יתרות מחסן",
+    "signatureSubtitleFinished": "מוצרים גמורים — יתרות מחסן",
     "pulseEyebrow": "רצפת חומרים",
     "categoryRail": "קטגוריות",
     "materialsHeading": "{group}",
@@ -2258,6 +2260,11 @@
       "wood": "עץ",
       "accessories": "אביזרים"
     },
+    "groupLandmark": {
+      "raw": "חומרים",
+      "finished": "מוצרים גמורים",
+      "semi": "חצי מוגמר"
+    },
     "materialCount": "{count} חומרים",
     "lowStockCount": "{count} מלאי נמוך",
     "chipItems": "{count} פריטים",
@@ -2354,6 +2361,9 @@
     "emptySearchBody": "נסו חיפוש אחר.",
     "emptyHistoryTitle": "אין תנועות עדיין",
     "emptyHistoryBody": "קבלות, ניפוקים והתאמות יופיעו כאן.",
+    "finishedOrderTitle": "הזמנה גמורה",
+    "finishedOrderErrorTitle": "לא ניתן לטעון את ההזמנה הגמורה.",
+    "finishedOrderErrorBody": "יחידות שעברו בדיקת איכות וארוזות במפעל מופיעות כאן עד יציאת המשאית.",
     "errorTitle": "לא ניתן לטעון מלאי",
     "errorBody": "בדקו את החיבור ונסו שוב.",
     "retry": "נסה שוב",

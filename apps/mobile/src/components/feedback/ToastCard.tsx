@@ -25,14 +25,15 @@ type Props = {
 function ToastTimer({
   durationMs,
   color,
+  track,
   isRTL,
 }: {
   durationMs: number;
   color: string;
+  track: string;
   isRTL: boolean;
 }) {
   const reduce = useReducedMotion();
-  const { colors } = useTheme();
   const progress = useSharedValue(1);
 
   useEffect(() => {
@@ -55,7 +56,7 @@ function ToastTimer({
     <View
       style={{
         height: 3,
-        backgroundColor: colors.surfaceSecondary,
+        backgroundColor: track,
         flexDirection: isRTL ? 'row-reverse' : 'row',
       }}
     >
@@ -75,10 +76,18 @@ function ToastTimer({
 
 /** Shared toast surface — live host and the dev gallery render the same card. */
 export function ToastCard({ message, variant, onPress, durationMs }: Props) {
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const { t, isRTL, locale } = useLocale();
   const chrome = toastChrome(variant, colors);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const woodError = variant === 'error';
+  const liquorice = colorScheme === 'dark' ? colors.surface : colors.textPrimary;
+  const cream = colorScheme === 'dark' ? colors.textPrimary : colors.background;
+  const cardBg = woodError ? liquorice : colors.surface;
+  const bodyColor = woodError ? cream : colors.textPrimary;
+  const kickerColor = woodError ? colors.brand : chrome.fg;
+  const closeColor = woodError ? colors.brand : colors.textMuted;
+  const stripe = woodError ? colors.brandActive : chrome.accent;
 
   const body = (
     <View>
@@ -92,29 +101,13 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
           paddingRight: isRTL ? theme.spacing.md + 4 : theme.spacing.md,
         }}
       >
-        <View
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: theme.radius.lg,
-            backgroundColor: chrome.soft,
-            borderWidth: 1,
-            borderColor: colors.border,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Ionicons name={chrome.icon} size={18} color={chrome.fg} />
-        </View>
-
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
           <AppText
             variant="caption"
-            weight={locale === 'ar' ? 'regular' : 'medium'}
+            weight={locale === 'ar' ? 'medium' : 'semibold'}
             style={{
-              color: chrome.fg,
-              letterSpacing: locale === 'ar' ? 0 : 0.6,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              color: kickerColor,
+              letterSpacing: locale === 'ar' ? 0 : 0.2,
               textAlign: isRTL ? 'right' : 'left',
             }}
           >
@@ -124,7 +117,7 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
             variant="bodySecondary"
             weight={titleWeight}
             numberOfLines={3}
-            style={{ textAlign: isRTL ? 'right' : 'left' }}
+            style={{ color: bodyColor, textAlign: isRTL ? 'right' : 'left' }}
           >
             {message}
           </AppText>
@@ -133,15 +126,20 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
         {onPress ? (
           <Ionicons
             name="close"
-            size={16}
-            color={colors.textMuted}
+            size={18}
+            color={closeColor}
             accessibilityElementsHidden
             importantForAccessibility="no"
           />
         ) : null}
       </View>
       {durationMs != null && durationMs > 0 ? (
-        <ToastTimer durationMs={durationMs} color={chrome.accent} isRTL={isRTL} />
+        <ToastTimer
+          durationMs={durationMs}
+          color={stripe}
+          track={woodError ? 'rgba(225, 223, 211, 0.12)' : colors.surfaceSecondary}
+          isRTL={isRTL}
+        />
       ) : null}
     </View>
   );
@@ -157,9 +155,9 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
         style={{
           overflow: 'hidden',
           borderRadius: theme.radius.xl,
-          backgroundColor: colors.surface,
+          backgroundColor: cardBg,
           borderWidth: 1,
-          borderColor: colors.borderStrong,
+          borderColor: woodError ? colors.brandActive : colors.borderStrong,
         }}
       >
         <View
@@ -169,8 +167,8 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
             top: 0,
             bottom: 0,
             width: 3,
-            backgroundColor: chrome.accent,
-            opacity: 0.9,
+            backgroundColor: stripe,
+            opacity: 0.95,
             zIndex: 1,
             ...(isRTL ? { right: 0 } : { left: 0 }),
           }}

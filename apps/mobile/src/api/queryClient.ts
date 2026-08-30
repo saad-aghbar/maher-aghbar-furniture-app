@@ -8,6 +8,7 @@ import {
 import { translateApiError, translateErrorCode } from '@maher/i18n';
 import { getActiveLocale } from '@/i18n/LocaleProvider';
 import { isApiError } from './errors';
+import { isRawNetworkFailure } from './queryErrorToast';
 import { shouldRetryQuery } from './retry';
 import { createSafeAsyncStorage } from './safeAsyncStorage';
 import { QUERY_PERSIST_KEY } from './queryPersist';
@@ -68,6 +69,9 @@ export function shouldToastApiError(error: unknown): boolean {
 
 export function toastMessageForError(error: unknown, _t?: unknown): string {
   const locale = getActiveLocale();
+  if (isRawNetworkFailure(error)) {
+    return translateErrorCode(locale, 'NETWORK');
+  }
   if (isApiError(error)) {
     if (error.isOffline) return translateErrorCode(locale, 'OFFLINE');
     return translateApiError(locale, error);
