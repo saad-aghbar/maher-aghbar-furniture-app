@@ -78,9 +78,6 @@ type Props = {
   banner?: ReactNode;
 };
 
-/** Extra beige clearance under the list so the last lane + cards clear the tab bar. */
-const LIST_BOTTOM_EXTRA = 120;
-
 type Section = {
   key: FloorBoardSectionKey;
   title: string;
@@ -298,11 +295,7 @@ export function OrdersSignatureHome({
       ListHeaderComponent={header}
       contentContainerStyle={{
         paddingHorizontal: theme.spacing.lg,
-        paddingBottom:
-          theme.spacing['3xl'] +
-          SURFACE_TAB_BAR_CLEARANCE +
-          Math.max(insets.bottom, theme.spacing.sm) +
-          LIST_BOTTOM_EXTRA,
+        paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
         flexGrow: 1,
       }}
       refreshControl={

@@ -1105,9 +1105,9 @@
     "dealerRailShowing": "Showing {dealer}",
     "stages": {
       "all": "All",
-      "pending": "Prep",
-      "production": "Prod",
-      "ready": "Ready",
+      "pending": "Preparing",
+      "production": "Production",
+      "ready": "Ready to start",
       "late": "Late"
     },
     "workbenchHotEyebrow": "On the bench",

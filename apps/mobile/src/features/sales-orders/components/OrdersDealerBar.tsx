@@ -103,8 +103,6 @@ export function OrdersDealerBar({ label, onPress, onClear }: Props) {
             color="muted"
             align="start"
             style={{
-              letterSpacing: locale === 'ar' ? 0 : 0.6,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
               fontSize: 11,
               lineHeight: 14,
             }}

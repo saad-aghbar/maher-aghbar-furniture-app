@@ -68,8 +68,7 @@ export function OrdersCompositionChrome({
             weight={locale === 'ar' ? 'regular' : 'medium'}
             align="start"
             style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' ? 0 : 0.2,
               color: colors.brand,
             }}
           >

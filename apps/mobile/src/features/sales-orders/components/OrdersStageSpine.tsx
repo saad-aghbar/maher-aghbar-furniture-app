@@ -69,7 +69,7 @@ function StageIcon({
   }
 }
 
-/** 4-up: All · Prep · Ready · Prod — one-line labels, honest zeros. */
+/** 4-up: All · Preparing · Ready to start · Production — one-line Production, honest zeros. */
 const JOURNEY: JourneyKey[] = ['all', 'pending', 'ready', 'production'];
 const STAGES: OrdersStageKey[] = ['pending', 'production', 'ready'];
 
@@ -178,8 +178,6 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
                 weight={titleWeight}
                 style={{
                   color: colors.brand,
-                  letterSpacing: locale === 'ar' ? 0 : 1.2,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
                   fontSize: 11,
                   lineHeight: 14,
                 }}
@@ -413,15 +411,16 @@ function StageNode({
         <AppText
           variant="caption"
           color="secondary"
-          numberOfLines={1}
+          numberOfLines={stageKey === 'production' ? 1 : 2}
           align="center"
           adjustsFontSizeToFit
-          minimumFontScale={0.8}
+          minimumFontScale={0.75}
           maxFontSizeMultiplier={1.1}
           style={{
             fontSize: 11,
             lineHeight: 14,
             width: '100%',
+            textTransform: 'none',
           }}
         >
           {label}

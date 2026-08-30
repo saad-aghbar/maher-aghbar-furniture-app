@@ -19,15 +19,6 @@ const PILL_HEIGHT = 34;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
-const FILL_LIGHT = ['#EDE6DA', '#EDE6DA', '#EDE6DA'] as const;
-const BORDER_LIGHT = ['#776245', '#776245', '#372612'] as const;
-const FILL_DARK = [
-  'rgba(168,144,108,0.22)',
-  'rgba(168,144,108,0.22)',
-  'rgba(168,144,108,0.22)',
-] as const;
-const BORDER_DARK = ['#A8906C', '#A8906C', '#776245'] as const;
-
 type ChipLayout = { x: number; width: number };
 
 type Props = {
@@ -56,8 +47,9 @@ export function OrdersApprovalChips({ value, onChange }: Props) {
 
   const activeIdx = Math.max(0, CHIPS.indexOf(value));
   const dark = colorScheme === 'dark';
-  const fills = dark ? FILL_DARK : FILL_LIGHT;
-  const borders = dark ? BORDER_DARK : BORDER_LIGHT;
+  const wood = colors.brandSoft;
+  const fills = [wood, wood, wood];
+  const borders = [colors.brand, colors.brand, colors.brandActive];
 
   const orderedLayouts = useMemo(
     () => CHIPS.map((chip) => layouts[chip]),

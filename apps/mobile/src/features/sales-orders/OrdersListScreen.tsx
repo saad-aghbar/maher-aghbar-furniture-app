@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { listRequests } from '@/api/modules/requests';
@@ -81,6 +82,7 @@ export function OrdersListScreen({
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const params = useLocalSearchParams<{ focus?: string | string[] }>();
@@ -586,7 +588,7 @@ export function OrdersListScreen({
         keyExtractor={(item) => (item.kind === 'rfq' ? `rfq-${item.id}` : item.id)}
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
           flexGrow: 1,
         }}
         refreshControl={
@@ -668,8 +670,7 @@ function OrdersHeader({
             weight={locale === 'ar' ? 'regular' : 'medium'}
             align="start"
             style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' ? 0 : 0.2,
               color: colors.brand,
             }}
           >
