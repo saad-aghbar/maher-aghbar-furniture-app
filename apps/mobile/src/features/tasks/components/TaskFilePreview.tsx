@@ -25,6 +25,8 @@ type TaskFilePreviewProps = {
   icon?: keyof typeof Ionicons.glyphMap;
   /** Prefer image tiles (shop-floor photos). */
   preferImages?: boolean;
+  /** Last-stage QC/packaging: keep titles sentence-case instead of industrial caps. */
+  sentenceCaseStamp?: boolean;
 };
 
 function absoluteDownload(path: string | undefined): string | null {
@@ -49,6 +51,7 @@ export function TaskFilePreview({
   emptyLabel,
   icon = 'images-outline',
   preferImages = false,
+  sentenceCaseStamp = false,
 }: TaskFilePreviewProps) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -170,7 +173,8 @@ export function TaskFilePreview({
             weight="semibold"
             style={{
               flex: 1,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              textTransform:
+                sentenceCaseStamp || locale === 'ar' ? 'none' : 'uppercase',
               letterSpacing: locale === 'ar' ? 0 : 0.55,
               fontSize: 11,
               color: colors.brand,

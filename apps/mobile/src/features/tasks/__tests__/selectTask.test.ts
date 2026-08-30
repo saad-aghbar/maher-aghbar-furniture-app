@@ -1,5 +1,6 @@
 import {
   assertNoProgressLeak,
+  formatWaitingOnStages,
   selectTaskCard,
   selectTaskDetail,
   sortUrgentFirst,
@@ -119,5 +120,43 @@ describe('selectTask', () => {
     expect(vm.plannedStart).toBe(now);
     expect(vm.timing.plannedStart).toBe(now);
     expect(vm.isScheduledToday).toBe(true);
+  });
+
+  it('shows human stage names for waitingOn, not enum codes', () => {
+    const vm = selectTaskDetail(
+      {
+        ...taskDetailFixture,
+        status: 'NOT_STARTED',
+        stageDefinition: {
+          ...taskDetailFixture.stageDefinition,
+          code: 'PACKAGING',
+          nameEn: 'Packaging',
+          dependsOnCodes: ['MATERIAL_PREP', 'CARPENTRY'],
+        },
+      },
+      'en',
+    );
+    expect(vm.waitingOn).toBe('Material preparation, Carpentry');
+    expect(vm.waitingOn).not.toMatch(/MATERIAL_PREP|CARPENTRY/);
+    expect(vm.canStart).toBe(false);
+  });
+
+  it('localizes waitingOn stage names in Arabic and Hebrew', () => {
+    const task = {
+      ...taskDetailFixture,
+      status: 'NOT_STARTED' as const,
+      stageDefinition: {
+        ...taskDetailFixture.stageDefinition,
+        dependsOnCodes: ['FOAM', 'INSPECTION'],
+      },
+    };
+    expect(selectTaskDetail(task, 'ar').waitingOn).toBe('تجهيز الإسفنج, فحص الجودة');
+    expect(selectTaskDetail(task, 'he').waitingOn).toBe('הכנת ספוג, בדיקת איכות');
+  });
+
+  it('sentence-cases unknown waitingOn codes instead of leaking the enum', () => {
+    expect(formatWaitingOnStages(['CUSTOM_STAGE', 'PACK'], 'en')).toBe(
+      'Custom stage, Packaging',
+    );
   });
 });
