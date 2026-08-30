@@ -22,8 +22,9 @@ import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
-import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { resolveMobileHomeHref } from '@/permissions';
+import { useTheme } from '@/theme';
 import { parseInvoiceSearchSubtitle } from './selectSearchHit';
 
 function hitHref(type: string, id: string, userCustomerId?: string | null): Href {
@@ -97,6 +98,9 @@ export function GlobalSearchScreen() {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const q = useDebouncedValue(search.trim(), 300);
+  const backFallback = (user
+    ? resolveMobileHomeHref(user)
+    : '/(app)/(admin)/(tabs)') as Href;
   const canSearch =
     can(user, 'catalog.read') ||
     can(user, 'sales-order.read') ||
@@ -115,21 +119,42 @@ export function GlobalSearchScreen() {
 
   const hits = flattenPaginatedPages(query.data?.pages);
 
+  const field = (
+    <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
+      <AppText variant="title" weight="semibold">
+        {t('mobile.search.title')}
+      </AppText>
+      <TextField
+        value={search}
+        onChangeText={setSearch}
+        placeholder={t('mobile.search.placeholder')}
+        autoCorrect={false}
+        autoCapitalize="none"
+        returnKeyType="search"
+        autoFocus
+        accessibilityLabel={t('mobile.search.placeholder')}
+      />
+    </View>
+  );
+
   if (!canSearch) {
     return (
-      <AppScreen backFallback={'/(app)/(admin)/(tabs)' as Href}>
+      <AppScreen backFallback={backFallback}>
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
   }
 
   return (
-    <AppScreen backFallback={'/(app)/(admin)/(tabs)' as Href}>
+    <AppScreen backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
+      {field}
       <FlatList
+        style={{ flex: 1 }}
         data={hits}
         keyExtractor={(item) => `${item.type}-${item.id}`}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
@@ -144,22 +169,6 @@ export function GlobalSearchScreen() {
         onEndReached={() => {
           if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
         }}
-        ListHeaderComponent={
-          <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
-            <AppText variant="title" weight="semibold">
-              {t('mobile.search.title')}
-            </AppText>
-            <TextField
-              value={search}
-              onChangeText={setSearch}
-              placeholder={t('mobile.search.placeholder')}
-              autoCorrect={false}
-              autoCapitalize="none"
-              returnKeyType="search"
-              accessibilityLabel={t('mobile.search.placeholder')}
-            />
-          </View>
-        }
         ListEmptyComponent={
           q.length < 1 ? (
             <EmptyState
