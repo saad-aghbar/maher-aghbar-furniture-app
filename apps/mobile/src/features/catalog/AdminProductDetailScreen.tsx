@@ -47,7 +47,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCameraProvider';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { CategoryPickerSheet } from './components/CategoryPickerSheet';
 import { BomFloorRow } from './components/BomFloorRow';
@@ -284,8 +284,11 @@ export function AdminProductDetailScreen({ productId }: Props) {
   const productionCost = num(productQuery.data?.productionCost ?? productQuery.data?.manufacturingCost);
   const categories = categoriesQuery.data?.data ?? [];
   const dealerPrices = pricesQuery.data ?? [];
+  /** Same stack inset as order detail so SPEC / materials clear the floating pill. */
   const footerPad =
-    theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + Math.max(insets.bottom, theme.spacing.sm);
+    theme.spacing['3xl'] +
+    surfaceTabBarStackInset(insets.bottom, theme.spacing.sm) +
+    theme.spacing['2xl'];
   const sheetLocksPageScroll =
     measureSheet ||
     materialSheet ||
@@ -479,6 +482,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
 
       <ScrollView
         scrollEnabled={!sheetLocksPageScroll}
+        style={{ flex: 1 }}
         refreshControl={
           <RefreshControl
             refreshing={productQuery.isRefetching && !productQuery.isPending}
@@ -493,6 +497,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
           paddingHorizontal: theme.spacing.lg,
           paddingBottom: footerPad,
           gap: theme.spacing.md,
+          flexGrow: 1,
         }}
         keyboardShouldPersistTaps="handled"
       >
