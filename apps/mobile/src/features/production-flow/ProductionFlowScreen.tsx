@@ -11,6 +11,7 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ProgressBar } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useSalesOrderQuery } from '@/features/sales-orders/query';
 import { useProductionOrderQuery } from '@/features/production/query';
@@ -203,7 +204,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
         <ScrollView
           contentContainerStyle={{
             gap: theme.spacing.lg,
-            paddingBottom: theme.spacing['6xl'] + 48,
+            paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
           }}
           refreshControl={
             <RefreshControl
@@ -252,7 +253,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
       <ScrollView
         contentContainerStyle={{
           gap: theme.spacing.lg,
-          paddingBottom: theme.spacing['6xl'] + 48,
+          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
         }}
         refreshControl={
           <RefreshControl
@@ -419,6 +420,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
           >
             <ProductionFlowMap
               stages={model.stages}
+              bottomInset={SURFACE_TAB_BAR_CLEARANCE}
               onStagePress={(stage) => {
                 if (
                   role === 'admin' &&
