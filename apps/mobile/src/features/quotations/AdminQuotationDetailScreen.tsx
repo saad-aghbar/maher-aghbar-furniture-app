@@ -38,6 +38,7 @@ import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import {
   OrderBoardCard,
   OrderSectionHeader,
@@ -508,6 +509,7 @@ export function AdminQuotationDetailScreen({
                   : t('mobile.adminQuotation.detail')
               }
               accent={colors.brand}
+              uppercase={false}
               trailing={embedded ? <StatusBadge status={detail.status} dot /> : undefined}
             />
 
@@ -776,6 +778,7 @@ export function AdminQuotationDetailScreen({
             <OrderSectionHeader
               icon="list-outline"
               label={t('mobile.adminQuotation.lines')}
+              uppercase={false}
             />
             {(detail.lines ?? []).length === 0 ? (
               <AppText variant="caption" color="muted">
@@ -1024,7 +1027,7 @@ export function AdminQuotationDetailScreen({
         }
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
-          paddingBottom: theme.spacing['3xl'] + insets.bottom + 72,
+          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
           gap: theme.spacing.md,
         }}
         keyboardShouldPersistTaps="handled"

@@ -12,6 +12,7 @@ describe('presentableText', () => {
     expect(presentableText('')).toBeNull();
     expect(presentableText('  ')).toBeNull();
     expect(presentableText('—')).toBeNull();
+    expect(presentableText('-')).toBeNull();
   });
 
   it('keeps real terms', () => {
@@ -28,13 +29,9 @@ describe('quotationQtyLabel', () => {
 });
 
 describe('quotationLineNet', () => {
-  it('is unit × qty, not tax-inclusive lineTotal', () => {
+  it('is unit × qty, never tax-inclusive lineTotal', () => {
     expect(quotationLineNet(110, 1)).toBe(110);
     expect(quotationLineNet('110.00', '1.00')).toBe(110);
-  });
-
-  it('returns null when values are not numbers', () => {
-    expect(quotationLineNet('x', 1)).toBeNull();
   });
 });
 

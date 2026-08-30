@@ -1,9 +1,7 @@
-import { formatQty } from '@/components/forms/qtyStepper';
-
 /** Hide empty optional rows (same idea as empty FAX) instead of showing "—". */
 export function presentableText(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
-  if (!trimmed || trimmed === '—') return null;
+  if (!trimmed || trimmed === '—' || trimmed === '–' || trimmed === '-') return null;
   return trimmed;
 }
 
@@ -11,12 +9,14 @@ export function presentableText(value: string | null | undefined): string | null
 export function quotationQtyLabel(value: number | string | null | undefined): string {
   if (value == null || value === '') return '';
   const n = Number(value);
-  return Number.isFinite(n) ? formatQty(n) : String(value);
+  if (!Number.isFinite(n)) return String(value);
+  if (Number.isInteger(n)) return String(n);
+  return String(n);
 }
 
 /**
- * Line net = unit × qty. Backend `lineTotal` is tax-inclusive quote total leftover;
- * tax belongs on the quote summary only.
+ * Line total is unit × qty. Do not use backend `lineTotal` — that is tax-inclusive
+ * quote total leftover (127.60). Tax stays on the quote summary.
  */
 export function quotationLineNet(
   unitPrice: number | string | null | undefined,
