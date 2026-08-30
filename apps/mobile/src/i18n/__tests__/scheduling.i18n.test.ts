@@ -805,4 +805,17 @@ describe('scheduling i18n keys', () => {
       /NEAR_CAPACITY|nearCapacity/,
     );
   });
+
+  it('humanizes admin load legend labels (not all-caps leftovers)', () => {
+    expect(translate('en', 'mobile.calendar.legend.empty')).toBe('Empty');
+    expect(translate('en', 'mobile.calendar.legend.light')).toBe('Light');
+    expect(translate('en', 'mobile.calendar.legend.half')).toBe('Half');
+    expect(translate('en', 'mobile.calendar.legend.busy')).toBe('Busy');
+    expect(translate('en', 'mobile.calendar.legend.closed')).toBe('Closed');
+    expect(translate('ar', 'mobile.calendar.legend.empty')).toBe('فارغ');
+    expect(translate('ar', 'mobile.calendar.legend.light')).toBe('خفيف');
+    expect(translate('ar', 'mobile.calendar.legend.half')).toBe('متوسط');
+    expect(translate('ar', 'mobile.calendar.legend.busy')).toBe('مزدحم');
+    expect(translate('ar', 'mobile.calendar.legend.closed')).toBe('مغلق');
+  });
 });
