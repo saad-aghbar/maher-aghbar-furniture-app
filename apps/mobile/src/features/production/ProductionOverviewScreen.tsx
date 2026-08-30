@@ -42,9 +42,6 @@ import {
 } from './query';
 import { selectProductionCard } from './selectProduction';
 
-/** Extra scroll pad so the last floor card clears the floating tab bar. */
-const LIST_BOTTOM_EXTRA = 48;
-
 type MetricAccent = 'brand' | 'info' | 'success' | 'late';
 
 type MetricKey = Exclude<ProductionListBucket, 'all'>;
@@ -110,9 +107,10 @@ export function ProductionOverviewScreen() {
   );
 
   const selectBucket = (next: ProductionListBucket) => {
-    if (next === bucket) return;
+    const resolved = next === bucket ? 'all' : next;
+    if (resolved === bucket) return;
     void haptics.selection();
-    setBucket(next);
+    setBucket(resolved);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
@@ -203,12 +201,7 @@ export function ProductionOverviewScreen() {
     : null;
 
   const boardShadow = theme.elevation.raised;
-  const listBottomPad =
-    theme.spacing['3xl'] +
-    SURFACE_TAB_BAR_CLEARANCE +
-    LIST_BOTTOM_EXTRA +
-    Math.max(insets.bottom, theme.spacing.sm);
-  const bucketLabel = t(`mobile.production.chips.${bucket}`);
+  const listBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
 
   return (
     <AppScreen>
@@ -247,11 +240,7 @@ export function ProductionOverviewScreen() {
               <AppText
                 variant="caption"
                 weight={locale === 'ar' ? 'regular' : 'medium'}
-                style={{
-                  letterSpacing: locale === 'ar' ? 0 : 1.4,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                  color: colors.brand,
-                }}
+                style={{ color: colors.brand }}
               >
                 {t('mobile.production.pulseEyebrow')}
               </AppText>
@@ -325,15 +314,28 @@ export function ProductionOverviewScreen() {
                   />
                   <View
                     style={{
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: theme.spacing.md,
                       paddingHorizontal: theme.spacing.lg,
                       paddingTop: theme.spacing.md,
                       paddingBottom: theme.spacing.xs,
-                      alignItems: isRTL ? 'flex-end' : 'flex-start',
                     }}
                   >
                     <AppText variant="caption" color="muted" numberOfLines={1}>
-                      {t('mobile.production.filterHint', { label: bucketLabel })}
+                      {t('mobile.production.board')}
                     </AppText>
+                    {bucket !== 'all' ? (
+                      <AppText
+                        variant="caption"
+                        color="muted"
+                        numberOfLines={1}
+                        style={{ flexShrink: 1 }}
+                      >
+                        {t('mobile.production.tapAgainForAll')}
+                      </AppText>
+                    ) : null}
                   </View>
                   <MetricRow
                     isRTL={isRTL}
