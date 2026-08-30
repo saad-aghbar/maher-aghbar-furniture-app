@@ -1,7 +1,14 @@
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
+import {
+  alignStart,
+  extraStartPadding,
+  localeRow,
+  pinStart,
+  useLocale,
+} from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -28,7 +35,7 @@ export function OrdersDealerBar({ label, onPress, onClear }: Props) {
         borderWidth: 1,
         borderColor: active ? colors.brand : colors.borderStrong,
         overflow: 'hidden',
-        flexDirection: isRTL ? 'row-reverse' : 'row',
+        flexDirection: localeRow(isRTL),
         alignItems: 'center',
         ...theme.elevation.card,
       }}
@@ -39,7 +46,7 @@ export function OrdersDealerBar({ label, onPress, onClear }: Props) {
             position: 'absolute',
             top: 0,
             bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
+            ...pinStart(isRTL),
             width: 3,
             backgroundColor: colors.brand,
             opacity: 0.85,
@@ -65,15 +72,10 @@ export function OrdersDealerBar({ label, onPress, onClear }: Props) {
           minHeight: 48,
           paddingHorizontal: theme.spacing.md,
           paddingVertical: theme.spacing.sm,
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           alignItems: 'center',
           gap: theme.spacing.sm,
-          paddingLeft: isRTL ? theme.spacing.md : active ? theme.spacing.md + 4 : theme.spacing.md,
-          paddingRight: isRTL
-            ? active
-              ? theme.spacing.md + 4
-              : theme.spacing.md
-            : theme.spacing.md,
+          ...(active ? extraStartPadding(isRTL, theme.spacing.md + 4) : null),
         }}
       >
         <View
@@ -95,13 +97,12 @@ export function OrdersDealerBar({ label, onPress, onClear }: Props) {
           />
         </View>
 
-        <View style={{ flex: 1, gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+        <View style={{ flex: 1, gap: 2, alignItems: alignStart(isRTL) }}>
           <AppText
             variant="caption"
             color="muted"
+            align="start"
             style={{
-              letterSpacing: locale === 'ar' ? 0 : 0.6,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
               fontSize: 11,
               lineHeight: 14,
             }}
@@ -112,6 +113,7 @@ export function OrdersDealerBar({ label, onPress, onClear }: Props) {
             variant="label"
             weight={titleWeight}
             numberOfLines={1}
+            align="start"
             style={{ color: active ? colors.brand : colors.textPrimary }}
           >
             {label ?? t('mobile.orders.dealerRailAll')}
@@ -119,11 +121,9 @@ export function OrdersDealerBar({ label, onPress, onClear }: Props) {
         </View>
 
         {!active || !onClear ? (
-          <Ionicons
-            name={isRTL ? 'chevron-back' : 'chevron-forward'}
-            size={18}
-            color={colors.textMuted}
-          />
+          <DirectionalIcon>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </DirectionalIcon>
         ) : null}
       </AnimatedPressable>
 

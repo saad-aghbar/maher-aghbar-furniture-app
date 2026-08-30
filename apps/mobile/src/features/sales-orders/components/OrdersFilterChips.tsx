@@ -6,7 +6,7 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { useDraggablePillBar, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -41,59 +41,13 @@ const CHIP_GAP = 2;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
-const FILL_LIGHT = [
-  '#F3EEE5',
-  '#EEE8E0',
-  '#EEEAE4',
-  '#F2E8E4',
-  '#E9EBE3',
-  '#E8EEEA',
-] as const;
-const BORDER_LIGHT = [
-  '#8F7A58',
-  '#7A6B52',
-  '#6E6254',
-  '#7A4538',
-  '#5A6348',
-  '#4A6B58',
-] as const;
-const FILL_DARK = [
-  'rgba(168,144,108,0.18)',
-  'rgba(168,148,120,0.20)',
-  'rgba(181,164,140,0.20)',
-  'rgba(196,137,122,0.18)',
-  'rgba(154,170,122,0.18)',
-  'rgba(122,170,148,0.18)',
-] as const;
-const BORDER_DARK = [
-  '#A8906C',
-  '#A89878',
-  '#B5A48C',
-  '#C4897A',
-  '#9AAA7A',
-  '#7AAA94',
-] as const;
-
 type ChipLayout = { x: number; width: number };
 
 function accentFor(
-  chip: StatusChipKey,
-  colors: {
-    brand: string;
-    info: string;
-    warning: string;
-    success: string;
-    textSecondary: string;
-  },
+  colors: { textPrimary: string; textSecondary: string },
   focused: boolean,
 ): string {
-  if (!focused) return colors.textSecondary;
-  if (chip === 'drafts') return colors.brand;
-  if (chip === 'pending') return colors.warning;
-  if (chip === 'production') return colors.info;
-  if (chip === 'ready') return colors.brand;
-  if (chip === 'delivered') return colors.success;
-  return colors.brand;
+  return focused ? colors.textPrimary : colors.textSecondary;
 }
 
 /**
@@ -110,8 +64,16 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
 
   const activeIdx = Math.max(0, CHIPS.indexOf(value));
   const dark = colorScheme === 'dark';
-  const fills = dark ? FILL_DARK : FILL_LIGHT;
-  const borders = dark ? BORDER_DARK : BORDER_LIGHT;
+  const wood = colors.brandSoft;
+  const fills = [wood, wood, wood, wood, wood, wood] as const;
+  const borders = [
+    colors.brand,
+    colors.brand,
+    colors.brand,
+    colors.brandActive,
+    colors.brand,
+    colors.brand,
+  ] as const;
 
   const orderedLayouts = useMemo(
     () => CHIPS.map((chip) => layouts[chip]),
@@ -162,10 +124,14 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
     width: pillW.value,
     backgroundColor: interpolateColor(
       hoverIndex.value,
-      [0, 1, 2, 3, 4],
+      [0, 1, 2, 3, 4, 5],
       [...fills],
     ),
-    borderColor: interpolateColor(hoverIndex.value, [0, 1, 2, 3, 4], [...borders]),
+    borderColor: interpolateColor(
+      hoverIndex.value,
+      [0, 1, 2, 3, 4, 5],
+      [...borders],
+    ),
   }));
 
   const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
@@ -201,7 +167,7 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
         <GestureDetector gesture={gesture}>
           <View
             style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: localeRow(isRTL),
               alignItems: 'center',
               gap: CHIP_GAP,
               minHeight: PILL_HEIGHT,
@@ -231,7 +197,7 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
             {CHIPS.map((chip) => {
               const focused = value === chip;
               const label = t(`mobile.orders.chips.${chip}`);
-              const ink = accentFor(chip, colors, focused);
+              const ink = accentFor(colors, focused);
 
               return (
                 <Pressable

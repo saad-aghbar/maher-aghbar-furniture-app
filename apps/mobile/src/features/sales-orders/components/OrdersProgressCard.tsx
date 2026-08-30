@@ -1,11 +1,23 @@
 import { Image, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { useLocale } from '@/i18n';
+import {
+  alignStart,
+  extraStartPadding,
+  localeRow,
+  pinStart,
+  useLocale,
+} from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
+import {
+  chipsLookLikeSameLabel,
+  humanizeOrderChip,
+  normalizeChipKey,
+} from '../humanizeOrderChip';
 import { resolveOrderMediaUri } from './OrderCardMedia';
 import { orderBoardShadow } from './orderFloorStyle';
 
@@ -33,10 +45,30 @@ type Props = {
   onProgressPress?: () => void;
 };
 
-const MEDIA = 88;
+const MEDIA = 80;
+
+function resolveOrderChips(
+  order: OrdersProgressCardModel,
+  locale: string,
+  t: (key: string) => string,
+) {
+  const statusLabel = humanizeOrderChip(locale, order.status);
+  const stageRaw = order.progressLabel?.trim() || '';
+  const showStage =
+    Boolean(stageRaw) && !chipsLookLikeSameLabel(stageRaw, order.status);
+  const stageKey = showStage ? normalizeChipKey(stageRaw) || order.status : '';
+  const stageLabel = showStage ? humanizeOrderChip(locale, stageRaw) : '';
+
+  return {
+    statusLabel,
+    stageKey,
+    stageLabel,
+    progressCaption: stageLabel || t('mobile.orders.progress'),
+  };
+}
 
 /**
- * Floor-list order card — soft elevation, accent strip, progress row.
+ * Floor-list order card — cream board, humanized pills, directional chevron.
  */
 export function OrdersProgressCard({ order, variant, onPress, onProgressPress }: Props) {
   const { t, formatCurrency, formatDate, isRTL, locale } = useLocale();
@@ -47,6 +79,13 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
     (order.priority ?? '').toUpperCase() === 'HIGH';
   const accent = urgent ? colors.warning : colors.brand;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const chips = resolveOrderChips(order, locale, t);
+  const idLine =
+    order.kind === 'rfq'
+      ? variant === 'dealer'
+        ? t('mobile.orders.rfqLabel')
+        : `${t('mobile.orders.unapprovedLabel')} · ${order.number}`
+      : order.number;
 
   return (
     <AnimatedPressable
@@ -72,7 +111,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
           position: 'absolute',
           top: 0,
           bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
+          ...pinStart(isRTL),
           width: 3,
           backgroundColor: accent,
           opacity: urgent ? 1 : 0.5,
@@ -81,14 +120,12 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
 
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           gap: theme.spacing.md,
           paddingTop: theme.spacing.md,
           paddingBottom: theme.spacing.sm,
           paddingHorizontal: theme.spacing.md,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
+          ...extraStartPadding(isRTL, theme.spacing.md + 4),
           alignItems: 'flex-start',
         }}
       >
@@ -122,63 +159,101 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             flex: 1,
             minWidth: 0,
             gap: 4,
-            alignItems: isRTL ? 'flex-end' : 'flex-start',
+            alignItems: alignStart(isRTL),
           }}
         >
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              gap: theme.spacing.sm,
-              width: '100%',
-            }}
-          >
+          {variant === 'admin' && order.dealerName ? (
             <AppText
-              variant="label"
-              weight={titleWeight}
-              numberOfLines={2}
-              style={{ flex: 1 }}
+              variant="caption"
+              color="muted"
+              numberOfLines={1}
+              align="start"
+              style={{
+                width: '100%',
+                letterSpacing: locale === 'ar' ? 0 : 0.4,
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                fontSize: 11,
+                lineHeight: 14,
+              }}
             >
-              {order.title}
+              {order.dealerName}
             </AppText>
-            <StatusBadge status={order.status} dot />
-          </View>
+          ) : null}
+
+          <AppText
+            variant="label"
+            weight={titleWeight}
+            numberOfLines={2}
+            align="start"
+            style={{ width: '100%' }}
+          >
+            {order.title}
+          </AppText>
 
           <AppText
             variant="caption"
             color="secondary"
             numberOfLines={1}
             dir={order.kind === 'rfq' && variant === 'dealer' ? 'auto' : 'ltr'}
+            align="start"
             style={{ letterSpacing: 0.2 }}
           >
-            {order.kind === 'rfq'
-              ? variant === 'dealer'
-                ? t('mobile.orders.rfqLabel')
-                : `${t('mobile.orders.unapprovedLabel')} · ${order.number}`
-              : order.number}
+            {idLine}
           </AppText>
 
-          {variant === 'admin' && order.dealerName ? (
-            <AppText variant="caption" color="muted" style={{ width: '100%' }}>
-              {`${t('mobile.orders.dealer')}: ${order.dealerName}`}
-            </AppText>
-          ) : null}
+          <View
+            style={{
+              flexDirection: localeRow(isRTL),
+              flexWrap: 'wrap',
+              gap: theme.spacing.xs,
+              width: '100%',
+              marginTop: 2,
+            }}
+          >
+            <StatusBadge
+              status={order.status}
+              label={chips.statusLabel}
+              ink="board"
+              dot
+            />
+            {chips.stageLabel ? (
+              <StatusBadge
+                status={chips.stageKey || order.status}
+                label={chips.stageLabel}
+                ink="board"
+              />
+            ) : null}
+          </View>
+
           {variant === 'dealer' && order.sellerPrice != null ? (
             <AppText
               variant="caption"
               color="muted"
               dir="ltr"
+              align="start"
               style={{ width: '100%' }}
             >
               {formatCurrency(order.sellerPrice)}
             </AppText>
           ) : null}
           {order.deliveryDate ? (
-            <AppText variant="caption" color="muted" style={{ width: '100%' }}>
+            <AppText variant="caption" color="muted" align="start" style={{ width: '100%' }}>
               {formatDate(order.deliveryDate)}
             </AppText>
           ) : null}
+        </View>
+
+        <View
+          style={{
+            alignSelf: 'center',
+            width: 22,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <DirectionalIcon>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </DirectionalIcon>
         </View>
       </View>
 
@@ -194,7 +269,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
       >
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: localeRow(isRTL),
             justifyContent: 'space-between',
             alignItems: 'center',
             gap: theme.spacing.sm,
@@ -206,7 +281,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             numberOfLines={1}
             style={{ flex: 1 }}
           >
-            {order.progressLabel?.trim() || t('mobile.orders.progress')}
+            {chips.progressCaption}
           </AppText>
           <AppText
             variant="caption"

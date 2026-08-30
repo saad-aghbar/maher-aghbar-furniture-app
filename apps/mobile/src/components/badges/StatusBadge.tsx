@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
 import { statusLabel } from '@maher/i18n';
-import { useLocale } from '@/i18n';
+import { alignStart, localeRow, textAlignFor, useLocale, writingDirectionFor } from '@/i18n';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import {
   getBadgeContainerStyle,
@@ -13,18 +13,26 @@ type StatusBadgeProps = {
   status: string;
   label?: string;
   dot?: boolean;
+  /** Army Camo wash + Liquorice type — board chips, not cool-grey defaults. */
+  ink?: 'semantic' | 'board';
 };
 
 function normalizeStatusKey(status: string): string {
   return status.trim().toUpperCase().replace(/\s+/g, '_');
 }
 
-export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
-  const { theme } = useTheme();
+export function StatusBadge({
+  status,
+  label,
+  dot = false,
+  ink = 'semantic',
+}: StatusBadgeProps) {
+  const { theme, colors } = useTheme();
   const { locale, isRTL } = useLocale();
   const key = normalizeStatusKey(status);
   const variant = resolveStatusVariant(key);
   const display = label ?? statusLabel(locale, key);
+  const board = ink === 'board';
 
   return (
     <View
@@ -32,7 +40,13 @@ export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
       accessibilityLabel={display}
       style={[
         getBadgeContainerStyle(theme, variant),
-        { alignSelf: isRTL ? 'flex-end' : 'flex-start' },
+        { alignSelf: alignStart(isRTL), flexDirection: localeRow(isRTL) },
+        board
+          ? {
+              backgroundColor: colors.brandSoft,
+              borderColor: colors.brand,
+            }
+          : null,
       ]}
     >
       {dot ? (
@@ -43,7 +57,7 @@ export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
             width: 6,
             height: 6,
             borderRadius: 3,
-            backgroundColor: getBadgeDotColor(theme, variant),
+            backgroundColor: board ? colors.brandActive : getBadgeDotColor(theme, variant),
           }}
         />
       ) : null}
@@ -57,11 +71,9 @@ export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
             systemWeight: theme.typography.weights.medium,
           }),
           {
-            textAlign: isRTL ? 'right' : 'left',
-            writingDirection: isRTL ? 'rtl' : 'ltr',
-            ...(isRTL
-              ? { fontSize: 10, lineHeight: 14 }
-              : null),
+            textAlign: textAlignFor(isRTL ? 'rtl' : 'ltr'),
+            writingDirection: writingDirectionFor(isRTL),
+            ...(board ? { color: colors.textPrimary } : null),
           },
         ]}
       >

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { listRequests } from '@/api/modules/requests';
@@ -18,10 +19,9 @@ import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { useLocale } from '@/i18n';
+import { alignStart, localeRow, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { SalesOrderListItem } from './api';
@@ -31,6 +31,7 @@ import {
   type StatusChipKey,
 } from './components/OrdersFilterChips';
 import { OrdersFilterButton } from './components/OrdersFilterButton';
+import { OrdersSearchBar } from './components/OrdersSearchBar';
 import {
   countActiveOrderFilters,
   defaultOrdersFilterDraft,
@@ -81,6 +82,7 @@ export function OrdersListScreen({
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const params = useLocalSearchParams<{ focus?: string | string[] }>();
@@ -586,7 +588,7 @@ export function OrdersListScreen({
         keyExtractor={(item) => (item.kind === 'rfq' ? `rfq-${item.id}` : item.id)}
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
           flexGrow: 1,
         }}
         refreshControl={
@@ -649,45 +651,49 @@ function OrdersHeader({
     <View style={{ gap: theme.spacing.lg }}>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: theme.spacing.md,
         }}
       >
-        <View style={{ flex: 1, gap: theme.spacing.xs, minWidth: 0 }}>
+        <View
+          style={{
+            flex: 1,
+            gap: theme.spacing.xs,
+            minWidth: 0,
+            alignItems: alignStart(isRTL),
+          }}
+        >
           <AppText
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
+            align="start"
             style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' ? 0 : 0.2,
               color: colors.brand,
             }}
           >
             {t('mobile.orders.pulseEyebrow')}
           </AppText>
-          <AppText variant="title" weight={titleWeight}>
+          <AppText variant="largeTitle" weight={titleWeight} align="start">
             {t('mobile.orders.title')}
           </AppText>
           <AppText
             variant="caption"
-            color="muted"
-            numberOfLines={1}
-            style={{ fontSize: 12, lineHeight: 16 }}
+            numberOfLines={2}
+            align="start"
+            style={{ fontSize: 12, lineHeight: 16, color: colors.brand }}
           >
             {t('mobile.orders.subtitle')}
           </AppText>
         </View>
         <OrdersFilterButton onPress={onOpenFilters} activeCount={filterActiveCount} />
       </View>
-      <TextField
+      <OrdersSearchBar
         value={searchInput}
         onChangeText={setSearchInput}
         placeholder={t('mobile.orders.searchPlaceholder')}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
       />
       <OrdersFilterChips value={statusChip} onChange={onChipChange} />
     </View>

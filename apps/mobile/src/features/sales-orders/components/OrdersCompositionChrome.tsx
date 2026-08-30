@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
-import { TextField } from '@/components/forms/TextField';
 import { DealerSearchBar } from '@/features/dealer-ui';
-import { useLocale } from '@/i18n';
+import { alignStart, localeRow, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { OrdersFilterButton } from './OrdersFilterButton';
+import { OrdersSearchBar } from './OrdersSearchBar';
 
 type Props = {
   title?: string;
@@ -46,35 +46,46 @@ export function OrdersCompositionChrome({
   const searchPlaceholder = t('mobile.orders.searchPlaceholder');
 
   return (
-    <View style={{ gap: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
+    <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: theme.spacing.md,
         }}
       >
-        <View style={{ flex: 1, gap: theme.spacing.xs, minWidth: 0 }}>
+        <View
+          style={{
+            flex: 1,
+            gap: theme.spacing.xs,
+            minWidth: 0,
+            alignItems: alignStart(isRTL),
+          }}
+        >
           <AppText
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
+            align="start"
             style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' ? 0 : 0.2,
               color: colors.brand,
             }}
           >
             {eyebrowLabel}
           </AppText>
-          <AppText variant="title" weight={titleWeight}>
+          <AppText variant="largeTitle" weight={titleWeight} align="start">
             {heading}
           </AppText>
           <AppText
             variant="caption"
-            color="muted"
             numberOfLines={2}
-            style={{ fontSize: 12, lineHeight: 16 }}
+            align="start"
+            style={{
+              fontSize: 12,
+              lineHeight: 16,
+              color: colors.brand,
+            }}
           >
             {subtitleLabel}
           </AppText>
@@ -89,13 +100,10 @@ export function OrdersCompositionChrome({
           placeholder={searchPlaceholder}
         />
       ) : (
-        <TextField
+        <OrdersSearchBar
           value={searchInput}
           onChangeText={setSearchInput}
           placeholder={searchPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
         />
       )}
       {children}

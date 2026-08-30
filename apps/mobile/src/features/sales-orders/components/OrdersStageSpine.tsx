@@ -7,12 +7,21 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
+import {
+  alignStart,
+  extraStartPadding,
+  localeRow,
+  pinStart,
+  useLocale,
+} from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme, type ThemeColors } from '@/theme';
+import { honestJourneyCount } from '../honestJourneyCount';
 import {
   toggleStageFocus,
   type OrdersStageFocus,
@@ -26,15 +35,13 @@ type Props = {
   onStageFocusChange: (next: OrdersStageFocus) => void;
 };
 
-function stageTint(colors: ThemeColors, key: OrdersStageKey) {
-  switch (key) {
-    case 'pending':
-      return { tint: colors.brand, soft: colors.brandSoft };
-    case 'production':
-      return { tint: colors.info, soft: colors.infoSoft };
-    case 'ready':
-      return { tint: colors.success, soft: colors.successSoft };
+type JourneyKey = OrdersStageKey | 'all';
+
+function stageTint(colors: ThemeColors, key: JourneyKey) {
+  if (key === 'production') {
+    return { tint: colors.brandActive, soft: colors.brandSoft };
   }
+  return { tint: colors.brand, soft: colors.brandSoft };
 }
 
 function StageIcon({
@@ -42,20 +49,28 @@ function StageIcon({
   color,
   size,
 }: {
-  stageKey: OrdersStageKey;
+  stageKey: JourneyKey;
   color: string;
   size: number;
 }) {
   switch (stageKey) {
+    case 'all':
+      return <Ionicons name="apps-outline" size={size} color={color} />;
     case 'pending':
-      return <Ionicons name="cube-outline" size={size} color={color} />;
-    case 'production':
-      return <MaterialCommunityIcons name="factory" size={size} color={color} />;
+      return <Ionicons name="hourglass-outline" size={size} color={color} />;
     case 'ready':
-      return <Ionicons name="checkmark-circle-outline" size={size} color={color} />;
+      return (
+        <DirectionalIcon>
+          <Ionicons name="play-outline" size={size} color={color} />
+        </DirectionalIcon>
+      );
+    case 'production':
+      return <MaterialCommunityIcons name="hammer" size={size} color={color} />;
   }
 }
 
+/** 4-up: All · Preparing · Ready to start · Production — one-line Production, honest zeros. */
+const JOURNEY: JourneyKey[] = ['all', 'pending', 'ready', 'production'];
 const STAGES: OrdersStageKey[] = ['pending', 'production', 'ready'];
 
 /**
@@ -112,7 +127,7 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
           position: 'absolute',
           top: 0,
           bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
+          ...pinStart(isRTL),
           width: 3,
           backgroundColor: colors.brand,
           opacity: 0.5,
@@ -123,79 +138,86 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
         style={{
           gap: theme.spacing.md,
           padding: theme.spacing.md,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
+          ...extraStartPadding(isRTL, theme.spacing.md + 4),
         }}
       >
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: localeRow(isRTL),
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: theme.spacing.sm,
           }}
         >
           <View
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
+              flexDirection: localeRow(isRTL),
               alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.surfaceSecondary,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.border,
+              gap: theme.spacing.sm,
+              flex: 1,
+              minWidth: 0,
             }}
           >
-            <Ionicons name="git-network-outline" size={16} color={colors.brand} />
-          </View>
-          <View style={{ flex: 1, gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-            <AppText
-              variant="caption"
-              weight={titleWeight}
-              style={{
-                color: colors.brand,
-                letterSpacing: locale === 'ar' ? 0 : 1.2,
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                fontSize: 11,
-                lineHeight: 14,
-              }}
-            >
-              {t('mobile.orders.pipelineEyebrow')}
-            </AppText>
-            <AppText
-              variant="caption"
-              color="secondary"
-              maxFontSizeMultiplier={1.15}
-              style={isRTL ? { fontSize: 11, lineHeight: 15 } : undefined}
-            >
-              {t('mobile.orders.pipelineHint')}
-            </AppText>
-          </View>
-          {total > 0 ? (
             <View
               style={{
-                minWidth: 28,
-                height: 28,
-                paddingHorizontal: 8,
-                borderRadius: 14,
-                backgroundColor: colors.brandSoft,
-                borderWidth: 1,
-                borderColor: colors.brand,
+                width: 32,
+                height: 32,
+                borderRadius: 16,
                 alignItems: 'center',
                 justifyContent: 'center',
+                backgroundColor: colors.surfaceSecondary,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
               }}
             >
+              <Ionicons name="git-network-outline" size={16} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1, gap: 2, minWidth: 0, alignItems: alignStart(isRTL) }}>
               <AppText
                 variant="caption"
-                weight="semibold"
-                dir="ltr"
-                style={{ color: colors.brand, fontVariant: ['tabular-nums'] }}
+                weight={titleWeight}
+                style={{
+                  color: colors.brand,
+                  fontSize: 11,
+                  lineHeight: 14,
+                }}
               >
-                {String(total)}
+                {t('mobile.orders.pipelineEyebrow')}
+              </AppText>
+              <AppText
+                variant="caption"
+                color="secondary"
+                maxFontSizeMultiplier={1.15}
+              >
+                {t('mobile.orders.pipelineHint')}
               </AppText>
             </View>
-          ) : null}
+          </View>
+          <View
+            style={{
+              minWidth: 28,
+              height: 28,
+              paddingHorizontal: 8,
+              borderRadius: 14,
+              backgroundColor: total === 0 ? colors.background : colors.brandSoft,
+              borderWidth: 1,
+              borderColor: total === 0 ? colors.borderStrong : colors.brand,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight="semibold"
+              dir="ltr"
+              style={{
+                color: total === 0 ? colors.textPrimary : colors.brand,
+                fontVariant: ['tabular-nums'],
+              }}
+            >
+              {honestJourneyCount(total)}
+            </AppText>
+          </View>
         </View>
 
         <Animated.View
@@ -205,7 +227,7 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
               borderRadius: theme.radius.full,
               backgroundColor: colors.surfaceSecondary,
               overflow: 'hidden',
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: localeRow(isRTL),
               gap: 2,
               padding: 2,
               borderWidth: StyleSheet.hairlineWidth,
@@ -249,25 +271,31 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
 
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: localeRow(isRTL),
             justifyContent: 'space-between',
             gap: theme.spacing.sm,
           }}
         >
-          {STAGES.map((key) => {
+          {JOURNEY.map((key) => {
             const { tint, soft } = stageTint(colors, key);
             const active = stageFocus === key;
+            const value = key === 'all' ? total : (counts[key] ?? 0);
             return (
               <StageNode
                 key={key}
                 stageKey={key}
                 label={t(`mobile.orders.stages.${key}`)}
-                value={counts[key]}
+                value={value}
                 tint={tint}
                 soft={soft}
                 active={active}
+                empty={value === 0}
                 onPress={() => {
                   void haptics.selection();
+                  if (key === 'all') {
+                    onStageFocusChange('all');
+                    return;
+                  }
                   onStageFocusChange(toggleStageFocus(stageFocus, key));
                 }}
               />
@@ -286,22 +314,38 @@ function StageNode({
   tint,
   soft,
   active,
+  empty,
   onPress,
 }: {
-  stageKey: OrdersStageKey;
+  stageKey: JourneyKey;
   label: string;
   value: number;
   tint: string;
   soft: string;
   active: boolean;
+  empty?: boolean;
   onPress: () => void;
 }) {
   const { isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const reduce = useReducedMotion();
+  const selected = useSharedValue(active ? 1 : 0);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
+  useEffect(() => {
+    if (reduce) {
+      selected.value = active ? 1 : 0;
+      return;
+    }
+    selected.value = withSpring(active ? 1 : 0, theme.motion.spring.snappy);
+  }, [active, reduce, selected, theme.motion.spring.snappy]);
+
+  const selectStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(selected.value, [0, 1], [1, 1.03]) }],
+  }));
+
   return (
-    <View style={{ flex: 1 }}>
+    <Animated.View style={[{ flex: 1 }, selectStyle]}>
       <AnimatedPressable
         variant="button"
         onPress={onPress}
@@ -310,7 +354,7 @@ function StageNode({
         accessibilityLabel={`${label} ${value}`}
         style={{
           flex: 1,
-          paddingHorizontal: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.xs,
           paddingVertical: theme.spacing.sm,
           borderRadius: theme.radius.lg,
           backgroundColor: active ? soft : colors.surfaceSecondary,
@@ -328,7 +372,7 @@ function StageNode({
               position: 'absolute',
               top: 0,
               bottom: 0,
-              ...(isRTL ? { right: 0 } : { left: 0 }),
+              ...pinStart(isRTL),
               width: 3,
               backgroundColor: tint,
               opacity: 0.9,
@@ -342,36 +386,46 @@ function StageNode({
             borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: active ? colors.surface : colors.surface,
+            backgroundColor: colors.background,
             borderWidth: StyleSheet.hairlineWidth,
-            borderColor: active ? tint : colors.border,
+            borderColor: empty ? colors.border : tint,
           }}
         >
-          <StageIcon stageKey={stageKey} color={tint} size={15} />
+          <StageIcon
+            stageKey={stageKey}
+            color={empty ? colors.textPrimary : tint}
+            size={15}
+          />
         </View>
         <AppText
           variant="label"
           weight={titleWeight}
           dir="ltr"
-          style={{ color: tint, fontVariant: ['tabular-nums'] }}
+          style={{
+            color: empty ? colors.textPrimary : tint,
+            fontVariant: ['tabular-nums'],
+          }}
         >
-          {String(value)}
+          {honestJourneyCount(value)}
         </AppText>
         <AppText
           variant="caption"
           color="secondary"
-          numberOfLines={2}
+          numberOfLines={stageKey === 'production' ? 1 : 2}
           align="center"
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}
           maxFontSizeMultiplier={1.1}
           style={{
-            fontSize: isRTL ? 10 : 11,
-            lineHeight: isRTL ? 13 : 14,
-            textAlign: 'center',
+            fontSize: 11,
+            lineHeight: 14,
+            width: '100%',
+            textTransform: 'none',
           }}
         >
           {label}
         </AppText>
       </AnimatedPressable>
-    </View>
+    </Animated.View>
   );
 }
