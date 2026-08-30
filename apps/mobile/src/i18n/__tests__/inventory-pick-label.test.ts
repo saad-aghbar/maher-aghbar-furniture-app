@@ -42,6 +42,15 @@ describe('inventory transfer/count picker i18n', () => {
     }
   });
 
+  it('titles the semi-finished inventory surface Semi, not a generic order', () => {
+    expect(translate('en', 'mobile.inventory.semiTitle')).toBe('Semi');
+    expect(translate('ar', 'mobile.inventory.semiTitle')).not.toBe('mobile.inventory.semiTitle');
+    expect(translate('he', 'mobile.inventory.semiTitle')).not.toBe('mobile.inventory.semiTitle');
+    expect(translate('en', 'mobile.inventory.semiTitle')).not.toMatch(/Order detail/i);
+    expect(translate('en', 'mobile.inventory.emptySemiTitle')).toBe('No semi-finished stock');
+    expect(translate('en', 'mobile.inventory.emptySemiBody')).toMatch(/production stage/i);
+  });
+
   it.each(PICKER_KEYS)('does not leak %s as a raw key', (key) => {
     for (const locale of ['en', 'ar', 'he'] as const) {
       const value = translate(locale, key, { qty: 6, unit: 'pcs' });

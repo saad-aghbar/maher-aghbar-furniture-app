@@ -2154,6 +2154,7 @@
       "finished": "Finished"
     },
     "semiHeading": "Semi-finished goods",
+    "semiTitle": "Semi",
     "finishedHeading": "Finished goods",
     "emptySemiTitle": "No semi-finished stock",
     "emptySemiBody": "Components appear here when a production stage records them.",
