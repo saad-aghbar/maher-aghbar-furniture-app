@@ -4,7 +4,7 @@ import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 /**
- * Sell-ready empty product photo — muted brand wash + monogram, not a raw label.
+ * Honest empty product photo — cream canvas + quiet monogram, not a grey void or label.
  */
 export function EmptyProductImage() {
   const { colors, colorScheme } = useTheme();
@@ -19,9 +19,11 @@ export function EmptyProductImage() {
       accessibilityLabel={t('mobile.catalog.noImage')}
       style={{
         flex: 1,
+        width: '100%',
+        height: '100%',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: colors.brandSoft,
+        backgroundColor: colors.background,
         overflow: 'hidden',
       }}
     >
