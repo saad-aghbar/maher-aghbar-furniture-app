@@ -29,6 +29,7 @@ import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
 import { displayRolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './components/MoreBoard';
 import { useAuth } from '@/auth/AuthProvider';
@@ -45,6 +46,7 @@ import {
 } from '@/auth/biometrics';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Linking, Pressable, Switch, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 function splitName(name: string): { first: string; last: string } {
@@ -69,6 +71,7 @@ export function MoreAccountScreen({
   const { user, logout, applyUser, refreshUser } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -291,7 +294,14 @@ export function MoreAccountScreen({
   const setupActive = Boolean(mfaSecret);
 
   return (
-    <ScrollableScreen>
+    <ScrollableScreen
+      contentContainerStyle={{
+        // Size to children so Theme / security can scroll; extra inset clears the floating tab bar.
+        flexGrow: 0,
+        paddingBottom:
+          insets.bottom + theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+      }}
+    >
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
