@@ -169,7 +169,9 @@ export function WorkflowFloorRow({
           <AppText
             variant="label"
             weight={active ? titleWeight : 'medium'}
-            numberOfLines={1}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+            textBreakStrategy="simple"
             style={{
               color: active ? colors.brand : colors.textPrimary,
               textAlign: isRTL ? 'right' : 'left',

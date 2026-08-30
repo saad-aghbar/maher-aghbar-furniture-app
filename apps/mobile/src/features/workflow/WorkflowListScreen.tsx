@@ -22,6 +22,7 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { WorkflowFloorBoard, WorkflowFloorRow } from './components/WorkflowFloorList';
 import { WorkflowPageHeader } from './components/WorkflowPageHeader';
@@ -59,6 +60,11 @@ export function WorkflowListScreen() {
   });
 
   const fieldOrder = nameFieldOrder(locale);
+  /** ScrollView `gap` can drop contentContainerStyle.paddingBottom — spacer clears the pill. */
+  const listBottomClearance =
+    theme.spacing['3xl'] +
+    SURFACE_TAB_BAR_CLEARANCE +
+    Math.max(insets.bottom, theme.spacing.sm);
   const nameLabels: Record<keyof TrilingualNames, string> = {
     nameEn: t('mobile.production.workflow.nameEn'),
     nameAr: t('mobile.production.workflow.nameAr'),
@@ -79,7 +85,7 @@ export function WorkflowListScreen() {
 
   return (
     <>
-      <ScrollableScreen>
+      <ScrollableScreen contentContainerStyle={{ paddingBottom: theme.spacing.md }}>
         {showOfflineBanner ? <OfflineBanner /> : null}
 
         <WorkflowPageHeader
@@ -195,6 +201,12 @@ export function WorkflowListScreen() {
             })}
           </WorkflowFloorBoard>
         )}
+        <View
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ height: listBottomClearance }}
+        />
       </ScrollableScreen>
 
       <BottomSheet
