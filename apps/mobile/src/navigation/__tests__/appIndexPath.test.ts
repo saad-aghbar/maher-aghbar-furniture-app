@@ -1,8 +1,10 @@
 import {
+  SEARCH_HREF,
   asAppHref,
   authenticatedLandingHref,
   expoDeepLinkPath,
   isGlobalSearchPath,
+  shouldPresentGlobalSearch,
   shouldRedirectAppIndex,
 } from '../appIndexPath';
 
@@ -19,8 +21,22 @@ describe('appIndexPath', () => {
     expect(isGlobalSearchPath(expoDeepLinkPath('exp://127.0.0.1:8081/--/(app)/search'))).toBe(
       true,
     );
+    expect(SEARCH_HREF).toBe('/(app)/search');
     expect(isGlobalSearchPath('/notifications')).toBe(false);
     expect(isGlobalSearchPath('/(app)/(admin)/(tabs)')).toBe(false);
+  });
+
+  it('opens search when Expo focused / but the launch URL is /(app)/search', () => {
+    const exp = 'exp://127.0.0.1:8081/--/(app)/search';
+    expect(shouldPresentGlobalSearch('/', ['(app)'], exp)).toBe(true);
+    expect(shouldPresentGlobalSearch('/', [], exp)).toBe(true);
+    expect(shouldPresentGlobalSearch('/search', [], null)).toBe(true);
+    expect(shouldPresentGlobalSearch('/', ['(app)', '(admin)', '(tabs)'], exp)).toBe(false);
+    expect(
+      shouldPresentGlobalSearch('/', ['(app)', '(employee)', '(tabs)'], exp),
+    ).toBe(false);
+    expect(shouldPresentGlobalSearch('/', ['(app)'], 'exp://127.0.0.1:8081')).toBe(false);
+    expect(asAppHref('/(app)/search')).toBe('/(app)/search');
   });
 
   it('does not let the app index Redirect steal real destinations', () => {
@@ -54,6 +70,13 @@ describe('appIndexPath', () => {
       '/(app)/(employee)/(tabs)',
     );
     expect(authenticatedLandingHref('/search', home)).toBe('/(app)/search');
+    expect(authenticatedLandingHref('/(app)/search', home)).toBe('/(app)/search');
+    expect(
+      authenticatedLandingHref(
+        expoDeepLinkPath('exp://127.0.0.1:8081/--/(app)/search'),
+        home,
+      ),
+    ).toBe('/(app)/search');
     expect(authenticatedLandingHref('/', home)).toBe(home);
     expect(asAppHref('/(app)/(customer)/(tabs)/catalog')).toBe(
       '/(app)/(customer)/(tabs)/catalog',

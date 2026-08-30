@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import * as Linking from 'expo-linking';
@@ -13,13 +13,22 @@ import { useTheme } from '@/theme';
 
 /**
  * Splash / bootstrap gate — restores SecureStore session then redirects.
+ * Wait for getInitialURL so `exp://…/--/(app)/search` is not replaced with Home.
  */
 export default function SplashGate() {
   const router = useRouter();
   const { status, bootstrap, user } = useAuth();
   const { colors, theme } = useTheme();
   const { t } = useLocale();
-  const incomingUrl = Linking.useURL();
+  const liveUrl = Linking.useURL();
+  const [initialUrl, setInitialUrl] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    void Linking.getInitialURL().then(setInitialUrl);
+  }, []);
+
+  const incomingUrl = liveUrl ?? initialUrl ?? null;
+  const urlReady = liveUrl != null || initialUrl !== undefined;
 
   useEffect(() => {
     switch (status) {
@@ -27,6 +36,7 @@ export default function SplashGate() {
       case 'authenticating':
         return;
       case 'authenticated':
+        if (!urlReady) return;
         if (user) {
           router.replace(
             authenticatedLandingHref(
@@ -52,7 +62,7 @@ export default function SplashGate() {
       default:
         router.replace('/(auth)/login' as Href);
     }
-  }, [incomingUrl, status, router, user]);
+  }, [incomingUrl, urlReady, status, router, user]);
 
   return (
     <View

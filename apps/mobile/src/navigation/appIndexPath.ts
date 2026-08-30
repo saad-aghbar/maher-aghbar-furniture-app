@@ -1,8 +1,11 @@
 /**
  * Path helpers for the authenticated (app) stack.
  * `(app)/index` is a safety Redirect into the surface tabs — it must not
- * fire while a sibling like `/search` is the intended route.
+ * fire while a sibling like `/(app)/search` is the intended route.
  */
+
+/** Keep the `(app)` group in the Expo href — never a bare `/search`. */
+export const SEARCH_HREF = '/(app)/search';
 
 export function expoDeepLinkPath(url: string | null | undefined): string {
   if (!url) return '';
@@ -29,6 +32,21 @@ function nonGroupSegments(pathname: string): string[] {
 export function isGlobalSearchPath(pathname: string): boolean {
   const leaf = nonGroupSegments(pathname);
   return leaf.length === 1 && leaf[0] === 'search';
+}
+
+/**
+ * Deep link meant global search even when Expo focused `/` (index)
+ * and stripped groups from `usePathname`. Only consult the launch URL when
+ * this really looks like the bare app index — not while sitting on Admin Home.
+ */
+export function shouldPresentGlobalSearch(
+  pathname: string,
+  segments: readonly string[] = [],
+  launchUrl?: string | null,
+): boolean {
+  if (isGlobalSearchPath(pathname) || segments.includes('search')) return true;
+  if (!shouldRedirectAppIndex(pathname, segments)) return false;
+  return isGlobalSearchPath(expoDeepLinkPath(launchUrl));
 }
 
 /**
@@ -67,9 +85,9 @@ export function shouldRedirectAppIndex(
   return leaf.length === 0 || (leaf.length === 1 && leaf[0] === 'index');
 }
 
-/** Turn an Expo path into an in-app href. */
+/** Turn an Expo path into an in-app href. Keep `(app)` groups. */
 export function asAppHref(pathname: string): string {
-  if (isGlobalSearchPath(pathname)) return '/(app)/search';
+  if (isGlobalSearchPath(pathname)) return SEARCH_HREF;
   if (pathname.startsWith('/(app)')) return pathname;
   if (pathname.startsWith('/')) return `/(app)${pathname}`;
   return `/(app)/${pathname}`;
