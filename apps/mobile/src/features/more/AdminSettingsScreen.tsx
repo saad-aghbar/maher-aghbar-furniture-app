@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, Switch, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
@@ -28,6 +29,7 @@ import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { haptics, useReducedMotion } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './components/MoreBoard';
 
@@ -139,7 +141,7 @@ export function AdminSettingsScreen() {
 
   if (!allowed) {
     return (
-      <ScrollableScreen>
+      <SettingsScroll>
         <BackButton
           onPress={() => {
             if (router.canGoBack()) router.back();
@@ -151,13 +153,13 @@ export function AdminSettingsScreen() {
           title={t('mobile.adminSettings.forbiddenTitle')}
           description={t('mobile.adminSettings.forbiddenBody')}
         />
-      </ScrollableScreen>
+      </SettingsScroll>
     );
   }
 
   if (settingsQuery.isError) {
     return (
-      <ScrollableScreen>
+      <SettingsScroll>
         <BackButton
           onPress={() => {
             if (router.canGoBack()) router.back();
@@ -170,13 +172,13 @@ export function AdminSettingsScreen() {
           description={t('common.loadFailed')}
           onRetry={() => void settingsQuery.refetch()}
         />
-      </ScrollableScreen>
+      </SettingsScroll>
     );
   }
 
   if (settingsQuery.isLoading || !company || !integrations) {
     return (
-      <ScrollableScreen>
+      <SettingsScroll>
         <BackButton
           onPress={() => {
             if (router.canGoBack()) router.back();
@@ -187,7 +189,7 @@ export function AdminSettingsScreen() {
         <AppText variant="body" color="muted">
           {t('mobile.adminSettings.loading')}
         </AppText>
-      </ScrollableScreen>
+      </SettingsScroll>
     );
   }
 
@@ -197,7 +199,7 @@ export function AdminSettingsScreen() {
       : t('catalog.integrationNotConfigured');
 
   return (
-    <ScrollableScreen>
+    <SettingsScroll>
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
@@ -212,11 +214,7 @@ export function AdminSettingsScreen() {
           <AppText
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
-            style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              color: colors.brand,
-            }}
+            style={{ color: colors.brand, textTransform: 'none' }}
           >
             {t('mobile.adminSettings.eyebrow')}
           </AppText>
@@ -478,6 +476,32 @@ export function AdminSettingsScreen() {
           </MoreBoard>
         </Animated.View>
       </View>
+    </SettingsScroll>
+  );
+}
+
+/**
+ * Last-content inset: insets.bottom + SURFACE_TAB_BAR_CLEARANCE.
+ * Real trailing height (not only paddingBottom) so Currency, VAT `16`,
+ * and Save clear the floating pill. Do not restyle the tab bar.
+ */
+function SettingsScroll({ children }: { children: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  return (
+    <ScrollableScreen
+      style={{ paddingBottom: bottomInset }}
+      contentContainerStyle={{ flexGrow: 0, paddingBottom: 0 }}
+      scrollProps={{
+        scrollIndicatorInsets: { bottom: bottomInset },
+      }}
+    >
+      {children}
+      <View
+        pointerEvents="none"
+        accessible={false}
+        style={{ height: bottomInset }}
+      />
     </ScrollableScreen>
   );
 }
@@ -489,10 +513,9 @@ function SectionLabel({ label, locale }: { label: string; locale: string }) {
       variant="caption"
       weight={locale === 'ar' ? 'regular' : 'medium'}
       style={{
-        letterSpacing: locale === 'ar' ? 0 : 0.8,
-        textTransform: locale === 'ar' ? 'none' : 'uppercase',
         color: colors.brand,
         fontSize: 11,
+        textTransform: 'none',
       }}
     >
       {label}
