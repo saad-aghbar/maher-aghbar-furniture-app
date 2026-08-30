@@ -65,7 +65,7 @@ export const statusVariantMap: Record<string, BadgeVariant> = {
   SUPERSEDED: 'default',
   PROVISIONAL: 'default',
   NEEDS_REVIEW: 'warning',
-  LATE: 'error',
+  LATE: 'warning',
   AWAITING_CONFIRMATION: 'warning',
   CONFIRMED_ON_TRACK: 'success',
   MAY_BE_DELAYED: 'warning',

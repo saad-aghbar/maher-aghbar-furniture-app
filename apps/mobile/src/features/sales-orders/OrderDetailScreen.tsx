@@ -77,6 +77,10 @@ import {
   type OrderDetailViewModel,
   type OrderLineItemView,
 } from './selectOrderDetail';
+import {
+  lineStatusBadgeStatus,
+  splitLineStatusFragment,
+} from './splitLineStatusFragment';
 import type { OrdersListVariant } from './selectOrderCard';
 import { isOwnOrderSchedule } from '@/api/modules/scheduling';
 import { useDealerDateChangeMutation, useOrderScheduleQuery } from '@/features/scheduling/query';
@@ -1250,6 +1254,12 @@ function LineItemCard({
   t: (key: string) => string;
 }) {
   const { colors, theme } = useTheme();
+  const { isRTL } = useLocale();
+  const nameParts = splitLineStatusFragment(item.productName);
+  const descParts = splitLineStatusFragment(item.description);
+  const statusFragment = nameParts.fragment ?? descParts.fragment;
+  const productName = nameParts.text;
+  const description = descParts.text || null;
   const bits = [
     item.dimensions,
     item.fabricType
@@ -1280,23 +1290,43 @@ function LineItemCard({
     >
       <View
         style={{
-          flexDirection: 'row',
+          flexDirection: isRTL ? 'row-reverse' : 'row',
           justifyContent: 'space-between',
+          alignItems: 'center',
           gap: theme.spacing.sm,
         }}
       >
-        <AppText variant="body" weight="semibold" style={{ flex: 1 }}>
-          {item.productName}
-        </AppText>
+        <View
+          style={{
+            flex: 1,
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: theme.spacing.xs,
+          }}
+        >
+          {productName ? (
+            <AppText variant="body" weight="semibold" style={{ flexShrink: 1 }}>
+              {productName}
+            </AppText>
+          ) : null}
+          {statusFragment ? (
+            <StatusBadge
+              status={lineStatusBadgeStatus(statusFragment)}
+              label={statusFragment}
+              dot
+            />
+          ) : null}
+        </View>
         {item.quantity != null ? (
           <AppText variant="caption" color="secondary">
             × {item.quantity}
           </AppText>
         ) : null}
       </View>
-      {item.description ? (
+      {description ? (
         <AppText variant="caption" color="secondary">
-          {item.description}
+          {description}
         </AppText>
       ) : null}
       {bits.length ? (
