@@ -21,6 +21,7 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { Divider } from '@/components/layout/Divider';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
@@ -115,6 +116,45 @@ const AT_RISK_ROW_ESTIMATE = 248;
 const OVERLAP_ROW_ESTIMATE = 168;
 const FLOOR_LIST_VISIBLE_ROWS = 3;
 const SCHEDULE_MEDIA = 88;
+const BACK_FALLBACK = '/(app)/(admin)/(tabs)/more' as Href;
+
+function SchedulingScreenTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
+  const { t, isRTL, locale } = useLocale();
+  const { colors, theme } = useTheme();
+
+  return (
+    <View
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'flex-start',
+        gap: theme.spacing.md,
+      }}
+    >
+      <View style={{ marginTop: 2 }}>
+        <ScreenBackLead fallback={BACK_FALLBACK} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.xs }}>
+        <AppText
+          variant="caption"
+          weight={locale === 'ar' ? 'regular' : 'medium'}
+          style={{
+            letterSpacing: locale === 'ar' ? 0 : 1.4,
+            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            color: colors.brand,
+          }}
+        >
+          {t('mobile.adminScheduling.eyebrow')}
+        </AppText>
+        <AppText variant="title" weight={titleWeight}>
+          {t('mobile.adminScheduling.title')}
+        </AppText>
+        <AppText variant="caption" color="muted">
+          {t('mobile.adminScheduling.subtitle')}
+        </AppText>
+      </View>
+    </View>
+  );
+}
 
 function workerInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -864,8 +904,7 @@ export function AdminSchedulingScreen() {
     return (
       <AppScreen>
         <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.md }}>
-          <SkeletonShimmer height={28} width="42%" />
-          <SkeletonShimmer height={18} width="70%" />
+          <SchedulingScreenTitle titleWeight={titleWeight} />
           <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -891,6 +930,7 @@ export function AdminSchedulingScreen() {
   if (isError) {
     return (
       <AppScreen>
+        <SchedulingScreenTitle titleWeight={titleWeight} />
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.adminScheduling.errorTitle')}
@@ -924,25 +964,7 @@ export function AdminSchedulingScreen() {
           />
         }
       >
-        <View style={{ gap: theme.spacing.xs }}>
-          <AppText
-            variant="caption"
-            weight={locale === 'ar' ? 'regular' : 'medium'}
-            style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              color: colors.brand,
-            }}
-          >
-            {t('mobile.adminScheduling.eyebrow')}
-          </AppText>
-          <AppText variant="title" weight={titleWeight}>
-            {t('mobile.adminScheduling.title')}
-          </AppText>
-          <AppText variant="caption" color="muted">
-            {t('mobile.adminScheduling.subtitle')}
-          </AppText>
-        </View>
+        <SchedulingScreenTitle titleWeight={titleWeight} />
 
         <View
           style={{
