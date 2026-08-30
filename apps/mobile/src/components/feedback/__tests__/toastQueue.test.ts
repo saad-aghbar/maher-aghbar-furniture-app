@@ -12,6 +12,15 @@ describe('toastQueue', () => {
     expect(q).toHaveLength(2);
   });
 
+  it('never enqueues persist / dehydrate internals', () => {
+    const q = enqueueToast([], {
+      message:
+        'A query that was dehydrated as pending ended up rejecting. [["catalog","list"]]',
+      variant: 'error',
+    });
+    expect(q).toHaveLength(0);
+  });
+
   it('dismisses by id', () => {
     let q = enqueueToast([], { message: 'a' });
     const id = q[0]!.id;

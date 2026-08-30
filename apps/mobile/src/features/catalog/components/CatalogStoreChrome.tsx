@@ -20,6 +20,8 @@ type Props = {
   onOpenFilters: () => void;
   showBack?: boolean;
   backFallback?: Href;
+  /** When false, only search + filters — page title/back live in CatalogPageHeader. */
+  showTitle?: boolean;
   children?: ReactNode;
 };
 
@@ -32,6 +34,7 @@ export function CatalogStoreChrome({
   onOpenFilters,
   showBack = false,
   backFallback = '/(app)/(admin)/(tabs)' as Href,
+  showTitle = true,
   children,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
@@ -42,38 +45,40 @@ export function CatalogStoreChrome({
 
   const body = (
     <View style={{ gap: theme.spacing.md }}>
-      <View
-        style={{
-          minHeight: leadSize,
-          justifyContent: 'center',
-        }}
-      >
-        {showBack ? (
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              [startEdge(isRTL)]: 0,
-              zIndex: 1,
-              justifyContent: 'center',
-            }}
-          >
-            <ScreenBackLead fallback={backFallback} />
-          </View>
-        ) : null}
-        <AppText
-          variant="largeTitle"
-          weight={titleWeight}
-          align="center"
-          numberOfLines={1}
+      {showTitle ? (
+        <View
           style={{
-            paddingHorizontal: showBack ? leadSize + theme.spacing.sm : 0,
+            minHeight: leadSize,
+            justifyContent: 'center',
           }}
         >
-          {t(titleKey)}
-        </AppText>
-      </View>
+          {showBack ? (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                [startEdge(isRTL)]: 0,
+                zIndex: 1,
+                justifyContent: 'center',
+              }}
+            >
+              <ScreenBackLead fallback={backFallback} />
+            </View>
+          ) : null}
+          <AppText
+            variant="largeTitle"
+            weight={titleWeight}
+            align="center"
+            numberOfLines={1}
+            style={{
+              paddingHorizontal: showBack ? leadSize + theme.spacing.sm : 0,
+            }}
+          >
+            {t(titleKey)}
+          </AppText>
+        </View>
+      ) : null}
 
       <SearchActionRow
         trailing={

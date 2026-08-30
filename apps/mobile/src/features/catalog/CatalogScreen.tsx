@@ -30,6 +30,7 @@ import {
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import type { BrowseCategory, BrowseProduct } from './api';
 import { CatalogFilterChips } from './components/CatalogFilterChips';
+import { CatalogPageHeader } from './components/CatalogPageHeader';
 import {
   CatalogFilterSheet,
   countActiveCatalogFilters,
@@ -328,6 +329,7 @@ export function CatalogScreen({
       }}
       showBack={showBack}
       backFallback={backFallback}
+      showTitle={false}
     >
       <CatalogFilterChips
         categories={categories}
@@ -337,9 +339,19 @@ export function CatalogScreen({
     </CatalogStoreChrome>
   );
 
+  const pageHeader =
+    !isDealer ? (
+      <CatalogPageHeader
+        title={t(titleKey)}
+        showBack={showBack}
+        backFallback={backFallback}
+      />
+    ) : null;
+
   if (isInitialLoading) {
     return (
       <AppScreen>
+        {pageHeader}
         {chrome}
         <View style={{ paddingHorizontal: isDealer ? pad : 0, paddingTop: theme.spacing.sm }}>
           <GridSkeleton />
@@ -364,23 +376,35 @@ export function CatalogScreen({
   if (forceState === 'error' || (listError && !forceState)) {
     return (
       <AppScreen>
-        {showOfflineBanner ? <OfflineBanner /> : null}
-        {chrome}
-        <ErrorState
-          title={t('mobile.catalog.errorTitle')}
-          description={t('mobile.catalog.errorBody')}
-          retryLabel={t('mobile.catalog.retry')}
-          onRetry={() => {
-            if (browseMode === 'ordered') void orderedQuery.refetch();
-            else void productsQuery.refetch();
+        {pageHeader}
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            paddingBottom: tabClearance,
           }}
-        />
+        >
+          <ErrorState
+            title={t('mobile.catalog.errorTitle')}
+            description={t('mobile.catalog.errorBody')}
+            retryLabel={t('mobile.catalog.retry')}
+            onRetry={() => {
+              if (browseMode === 'ordered') void orderedQuery.refetch();
+              else void productsQuery.refetch();
+            }}
+          />
+        </View>
       </AppScreen>
     );
   }
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
+      {pageHeader ? (
+        <View style={{ paddingHorizontal: pad, paddingBottom: theme.spacing.sm }}>
+          {pageHeader}
+        </View>
+      ) : null}
       <FlatList
         data={cards}
         keyExtractor={(item) => item.id}

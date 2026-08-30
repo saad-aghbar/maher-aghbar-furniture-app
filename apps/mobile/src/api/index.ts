@@ -28,7 +28,10 @@ export {
   createQueryPersister,
   createSafeAsyncStorage,
   shouldDehydrateQuery,
+  stripPendingFromPersistedClient,
   shouldToastApiError,
+  isTechnicalQueryError,
+  sanitizeFeedbackCopy,
   toastMessageForError,
   QUERY_PERSIST_KEY,
 } from './queryClient';

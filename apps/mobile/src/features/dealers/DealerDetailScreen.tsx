@@ -234,9 +234,9 @@ export function DealerDetailScreen({ dealerId }: Props) {
         <BackButton onPress={onBack} />
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
-          title={t('mobile.adminHome.errorTitle')}
-          description={t('mobile.adminHome.errorBody')}
-          retryLabel={t('mobile.adminHome.retry')}
+          title={t('mobile.dealers.detailErrorTitle')}
+          description={t('mobile.dealers.errorBody')}
+          retryLabel={t('mobile.dealers.retry')}
           onRetry={() => void detailQuery.refetch()}
         />
       </ScrollableScreen>
