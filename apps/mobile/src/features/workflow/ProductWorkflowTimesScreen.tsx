@@ -96,16 +96,18 @@ export function ProductWorkflowTimesScreen({
     return estimateStages;
   }, [estimateStages, graphStages, workflowPending]);
 
+  const hasStages = stages.length > 0;
+
   const totalMinutes = useMemo(() => {
+    if (!hasStages) return 0;
     if (profileQuery.data?.totalStandardMinutes != null) {
       return Number(profileQuery.data.totalStandardMinutes);
     }
     return stages.reduce((sum, s) => sum + (s.estimatedMinutes ?? 0), 0);
-  }, [profileQuery.data?.totalStandardMinutes, stages]);
+  }, [hasStages, profileQuery.data?.totalStandardMinutes, stages]);
 
   const missingCount = stages.filter((s) => s.estimateReviewRequired).length;
-  const loading =
-    (workflowPending || estimatesQuery.isLoading) && stages.length === 0;
+  const loading = (workflowPending || estimatesQuery.isLoading) && !hasStages;
   const productIdentity = formatProductIdentity(
     productQuery.data?.sku,
     productQuery.data ? localizedName(locale, productQuery.data, productQuery.data.sku) : '',
@@ -116,7 +118,7 @@ export function ProductWorkflowTimesScreen({
     (workflowQuery.isError || versionQuery.isError) &&
     !workflowQuery.data &&
     !versionQuery.data &&
-    estimateStages.length === 0 &&
+    !hasStages &&
     !estimatesQuery.isLoading
   ) {
     return (
@@ -173,53 +175,55 @@ export function ProductWorkflowTimesScreen({
               {productIdentity}
             </AppText>
           ) : null}
-          {stages.length > 0 ? (
+          {hasStages ? (
             <AppText variant="caption" color="muted">
               {t('mobile.production.workflow.productTimesHint')}
             </AppText>
           ) : null}
         </View>
 
-        <View
-          style={{
-            borderRadius: theme.radius.lg,
-            borderWidth: 1,
-            borderColor: colors.borderStrong,
-            backgroundColor: colors.surfaceSecondary,
-            padding: theme.spacing.md,
-            gap: 4,
-          }}
-        >
-          <AppText variant="caption" color="muted">
-            {t('mobile.production.workflow.totalProductionTime')}
-          </AppText>
-          <AppText variant="title" weight="semibold">
-            {formatMinutesDuration(totalMinutes, {
-              hour: t('mobile.workerHome.durationHour'),
-              minute: t('mobile.workerHome.durationMinute'),
-            })}
-          </AppText>
-          {stages.length === 0 ? null : missingCount > 0 ? (
-            <AppText variant="caption" style={{ color: colors.error }}>
-              {t('mobile.production.workflow.stagesNeedTime', { count: missingCount })}
-            </AppText>
-          ) : (
+        {hasStages ? (
+          <View
+            style={{
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
+              backgroundColor: colors.surfaceSecondary,
+              padding: theme.spacing.md,
+              gap: 4,
+            }}
+          >
             <AppText variant="caption" color="muted">
-              {t('mobile.production.workflow.allStagesTimed')}
+              {t('mobile.production.workflow.totalProductionTime')}
             </AppText>
-          )}
-        </View>
+            <AppText variant="title" weight="semibold">
+              {formatMinutesDuration(totalMinutes, {
+                hour: t('mobile.workerHome.durationHour'),
+                minute: t('mobile.workerHome.durationMinute'),
+              })}
+            </AppText>
+            {missingCount > 0 ? (
+              <AppText variant="caption" style={{ color: colors.error }}>
+                {t('mobile.production.workflow.stagesNeedTime', { count: missingCount })}
+              </AppText>
+            ) : (
+              <AppText variant="caption" color="muted">
+                {t('mobile.production.workflow.allStagesTimed')}
+              </AppText>
+            )}
+          </View>
+        ) : null}
 
         {loading ? (
           <AppText color="muted">{t('mobile.production.loadingMore')}</AppText>
-        ) : stages.length === 0 ? (
-          <AppText color="muted">{t('mobile.production.workflow.emptyStages')}</AppText>
-        ) : (
+        ) : hasStages ? (
           <ProductionFlowMap
             stages={stages}
             showEstimatedDuration
             onStagePress={(stage) => setSelected(stage)}
           />
+        ) : (
+          <AppText color="muted">{t('mobile.production.workflow.emptyStages')}</AppText>
         )}
       </ScrollView>
 
