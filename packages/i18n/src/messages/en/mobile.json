@@ -1093,7 +1093,7 @@
     "trackingId": "Order: {id}",
     "rfqLabel": "Request for quotation",
     "unapprovedLabel": "Unapproved",
-    "pipelineEyebrow": "On the line",
+    "pipelineEyebrow": "Order journey",
     "pipelineTitle": "Orders by stage",
     "pipelineHint": "Tap a stage to focus the list.",
     "dealerFocusEyebrow": "Focus",
@@ -1111,7 +1111,7 @@
       "late": "Late"
     },
     "workbenchHotEyebrow": "On the bench",
-    "workbenchLanesEyebrow": "Lanes",
+    "workbenchLanesEyebrow": "Lane",
     "workbenchBrowseTitle": "Browse",
     "ledgerEyebrow": "Delivery ledger",
     "ledgerHint": "Grouped by when they need to leave the floor.",

@@ -1093,7 +1093,7 @@
     "trackingId": "הזמנה: {id}",
     "rfqLabel": "בקשת הצעת מחיר",
     "unapprovedLabel": "לא מאושר",
-    "pipelineEyebrow": "על הקו",
+    "pipelineEyebrow": "מסע ההזמנה",
     "pipelineTitle": "הזמנות לפי שלב",
     "pipelineHint": "לחצו על שלב כדי למקד את הרשימה.",
     "dealerFocusEyebrow": "מיקוד",
@@ -1111,7 +1111,7 @@
       "late": "באיחור"
     },
     "workbenchHotEyebrow": "על השולחן",
-    "workbenchLanesEyebrow": "מסלולים",
+    "workbenchLanesEyebrow": "נתיב",
     "workbenchBrowseTitle": "עיון",
     "ledgerEyebrow": "יומן אספקה",
     "ledgerHint": "מקובץ לפי מועד היציאה מהרצפה.",

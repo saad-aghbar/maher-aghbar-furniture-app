@@ -1093,7 +1093,7 @@
     "trackingId": "طلب: {id}",
     "rfqLabel": "طلب عرض سعر",
     "unapprovedLabel": "غير معتمد",
-    "pipelineEyebrow": "على الخط",
+    "pipelineEyebrow": "رحلة الطلبية",
     "pipelineTitle": "الطلبيات حسب المرحلة",
     "pipelineHint": "اضغط مرحلة لتركيز القائمة.",
     "dealerFocusEyebrow": "التركيز",
@@ -1111,7 +1111,7 @@
       "late": "متأخر"
     },
     "workbenchHotEyebrow": "على الطاولة",
-    "workbenchLanesEyebrow": "المسارات",
+    "workbenchLanesEyebrow": "مسار",
     "workbenchBrowseTitle": "تصفّح",
     "ledgerEyebrow": "سجل التسليم",
     "ledgerHint": "مجمّعة حسب موعد الخروج من الورشة.",

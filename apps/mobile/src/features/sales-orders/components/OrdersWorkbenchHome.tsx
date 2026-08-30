@@ -150,10 +150,7 @@ export function OrdersWorkbenchHome({
         <AppText
           variant="caption"
           weight="semibold"
-          style={{
-            color: colors.brand,
-            ...(isRTL ? null : { letterSpacing: 1.4, textTransform: 'uppercase' as const }),
-          }}
+          style={{ color: colors.brand }}
         >
           {t('mobile.orders.workbenchLanesEyebrow')}
         </AppText>
