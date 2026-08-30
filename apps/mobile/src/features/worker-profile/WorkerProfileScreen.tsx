@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Switch, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAuth } from '@/auth/AuthProvider';
@@ -24,6 +25,7 @@ import { MoreBoard } from '@/features/more/components/MoreBoard';
 import { useLocale } from '@/i18n';
 import { rolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 
 /**
@@ -34,10 +36,13 @@ export function WorkerProfileScreen() {
   const router = useRouter();
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const reduce = useReducedMotion();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  /** ScrollView `gap` can drop paddingBottom — spacer uses the requested tab-bar inset. */
+  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioEnabled, setBioEnabled] = useState(false);
   const [bioBusy, setBioBusy] = useState(false);
@@ -103,7 +108,7 @@ export function WorkerProfileScreen() {
     reduce ? undefined : FadeInDown.delay(delay).duration(380).damping(22);
 
   return (
-    <ScrollableScreen>
+    <ScrollableScreen contentContainerStyle={{ paddingBottom: 0 }}>
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View
@@ -117,8 +122,6 @@ export function WorkerProfileScreen() {
           variant="caption"
           weight={locale === 'ar' ? 'regular' : 'medium'}
           style={{
-            letterSpacing: locale === 'ar' ? 0 : 1.4,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
             color: colors.brand,
             textAlign: isRTL ? 'right' : 'left',
           }}
@@ -182,11 +185,7 @@ export function WorkerProfileScreen() {
                 <AppText
                   variant="caption"
                   weight={locale === 'ar' ? 'regular' : 'medium'}
-                  style={{
-                    letterSpacing: locale === 'ar' ? 0 : 1.2,
-                    textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                    color: colors.brand,
-                  }}
+                  style={{ color: colors.brand }}
                 >
                   {t('mobile.workerProfile.identityEyebrow')}
                 </AppText>
@@ -276,15 +275,11 @@ export function WorkerProfileScreen() {
             <Divider compact />
             <PasswordField
               label={t('auth.password')}
-              value={user.portalPassword ?? ''}
+              value=""
               editable={false}
               showLabel={t('auth.showPassword')}
               hideLabel={t('auth.hidePassword')}
-              hint={
-                user.portalPassword
-                  ? t('mobile.more.portalPasswordHint')
-                  : t('mobile.more.portalPasswordUnavailable')
-              }
+              hint={t('mobile.more.portalPasswordHint')}
             />
           </MoreBoard>
         </Animated.View>
@@ -301,6 +296,13 @@ export function WorkerProfileScreen() {
           />
         </Animated.View>
       </View>
+
+      <View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ height: listBottomClearance }}
+      />
     </ScrollableScreen>
   );
 }
