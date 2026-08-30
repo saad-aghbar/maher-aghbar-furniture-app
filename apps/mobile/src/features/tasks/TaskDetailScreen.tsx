@@ -42,6 +42,11 @@ import { useAccessoryCamera } from '@/features/inventory/components/AccessoryCam
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import {
+  isLastStageQualityFloor,
+  resolveTaskQualityKind,
+  type TaskQualityKind,
+} from '@/features/quality/taskQualityKind';
 import { useLocale } from '@/i18n';
 import { SuccessBurst, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -546,6 +551,8 @@ export function TaskDetailScreen({
   const deadlineLabel = vm.deadline
     ? formatDateTime(vm.deadline)
     : t('mobile.tasks.noDeadline');
+  const qualityKind = raw ? resolveTaskQualityKind(raw) : null;
+  const hideProductionChrome = isLastStageQualityFloor(qualityKind);
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
@@ -558,7 +565,7 @@ export function TaskDetailScreen({
       <View style={{ paddingHorizontal: pad }}>
         <TaskDetailNav
           onBack={onBack}
-          title={t('mobile.tasks.detailTitle')}
+          title={taskDetailNavTitle(qualityKind, t)}
           subtitle={vm.orderNumber}
           trailing={<StatusBadge status={vm.status} />}
         />
@@ -689,7 +696,8 @@ export function TaskDetailScreen({
                 style={{
                   color: colors.brand,
                   letterSpacing: locale === 'ar' ? 0 : 0.6,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  textTransform:
+                    hideProductionChrome || locale === 'ar' ? 'none' : 'uppercase',
                   fontSize: 11,
                   textAlign: isRTL ? 'right' : 'left',
                 }}
@@ -741,16 +749,19 @@ export function TaskDetailScreen({
             </View>
           </View>
 
-          <TaskTimerBoard
-            timing={vm.timing}
-            formatDateTime={formatDateTime}
-            isScheduledToday={vm.isScheduledToday}
-          />
+          {hideProductionChrome ? null : (
+            <TaskTimerBoard
+              timing={vm.timing}
+              formatDateTime={formatDateTime}
+              isScheduledToday={vm.isScheduledToday}
+            />
+          )}
 
           <FloorSection
             title={t('mobile.tasks.instructions')}
             isRTL={isRTL}
             locale={locale}
+            sentenceCaseStamp={hideProductionChrome}
           >
             <AppText
               variant="body"
@@ -761,7 +772,12 @@ export function TaskDetailScreen({
           </FloorSection>
 
           {vm.notes ? (
-            <FloorSection title={t('mobile.tasks.notes')} isRTL={isRTL} locale={locale}>
+            <FloorSection
+              title={t('mobile.tasks.notes')}
+              isRTL={isRTL}
+              locale={locale}
+              sentenceCaseStamp={hideProductionChrome}
+            >
               <AppText variant="body" style={{ textAlign: isRTL ? 'right' : 'left' }}>
                 {vm.notes}
               </AppText>
@@ -769,7 +785,11 @@ export function TaskDetailScreen({
           ) : null}
 
           {vm.waitingOn ? (
-            <AppText variant="bodySecondary" color="warning">
+            <AppText
+              variant="bodySecondary"
+              color="warning"
+              style={{ textAlign: isRTL ? 'right' : 'left' }}
+            >
               {t('mobile.tasks.waitingOn', { stages: vm.waitingOn })}
             </AppText>
           ) : null}
@@ -801,6 +821,7 @@ export function TaskDetailScreen({
             files={vm.attachments}
             emptyLabel={t('mobile.tasks.noAttachments')}
             icon="document-attach-outline"
+            sentenceCaseStamp={hideProductionChrome}
           />
 
           <TaskFilePreview
@@ -809,6 +830,7 @@ export function TaskDetailScreen({
             emptyLabel={t('mobile.noPhotos')}
             icon="camera-outline"
             preferImages
+            sentenceCaseStamp={hideProductionChrome}
           />
 
           {offline && canComplete && vm.canFinish ? (
@@ -904,6 +926,21 @@ export function TaskDetailScreen({
   );
 }
 
+function taskDetailNavTitle(
+  qualityKind: TaskQualityKind,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  if (qualityKind === 'packaging') {
+    const label = t('production.stageLibrary.PACKAGING');
+    if (label !== 'production.stageLibrary.PACKAGING') return label;
+  }
+  if (qualityKind === 'inspection' || qualityKind === 'reinspection') {
+    const label = t('catalog.inspectionDetail');
+    if (label !== 'catalog.inspectionDetail') return label;
+  }
+  return t('mobile.tasks.detailTitle');
+}
+
 function TaskDetailNav({
   onBack,
   title,
@@ -963,11 +1000,13 @@ function FloorSection({
   children,
   isRTL,
   locale,
+  sentenceCaseStamp = false,
 }: {
   title: string;
   children: ReactNode;
   isRTL: boolean;
   locale: string;
+  sentenceCaseStamp?: boolean;
 }) {
   const { colors, theme, colorScheme } = useTheme();
   return (
@@ -996,7 +1035,8 @@ function FloorSection({
           style={{
             color: colors.brand,
             letterSpacing: locale === 'ar' ? 0 : 0.6,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            textTransform:
+              sentenceCaseStamp || locale === 'ar' ? 'none' : 'uppercase',
             fontSize: 11,
             textAlign: isRTL ? 'right' : 'left',
           }}

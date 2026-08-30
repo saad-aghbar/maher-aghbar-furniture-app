@@ -103,6 +103,9 @@ export type TaskDetail = TaskListItem & {
     dependsOnCodes?: string[];
     requiresPhotos?: boolean;
   };
+  /** Present on last-stage QC tasks when the API sends it. */
+  executionKind?: string | null;
+  isReinspection?: boolean | null;
 };
 
 export type TaskListFilters = PageParams & {

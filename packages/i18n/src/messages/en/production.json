@@ -367,6 +367,17 @@
     "editBom": "Edit materials",
     "bomLine": "{sku} × {qty}"
   },
+  "stageLibrary": {
+    "MATERIAL_PREP": "Material preparation",
+    "CARPENTRY": "Carpentry",
+    "PAINTING": "Painting",
+    "FOAM": "Foam preparation",
+    "UPHOLSTERY": "Upholstery",
+    "ASSEMBLY": "Assembly",
+    "INSPECTION": "Inspection",
+    "PACKAGING": "Packaging",
+    "DELIVERY": "Delivery"
+  },
   "floorInstructions": {
     "specs": "Specs: {specs}",
     "heading": "{stage} for: {productLine}.",
@@ -387,6 +398,12 @@
       "l1": "Apply primer and finish coats per color reference.",
       "l2": "Allow full cure time before handing off to assembly.",
       "l3": "Protect finished surfaces for transport to next stage."
+    },
+    "FOAM": {
+      "heading": "Foam for: {productLine}.",
+      "l1": "Cut and shape foam to the approved pattern and density.",
+      "l2": "Check thickness and fit against the frame before covering.",
+      "l3": "Stage completed foam for upholstery."
     },
     "UPHOLSTERY": {
       "heading": "Upholstery for: {productLine}.",

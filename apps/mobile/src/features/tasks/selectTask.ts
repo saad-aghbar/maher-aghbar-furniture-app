@@ -1,4 +1,5 @@
 import type { PriorityLevel } from '@/components/badges/badgeStyles';
+import { translate } from '@/i18n/translate';
 import { localizedName } from '@maher/i18n';
 import type { Locale } from '@maher/types';
 import type { TaskDetail, TaskFile, TaskListItem } from './api';
@@ -53,6 +54,33 @@ export type TaskDetailViewModel = TaskCardModel & {
     elapsedMinutes: number;
   };
 };
+
+const STAGE_CODE_ALIASES: Record<string, string> = {
+  PACK: 'PACKAGING',
+  QC: 'INSPECTION',
+};
+
+function sentenceCaseStageCode(code: string): string {
+  const lowered = code.replace(/_/g, ' ').toLowerCase();
+  if (!lowered) return code;
+  return lowered.charAt(0).toUpperCase() + lowered.slice(1);
+}
+
+/** Human stage names for waiting-on copy. Never leak MATERIAL_PREP-style enums. */
+export function formatWaitingOnStages(codes: string[], locale: Locale): string {
+  return codes
+    .map((raw) => {
+      const code = raw.trim().toUpperCase();
+      if (!code) return '';
+      const canonical = STAGE_CODE_ALIASES[code] ?? code;
+      const key = `production.stageLibrary.${canonical}`;
+      const label = translate(locale, key);
+      if (label !== key) return label;
+      return sentenceCaseStageCode(canonical);
+    })
+    .filter(Boolean)
+    .join(', ');
+}
 
 export function toPriorityLevel(priority: string): PriorityLevel {
   const p = priority.toLowerCase();
@@ -173,7 +201,7 @@ export function selectTaskDetail(
   const terminal = status === 'COMPLETED' || status === 'CANCELLED';
   const waitingOn =
     status === 'NOT_STARTED' && (task.stageDefinition?.dependsOnCodes?.length ?? 0) > 0
-      ? task.stageDefinition!.dependsOnCodes!.join(', ')
+      ? formatWaitingOnStages(task.stageDefinition!.dependsOnCodes!, locale) || null
       : null;
 
   const product = productTitle(task, locale);

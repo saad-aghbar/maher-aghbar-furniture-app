@@ -14,6 +14,7 @@ const KNOWN_STAGES = new Set([
   'MATERIAL_PREP',
   'CARPENTRY',
   'PAINTING',
+  'FOAM',
   'UPHOLSTERY',
   'ASSEMBLY',
   'INSPECTION',
