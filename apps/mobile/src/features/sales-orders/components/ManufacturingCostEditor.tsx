@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 import {
   inventoryItemUnitCost,
   type InventoryCategoryGroup,
@@ -33,11 +33,6 @@ const LABEL_KEY: Record<(typeof KEYS)[number], string> = {
   foam: 'mobile.orderDetail.foamCost',
   accessories: 'mobile.orderDetail.accessoriesCost',
 };
-
-/** How many material rows stay visible before the list scrolls. */
-const VISIBLE_MATERIAL_ROWS = 2.5;
-const EDITABLE_ROW_ESTIMATE = 118;
-const READONLY_ROW_ESTIMATE = 72;
 
 function num(s: string): number {
   const n = Number(s);
@@ -155,11 +150,6 @@ export function ManufacturingCostEditor({
     [edit],
   );
 
-  const listMaxHeight =
-    VISIBLE_MATERIAL_ROWS *
-      (editable ? EDITABLE_ROW_ESTIMATE : READONLY_ROW_ESTIMATE) +
-    theme.spacing.sm * Math.ceil(VISIBLE_MATERIAL_ROWS);
-
   function setField(key: (typeof KEYS)[number], field: 'qty' | 'cost', value: string) {
     const qtyKey = `${key}Qty` as keyof CostBreakdownEdit;
     const costKey = `${key}Cost` as keyof CostBreakdownEdit;
@@ -233,13 +223,7 @@ export function ManufacturingCostEditor({
         {formatCurrency(total)}
       </AppText>
 
-      <ScrollView
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-        keyboardShouldPersistTaps="handled"
-        style={{ maxHeight: listMaxHeight }}
-        contentContainerStyle={{ gap: theme.spacing.sm, paddingBottom: 2 }}
-      >
+      <View style={{ gap: theme.spacing.sm }}>
         {rows.map((row) => (
           <View
             key={row.key}
@@ -252,49 +236,41 @@ export function ManufacturingCostEditor({
               backgroundColor: colors.surfaceSecondary,
             }}
           >
-            <AppText variant="caption" color="muted" style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 11 }}>
+            <AppText
+              variant="caption"
+              color="muted"
+              style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 11 }}
+            >
               {t(LABEL_KEY[row.key])}
             </AppText>
-            {editable ? (
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <FieldInline
-                  label={t('mobile.orderDetail.costAmount')}
-                  value={row.cost}
-                  onChangeText={(v) => setField(row.key, 'cost', v)}
-                  style={{ flex: 1.2 }}
-                />
-                <FieldInline
-                  label={t('mobile.orderDetail.qty')}
-                  value={row.qty}
-                  onChangeText={(v) => setField(row.key, 'qty', v)}
-                  style={{ flex: 0.8 }}
-                />
-              </View>
-            ) : (
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <AppText variant="label" weight="semibold" dir="ltr">
-                  {formatCurrency(num(row.cost))}
-                </AppText>
-                <AppText variant="caption" color="muted">
-                  {t('mobile.orderDetail.qty')} {row.qty}
-                </AppText>
-              </View>
-            )}
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <FieldInline
+                label={t('mobile.orderDetail.costAmount')}
+                value={editable ? row.cost : formatCurrency(num(row.cost))}
+                onChangeText={
+                  editable ? (v) => setField(row.key, 'cost', v) : undefined
+                }
+                editable={editable}
+                style={{ flex: 1.2 }}
+              />
+              <FieldInline
+                label={t('mobile.orderDetail.qty')}
+                value={row.qty}
+                onChangeText={
+                  editable ? (v) => setField(row.key, 'qty', v) : undefined
+                }
+                editable={editable}
+                style={{ flex: 0.8 }}
+              />
+            </View>
           </View>
         ))}
-      </ScrollView>
+      </View>
 
       {editable ? (
         <AppText variant="caption" color="muted">
@@ -316,36 +292,61 @@ function FieldInline({
   label,
   value,
   onChangeText,
+  editable,
   style,
 }: {
   label: string;
   value: string;
-  onChangeText: (v: string) => void;
+  onChangeText?: (v: string) => void;
+  editable: boolean;
   style?: object;
 }) {
   const { colors, theme } = useTheme();
   const { isRTL } = useLocale();
   return (
-    <View style={[{ gap: 2 }, style]}>
-      <AppText variant="caption" color="muted">
-        {label}
-      </AppText>
-      <AppTextInput
-        value={value}
-        onChangeText={onChangeText}
-        keyboardType="decimal-pad"
-        placeholderTextColor={colors.textMuted}
-        style={{
-          minHeight: 40,
+    <View
+      style={[
+        {
+          gap: 2,
           borderWidth: 1,
           borderColor: colors.border,
-          borderRadius: theme.radius.sm,
+          borderRadius: theme.radius.md,
           paddingHorizontal: theme.spacing.sm,
-          color: colors.textPrimary,
+          paddingVertical: theme.spacing.xs,
           backgroundColor: colors.surface,
-          textAlign: isRTL ? 'right' : 'left',
-        }}
-      />
+          minHeight: 48,
+          justifyContent: 'center',
+        },
+        style,
+      ]}
+    >
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{ textTransform: 'uppercase', letterSpacing: 0.4, fontSize: 11 }}
+      >
+        {label}
+      </AppText>
+      {editable && onChangeText ? (
+        <AppTextInput
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType="decimal-pad"
+          placeholderTextColor={colors.textMuted}
+          style={{
+            minHeight: 28,
+            paddingVertical: 0,
+            paddingHorizontal: 0,
+            color: colors.textPrimary,
+            backgroundColor: 'transparent',
+            textAlign: isRTL ? 'right' : 'left',
+          }}
+        />
+      ) : (
+        <AppText variant="label" weight="semibold" dir="ltr">
+          {value}
+        </AppText>
+      )}
     </View>
   );
 }
