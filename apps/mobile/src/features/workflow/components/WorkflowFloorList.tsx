@@ -147,6 +147,7 @@ export function WorkflowFloorRow({
             backgroundColor: active ? colors.surface : colors.brandSoft,
             borderWidth: 1,
             borderColor: active ? colors.brand : colors.border,
+            flexShrink: 0,
           }}
         >
           {badge ? (
@@ -165,16 +166,19 @@ export function WorkflowFloorRow({
             />
           )}
         </View>
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+        <View style={{ flex: 1, flexShrink: 1, gap: 2, minWidth: 0 }}>
           <AppText
             variant="label"
             weight={active ? titleWeight : 'medium'}
             numberOfLines={2}
             ellipsizeMode="tail"
             textBreakStrategy="simple"
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
             style={{
               color: active ? colors.brand : colors.textPrimary,
               textAlign: isRTL ? 'right' : 'left',
+              flexShrink: 1,
             }}
           >
             {label}
@@ -190,12 +194,13 @@ export function WorkflowFloorRow({
             </AppText>
           ) : null}
         </View>
-        {trailing}
+        {trailing ? <View style={{ flexShrink: 0 }}>{trailing}</View> : null}
         {!trailing && showChevron ? (
           <Ionicons
             name={isRTL ? 'chevron-back' : 'chevron-forward'}
             size={16}
             color={colors.textMuted}
+            style={{ flexShrink: 0 }}
           />
         ) : null}
       </View>

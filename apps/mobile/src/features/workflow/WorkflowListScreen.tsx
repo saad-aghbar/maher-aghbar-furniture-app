@@ -60,11 +60,8 @@ export function WorkflowListScreen() {
   });
 
   const fieldOrder = nameFieldOrder(locale);
-  /** ScrollView `gap` can drop contentContainerStyle.paddingBottom — spacer clears the pill. */
-  const listBottomClearance =
-    theme.spacing['3xl'] +
-    SURFACE_TAB_BAR_CLEARANCE +
-    Math.max(insets.bottom, theme.spacing.sm);
+  /** ScrollView `gap` can drop paddingBottom — spacer uses the requested tab-bar inset. */
+  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
   const nameLabels: Record<keyof TrilingualNames, string> = {
     nameEn: t('mobile.production.workflow.nameEn'),
     nameAr: t('mobile.production.workflow.nameAr'),
@@ -85,7 +82,7 @@ export function WorkflowListScreen() {
 
   return (
     <>
-      <ScrollableScreen contentContainerStyle={{ paddingBottom: theme.spacing.md }}>
+      <ScrollableScreen contentContainerStyle={{ paddingBottom: 0 }}>
         {showOfflineBanner ? <OfflineBanner /> : null}
 
         <WorkflowPageHeader
@@ -164,28 +161,26 @@ export function WorkflowListScreen() {
                             flexDirection: isRTL ? 'row-reverse' : 'row',
                             alignItems: 'center',
                             gap: theme.spacing.sm,
+                            flexShrink: 0,
                           }}
                         >
                           <Pressable
                             accessibilityRole="button"
                             accessibilityLabel={t('mobile.production.workflow.deleteWorkflow')}
-                            hitSlop={8}
+                            hitSlop={10}
                             onPress={() => {
                               void haptics.selection();
                               setDeleteTarget(row);
                             }}
                             style={{
-                              width: 36,
-                              height: 36,
-                              borderRadius: 18,
+                              minWidth: theme.sizes.touch.min - 8,
+                              minHeight: theme.sizes.touch.min - 8,
                               alignItems: 'center',
                               justifyContent: 'center',
-                              borderWidth: 1,
-                              borderColor: colors.border,
-                              backgroundColor: colors.surface,
+                              flexShrink: 0,
                             }}
                           >
-                            <Ionicons name="trash-outline" size={16} color={colors.error} />
+                            <Ionicons name="trash-outline" size={18} color={colors.error} />
                           </Pressable>
                           <Ionicons
                             name={isRTL ? 'chevron-back' : 'chevron-forward'}
