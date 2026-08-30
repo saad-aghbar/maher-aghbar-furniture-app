@@ -30,6 +30,18 @@ describe('inventory transfer/count picker i18n', () => {
     expect(translate('he', 'mobile.inventory.pickFinishedItem')).toBe('בחירת מוצר מוגמר');
   });
 
+  it('humanizes lifecycle tabs (Raw / Semi / Finished, not RAW/SEMI/FIN)', () => {
+    expect(translate('en', 'mobile.inventory.lifecycle.materials')).toBe('Raw');
+    expect(translate('en', 'mobile.inventory.lifecycle.semiFinished')).toBe('Semi');
+    expect(translate('en', 'mobile.inventory.lifecycle.finished')).toBe('Finished');
+    for (const locale of ['en', 'ar', 'he'] as const) {
+      for (const key of ['materials', 'semiFinished', 'finished'] as const) {
+        const value = translate(locale, `mobile.inventory.lifecycle.${key}`);
+        expect(value).not.toMatch(/^(RAW|SEMI|FIN)$/);
+      }
+    }
+  });
+
   it.each(PICKER_KEYS)('does not leak %s as a raw key', (key) => {
     for (const locale of ['en', 'ar', 'he'] as const) {
       const value = translate(locale, key, { qty: 6, unit: 'pcs' });

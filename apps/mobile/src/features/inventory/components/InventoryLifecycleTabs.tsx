@@ -174,6 +174,8 @@ export function InventoryLifecycleTabs({ active, onChange }: Props) {
                 weight={focused ? (locale === 'ar' ? 'medium' : 'semibold') : 'medium'}
                 numberOfLines={1}
                 align="center"
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
                 style={{
                   color: ink,
                   fontSize: 12,
