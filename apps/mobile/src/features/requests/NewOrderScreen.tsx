@@ -53,10 +53,7 @@ import {
 import { LocationMapPicker } from './components/LocationMapPicker';
 import { NewOrderDeliveryAddressBlock } from './components/NewOrderDeliveryAddressBlock';
 import { NewOrderDimensionsEditor } from './components/NewOrderDimensionsEditor';
-import {
-  NewOrderFloatingDock,
-  newOrderDockScrollPad,
-} from './components/NewOrderFloatingDock';
+import { NewOrderFloatingDock } from './components/NewOrderFloatingDock';
 import { NewOrderQtyStepper } from './components/NewOrderQtyStepper';
 import { NewOrderPriorityBar } from './components/NewOrderPriorityBar';
 import { NewOrderStageRail } from './components/NewOrderStageRail';
@@ -71,7 +68,7 @@ import {
   saveLocalDraft,
   type NewOrderLocalDraft,
 } from './newOrderDraft';
-import { newOrderDockMode } from './newOrderDockMode';
+import { newOrderDockMode, newOrderDockScrollPad } from './newOrderDockMode';
 import {
   emptyDimensionFields,
   formatDimensionsNotes,

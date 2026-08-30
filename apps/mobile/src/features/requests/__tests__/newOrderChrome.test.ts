@@ -8,11 +8,11 @@ import {
 import {
   newOrderDockMode,
   newOrderDockPrimaryKey,
+  newOrderDockScrollPad,
   newOrderDockShowsSaveDraft,
   NEW_ORDER_DOCK_BODY_HEIGHT,
   NEW_ORDER_DOCK_SCROLL_EXTRA,
 } from '../newOrderDockMode';
-import { newOrderDockScrollPad } from '../components/NewOrderFloatingDock';
 
 describe('stageProgress', () => {
   it('maps steps to rising fractions', () => {

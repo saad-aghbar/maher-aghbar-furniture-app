@@ -14,28 +14,10 @@ import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { dealerTokens, useTheme } from '@/theme';
 import {
   NEW_ORDER_DOCK_BODY_HEIGHT,
-  NEW_ORDER_DOCK_SCROLL_EXTRA,
   type NewOrderDockMode,
   newOrderDockPrimaryKey,
   newOrderDockShowsSaveDraft,
 } from '../newOrderDockMode';
-
-export { NEW_ORDER_DOCK_BODY_HEIGHT, NEW_ORDER_DOCK_SCROLL_EXTRA };
-
-/**
- * Bottom inset so wizard content is laid out above the floating dock
- * (and the dealer tab/FAB it sits on). Apply to the screen shell, not only
- * ScrollView content padding — content-only pad leaves short step-1 forms
- * drawn under Back/Continue.
- */
-export function newOrderDockScrollPad(spacingMd: number): number {
-  return (
-    DEALER_TAB_BAR_CLEARANCE +
-    NEW_ORDER_DOCK_BODY_HEIGHT +
-    NEW_ORDER_DOCK_SCROLL_EXTRA +
-    spacingMd
-  );
-}
 
 type NewOrderFloatingDockProps = {
   mode: NewOrderDockMode;
