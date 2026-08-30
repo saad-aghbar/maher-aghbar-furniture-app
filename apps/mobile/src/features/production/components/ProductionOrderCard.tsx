@@ -8,7 +8,10 @@ import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import { adminProductionFlowHref } from '@/features/production-flow/flowRoutes';
-import type { ProductionCardModel } from '../selectProduction';
+import {
+  productionFloorStatusLabel,
+  type ProductionCardModel,
+} from '../selectProduction';
 
 type ProductionOrderCardProps = {
   order: ProductionCardModel;
@@ -204,7 +207,13 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
             >
               {order.title}
             </AppText>
-            <StatusBadge status={order.status} />
+            <StatusBadge
+              status={order.status}
+              label={productionFloorStatusLabel(
+                order.status,
+                t('mobile.production.inProduction'),
+              )}
+            />
           </View>
 
           <AppText

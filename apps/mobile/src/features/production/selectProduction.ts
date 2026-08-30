@@ -103,6 +103,19 @@ export type ProductionDetailModel = ProductionCardModel & {
   showStages: false;
 };
 
+/**
+ * Production-order floor badge. Backend status stays IN_PROGRESS;
+ * the board bucket is in_production — one human name for both.
+ */
+export function productionFloorStatusLabel(
+  status: string,
+  inProductionLabel: string,
+): string | undefined {
+  const key = status.trim().toUpperCase().replace(/\s+/g, '_');
+  if (key === 'IN_PROGRESS' || key === 'IN_PRODUCTION') return inProductionLabel;
+  return undefined;
+}
+
 export function selectProductionCard(
   item: ProductionOrderListItem,
   locale: string,

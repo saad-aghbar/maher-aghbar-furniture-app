@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -41,6 +42,9 @@ import {
 } from './query';
 import { selectProductionCard } from './selectProduction';
 
+/** Extra scroll pad so the last floor card clears the floating tab bar. */
+const LIST_BOTTOM_EXTRA = 48;
+
 type MetricAccent = 'brand' | 'info' | 'success' | 'late';
 
 type MetricKey = Exclude<ProductionListBucket, 'all'>;
@@ -57,6 +61,7 @@ export function ProductionOverviewScreen() {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const reduce = useReducedMotion();
   const listRef = useRef<FlatList>(null);
@@ -105,13 +110,9 @@ export function ProductionOverviewScreen() {
   );
 
   const selectBucket = (next: ProductionListBucket) => {
-    const isPeriod =
-      next === 'daily' || next === 'weekly' || next === 'monthly';
-    const resolved =
-      isPeriod && next === bucket ? 'all' : next === bucket ? null : next;
-    if (resolved == null) return;
+    if (next === bucket) return;
     void haptics.selection();
-    setBucket(resolved);
+    setBucket(next);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
@@ -202,6 +203,12 @@ export function ProductionOverviewScreen() {
     : null;
 
   const boardShadow = theme.elevation.raised;
+  const listBottomPad =
+    theme.spacing['3xl'] +
+    SURFACE_TAB_BAR_CLEARANCE +
+    LIST_BOTTOM_EXTRA +
+    Math.max(insets.bottom, theme.spacing.sm);
+  const bucketLabel = t(`mobile.production.chips.${bucket}`);
 
   return (
     <AppScreen>
@@ -210,9 +217,10 @@ export function ProductionOverviewScreen() {
         ref={listRef}
         data={cards}
         keyExtractor={(item) => item.id}
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: listBottomPad,
           flexGrow: 1,
         }}
         refreshControl={
@@ -315,6 +323,18 @@ export function ProductionOverviewScreen() {
                       opacity: 0.55,
                     }}
                   />
+                  <View
+                    style={{
+                      paddingHorizontal: theme.spacing.lg,
+                      paddingTop: theme.spacing.md,
+                      paddingBottom: theme.spacing.xs,
+                      alignItems: isRTL ? 'flex-end' : 'flex-start',
+                    }}
+                  >
+                    <AppText variant="caption" color="muted" numberOfLines={1}>
+                      {t('mobile.production.filterHint', { label: bucketLabel })}
+                    </AppText>
+                  </View>
                   <MetricRow
                     isRTL={isRTL}
                     items={topMetrics}
@@ -372,15 +392,17 @@ export function ProductionOverviewScreen() {
           )
         }
         ListFooterComponent={
-          listQuery.isFetchingNextPage ? (
-            <AppText
-              variant="caption"
-              color="secondary"
-              style={{ textAlign: 'center', paddingVertical: theme.spacing.md }}
-            >
-              {t('mobile.production.loadingMore')}
-            </AppText>
-          ) : null
+          <View style={{ paddingBottom: theme.spacing.sm }}>
+            {listQuery.isFetchingNextPage ? (
+              <AppText
+                variant="caption"
+                color="secondary"
+                style={{ textAlign: 'center', paddingVertical: theme.spacing.md }}
+              >
+                {t('mobile.production.loadingMore')}
+              </AppText>
+            ) : null}
+          </View>
         }
         renderItem={({ item, index }) => (
           <ListItemEnter index={index}>
