@@ -12,6 +12,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
+import { EmptyProductImage } from '@/components/media/EmptyProductImage';
 import { ImageViewer } from '@/components/media/ImageViewer';
 import { SkeletonShimmer, haptics } from '@/motion';
 import { useLocale } from '@/i18n';
@@ -59,15 +60,16 @@ export function ProductImageCarousel({
 
   return (
     <View>
-      <View style={{ width: SCREEN_W, height, backgroundColor: colors.surfaceSecondary }}>
+      <View
+        style={{
+          width: SCREEN_W,
+          height,
+          backgroundColor: empty ? colors.background : colors.surfaceSecondary,
+        }}
+      >
         {empty ? (
-          <Animated.View
-            entering={FadeIn.duration(280)}
-            style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <AppText variant="body" color="muted">
-              {t('mobile.productDetail.noImage')}
-            </AppText>
+          <Animated.View entering={FadeIn.duration(280)} style={{ flex: 1 }}>
+            <EmptyProductImage caption={t('mobile.productDetail.noImage')} />
           </Animated.View>
         ) : (
           <FlatList
