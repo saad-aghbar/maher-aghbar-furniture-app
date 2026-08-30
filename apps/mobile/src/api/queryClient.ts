@@ -8,6 +8,7 @@ import {
 import { translateApiError, translateErrorCode } from '@maher/i18n';
 import { getActiveLocale } from '@/i18n/LocaleProvider';
 import { isApiError } from './errors';
+import { shouldSkipQueryErrorToast } from './queryErrorToast';
 import { shouldRetryQuery } from './retry';
 import { createSafeAsyncStorage } from './safeAsyncStorage';
 import { QUERY_PERSIST_KEY } from './queryPersist';
@@ -19,6 +20,8 @@ export type QueryClientHooks = {
   onError?: (error: unknown) => void;
 };
 
+export { shouldSkipQueryErrorToast } from './queryErrorToast';
+
 export function createQueryClient(hooks: QueryClientHooks = {}): QueryClient {
   const notify = (error: unknown) => {
     hooks.onError?.(error);
@@ -26,7 +29,10 @@ export function createQueryClient(hooks: QueryClientHooks = {}): QueryClient {
 
   return new QueryClient({
     queryCache: new QueryCache({
-      onError: (error) => notify(error),
+      onError: (error, query) => {
+        if (shouldSkipQueryErrorToast(query.meta)) return;
+        notify(error);
+      },
     }),
     mutationCache: new MutationCache({
       onError: (error) => notify(error),

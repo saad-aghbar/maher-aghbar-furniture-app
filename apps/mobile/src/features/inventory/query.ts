@@ -35,12 +35,16 @@ import {
   type UpdateInventoryItemInput,
 } from './api';
 
+/** Hub already paints a floor error board — skip the generic query toast. */
+const skipHubErrorToast = { skipErrorToast: true } as const;
+
 export function useInventoryGroupsQuery(enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.inventory.groups(),
     queryFn: listInventoryGroups,
     enabled,
     staleTime: 30_000,
+    meta: skipHubErrorToast,
   });
 }
 
@@ -62,6 +66,7 @@ export function useInventoryItemsInfiniteQuery(
     enabled,
     staleTime: 15_000,
     placeholderData: keepPreviousData,
+    meta: skipHubErrorToast,
   });
 }
 
@@ -176,6 +181,7 @@ export function useWarehouseTransfersInfiniteQuery(
     enabled,
     staleTime: 15_000,
     placeholderData: keepPreviousData,
+    meta: skipHubErrorToast,
   });
 }
 
@@ -202,6 +208,7 @@ export function useInventoryStockCountsInfiniteQuery(
     enabled,
     staleTime: 15_000,
     placeholderData: keepPreviousData,
+    meta: skipHubErrorToast,
   });
 }
 
@@ -318,6 +325,7 @@ export function useSemiFinishedLotsInfiniteQuery(filters: { q?: string }, enable
     enabled,
     staleTime: 15_000,
     placeholderData: keepPreviousData,
+    meta: skipHubErrorToast,
   });
 }
 
@@ -337,6 +345,7 @@ export function useFinishedGoodsInfiniteQuery(filters: { q?: string }, enabled: 
     enabled,
     staleTime: 15_000,
     placeholderData: keepPreviousData,
+    meta: skipHubErrorToast,
   });
 }
 

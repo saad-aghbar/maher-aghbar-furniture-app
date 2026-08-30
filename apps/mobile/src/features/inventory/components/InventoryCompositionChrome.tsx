@@ -2,11 +2,11 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { TextField } from '@/components/forms/TextField';
 import { Divider } from '@/components/layout/Divider';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { InventorySearchField } from './InventorySearchField';
 import {
   InventorySectionTabs,
   type InventoryHomeSection,
@@ -147,14 +147,10 @@ export function InventoryCompositionChrome({
             }}
           >
             <View style={{ flex: 1, minWidth: 0 }}>
-              <TextField
+              <InventorySearchField
                 value={searchInput}
                 onChangeText={setSearchInput}
                 placeholder={searchPlaceholder}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                clearButtonMode="while-editing"
               />
             </View>
             {syncVisible ? (

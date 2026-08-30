@@ -2353,8 +2353,8 @@
     "emptySearchBody": "נסו חיפוש אחר.",
     "emptyHistoryTitle": "אין תנועות עדיין",
     "emptyHistoryBody": "קבלות, ניפוקים והתאמות יופיעו כאן.",
-    "errorTitle": "לא ניתן לטעון מלאי",
-    "errorBody": "בדקו את החיבור ונסו שוב.",
+    "errorTitle": "לא ניתן להגיע למחסן",
+    "errorBody": "היתרות יופיעו כאן כשהחיבור יחזור.",
     "retry": "נסה שוב",
     "txType": {
       "PURCHASE_RECEIPT": "קבלת רכש",

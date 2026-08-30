@@ -2353,8 +2353,8 @@
     "emptySearchBody": "Try a different search.",
     "emptyHistoryTitle": "No movements yet",
     "emptyHistoryBody": "Receipts, issues, and adjustments will appear here.",
-    "errorTitle": "Couldn’t load inventory",
-    "errorBody": "Check your connection and try again.",
+    "errorTitle": "Couldn’t reach the warehouse",
+    "errorBody": "Balances will show here once we’re connected again.",
     "retry": "Try again",
     "txType": {
       "PURCHASE_RECEIPT": "Purchase receipt",
