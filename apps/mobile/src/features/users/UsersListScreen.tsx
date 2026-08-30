@@ -101,9 +101,8 @@ export function UsersListScreen() {
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const allowed = can(user, 'user.manage');
-  /** Last-card spacer — FlatList `gap` can drop contentContainerStyle.paddingBottom. */
-  const listBottomClearance =
-    insets.bottom + theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
+  /** Last-card inset: home indicator + floating tab bar (same as other leftover PRs). */
+  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
 
   const [segment, setSegment] = useState<UsersSegment>('workers');
   const [q, setQ] = useState('');
@@ -332,7 +331,7 @@ export function UsersListScreen() {
           gap: theme.spacing.md,
           flexGrow: 1,
         }}
-        style={{ opacity: isFilterUpdating ? 0.72 : 1 }}
+        style={{ flex: 1, opacity: isFilterUpdating ? 0.72 : 1 }}
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
             <UsersScreenTitle titleWeight={titleWeight} />
