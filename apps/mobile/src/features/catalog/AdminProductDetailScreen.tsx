@@ -56,6 +56,7 @@ import { MeasurementFloorRow, displayMeasurementUnit } from './components/Measur
 import { MeasurementValuePanel } from './components/MeasurementValueSheet';
 import { ProductGalleryBoard } from './components/ProductGalleryBoard';
 import { ProductPhotoSourceSheet } from './components/ProductPhotoSourceSheet';
+import { formatCatalogDimensionHint } from './catalogDimensionHint';
 import { mergeProductPhotos, splitProductPhotos } from './productPhotos';
 import { ProductWorkflowSection } from '@/features/workflow/components/ProductWorkflowSection';
 import {
@@ -633,10 +634,15 @@ export function AdminProductDetailScreen({ productId }: Props) {
                   ['depth', t('catalog.depth')],
                   ['seatHeight', t('catalog.seatHeight')],
                 ] as const
-              ).map(([key, label]) => (
+              ).map(([key, fieldLabel]) => (
                 <View key={key} style={{ width: '47%', flexGrow: 1 }}>
                   <TextField
-                    label={label}
+                    label={fieldLabel}
+                    hint={formatCatalogDimensionHint(
+                      label('catalog.catalog', 'Catalog'),
+                      productQuery.data?.[key],
+                      label('catalog.emptyValue', '—'),
+                    )}
                     value={draft[key]}
                     onChangeText={(v) => set(key, v)}
                     keyboardType="decimal-pad"
