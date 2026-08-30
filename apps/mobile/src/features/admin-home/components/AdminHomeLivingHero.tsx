@@ -157,6 +157,8 @@ export function AdminHomeLivingHero({
   }));
 
   const ink = colorScheme === 'dark' ? colors.textPrimary : '#2A2420';
+  // Date + EST. — Army Camo on parchment, Muted Silver on Liquorice (not iOS grey).
+  const chromeSecondary = colorScheme === 'dark' ? colors.textSecondary : colors.brand;
   const markSize = Math.min(width * 0.48, 220);
 
   return (
@@ -212,7 +214,7 @@ export function AdminHomeLivingHero({
             <AppText
               variant="caption"
               weight="medium"
-              style={{ letterSpacing: 1.2, textTransform: 'uppercase', color: colors.textMuted }}
+              style={{ letterSpacing: 1.2, textTransform: 'uppercase', color: chromeSecondary }}
             >
               {formatDate(new Date())}
             </AppText>
@@ -243,6 +245,7 @@ export function AdminHomeLivingHero({
                   backgroundColor: colors.surface,
                   alignItems: 'center',
                   justifyContent: 'center',
+                  overflow: 'visible',
                 }}
               >
                 <Animated.View style={bellStyle}>
@@ -252,21 +255,26 @@ export function AdminHomeLivingHero({
                   <View
                     style={{
                       position: 'absolute',
-                      top: 4,
-                      ...(isRTL ? { left: 4 } : { right: 4 }),
-                      minWidth: 16,
-                      height: 16,
-                      borderRadius: 8,
+                      top: 1,
+                      ...(isRTL ? { left: 1 } : { right: 1 }),
+                      minWidth: 20,
+                      height: 18,
+                      borderRadius: 9,
                       backgroundColor: colors.warning,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      paddingHorizontal: 3,
+                      paddingHorizontal: 5,
                     }}
                   >
                     <AppText
                       variant="caption"
                       weight="semibold"
-                      style={{ color: colors.onBrand, fontSize: 9, lineHeight: 11 }}
+                      style={{
+                        color: colors.onBrand,
+                        fontSize: 11,
+                        lineHeight: 13,
+                        includeFontPadding: false,
+                      }}
                     >
                       {unreadNotifications > 99 ? '99+' : String(unreadNotifications)}
                     </AppText>
@@ -290,7 +298,7 @@ export function AdminHomeLivingHero({
               variant="caption"
               weight="semibold"
               style={{
-                color: colors.brand,
+                color: chromeSecondary,
                 letterSpacing: 3,
                 textTransform: 'uppercase',
               }}
