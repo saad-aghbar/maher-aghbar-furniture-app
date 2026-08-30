@@ -18,16 +18,23 @@ export type AttentionChrome = {
   on: string;
   muted: string;
   border: string;
+  /** Filled chocolate action pill on charcoal — not tan ghost ink. */
+  actionFill: string;
 };
 
 /** Dark charcoal + gold-tan ATTENTION language (image 4). */
-export function attentionChrome(colors: ThemeColors): AttentionChrome {
+export function attentionChrome(
+  colors: ThemeColors,
+  scheme: ColorScheme = 'light',
+): AttentionChrome {
   return {
     surface: colors.attention,
     accent: colors.attentionAccent,
     on: colors.attentionOn,
     muted: 'rgba(245, 241, 234, 0.65)',
     border: 'rgba(212, 196, 168, 0.22)',
+    // Dark scheme lifts brandHover to gold — keep the pill chocolate on charcoal.
+    actionFill: scheme === 'dark' ? colors.brandActive : colors.brandHover,
   };
 }
 

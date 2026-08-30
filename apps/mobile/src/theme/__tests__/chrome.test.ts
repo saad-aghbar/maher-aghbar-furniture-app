@@ -10,6 +10,16 @@ describe('chrome tokens', () => {
     expect(light.surface).not.toBe(lightColors.error);
   });
 
+  it('fills attention actions with chocolate, cream type — not tan ghost ink', () => {
+    const light = attentionChrome(lightColors, 'light');
+    const dark = attentionChrome(darkColors, 'dark');
+    expect(light.actionFill).toBe(lightColors.brandHover);
+    expect(light.actionFill).not.toBe(lightColors.attentionAccent);
+    expect(light.on).toBe(lightColors.attentionOn);
+    expect(dark.actionFill).toBe(darkColors.brandActive);
+    expect(dark.actionFill).not.toBe(darkColors.attentionAccent);
+  });
+
   it('keeps sheet rows on cream, not system white', () => {
     const sheet = sheetChrome(lightColors, 'light');
     expect(sheet.canvas).toBe(lightColors.background);
