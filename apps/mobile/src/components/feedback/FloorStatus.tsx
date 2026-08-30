@@ -53,11 +53,13 @@ export function FloorStatus({
         >
           {title}
         </AppText>
-        {description && !isError ? (
+        {description ? (
           <AppText
             variant="bodySecondary"
-            color="secondary"
-            style={{ textAlign: isRTL ? 'right' : 'left' }}
+            style={{
+              color: isError ? colors.brand : colors.textPrimary,
+              textAlign: isRTL ? 'right' : 'left',
+            }}
           >
             {description}
           </AppText>

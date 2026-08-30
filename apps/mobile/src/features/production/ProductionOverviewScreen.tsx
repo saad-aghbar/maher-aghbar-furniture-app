@@ -143,6 +143,9 @@ export function ProductionOverviewScreen() {
       <AppScreen>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ToastClearance />
+        <AppText variant="title" weight={locale === 'ar' ? 'medium' : 'semibold'}>
+          {t('mobile.production.title')}
+        </AppText>
         <ErrorState
           title={t('mobile.production.errorTitle')}
           description={t('mobile.production.errorBody')}
