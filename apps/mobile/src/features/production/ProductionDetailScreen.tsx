@@ -1,9 +1,10 @@
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { FlatList, Image, RefreshControl, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can, canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -67,8 +68,9 @@ function priorityText(priority: string, t: (key: string) => string): string {
 
 export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps) {
   const { user } = useAuth();
-  const { t, locale, isRTL } = useLocale();
+  const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -92,6 +94,7 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
     name: string;
   } | null>(null);
   const [viewCompleted, setViewCompleted] = useState(false);
+  const listRef = useRef<FlatList<ProductionTaskRow>>(null);
 
   const query = useProductionOrderQuery(orderId, canRead);
   const materialsQuery = useProductionMaterialsQuery(orderId, canRead && canUpdate);
@@ -159,17 +162,27 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
       : colors.brand;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const boardShadow = theme.elevation.card;
+  /** Last stage row clears the floating pill — same leftover inset as other admin surfaces. */
+  const listBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const materialsReady = (materialsQuery.data?.materials?.length ?? 0) > 0;
+  const workersReady =
+    detail.taskCount > 0 && detail.assignedWorkerCount >= detail.taskCount;
 
   return (
     <AppScreen backFallback={'/(app)/(admin)/(tabs)/production' as Href}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
+        ref={listRef}
         data={taskRows}
         keyExtractor={(item) => item.id}
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: listBottomPad,
           flexGrow: 1,
+        }}
+        onScrollToIndexFailed={() => {
+          listRef.current?.scrollToEnd({ animated: true });
         }}
         refreshControl={
           <RefreshControl
@@ -179,6 +192,44 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
         }
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.lg, marginBottom: theme.spacing.sm }}>
+            {detail.estimatedManufacturingCost != null ? (
+              <HeaderEnter reduce={reduce} delay={0}>
+                <SurfaceCard>
+                  <View style={{ gap: theme.spacing.sm }}>
+                    <AppText variant="heading" weight="semibold">
+                      {detail.actualManufacturingCost != null
+                        ? t('mobile.production.manufacturingCostActualTitle')
+                        : t('mobile.production.manufacturingCostEstimated')}
+                    </AppText>
+                    {detail.actualManufacturingCost == null ? (
+                      <AppText variant="caption" color="muted">
+                        {t('mobile.production.estimatedOnly')}
+                      </AppText>
+                    ) : null}
+                    <MetaRow
+                      isRTL={isRTL}
+                      label={t('mobile.production.estimatedLabel')}
+                      value={formatCurrency(detail.estimatedManufacturingCost)}
+                    />
+                    <MetaRow
+                      isRTL={isRTL}
+                      label={t('mobile.production.actualLabel')}
+                      value={
+                        detail.actualManufacturingCost != null
+                          ? formatCurrency(detail.actualManufacturingCost)
+                          : t('mobile.production.unavailable')
+                      }
+                    />
+                    <MetaRow
+                      isRTL={isRTL}
+                      label={t('mobile.production.varianceLabel')}
+                      value={t('mobile.production.unavailable')}
+                    />
+                  </View>
+                </SurfaceCard>
+              </HeaderEnter>
+            ) : null}
+
             <HeaderEnter reduce={reduce} delay={0}>
               <View
                 style={{
@@ -672,11 +723,69 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
               </HeaderEnter>
             ) : null}
 
+            <HeaderEnter reduce={reduce} delay={180}>
+              <View style={{ gap: theme.spacing.md }}>
+                <View style={{ gap: theme.spacing['2xs'] }}>
+                  <AppText variant="caption" color="muted" weight="medium">
+                    {t('mobile.production.planKicker')}
+                  </AppText>
+                  <AppText variant="heading" weight="semibold">
+                    {t('mobile.production.planTitle')}
+                  </AppText>
+                </View>
+                <SurfaceCard>
+                  <View style={{ gap: theme.spacing.sm }}>
+                    <ReadinessRow
+                      done={detail.planSetupReady}
+                      label={t('mobile.production.readinessSetup')}
+                      isRTL={isRTL}
+                    />
+                    <ReadinessRow
+                      done={detail.taskCount > 0}
+                      label={t('mobile.production.readinessWorkflow')}
+                      isRTL={isRTL}
+                    />
+                    <ReadinessRow
+                      done={materialsReady}
+                      label={t('mobile.production.materials')}
+                      isRTL={isRTL}
+                    />
+                    <ReadinessRow
+                      done={workersReady}
+                      label={t('mobile.production.readinessWorkers', {
+                        assigned: detail.assignedWorkerCount,
+                        total: detail.taskCount,
+                      })}
+                      isRTL={isRTL}
+                    />
+                  </View>
+                </SurfaceCard>
+                {canAssign ? (
+                  <PrimaryButton
+                    label={t('mobile.production.assignWorkersAndDates')}
+                    onPress={() => {
+                      if (viewCompleted) setViewCompleted(false);
+                      const next = detail.tasks.find(
+                        (task) => task.canAssign && !task.assigneeId,
+                      );
+                      if (next) {
+                        setActiveTask(next);
+                        return;
+                      }
+                      if (taskRows.length > 0) {
+                        listRef.current?.scrollToIndex({ index: 0, animated: true });
+                      }
+                    }}
+                  />
+                ) : null}
+              </View>
+            </HeaderEnter>
+
             <HeaderEnter reduce={reduce} delay={200}>
               <AppText variant="heading" weight="semibold">
                 {viewCompleted
                   ? t('mobile.production.completedTasks')
-                  : t('mobile.production.tasks')}
+                  : t('mobile.production.stageAssignments')}
               </AppText>
             </HeaderEnter>
           </View>
@@ -937,6 +1046,37 @@ function MetaRow({
         }}
       >
         {value}
+      </AppText>
+    </View>
+  );
+}
+
+function ReadinessRow({
+  done,
+  label,
+  isRTL,
+}: {
+  done: boolean;
+  label: string;
+  isRTL: boolean;
+}) {
+  const { colors, theme } = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        gap: theme.spacing.sm,
+        minHeight: theme.sizes.touch.min - 8,
+      }}
+    >
+      <Ionicons
+        name={done ? 'checkmark-circle' : 'ellipse-outline'}
+        size={20}
+        color={done ? colors.success : colors.borderStrong}
+      />
+      <AppText variant="body" weight="medium" style={{ flex: 1 }}>
+        {label}
       </AppText>
     </View>
   );

@@ -58,6 +58,7 @@ export type ProductionOrderListItem = {
     nameAr?: string | null;
     nameHe?: string | null;
     imageUrl?: string | null;
+    manufacturingCost?: number | string | null;
   } | null;
   salesOrder?: {
     id: string;
