@@ -20,6 +20,8 @@ describe('activeTabFromPath', () => {
     expect(activeTabFromPath('admin', '/search')).toBe('more');
     expect(activeTabFromPath('admin', '/(app)/(admin)/more/account')).toBe('more');
     expect(activeTabFromPath('admin', '/more/account')).toBe('more');
+    expect(activeTabFromPath('admin', '/(app)/(admin)/scheduling')).toBe('more');
+    expect(activeTabFromPath('admin', '/scheduling')).toBe('more');
   });
 
   it('maps primary tabs correctly when groups are stripped', () => {
