@@ -10,6 +10,111 @@ export type NotificationCardModel = {
   linkUrl: string | null;
 };
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HUMAN_ORDER_CODE_RE = /^(?:[A-Za-z]{1,8}-?\d[\w-]*|[A-Z]{2,}\d+)$/;
+
+const VAR_KEYS = [
+  'orderNumber',
+  'orderCode',
+  'orderNo',
+  'number',
+  'orderId',
+  'version',
+  'date',
+  'reason',
+  'total',
+  'taskName',
+  'amount',
+  'jobNumber',
+] as const;
+
+function asTrimmedString(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function collectVars(source: Record<string, unknown>, into: Record<string, string>) {
+  for (const key of VAR_KEYS) {
+    const value = asTrimmedString(source[key]);
+    if (value && into[key] == null) into[key] = value;
+  }
+}
+
+function orderCodeFromLink(linkUrl?: string | null): string | null {
+  if (!linkUrl) return null;
+  const last = linkUrl.split('/').filter(Boolean).pop() ?? '';
+  let decoded = last.split('?')[0] ?? '';
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // keep raw segment
+  }
+  decoded = decoded.trim();
+  if (!decoded || UUID_RE.test(decoded)) return null;
+  return HUMAN_ORDER_CODE_RE.test(decoded) ? decoded : null;
+}
+
+/**
+ * Pull interpolation values from the notification payload when the API includes them.
+ * Never invents ids — empty when the row has none.
+ */
+export function notificationTemplateVars(row: AppNotification): Record<string, string> {
+  const vars: Record<string, string> = {};
+  const rec = row as AppNotification & Record<string, unknown>;
+  collectVars(rec, vars);
+  for (const nestedKey of ['vars', 'data', 'metadata', 'payload'] as const) {
+    const nested = rec[nestedKey];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      collectVars(nested as Record<string, unknown>, vars);
+    }
+  }
+  const fromLink = orderCodeFromLink(row.linkUrl);
+  if (fromLink) {
+    if (!vars.orderNumber) vars.orderNumber = fromLink;
+    if (!vars.number) vars.number = fromLink;
+  }
+  if (vars.orderNumber && !vars.number) vars.number = vars.orderNumber;
+  if (vars.number && !vars.orderNumber) vars.orderNumber = vars.number;
+  if (vars.version && vars.v == null) vars.v = vars.version;
+  else if (!vars.version && vars.orderNumber && vars.v == null) vars.v = vars.orderNumber;
+  return vars;
+}
+
+function insertOrderRef(text: string, orderRef: string): string {
+  let out = text;
+  out = out.replace(/\bfor order(?=\s+is\b)/i, `for order ${orderRef}`);
+  out = out.replace(/لأمر الإنتاج(?=\s+وينتظر)/, `لأمر الإنتاج ${orderRef}`);
+  out = out.replace(/להזמנה(?=\s+ממתין)/, `להזמנה ${orderRef}`);
+  return out;
+}
+
+/**
+ * Fill leftover `{{var}}` / `{var}` tokens, drop raw `(v)` / missing i18n holes,
+ * and surface a real order code when the payload has one.
+ */
+export function polishNotificationCopy(text: string, vars: Record<string, string>): string {
+  if (!text) return '';
+  let out = text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => vars[key] ?? '');
+  out = out.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? '');
+  out = out.replace(/\(\s*(?:v|version|نسخة|גרסה)\s*\)/gi, '');
+  out = out.replace(/\(\s*\)/g, '');
+  out = out.replace(/[ \t]{2,}/g, ' ');
+  out = out.replace(/\s+([,.;:!?])/g, '$1');
+
+  const orderRef = vars.orderNumber || vars.number || vars.orderCode || null;
+  if (orderRef) {
+    out = insertOrderRef(out, orderRef);
+  } else {
+    out = out.replace(/\s+for order(?=\s+is\b)/i, '');
+  }
+
+  out = out.replace(/[ \t]{2,}/g, ' ');
+  return out.trim();
+}
+
 export type NotificationDaySection = {
   key: string;
   label: string;
@@ -33,11 +138,16 @@ export function selectNotificationCard(
   locale: string,
 ): NotificationCardModel {
   const ar = locale === 'ar' || locale === 'he';
+  const vars = notificationTemplateVars(row);
+  const rawTitle = ar
+    ? row.titleAr || row.titleEn || row.type
+    : row.titleEn || row.titleAr || row.type;
+  const rawBody = ar ? row.bodyAr || row.bodyEn || '' : row.bodyEn || row.bodyAr || '';
   return {
     id: row.id,
     type: row.type,
-    title: ar ? row.titleAr || row.titleEn || row.type : row.titleEn || row.titleAr || row.type,
-    body: ar ? row.bodyAr || row.bodyEn || '' : row.bodyEn || row.bodyAr || '',
+    title: polishNotificationCopy(rawTitle, vars),
+    body: polishNotificationCopy(rawBody, vars),
     unread: !row.readAt,
     createdAt: row.createdAt,
     linkUrl: row.linkUrl ?? null,

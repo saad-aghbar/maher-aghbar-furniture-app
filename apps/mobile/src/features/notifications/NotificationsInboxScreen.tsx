@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RefreshControl, SectionList, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { can, resolveAppSurface } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -124,7 +125,12 @@ export function NotificationsInboxScreen({
   const { t, tPlural, locale, isRTL, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const listBottomClearance =
+    theme.spacing['3xl'] +
+    SURFACE_TAB_BAR_CLEARANCE +
+    Math.max(insets.bottom, theme.spacing.sm);
   const allowed = can(user, 'notification.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const surface = user ? resolveAppSurface(user) : 'admin';
@@ -215,8 +221,18 @@ export function NotificationsInboxScreen({
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: visibleRows.length > 0 ? 0 : listBottomClearance,
         }}
+        ListFooterComponent={
+          visibleRows.length > 0 ? (
+            <View
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={{ height: listBottomClearance }}
+            />
+          ) : null
+        }
         refreshControl={
           <RefreshControl
             refreshing={Boolean(query.isRefetching && !query.isFetching)}
