@@ -1,4 +1,9 @@
-import { selectProductionCard, selectProductionDetail, workersForStage } from '../selectProduction';
+import {
+  productionFloorStatusLabel,
+  selectProductionCard,
+  selectProductionDetail,
+  workersForStage,
+} from '../selectProduction';
 import type { ProductionOrderDetail, ProductionOrderListItem } from '../api';
 import { selectOrderDetail } from '@/features/sales-orders/selectOrderDetail';
 import {
@@ -80,6 +85,26 @@ const detail: ProductionOrderDetail = {
   ],
   openBlockers: [],
 };
+
+describe('productionFloorStatusLabel', () => {
+  it('uses In production for IN_PROGRESS and IN_PRODUCTION', () => {
+    expect(productionFloorStatusLabel('IN_PROGRESS', 'In production')).toBe(
+      'In production',
+    );
+    expect(productionFloorStatusLabel('in progress', 'In production')).toBe(
+      'In production',
+    );
+    expect(productionFloorStatusLabel('IN_PRODUCTION', 'In production')).toBe(
+      'In production',
+    );
+  });
+
+  it('leaves other production-order statuses to the status map', () => {
+    expect(productionFloorStatusLabel('PLANNED', 'In production')).toBeUndefined();
+    expect(productionFloorStatusLabel('COMPLETED', 'In production')).toBeUndefined();
+    expect(productionFloorStatusLabel('ON_HOLD', 'In production')).toBeUndefined();
+  });
+});
 
 describe('selectProduction', () => {
   it('maps dealer, model image, priority, and progress without stages', () => {

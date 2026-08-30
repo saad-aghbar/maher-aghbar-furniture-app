@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -58,6 +59,7 @@ export function ProductionOverviewScreen() {
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const reduce = useReducedMotion();
   const listRef = useRef<FlatList>(null);
@@ -207,6 +209,7 @@ export function ProductionOverviewScreen() {
     : null;
 
   const boardShadow = theme.elevation.raised;
+  const listBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
 
   return (
     <AppScreen>
@@ -215,9 +218,10 @@ export function ProductionOverviewScreen() {
         ref={listRef}
         data={cards}
         keyExtractor={(item) => item.id}
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: listBottomPad,
           flexGrow: 1,
         }}
         refreshControl={
@@ -245,11 +249,7 @@ export function ProductionOverviewScreen() {
               <AppText
                 variant="caption"
                 weight={locale === 'ar' ? 'regular' : 'medium'}
-                style={{
-                  letterSpacing: locale === 'ar' ? 0 : 1.4,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                  color: colors.brand,
-                }}
+                style={{ color: colors.brand }}
               >
                 {t('mobile.production.pulseEyebrow')}
               </AppText>
@@ -321,6 +321,18 @@ export function ProductionOverviewScreen() {
                       opacity: 0.55,
                     }}
                   />
+                  <View
+                    style={{
+                      paddingHorizontal: theme.spacing.lg,
+                      paddingTop: theme.spacing.md,
+                      paddingBottom: theme.spacing.xs,
+                      alignItems: isRTL ? 'flex-end' : 'flex-start',
+                    }}
+                  >
+                    <AppText variant="caption" color="muted" numberOfLines={1}>
+                      {t('mobile.production.board')}
+                    </AppText>
+                  </View>
                   <MetricRow
                     isRTL={isRTL}
                     items={topMetrics}
@@ -378,15 +390,17 @@ export function ProductionOverviewScreen() {
           )
         }
         ListFooterComponent={
-          listQuery.isFetchingNextPage ? (
-            <AppText
-              variant="caption"
-              color="secondary"
-              style={{ textAlign: 'center', paddingVertical: theme.spacing.md }}
-            >
-              {t('mobile.production.loadingMore')}
-            </AppText>
-          ) : null
+          <View style={{ paddingBottom: theme.spacing.sm }}>
+            {listQuery.isFetchingNextPage ? (
+              <AppText
+                variant="caption"
+                color="secondary"
+                style={{ textAlign: 'center', paddingVertical: theme.spacing.md }}
+              >
+                {t('mobile.production.loadingMore')}
+              </AppText>
+            ) : null}
+          </View>
         }
         renderItem={({ item, index }) => (
           <ListItemEnter index={index}>

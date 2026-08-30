@@ -1832,6 +1832,7 @@
     "title": "Production",
     "subtitle": "Monitor progress, assign workers, and clear blockers",
     "pulseEyebrow": "Floor pulse",
+    "board": "Board",
     "daily": "Daily",
     "weekly": "Weekly",
     "monthly": "Monthly",
