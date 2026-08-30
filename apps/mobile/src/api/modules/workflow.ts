@@ -288,7 +288,12 @@ export type ProductionSetupStage = {
 
 export type ProductionSetupResponse = {
   status: 'READY' | 'NEEDS_SETUP' | 'INVALID';
-  issues: Array<{ code: string; message: string }>;
+  issues: Array<{
+    code: string;
+    message: string;
+    workflowNodeId?: string | null;
+    nodeKey?: string | null;
+  }>;
   workflow: { id: string; nameEn: string; nameAr: string; nameHe?: string | null } | null;
   bomLines?: Array<{ sku: string; qty: number; exists: boolean }>;
   stages: ProductionSetupStage[];

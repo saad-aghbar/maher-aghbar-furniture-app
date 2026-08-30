@@ -1,8 +1,13 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatProductionPreviewStep, localizedName } from '@maher/i18n';
+import { getAdminProduct } from '@/api/modules/catalogAdmin';
+import { getInventoryItemByCode } from '@/api/modules/inventory';
 import { isApiError } from '@/api/errors';
+import { queryKeys } from '@/api/queryKeys';
 import { toastMessageForError } from '@/api/queryClient';
 import type { ProductionSetupStage } from '@/api/modules/workflow';
 import { AppText } from '@/components/AppText';
@@ -13,6 +18,8 @@ import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { useTheme } from '@/theme';
 import {
   useProductProductionSetupPreviewQuery,
@@ -20,6 +27,11 @@ import {
   usePutProductProductionSetupMutation,
 } from '@/features/workflow/query';
 import { ProductionStageSetupSheet } from './components/ProductionStageSetupSheet';
+import { WorkflowStatusPill } from './components/WorkflowPageHeader';
+import {
+  productionSetupIssueText,
+  productionSetupProductLine,
+} from './productionSetupCopy';
 
 type Props = {
   productId: string;
@@ -36,12 +48,19 @@ export function ProductionSetupScreen({
   productId,
   backFallback = '/(app)/(admin)/products',
 }: Props) {
-  const { t, locale } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showToast } = useToast();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const setupQuery = useProductProductionSetupQuery(productId);
   const previewQuery = useProductProductionSetupPreviewQuery(productId);
+  const productQuery = useQuery({
+    queryKey: queryKeys.catalog.adminDetail(productId),
+    queryFn: () => getAdminProduct(productId),
+    enabled: Boolean(productId),
+    staleTime: 30_000,
+  });
   const saveMutation = usePutProductProductionSetupMutation(productId);
   const [editing, setEditing] = useState<ProductionSetupStage | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ProductionSetupStage>>({});
@@ -49,6 +68,50 @@ export function ProductionSetupScreen({
   const stages = useMemo(() => {
     return (setupQuery.data?.stages ?? []).map((s) => drafts[s.workflowNodeId] ?? s);
   }, [drafts, setupQuery.data?.stages]);
+
+  const bomSkus = useMemo(
+    () =>
+      (setupQuery.data?.bomLines ?? [])
+        .map((line) => line.sku)
+        .filter((sku): sku is string => Boolean(sku)),
+    [setupQuery.data?.bomLines],
+  );
+
+  const photoQueries = useQueries({
+    queries: bomSkus.map((sku) => ({
+      queryKey: [...queryKeys.inventory.details(), 'by-code', sku] as const,
+      queryFn: async () => {
+        try {
+          return await getInventoryItemByCode(sku);
+        } catch {
+          return null;
+        }
+      },
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
+
+  const photoBySku = useMemo(() => {
+    const map = new Map<string, string>();
+    bomSkus.forEach((sku, i) => {
+      const uri = resolveOrderMediaUri(photoQueries[i]?.data?.imageUrl);
+      if (uri) map.set(sku, uri);
+    });
+    return map;
+  }, [bomSkus, photoQueries]);
+
+  const productBomBySku = useMemo(() => {
+    const map = new Map<string, { nameEn: string; nameAr: string }>();
+    for (const line of productQuery.data?.bomLines ?? []) {
+      if (line.sku) map.set(line.sku, line);
+    }
+    return map;
+  }, [productQuery.data?.bomLines]);
+
+  const productLine = productionSetupProductLine(productQuery.data, locale);
+  const tabClearance =
+    theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + Math.max(insets.bottom, theme.spacing.sm);
 
   function saveAll() {
     saveMutation.mutate(
@@ -117,16 +180,24 @@ export function ProductionSetupScreen({
         contentContainerStyle={{
           padding: theme.spacing.lg,
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['4xl'],
+          paddingBottom: tabClearance,
         }}
         refreshControl={
           <RefreshControl
-            refreshing={setupQuery.isRefetching}
-            onRefresh={() => void setupQuery.refetch()}
+            refreshing={setupQuery.isRefetching || productQuery.isRefetching}
+            onRefresh={() => {
+              void setupQuery.refetch();
+              void productQuery.refetch();
+            }}
           />
         }
       >
         <AppText variant="title">{t('mobile.production.workflow.setupTitle')}</AppText>
+        {productLine ? (
+          <AppText variant="heading" weight="semibold" dir="ltr" face="latin">
+            {productLine}
+          </AppText>
+        ) : null}
         <AppText variant="caption" color="muted">
           {t('production.setup.newOrdersOnly')}
         </AppText>
@@ -134,17 +205,23 @@ export function ProductionSetupScreen({
           <ActivityIndicator color={colors.brand} />
         ) : null}
         {setup ? (
-          <AppText variant="heading" weight="semibold">
-            {statusLabel(setup.status, t)}
-          </AppText>
+          <WorkflowStatusPill
+            label={statusLabel(setup.status, t)}
+            active={setup.status === 'READY'}
+          />
         ) : null}
-        {(setup?.issues ?? []).map((issue) => (
-          <AppText key={issue.code} variant="caption" color="muted">
-            {t(`errors.${issue.code}`) === `errors.${issue.code}`
-              ? issue.message
-              : t(`errors.${issue.code}`)}
-          </AppText>
-        ))}
+        {(setup?.issues ?? []).length ? (
+          <View style={{ ...cardStyle, gap: theme.spacing.sm, borderColor: colors.borderStrong }}>
+            <AppText variant="heading" weight="semibold">
+              {t('production.setup.issues')}
+            </AppText>
+            {(setup?.issues ?? []).map((issue, i) => (
+              <AppText key={`${issue.code}-${issue.workflowNodeId ?? i}`} variant="caption" color="muted">
+                {productionSetupIssueText(issue, stages, locale, t)}
+              </AppText>
+            ))}
+          </View>
+        ) : null}
 
         <View style={{ ...cardStyle, gap: theme.spacing.sm }}>
           <AppText variant="heading" weight="semibold">
@@ -155,11 +232,51 @@ export function ProductionSetupScreen({
               {t('production.setup.bomEmpty')}
             </AppText>
           ) : (
-            (setup?.bomLines ?? []).map((line) => (
-              <AppText key={line.sku} variant="caption">
-                {t('production.setup.bomLine', { sku: line.sku, qty: String(line.qty) })}
-              </AppText>
-            ))
+            (setup?.bomLines ?? []).map((line) => {
+              const named = productBomBySku.get(line.sku);
+              const name = named
+                ? localizedName(locale, named, line.sku)
+                : line.sku;
+              const photoUri = photoBySku.get(line.sku);
+              return (
+                <View
+                  key={line.sku}
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    gap: theme.spacing.sm,
+                    minHeight: 44,
+                  }}
+                >
+                  {photoUri ? (
+                    <Image
+                      source={{ uri: photoUri }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: colors.surfaceSecondary,
+                      }}
+                      resizeMode="cover"
+                      accessibilityIgnoresInvertColors
+                    />
+                  ) : null}
+                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                    <AppText variant="body" weight="semibold" numberOfLines={1}>
+                      {name}
+                    </AppText>
+                    {name !== line.sku ? (
+                      <AppText variant="caption" color="muted" dir="ltr">
+                        {line.sku}
+                      </AppText>
+                    ) : null}
+                  </View>
+                  <AppText variant="body" weight="semibold" dir="ltr">
+                    {String(line.qty)}
+                  </AppText>
+                </View>
+              );
+            })
           )}
           <Pressable
             onPress={() => {
