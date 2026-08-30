@@ -15,6 +15,8 @@ import { useGrowingMultilineInput } from './useGrowingMultilineInput';
 
 export type TextFieldProps = TextInputProps & {
   label?: string;
+  /** Quiet trailing label hint (e.g. catalog reference). Brand-neutral muted. */
+  hint?: string;
   error?: string;
   containerStyle?: StyleProp<ViewStyle>;
   /**
@@ -35,8 +37,9 @@ export type TextFieldProps = TextInputProps & {
 
 export function TextField({
   label,
+  hint,
   error,
-  containerStyle,
+  containerStyle;
   style,
   pill,
   growMaxHeight,
@@ -94,7 +97,7 @@ export function TextField({
 
   return (
     <View style={[{ gap: theme.spacing.xs, width: '100%' }, containerStyle]}>
-      {label || copyable ? (
+      {label || copyable || hint ? (
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -111,6 +114,16 @@ export function TextField({
           ) : (
             <View style={{ flex: 1 }} />
           )}
+          {hint ? (
+            <AppText
+              variant="caption"
+              color="muted"
+              numberOfLines={1}
+              style={{ flexShrink: 0 }}
+            >
+              {hint}
+            </AppText>
+          ) : null}
           {copyable ? (
             <CopyNotesButton
               value={typeof value === 'string' ? value : value != null ? String(value) : ''}
