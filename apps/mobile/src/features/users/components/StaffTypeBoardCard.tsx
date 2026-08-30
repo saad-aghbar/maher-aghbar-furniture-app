@@ -138,7 +138,7 @@ export function StaffTypeBoardCard({ item, onView, onDuplicate, onDeactivate, on
             </View>
           </View>
 
-          <StatusBadge status={active ? 'ACTIVE' : 'INACTIVE'} dot />
+          <StatusBadge status={active ? 'ACTIVE' : 'INACTIVE'} dot variant={active ? 'brand' : undefined} />
         </View>
 
         <View

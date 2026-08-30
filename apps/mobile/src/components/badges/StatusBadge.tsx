@@ -7,6 +7,7 @@ import {
   getBadgeDotColor,
   getBadgeLabelStyle,
   resolveStatusVariant,
+  type BadgeVariant,
 } from './badgeStyles';
 import { displayStatusLabel, looksLikeStatusEnum, normalizeStatusKey } from './statusDisplay';
 
@@ -16,6 +17,8 @@ type StatusBadgeProps = {
   dot?: boolean;
   /** Army Camo wash + Liquorice type — board chips, not cool-grey defaults. */
   ink?: 'semantic' | 'board';
+  /** Override status-map fill (Staff Types Active → wood, not mint success). */
+  variant?: BadgeVariant;
 };
 
 export function StatusBadge({
@@ -23,11 +26,12 @@ export function StatusBadge({
   label,
   dot = false,
   ink = 'semantic',
+  variant: variantOverride,
 }: StatusBadgeProps) {
   const { theme, colors } = useTheme();
   const { locale, isRTL } = useLocale();
   const key = normalizeStatusKey(status);
-  const variant = resolveStatusVariant(key);
+  const variant = variantOverride ?? resolveStatusVariant(key);
   const display =
     label && !looksLikeStatusEnum(label) ? label : displayStatusLabel(locale, label ?? status);
   const board = ink === 'board';
