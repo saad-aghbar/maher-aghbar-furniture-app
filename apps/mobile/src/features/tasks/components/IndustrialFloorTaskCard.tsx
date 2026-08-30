@@ -492,8 +492,6 @@ function MetaRow({
         variant="caption"
         color="muted"
         style={{
-          textTransform: localeSafeTransform(isRTL),
-          letterSpacing: isRTL ? 0 : 0.4,
           fontSize: 10,
           flexShrink: 0,
           maxWidth: '32%',
@@ -518,8 +516,4 @@ function MetaRow({
       </AppText>
     </View>
   );
-}
-
-function localeSafeTransform(isRTL: boolean): 'none' | 'uppercase' {
-  return isRTL ? 'none' : 'uppercase';
 }

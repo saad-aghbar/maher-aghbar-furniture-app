@@ -5,6 +5,7 @@ import {
   RefreshControl,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -74,10 +75,11 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const insets = useSafeAreaInsets();
   const allowed = can(user, 'production-task.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const isCompleted = variant === 'completed';
-  const listBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
+  const listBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
 
   const [segment, setSegment] = useState<TasksSegment>('open');
   const [completedFilters, setCompletedFilters] = useState<CompletedFiltersState>(
@@ -209,11 +211,7 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
               <AppText
                 variant="caption"
                 weight="semibold"
-                style={{
-                  color: colors.brand,
-                  letterSpacing: locale === 'ar' ? 0 : 1.6,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                }}
+                style={{ color: colors.brand }}
               >
                 {t(isCompleted ? 'mobile.tasks.completedEyebrow' : 'mobile.tasks.floorEyebrow')}
               </AppText>
