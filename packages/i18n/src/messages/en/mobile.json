@@ -1497,6 +1497,21 @@
       "quotation": "Quotation",
       "order": "Order"
     },
+    "path": {
+      "request": "Dealer request",
+      "quotation": "Quotation",
+      "accepted": "Accepted",
+      "preparing": "Preparing"
+    },
+    "currentPhase": "Current phase",
+    "waitingForReview": "Waiting for review",
+    "gaps": {
+      "title": "Incomplete information",
+      "attachments": "No attachments yet",
+      "customLines": "Custom or modified lines need careful review",
+      "deliveryAddress": "Delivery address is missing",
+      "endCustomer": "End-customer name is missing"
+    },
     "noQuotationYet": "No quotation yet",
     "noQuotationHint": "When the request is ready, create a quotation to set prices and send for approval.",
     "orderStageEmpty": "No sales order yet",

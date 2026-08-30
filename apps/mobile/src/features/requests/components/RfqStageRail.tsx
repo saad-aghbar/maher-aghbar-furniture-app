@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
@@ -6,8 +5,17 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme, type ThemeColors } from '@/theme';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import {
+  RFQ_PATH_STEPS,
+  RFQ_WORKSPACE_STAGES,
+  rfqPathReachedIndex,
+  rfqPathTone,
+  rfqSegmentFilled,
+  type RfqPathStep,
+  type RfqWorkspaceStage,
+} from '../rfqWorkspaceStage';
 
-export type RfqWorkspaceStage = 'request' | 'quotation' | 'order';
+export type { RfqWorkspaceStage };
 
 type Props = {
   stage: RfqWorkspaceStage;
@@ -16,11 +24,7 @@ type Props = {
   hasOrder: boolean;
 };
 
-const STAGES: RfqWorkspaceStage[] = ['request', 'quotation', 'order'];
-
-function stageIndex(stage: RfqWorkspaceStage): number {
-  return STAGES.indexOf(stage);
-}
+const STAGES = RFQ_WORKSPACE_STAGES;
 
 function stageTint(colors: ThemeColors, key: RfqWorkspaceStage) {
   switch (key) {
@@ -55,21 +59,8 @@ function StageIcon({
 export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const current = stageIndex(stage);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-
-  /** Keep progress from collapsing when navigating back. */
-  const [peak, setPeak] = useState(current);
-  useEffect(() => {
-    const fromData = hasOrder ? 2 : hasQuote ? 1 : 0;
-    const next = Math.max(current, fromData);
-    setPeak((prev) => (next > prev ? next : prev));
-  }, [current, hasQuote, hasOrder]);
-
-  const showOrderSegment = peak >= 2 || hasOrder || stage === 'order';
-  const progressKeys: RfqWorkspaceStage[] = showOrderSegment
-    ? STAGES
-    : ['request', 'quotation'];
+  const reached = rfqPathReachedIndex({ hasQuote, hasOrder });
 
   const labelFor = (key: RfqWorkspaceStage) => {
     switch (key) {
@@ -82,17 +73,11 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
     }
   };
 
+  const pathLabel = (key: RfqPathStep) => t(`mobile.adminRequest.path.${key}`);
+
   const available = (key: RfqWorkspaceStage) => {
     if (key === 'request' || key === 'quotation') return true;
     return hasOrder;
-  };
-
-  /** Filled progress — based on peak so going back does not erase segments. */
-  const filled = (key: RfqWorkspaceStage) => {
-    const i = stageIndex(key);
-    if (i === 0) return true;
-    if (i === 1) return peak >= 1 || hasQuote || current >= 1;
-    return peak >= 2 || hasOrder;
   };
 
   /** Workflow completion only — never mark done just for visiting. */
@@ -169,14 +154,51 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
             >
               {t('mobile.adminRequest.eyebrow')}
             </AppText>
-            <AppText
-              variant="caption"
-              color="secondary"
-              maxFontSizeMultiplier={1.15}
-              style={{ fontSize: 11, lineHeight: 15 }}
+            <View
+              accessibilityLabel={t('mobile.adminRequest.stageHint')}
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+              }}
             >
-              {t('mobile.adminRequest.stageHint')}
-            </AppText>
+              {RFQ_PATH_STEPS.map((key, index) => {
+                const tone = rfqPathTone(key, reached);
+                return (
+                  <View
+                    key={key}
+                    style={{
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {index > 0 ? (
+                      <AppText
+                        variant="caption"
+                        color="muted"
+                        maxFontSizeMultiplier={1.15}
+                        style={{ fontSize: 11, lineHeight: 15, marginHorizontal: 4 }}
+                      >
+                        {isRTL ? '←' : '→'}
+                      </AppText>
+                    ) : null}
+                    <AppText
+                      variant="caption"
+                      color={tone === 'upcoming' ? 'muted' : 'secondary'}
+                      weight={tone === 'current' ? titleWeight : 'regular'}
+                      maxFontSizeMultiplier={1.15}
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 15,
+                        opacity: tone === 'upcoming' ? 0.55 : 1,
+                      }}
+                    >
+                      {pathLabel(key)}
+                    </AppText>
+                  </View>
+                );
+              })}
+            </View>
           </View>
         </View>
 
@@ -193,9 +215,8 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
             borderColor: colors.border,
           }}
         >
-          {progressKeys.map((key) => {
-            const on = filled(key);
-            const { tint } = stageTint(colors, key);
+          {RFQ_PATH_STEPS.map((key) => {
+            const on = rfqSegmentFilled(key, reached);
             return (
               <View
                 key={key}
@@ -203,8 +224,8 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
                   flex: 1,
                   minWidth: 6,
                   borderRadius: theme.radius.full,
-                  backgroundColor: on ? tint : 'transparent',
-                  opacity: stage === key ? 1 : on ? 0.5 : 1,
+                  backgroundColor: on ? colors.brand : 'transparent',
+                  opacity: on && rfqPathTone(key, reached) === 'current' ? 1 : on ? 0.55 : 1,
                 }}
               />
             );

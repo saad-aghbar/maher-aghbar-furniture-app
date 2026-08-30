@@ -1497,6 +1497,21 @@
       "quotation": "عرض السعر",
       "order": "الطلبية"
     },
+    "path": {
+      "request": "طلب التاجر",
+      "quotation": "عرض سعر",
+      "accepted": "مقبول",
+      "preparing": "قيد التحضير"
+    },
+    "currentPhase": "المرحلة الحالية",
+    "waitingForReview": "بانتظار المراجعة",
+    "gaps": {
+      "title": "معلومات ناقصة",
+      "attachments": "لا توجد مرفقات بعد",
+      "customLines": "البنود المخصصة أو المعدّلة تحتاج مراجعة",
+      "deliveryAddress": "عنوان التسليم ناقص",
+      "endCustomer": "اسم العميل النهائي ناقص"
+    },
     "noQuotationYet": "لا يوجد عرض سعر بعد",
     "noQuotationHint": "عندما يكون الطلب جاهزًا، أنشئ عرض سعر لتحديد الأسعار وإرساله للاعتماد.",
     "orderStageEmpty": "لا يوجد أمر بيع بعد",

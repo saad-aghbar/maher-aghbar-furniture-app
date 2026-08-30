@@ -11,7 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
-import { localizedName } from '@maher/i18n';
+import { localizedName, statusLabel } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import { createQuotation } from '@/api/modules/quotations';
 import {
@@ -40,6 +40,7 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
@@ -53,10 +54,13 @@ import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel'
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { AdminQuotationPanel } from '@/features/quotations/AdminQuotationDetailScreen';
+import { RfqStageRail } from '@/features/requests/components/RfqStageRail';
 import {
-  RfqStageRail,
+  isRfqWaitingForReview,
+  rfqIncompleteGaps,
+  rfqStageFromData,
   type RfqWorkspaceStage,
-} from '@/features/requests/components/RfqStageRail';
+} from '@/features/requests/rfqWorkspaceStage';
 
 type Props = {
   requestId: string;
@@ -67,16 +71,6 @@ type Props = {
 type WorkflowConfirm = 'needsInfo' | 'close' | null;
 
 type LinkedSalesOrder = { id: string; number: string; status: string };
-
-function sourceLabel(
-  source: string | null | undefined,
-  t: (k: string) => string,
-): string {
-  if (!source) return '—';
-  const key = `mobile.adminRequest.source.${source}`;
-  const label = t(key);
-  return label === key ? source : label;
-}
 
 function priorityLabel(
   priority: string | null | undefined,
@@ -130,7 +124,7 @@ function MetaCell({
  */
 export function AdminRequestDetailScreen({
   requestId,
-  initialStage = 'request',
+  initialStage,
   initialQuoteId,
 }: Props) {
   const { user } = useAuth();
@@ -145,7 +139,9 @@ export function AdminRequestDetailScreen({
   const canCreateQuote = can(user, 'quotation.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const [stage, setStage] = useState<RfqWorkspaceStage>(initialStage);
+  const [pickedStage, setPickedStage] = useState<RfqWorkspaceStage | undefined>(
+    initialStage,
+  );
   const [activeQuotationId, setActiveQuotationId] = useState<string | null>(
     initialQuoteId ?? null,
   );
@@ -164,7 +160,7 @@ export function AdminRequestDetailScreen({
   >([]);
 
   useEffect(() => {
-    if (initialStage) setStage(initialStage);
+    if (initialStage) setPickedStage(initialStage);
     if (initialQuoteId) setActiveQuotationId(initialQuoteId);
   }, [initialStage, initialQuoteId]);
 
@@ -332,7 +328,7 @@ export function AdminRequestDetailScreen({
       await invalidate();
       await queryClient.invalidateQueries({ queryKey: queryKeys.quotations.all });
       setActiveQuotationId(quote.id);
-      setStage('quotation');
+      setPickedStage('quotation');
     },
     onError: (err) => {
       setMessage(null);
@@ -495,13 +491,24 @@ export function AdminRequestDetailScreen({
   const hasQuote = Boolean(activeQuotationId) || (detail.quotations?.length ?? 0) > 0;
   const hasOrder = Boolean(linkedSalesOrder);
   const quoteId = activeQuotationId ?? detail.quotations?.[0]?.id ?? null;
+  const stage =
+    pickedStage ??
+    rfqStageFromData({ hasQuote, hasOrder, status: detail.status });
+
+  const statusPhrase = isRfqWaitingForReview(status)
+    ? t('mobile.adminRequest.waitingForReview')
+    : statusLabel(locale, status);
+  const currentPhaseLabel =
+    status === 'QUOTED' || (hasQuote && !hasOrder)
+      ? t('mobile.adminRequest.path.quotation')
+      : statusPhrase;
+  const incompleteGaps = rfqIncompleteGaps(detail);
+  const needsInfoAsk = status === 'NEEDS_INFORMATION' ? detail.internalNotes?.trim() : '';
 
   const stageBadgeStatus =
-    stage === 'quotation'
-      ? undefined // badge comes from panel header
-      : stage === 'order' && linkedSalesOrder
-        ? linkedSalesOrder.status
-        : detail.status;
+    stage === 'order' && linkedSalesOrder
+      ? linkedSalesOrder.status
+      : detail.status;
 
   let enter = 0;
   const nextIndex = () => enter++;
@@ -523,7 +530,11 @@ export function AdminRequestDetailScreen({
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
           paddingTop: theme.spacing.sm,
-          paddingBottom: theme.spacing['3xl'] + insets.bottom + 72,
+          paddingBottom:
+            theme.spacing['3xl'] +
+            SURFACE_TAB_BAR_CLEARANCE +
+            theme.spacing.xl +
+            Math.max(insets.bottom, theme.spacing.sm),
           gap: theme.spacing.md,
         }}
         keyboardShouldPersistTaps="handled"
@@ -531,28 +542,35 @@ export function AdminRequestDetailScreen({
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             gap: theme.spacing.sm,
             minHeight: theme.sizes.touch.min,
           }}
         >
           <BackButton onPress={goBack} label={t('mobile.adminRequest.backToOrders')} />
-          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 2, paddingTop: 2 }}>
             <AppText
               variant="title"
               weight={titleWeight}
-              numberOfLines={1}
               dir="ltr"
             >
               {detail.number}
             </AppText>
-            <AppText variant="caption" color="muted" numberOfLines={1}>
+            <AppText variant="caption" color="muted" numberOfLines={2}>
               {dealerName}
             </AppText>
           </View>
-          {stage !== 'quotation' && stageBadgeStatus ? (
-            <View style={{ justifyContent: 'center', alignItems: 'center', maxWidth: '42%' }}>
-              <StatusBadge status={stageBadgeStatus} dot />
+          {stageBadgeStatus ? (
+            <View style={{ justifyContent: 'flex-start', alignItems: 'center', maxWidth: '42%', paddingTop: 4 }}>
+              <StatusBadge
+                status={stageBadgeStatus}
+                label={
+                  stageBadgeStatus === status && isRfqWaitingForReview(status)
+                    ? statusPhrase
+                    : undefined
+                }
+                dot
+              />
             </View>
           ) : null}
         </View>
@@ -562,16 +580,38 @@ export function AdminRequestDetailScreen({
           hasQuote={hasQuote}
           hasOrder={hasOrder}
           onChange={(next) => {
-            setStage(next);
+            setPickedStage(next);
             setMessage(null);
             setError(null);
           }}
         />
 
+        <OrderBoardCard>
+          <AppText variant="caption" color="muted">
+            {t('mobile.adminRequest.currentPhase')}
+          </AppText>
+          <AppText variant="title" weight={titleWeight}>
+            {currentPhaseLabel}
+          </AppText>
+        </OrderBoardCard>
+
         {stage === 'request' && galleryUris.length > 0 ? (
           <View style={{ marginHorizontal: -theme.spacing.lg }}>
             <ImageCarousel uris={galleryUris} height={220} />
           </View>
+        ) : null}
+
+        {needsInfoAsk ? (
+          <OrderBoardCard accent={colors.brand}>
+            <OrderSectionHeader
+              icon="alert-circle-outline"
+              label={t('mobile.adminRequest.needsInfo')}
+              accent={colors.brand}
+            />
+            <AppText variant="label" weight="medium">
+              {needsInfoAsk}
+            </AppText>
+          </OrderBoardCard>
         ) : null}
         {message ? (
           <View
@@ -611,14 +651,14 @@ export function AdminRequestDetailScreen({
             <AdminQuotationPanel
               quotationId={quoteId}
               embedded
-              onOpenRequest={() => setStage('request')}
+              onOpenRequest={() => setPickedStage('request')}
               onRevised={(id) => {
                 setActiveQuotationId(id);
                 void invalidate();
               }}
               onAccepted={(so) => {
                 setLinkedSalesOrder(so);
-                setStage('order');
+                setPickedStage('order');
                 void invalidate();
               }}
               onLoaded={(info) => {
@@ -649,7 +689,7 @@ export function AdminRequestDetailScreen({
               ) : (
                 <SecondaryButton
                   label={t('mobile.adminRequest.stages.request')}
-                  onPress={() => setStage('request')}
+                  onPress={() => setPickedStage('request')}
                   style={{ alignSelf: 'stretch', width: '100%' }}
                 />
               )}
@@ -694,7 +734,7 @@ export function AdminRequestDetailScreen({
                 </AppText>
                 <SecondaryButton
                   label={t('mobile.adminRequest.stages.quotation')}
-                  onPress={() => setStage('quotation')}
+                  onPress={() => setPickedStage('quotation')}
                   style={{ alignSelf: 'stretch', width: '100%' }}
                 />
               </View>
@@ -719,15 +759,6 @@ export function AdminRequestDetailScreen({
                 gap: theme.spacing.md,
               }}
             >
-              <MetaCell
-                label={t('mobile.adminRequest.factoryOrder')}
-                value={detail.number}
-                ltr
-              />
-              <MetaCell
-                label={t('mobile.adminRequest.sourceLabel')}
-                value={sourceLabel(detail.source, t)}
-              />
               <MetaCell
                 label={t('mobile.adminRequest.priority')}
                 value={priorityLabel(detail.priority, t)}
@@ -1108,7 +1139,7 @@ export function AdminRequestDetailScreen({
                     onPress={() => {
                       void haptics.selection();
                       setActiveQuotationId(q.id);
-                      setStage('quotation');
+                      setPickedStage('quotation');
                     }}
                     style={{
                       flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -1138,6 +1169,23 @@ export function AdminRequestDetailScreen({
           </OrderBoardCard>
         </ListItemEnter>
           </>
+        ) : null}
+
+        {incompleteGaps.length > 0 ? (
+          <OrderBoardCard accent={colors.warning}>
+            <OrderSectionHeader
+              icon="warning-outline"
+              label={t('mobile.adminRequest.gaps.title')}
+              accent={colors.warning}
+            />
+            <View style={{ gap: theme.spacing.xs }}>
+              {incompleteGaps.map((gap) => (
+                <AppText key={gap} variant="label" color="secondary">
+                  {`• ${t(`mobile.adminRequest.gaps.${gap}`)}`}
+                </AppText>
+              ))}
+            </View>
+          </OrderBoardCard>
         ) : null}
       </ScrollView>
 
