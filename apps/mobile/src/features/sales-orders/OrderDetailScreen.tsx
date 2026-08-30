@@ -42,7 +42,7 @@ import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionShe
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
 import { haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import {
   adminOrderFlowHref,
@@ -258,16 +258,15 @@ export function OrderDetailScreen({
     showAdminActions &&
       (vm.isDraft || canHoldSalesOrder(vm.status) || canCancelSalesOrder(vm.status)),
   );
-  /** Lift sticky bar above floating tab bar; leave room in the scroll. */
-  const stickyBottom = SURFACE_TAB_BAR_CLEARANCE;
+  /** Lift sticky bar above floating tab bar (includes home-indicator inset). */
+  const stickyBottom = surfaceTabBarStackInset(insets.bottom, theme.spacing.sm);
   const hasProductionWorkflow = (vm?.productionOrders?.length ?? 0) > 0;
   /** Extra beige clearance so dock / last boards clear the tab bar. */
   const stickyPad = showStickyActions
     ? stickyBottom + 148
     : theme.spacing['3xl'] +
-      SURFACE_TAB_BAR_CLEARANCE +
-      Math.max(insets.bottom, 0) +
-      (variant === 'dealer' ? 56 : 24);
+      stickyBottom +
+      (variant === 'dealer' ? 56 : theme.spacing['2xl']);
 
   const actionsSheet: ActionSheetItem[] = useMemo(() => {
     if (!vm) return [];
@@ -441,6 +440,7 @@ export function OrderDetailScreen({
       </Animated.View>
 
       <Animated.ScrollView
+        style={{ flex: 1 }}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         refreshControl={
