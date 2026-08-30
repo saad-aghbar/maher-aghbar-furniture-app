@@ -33,9 +33,29 @@ export function isGlobalSearchPath(pathname: string): boolean {
 
 /**
  * Only the bare `(app)` index should redirect into surface tabs.
- * Surface groups and siblings (`/search`, `/notifications`, catalog, …) stay put.
+ * Surface groups and siblings stay put.
+ *
+ * `/(app)/(employee)/(tabs)` has no leaf after groups — Expo often reports
+ * pathname `/`, which must not be treated as the app index.
  */
-export function shouldRedirectAppIndex(pathname: string): boolean {
+export function shouldRedirectAppIndex(
+  pathname: string,
+  segments: readonly string[] = [],
+): boolean {
+  if (
+    segments.includes('(admin)') ||
+    segments.includes('(customer)') ||
+    segments.includes('(employee)')
+  ) {
+    return false;
+  }
+  if (
+    segments.includes('search') ||
+    segments.includes('notifications') ||
+    segments.includes('_forbidden')
+  ) {
+    return false;
+  }
   const raw = pathname.split('/').filter(Boolean);
   const leaf = raw.filter((s) => !s.startsWith('('));
   if (raw.includes('(admin)') || raw.includes('(customer)') || raw.includes('(employee)')) {
@@ -57,7 +77,7 @@ export function asAppHref(pathname: string): string {
 
 /**
  * After session restore: keep a real deep-link destination.
- * SurfaceGate sends the wrong surface to `_forbidden` — never Home-by-accident.
+ * SurfaceGate shows ForbiddenView in place — never Home-by-accident.
  */
 export function authenticatedLandingHref(incomingPath: string, homeHref: string): string {
   if (shouldRedirectAppIndex(incomingPath)) return homeHref;

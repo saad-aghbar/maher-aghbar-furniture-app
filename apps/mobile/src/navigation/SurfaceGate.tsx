@@ -1,8 +1,7 @@
-import { Redirect, Stack } from 'expo-router';
-import type { Href } from 'expo-router';
+import { Stack } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
+import { ForbiddenView } from '@/navigation/ForbiddenView';
 import { useStackMotionOptions } from '@/navigation/stackMotion';
-import { wrongSurfaceHref } from '@/navigation/surfaceGuard';
 import { resolveAppSurface, type AppSurface } from '@/permissions';
 
 type SurfaceGateProps = {
@@ -11,7 +10,8 @@ type SurfaceGateProps = {
 
 /**
  * Surface gate + nested Stack so products/details push without unmounting the app chrome.
- * Tab bar is mounted once at `app/(app)/_layout` so it never disappears.
+ * Wrong surface: existing forbidden screen in place (do not bounce to Home).
+ * `_forbidden.tsx` is a `_` file — Expo may not treat a Redirect there as a route.
  */
 export function SurfaceGate({ expected }: SurfaceGateProps) {
   const { status, user } = useAuth();
@@ -22,7 +22,7 @@ export function SurfaceGate({ expected }: SurfaceGateProps) {
   }
 
   if (resolveAppSurface(user) !== expected) {
-    return <Redirect href={wrongSurfaceHref() as Href} />;
+    return <ForbiddenView />;
   }
 
   return <Stack screenOptions={stackMotion} />;

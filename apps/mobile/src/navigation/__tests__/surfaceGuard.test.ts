@@ -63,4 +63,14 @@ describe('surfaceGuard', () => {
     expect(shouldForbidTab(admin, 'customer', 'catalog', isTabAllowed)).toBe(true);
     expect(wrongSurfaceHref()).toBe('/(app)/_forbidden');
   });
+
+  it('admin on employee tabs is a forbidden surface, not Home', () => {
+    const admin: AuthUser = {
+      ...base,
+      permissions: ['quotation.create', 'customer.create'],
+    };
+    expect(isCorrectSurface(admin, 'employee')).toBe(false);
+    expect(shouldForbidTab(admin, 'employee', 'index', isTabAllowed)).toBe(true);
+    expect(wrongSurfaceHref()).toBe('/(app)/_forbidden');
+  });
 });

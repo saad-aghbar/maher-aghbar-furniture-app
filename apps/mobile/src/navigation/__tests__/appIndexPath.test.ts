@@ -31,16 +31,28 @@ describe('appIndexPath', () => {
     expect(shouldRedirectAppIndex('/(app)/(customer)/(tabs)/catalog')).toBe(false);
     expect(shouldRedirectAppIndex('/(app)/(admin)/(tabs)')).toBe(false);
     expect(shouldRedirectAppIndex('/(app)/(admin)/(tabs)/orders')).toBe(false);
+    expect(shouldRedirectAppIndex('/(app)/(employee)/(tabs)')).toBe(false);
     expect(shouldRedirectAppIndex('/')).toBe(true);
     expect(shouldRedirectAppIndex('/(app)')).toBe(true);
     expect(shouldRedirectAppIndex('/(app)/index')).toBe(true);
   });
 
-  it('preserves catalog and search deep links instead of bouncing to Home', () => {
+  it('treats group-stripped employee tabs as a real destination, not /', () => {
+    expect(shouldRedirectAppIndex('/', ['(app)', '(employee)', '(tabs)'])).toBe(false);
+    expect(shouldRedirectAppIndex('/', ['(app)', '(customer)', '(tabs)'])).toBe(false);
+    expect(shouldRedirectAppIndex('/', ['(app)', '(admin)', '(tabs)'])).toBe(false);
+    expect(shouldRedirectAppIndex('/', ['(app)'])).toBe(true);
+    expect(shouldRedirectAppIndex('/', [])).toBe(true);
+  });
+
+  it('preserves catalog, search, and employee-tab deep links instead of bouncing to Home', () => {
     const home = '/(app)/(admin)/(tabs)';
     expect(
       authenticatedLandingHref('/(app)/(customer)/(tabs)/catalog', home),
     ).toBe('/(app)/(customer)/(tabs)/catalog');
+    expect(authenticatedLandingHref('/(app)/(employee)/(tabs)', home)).toBe(
+      '/(app)/(employee)/(tabs)',
+    );
     expect(authenticatedLandingHref('/search', home)).toBe('/(app)/search');
     expect(authenticatedLandingHref('/', home)).toBe(home);
     expect(asAppHref('/(app)/(customer)/(tabs)/catalog')).toBe(
