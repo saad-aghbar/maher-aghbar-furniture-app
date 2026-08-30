@@ -49,6 +49,34 @@ export function shouldPresentGlobalSearch(
   return isGlobalSearchPath(expoDeepLinkPath(launchUrl));
 }
 
+export type GroupedAppSurface = 'admin' | 'customer' | 'employee';
+
+/** Keep groups: `/(app)/(customer)/(tabs)` and Expo Go `--/(app)/(customer)/(tabs)`. */
+export function groupedSurfaceFromPath(pathname: string): GroupedAppSurface | null {
+  const path = expoDeepLinkPath(pathname) || pathname;
+  const parts = path.split('/').filter(Boolean);
+  if (parts.includes('(customer)')) return 'customer';
+  if (parts.includes('(employee)')) return 'employee';
+  if (parts.includes('(admin)')) return 'admin';
+  return null;
+}
+
+/**
+ * Grouped customer/employee tab roots have no leaf — Expo often focuses `/`.
+ * Admin must see forbidden, not Admin Home, and not dealer Home.
+ */
+export function shouldPresentWrongSurfaceForbidden(
+  pathname: string,
+  segments: readonly string[] = [],
+  launchUrl: string | null | undefined,
+  sessionSurface: string,
+): boolean {
+  if (!shouldRedirectAppIndex(pathname, segments)) return false;
+  const intended = groupedSurfaceFromPath(expoDeepLinkPath(launchUrl) || pathname);
+  if (!intended) return false;
+  return intended !== sessionSurface;
+}
+
 /**
  * Only the bare `(app)` index should redirect into surface tabs.
  * Surface groups and siblings stay put.

@@ -4,7 +4,9 @@ import {
   authenticatedLandingHref,
   expoDeepLinkPath,
   isGlobalSearchPath,
+  groupedSurfaceFromPath,
   shouldPresentGlobalSearch,
+  shouldPresentWrongSurfaceForbidden,
   shouldRedirectAppIndex,
 } from '../appIndexPath';
 
@@ -61,11 +63,63 @@ describe('appIndexPath', () => {
     expect(shouldRedirectAppIndex('/', [])).toBe(true);
   });
 
+  it('admin on grouped customer tabs from the Expo launch URL is forbidden, not Home', () => {
+    const exp = 'exp://127.0.0.1:8081/--/(app)/(customer)/(tabs)';
+    expect(groupedSurfaceFromPath(expoDeepLinkPath(exp))).toBe('customer');
+    expect(shouldPresentGlobalSearch('/', ['(app)'], exp)).toBe(false);
+    expect(shouldPresentWrongSurfaceForbidden('/', ['(app)'], exp, 'admin')).toBe(true);
+    expect(shouldPresentWrongSurfaceForbidden('/', [], exp, 'admin')).toBe(true);
+    expect(
+      shouldPresentWrongSurfaceForbidden('/', ['(app)'], exp, 'customer'),
+    ).toBe(false);
+    expect(
+      shouldPresentWrongSurfaceForbidden(
+        '/',
+        ['(app)', '(admin)', '(tabs)'],
+        exp,
+        'admin',
+      ),
+    ).toBe(false);
+    expect(
+      shouldPresentWrongSurfaceForbidden(
+        '/',
+        ['(app)', '(customer)', '(tabs)'],
+        exp,
+        'admin',
+      ),
+    ).toBe(false);
+    expect(
+      shouldPresentWrongSurfaceForbidden(
+        '/',
+        ['(app)'],
+        'exp://127.0.0.1:8081/--/(app)/(employee)/(tabs)',
+        'admin',
+      ),
+    ).toBe(true);
+    expect(
+      shouldPresentWrongSurfaceForbidden(
+        '/',
+        ['(app)'],
+        'exp://127.0.0.1:8081/--/(app)/(customer)/(tabs)/catalog',
+        'admin',
+      ),
+    ).toBe(true);
+  });
+
   it('preserves catalog, search, and employee-tab deep links instead of bouncing to Home', () => {
     const home = '/(app)/(admin)/(tabs)';
     expect(
       authenticatedLandingHref('/(app)/(customer)/(tabs)/catalog', home),
     ).toBe('/(app)/(customer)/(tabs)/catalog');
+    expect(authenticatedLandingHref('/(app)/(customer)/(tabs)', home)).toBe(
+      '/(app)/(customer)/(tabs)',
+    );
+    expect(
+      authenticatedLandingHref(
+        expoDeepLinkPath('exp://127.0.0.1:8081/--/(app)/(customer)/(tabs)'),
+        home,
+      ),
+    ).toBe('/(app)/(customer)/(tabs)');
     expect(authenticatedLandingHref('/(app)/(employee)/(tabs)', home)).toBe(
       '/(app)/(employee)/(tabs)',
     );
