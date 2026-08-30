@@ -15,6 +15,7 @@ import { useTheme } from '@/theme';
 import { queryKeys } from '@/api/queryKeys';
 import { useNotificationsQuery } from '@/features/notifications/query';
 import { normalizeNotificationList, unreadCount } from '@/features/notifications/selectNotification';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { AtelierScrollProvider, useAtelierScroll } from './AtelierScrollContext';
 import { AdminHomeAtelierDashboard } from './components/AdminHomeAtelierDashboard';
 import { AdminHomeAtelierHero } from './components/AdminHomeAtelierHero';
@@ -49,6 +50,7 @@ function AtelierScrollShell({
       scrollY.value = e.contentOffset.y;
     },
   });
+  const lastContentInset = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
 
   return (
     <Animated.ScrollView
@@ -59,7 +61,7 @@ function AtelierScrollShell({
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{
         paddingTop: insets.top + theme.spacing.lg,
-        paddingBottom: insets.bottom + 120,
+        paddingBottom: lastContentInset,
         paddingHorizontal: theme.spacing.lg,
       }}
       refreshControl={refreshControl}
