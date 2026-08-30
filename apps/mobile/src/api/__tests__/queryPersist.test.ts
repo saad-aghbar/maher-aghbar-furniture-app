@@ -1,4 +1,4 @@
-import { shouldDehydrateQuery } from '../queryPersist';
+import { shouldDehydrateQuery, stripPendingFromPersistedClient } from '../queryPersist';
 import type { Query } from '@tanstack/react-query';
 
 function q(key: unknown[], status: 'success' | 'pending' | 'error' = 'success'): Query {
@@ -23,5 +23,18 @@ describe('shouldDehydrateQuery offline whitelist', () => {
     expect(shouldDehydrateQuery(q(['catalog', 'list', {}], 'pending'))).toBe(false);
     expect(shouldDehydrateQuery(q(['catalog', 'list', {}], 'error'))).toBe(false);
     expect(shouldDehydrateQuery(q(['tasks', 'list', {}], 'pending'))).toBe(false);
+  });
+
+  it('strips pending queries from a restored persist blob', () => {
+    const restored = stripPendingFromPersistedClient({
+      clientState: {
+        queries: [
+          { state: { status: 'success' } },
+          { state: { status: 'pending' } },
+          { state: { status: 'error' } },
+        ],
+      },
+    });
+    expect(restored.clientState.queries).toEqual([{ state: { status: 'success' } }]);
   });
 });

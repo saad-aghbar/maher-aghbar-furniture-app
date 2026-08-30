@@ -2,7 +2,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { focusManager, onlineManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createElement, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppState, type AppStateStatus, Platform } from 'react-native';
+import { AppState, LogBox, type AppStateStatus, Platform } from 'react-native';
 import { useToast } from '@/components/feedback/Toast';
 import {
   createQueryClient,
@@ -27,6 +27,8 @@ function setupOnlineManager() {
 }
 
 setupOnlineManager();
+
+LogBox.ignoreLogs([/dehydrated as pending/i, /was dehydrated/i]);
 
 /**
  * Query client provider with AsyncStorage persistence (catalog/tasks lists only).
@@ -66,6 +68,7 @@ export function QueryProvider({ children }: { children: ReactNode }) {
         buster: 'no-pending-dehydrate-v1',
         dehydrateOptions: {
           shouldDehydrateQuery,
+          shouldDehydrateMutation: () => false,
         },
         maxAge: 1000 * 60 * 60 * 24, // 24h
       },

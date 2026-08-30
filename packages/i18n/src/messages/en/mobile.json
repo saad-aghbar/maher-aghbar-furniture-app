@@ -2413,7 +2413,11 @@
     "pulseEyebrow": "Trade floor",
     "subtitle": "Accounts, balances, and open work.",
     "emptyTitle": "No dealers yet",
-    "emptyBody": "Dealer accounts will show up here."
+    "emptyBody": "Dealer accounts will show up here.",
+    "errorTitle": "Couldn’t load dealers",
+    "errorBody": "Check your connection and try again.",
+    "retry": "Try again",
+    "detailErrorTitle": "Couldn’t load dealer"
   },
   "users": {
     "soonBody": "User management is coming to mobile. Use the web atelier for now.",

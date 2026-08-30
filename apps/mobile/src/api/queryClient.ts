@@ -7,14 +7,14 @@ import { isApiError } from './errors';
 import { isRawNetworkFailure } from './queryErrorToast';
 import { shouldRetryQuery } from './retry';
 import { createSafeAsyncStorage } from './safeAsyncStorage';
-import { QUERY_PERSIST_KEY } from './queryPersist';
+import { QUERY_PERSIST_KEY, stripPendingFromPersistedClient } from './queryPersist';
 import { isQueryDebugToastMessage } from '@/components/feedback/queryDebugToast';
 import { isTechnicalQueryError } from './toastErrors';
 
-export { isTechnicalQueryError, shouldToastApiError } from './toastErrors';
+export { isTechnicalQueryError, shouldToastApiError, sanitizeFeedbackCopy } from './toastErrors';
 
 export { createSafeAsyncStorage } from './safeAsyncStorage';
-export { shouldDehydrateQuery, QUERY_PERSIST_KEY } from './queryPersist';
+export { shouldDehydrateQuery, stripPendingFromPersistedClient, QUERY_PERSIST_KEY } from './queryPersist';
 
 export type QueryClientHooks = {
   /** Mutation failures only. Query loads render ErrorState — do not toast those. */
@@ -44,10 +44,19 @@ export function createQueryClient(hooks: QueryClientHooks = {}): QueryClient {
 }
 
 export function createQueryPersister() {
-  return createAsyncStoragePersister({
+  const inner = createAsyncStoragePersister({
     storage: createSafeAsyncStorage(AsyncStorage),
     key: QUERY_PERSIST_KEY,
   });
+  return {
+    persistClient: inner.persistClient.bind(inner),
+    removeClient: inner.removeClient.bind(inner),
+    restoreClient: async () => {
+      const restored = await inner.restoreClient();
+      if (!restored) return restored;
+      return stripPendingFromPersistedClient(restored);
+    },
+  };
 }
 
 export function toastMessageForError(error: unknown, _t?: unknown): string {

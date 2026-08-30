@@ -1,5 +1,5 @@
 import { abortedError, ApiError, offlineError } from '../errors';
-import { isTechnicalQueryError, shouldToastApiError } from '../toastErrors';
+import { isTechnicalQueryError, sanitizeFeedbackCopy, shouldToastApiError } from '../toastErrors';
 import { isRawNetworkFailure, isRawNetworkFailureMessage } from '../queryErrorToast';
 
 describe('raw network failure copy', () => {
@@ -26,6 +26,9 @@ describe('shouldToastApiError', () => {
     expect(isTechnicalQueryError(persist)).toBe(true);
     expect(shouldToastApiError(persist)).toBe(false);
     expect(shouldToastApiError('A query that was dehydrated as pending en…')).toBe(false);
+    expect(sanitizeFeedbackCopy(persist.message, 'Couldn’t load dealers')).toBe(
+      'Couldn’t load dealers',
+    );
   });
 
   it('does not toast unauthorized or aborted', () => {

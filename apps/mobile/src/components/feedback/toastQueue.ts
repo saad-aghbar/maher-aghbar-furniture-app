@@ -7,6 +7,8 @@ export type ToastItem = {
   durationMs: number;
 };
 
+import { isTechnicalQueryError } from '@/api/toastErrors';
+
 export type ShowToastInput = {
   message: string;
   variant?: ToastVariant;
@@ -21,6 +23,7 @@ export function createToastId(): string {
 }
 
 export function enqueueToast(queue: ToastItem[], input: ShowToastInput): ToastItem[] {
+  if (isTechnicalQueryError(input.message)) return queue;
   const item: ToastItem = {
     id: createToastId(),
     message: input.message,

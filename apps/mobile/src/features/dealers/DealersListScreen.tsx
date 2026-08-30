@@ -112,11 +112,10 @@ export function DealersListScreen() {
     return (
       <ScrollableScreen>
         <DealersScreenTitle onBack={onBack} titleWeight={titleWeight} />
-        {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
-          title={t('mobile.adminHome.errorTitle')}
-          description={t('mobile.adminHome.errorBody')}
-          retryLabel={t('mobile.adminHome.retry')}
+          title={t('mobile.dealers.errorTitle')}
+          description={t('mobile.dealers.errorBody')}
+          retryLabel={t('mobile.dealers.retry')}
           onRetry={() => void query.refetch()}
         />
       </ScrollableScreen>

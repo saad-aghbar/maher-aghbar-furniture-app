@@ -17,6 +17,12 @@ export function isTechnicalQueryError(error: unknown): boolean {
   );
 }
 
+/** Drop TanStack persist strings from titles / bodies / toasts. */
+export function sanitizeFeedbackCopy(text: string | undefined, fallback: string): string {
+  if (!text || isTechnicalQueryError(text)) return fallback;
+  return text;
+}
+
 /** Codes that should surface as toasts from global handlers. */
 export function shouldToastApiError(error: unknown): boolean {
   if (isTechnicalQueryError(error)) return false;
