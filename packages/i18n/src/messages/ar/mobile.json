@@ -2259,6 +2259,10 @@
       "wood": "خشب",
       "accessories": "إكسسوارات"
     },
+    "groupLandmark": {
+      "finished": "الجاهزة",
+      "semi": "نصف مصنّعة"
+    },
     "materialCount": "{count} مواد",
     "lowStockCount": "{count} مخزون منخفض",
     "chipItems": "{count} مواد",

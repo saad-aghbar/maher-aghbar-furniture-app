@@ -2259,6 +2259,10 @@
       "wood": "Wood",
       "accessories": "Accessories"
     },
+    "groupLandmark": {
+      "finished": "Finished",
+      "semi": "Semi"
+    },
     "materialCount": "{count} materials",
     "lowStockCount": "{count} low stock",
     "chipItems": "{count} items",

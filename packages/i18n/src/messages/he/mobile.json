@@ -2259,6 +2259,10 @@
       "wood": "עץ",
       "accessories": "אביזרים"
     },
+    "groupLandmark": {
+      "finished": "מוצרים גמורים",
+      "semi": "חצי מוגמר"
+    },
     "materialCount": "{count} חומרים",
     "lowStockCount": "{count} מלאי נמוך",
     "chipItems": "{count} פריטים",

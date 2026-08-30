@@ -5,8 +5,8 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
-import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
+import { InventoryGroupLoadError } from './components/InventoryGroupLoadError';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
@@ -131,10 +131,8 @@ export function InventoryGroupListScreen({
     return (
       <AppScreen backFallback={'/(app)/(admin)/(tabs)/inventory' as Href}>
         {showOfflineBanner ? <OfflineBanner /> : null}
-        <ErrorState
-          title={t('mobile.inventory.errorTitle')}
-          description={t('mobile.inventory.errorBody')}
-          retryLabel={t('mobile.inventory.retry')}
+        <InventoryGroupLoadError
+          groupTitle={title}
           onRetry={() => void query.refetch()}
         />
       </AppScreen>

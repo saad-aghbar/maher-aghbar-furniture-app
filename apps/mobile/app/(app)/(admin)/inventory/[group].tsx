@@ -2,11 +2,14 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
-import { EmptyState } from '@/components/feedback/EmptyState';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { InventoryGroupListScreen } from '@/features/inventory/InventoryGroupListScreen';
+import { InventoryGroupLoadError } from '@/features/inventory/components/InventoryGroupLoadError';
 import { INVENTORY_COMPOSITION } from '@/features/inventory/inventoryComposition';
-import { isValidCategoryGroup } from '@/features/inventory/selectInventory';
+import {
+  inventoryGroupRouteTitle,
+  isValidCategoryGroup,
+} from '@/features/inventory/selectInventory';
 import { useLocale } from '@/i18n';
 import { PermissionGate } from '@/navigation/PermissionGate';
 
@@ -20,6 +23,7 @@ export default function AdminInventoryGroupRoute() {
   const { t } = useLocale();
   const router = useRouter();
   const value = String(group ?? '');
+  const groupTitle = inventoryGroupRouteTitle(value, t);
 
   useEffect(() => {
     if (INVENTORY_COMPOSITION !== 'signature') return;
@@ -30,9 +34,11 @@ export default function AdminInventoryGroupRoute() {
   if (!isValidCategoryGroup(value)) {
     return (
       <AppScreen>
-        <EmptyState
-          title={t('mobile.inventory.errorTitle')}
-          description={t('mobile.inventory.errorBody')}
+        <InventoryGroupLoadError
+          groupTitle={groupTitle}
+          onRetry={() => {
+            router.replace('/(app)/(admin)/(tabs)/inventory' as Href);
+          }}
         />
       </AppScreen>
     );
