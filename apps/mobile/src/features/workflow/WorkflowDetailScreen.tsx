@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { usePreventRemove } from '@react-navigation/native';
 import { useNavigation, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
@@ -24,6 +25,7 @@ import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { ProductionFlowMap } from '@/features/production-flow/components/ProductionFlowMap';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
 import { AddStageSheet } from './components/AddStageSheet';
@@ -49,12 +51,15 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { theme, colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const navigation = useNavigation();
   const smartBack = useSmartBack(backFallback);
   const canManage = can(user, 'production.workflow.manage');
   const canPublish = can(user, 'production.workflow.publish');
+  /** ScrollView `gap` can drop paddingBottom — spacer uses the requested tab-bar inset. */
+  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
 
   const [addOpen, setAddOpen] = useState(false);
   const [editNode, setEditNode] = useState<WorkflowNode | null>(null);
@@ -219,7 +224,7 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
 
   return (
     <>
-      <ScrollableScreen>
+      <ScrollableScreen contentContainerStyle={{ paddingBottom: 0 }}>
         {showOfflineBanner ? <OfflineBanner /> : null}
 
         <WorkflowPageHeader
@@ -336,6 +341,13 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
             style={{ borderRadius: theme.radius.xl }}
           />
         ) : null}
+
+        <View
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ height: listBottomClearance }}
+        />
       </ScrollableScreen>
 
       {isDraft && version ? (
