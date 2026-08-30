@@ -2,6 +2,16 @@
 export const SURFACE_TAB_BAR_CLEARANCE = 88;
 
 /**
+ * Last-content inset so the last list row clears the floating pill
+ * (`insets.bottom + SURFACE_TAB_BAR_CLEARANCE`). Prefer this as FlatList
+ * `paddingBottom` and `ListFooterComponent` height — VirtualizedList always
+ * counts the footer in content size.
+ */
+export function surfaceListBottomInset(safeBottom: number): number {
+  return SURFACE_TAB_BAR_CLEARANCE + Math.max(0, safeBottom);
+}
+
+/**
  * Outer height of PersistentSurfaceTabBar floating shell
  * (SHELL_PAD 6 + ACTIVE_HEIGHT 46 + SHELL_PAD 6).
  */

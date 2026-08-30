@@ -78,4 +78,12 @@ describe('staff-types i18n keys', () => {
     });
     expect(leaks).toEqual([]);
   });
+
+  it('uses sentence-case English labels (Empty/Light family, not ALL CAPS)', () => {
+    expect(translate('en', 'users.staffTypesEyebrow')).toBe('Job presets');
+    expect(translate('en', 'users.systemPreset')).toBe('System preset');
+    expect(translate('en', 'users.assignedShort')).toBe('Assigned');
+    expect(translate('en', 'users.permissions')).toBe('Permissions');
+    expect(translate('en', 'users.custom')).toBe('Custom');
+  });
 });

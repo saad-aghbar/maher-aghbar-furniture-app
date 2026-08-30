@@ -1,5 +1,6 @@
 import {
   SURFACE_TAB_BAR_CLEARANCE,
+  surfaceListBottomInset,
   surfaceTabBarStackInset,
 } from '../tabBarClearance';
 
@@ -10,5 +11,16 @@ describe('surfaceTabBarStackInset', () => {
 
   it('uses minGap when the safe-area inset is zero', () => {
     expect(surfaceTabBarStackInset(0, 8)).toBe(SURFACE_TAB_BAR_CLEARANCE + 8);
+  });
+});
+
+describe('surfaceListBottomInset', () => {
+  it('is insets.bottom + SURFACE_TAB_BAR_CLEARANCE', () => {
+    expect(surfaceListBottomInset(34)).toBe(SURFACE_TAB_BAR_CLEARANCE + 34);
+  });
+
+  it('does not shrink when the safe-area inset is missing', () => {
+    expect(surfaceListBottomInset(0)).toBe(SURFACE_TAB_BAR_CLEARANCE);
+    expect(surfaceListBottomInset(-8)).toBe(SURFACE_TAB_BAR_CLEARANCE);
   });
 });

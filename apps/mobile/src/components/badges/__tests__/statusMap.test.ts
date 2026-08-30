@@ -44,4 +44,12 @@ describe('badge status / priority maps', () => {
     expect(rtl.maxWidth).toBe('100%');
     expect(rtl.flexShrink).toBe(1);
   });
+
+  it('brand wash is wood, not mint success', () => {
+    const wood = getBadgeContainerStyle(lightTheme, 'brand');
+    const mint = getBadgeContainerStyle(lightTheme, 'success');
+    expect(wood.backgroundColor).toBe(lightTheme.colors.brandSoft);
+    expect(mint.backgroundColor).toBe(lightTheme.colors.successSoft);
+    expect(wood.backgroundColor).not.toBe(mint.backgroundColor);
+  });
 });

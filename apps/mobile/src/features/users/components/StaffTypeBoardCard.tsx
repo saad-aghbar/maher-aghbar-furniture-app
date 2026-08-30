@@ -127,10 +127,10 @@ export function StaffTypeBoardCard({ item, onView, onDuplicate, onDeactivate, on
               <AppText
                 variant="caption"
                 color="muted"
+                weight={locale === 'ar' ? 'regular' : 'medium'}
                 style={{
                   fontSize: 10,
-                  letterSpacing: locale === 'ar' ? 0 : 0.4,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  letterSpacing: isRTL ? 0 : 0.2,
                 }}
               >
                 {item.isSystem ? t('users.systemPreset') : t('users.custom')}
@@ -138,7 +138,7 @@ export function StaffTypeBoardCard({ item, onView, onDuplicate, onDeactivate, on
             </View>
           </View>
 
-          <StatusBadge status={active ? 'ACTIVE' : 'INACTIVE'} dot />
+          <StatusBadge status={active ? 'ACTIVE' : 'INACTIVE'} dot variant={active ? 'brand' : undefined} />
         </View>
 
         <View
@@ -218,11 +218,11 @@ function StatCell({ label, value }: { label: string; value: string }) {
       <AppText
         variant="caption"
         color="muted"
+        weight={locale === 'ar' ? 'regular' : 'medium'}
         style={{
           textAlign: isRTL ? 'right' : 'left',
           fontSize: 10,
-          letterSpacing: locale === 'ar' ? 0 : 0.4,
-          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: isRTL ? 0 : 0.2,
         }}
       >
         {label}
