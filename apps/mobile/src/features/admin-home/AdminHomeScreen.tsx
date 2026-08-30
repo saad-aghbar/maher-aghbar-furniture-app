@@ -15,6 +15,7 @@ import { useTheme } from '@/theme';
 import { queryKeys } from '@/api/queryKeys';
 import { useNotificationsQuery } from '@/features/notifications/query';
 import { normalizeNotificationList, unreadCount } from '@/features/notifications/selectNotification';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { AtelierScrollProvider, useAtelierScroll } from './AtelierScrollContext';
 import { AdminHomeAtelierDashboard } from './components/AdminHomeAtelierDashboard';
 import { AdminHomeAtelierHero } from './components/AdminHomeAtelierHero';
@@ -49,6 +50,9 @@ function AtelierScrollShell({
       scrollY.value = e.contentOffset.y;
     },
   });
+  /** Extra clearance so the last Attention card sits fully above the floating tab bar. */
+  const scrollBottomPad =
+    insets.bottom + theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + theme.spacing['5xl'];
 
   return (
     <Animated.ScrollView
@@ -59,8 +63,9 @@ function AtelierScrollShell({
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{
         paddingTop: insets.top + theme.spacing.lg,
-        paddingBottom: insets.bottom + 120,
+        paddingBottom: scrollBottomPad,
         paddingHorizontal: theme.spacing.lg,
+        flexGrow: 1,
       }}
       refreshControl={refreshControl}
     >
