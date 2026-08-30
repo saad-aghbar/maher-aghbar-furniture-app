@@ -39,7 +39,7 @@ export function TextField({
   label,
   hint,
   error,
-  containerStyle;
+  containerStyle,
   style,
   pill,
   growMaxHeight,
