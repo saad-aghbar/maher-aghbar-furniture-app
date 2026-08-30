@@ -306,10 +306,8 @@ export function MoreAccountScreen({
   return (
     <ScrollableScreen
       contentContainerStyle={{
-        // Size to children so Theme / security can scroll; extra inset clears the floating tab bar.
         flexGrow: 0,
-        paddingBottom:
-          insets.bottom + theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+        paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
       }}
     >
       {showOfflineBanner ? <OfflineBanner /> : null}
@@ -413,8 +411,8 @@ export function MoreAccountScreen({
                 variant="caption"
                 weight={locale === 'ar' ? 'regular' : 'medium'}
                 style={{
-                  letterSpacing: locale === 'ar' ? 0 : 1.4,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  letterSpacing: 0,
+                  textTransform: 'none',
                   color: colors.brand,
                 }}
               >
@@ -750,6 +748,10 @@ export function MoreAccountScreen({
           />
         </Animated.View>
       </View>
+      <View
+        pointerEvents="none"
+        style={{ height: insets.bottom + SURFACE_TAB_BAR_CLEARANCE }}
+      />
     </ScrollableScreen>
   );
 }
@@ -762,8 +764,8 @@ function SectionLabel({ label, locale }: { label: string; locale: string }) {
       weight={locale === 'ar' ? 'regular' : 'medium'}
       align="start"
       style={{
-        letterSpacing: locale === 'ar' ? 0 : 0.8,
-        textTransform: locale === 'ar' ? 'none' : 'uppercase',
+        letterSpacing: 0,
+        textTransform: 'none',
         color: colors.brand,
         fontSize: 11,
       }}
