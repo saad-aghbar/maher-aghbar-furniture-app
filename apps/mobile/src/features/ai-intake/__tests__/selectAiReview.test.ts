@@ -1,4 +1,5 @@
 import {
+  aiIntakeListBadgeStatus,
   confidenceLabel,
   isProcessingPhase,
   localUploadingReview,
@@ -58,5 +59,21 @@ describe('selectAiReview', () => {
     expect(confidenceLabel(0.6)).toBe('medium');
     expect(confidenceLabel(0.2)).toBe('low');
     expect(confidenceLabel(null)).toBeNull();
+  });
+});
+
+describe('aiIntakeListBadgeStatus', () => {
+  it('warms approved COMPLETED to quiet wood-cream chrome, not mint success', () => {
+    expect(aiIntakeListBadgeStatus('COMPLETED', 'approved')).toBe('DRAFT');
+    expect(aiIntakeListBadgeStatus('COMPLETED')).toBe('DRAFT');
+  });
+
+  it('leaves other intake list statuses on their existing StatusBadge keys', () => {
+    expect(aiIntakeListBadgeStatus('NEEDS_REVIEW', 'ready')).toBe('NEEDS_REVIEW');
+    expect(aiIntakeListBadgeStatus('NEEDS_REVIEW', 'needs_review')).toBe('NEEDS_REVIEW');
+    expect(aiIntakeListBadgeStatus('PROCESSING', 'extracting')).toBe('PROCESSING');
+    expect(aiIntakeListBadgeStatus('QUEUED', 'reading')).toBe('QUEUED');
+    expect(aiIntakeListBadgeStatus('FAILED', 'failed')).toBe('FAILED');
+    expect(aiIntakeListBadgeStatus('FAILED', 'manual')).toBe('FAILED');
   });
 });
