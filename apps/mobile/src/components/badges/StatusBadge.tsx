@@ -3,6 +3,7 @@ import { AppText } from '@/components/AppText';
 import { alignStart, localeRow, textAlignFor, useLocale, writingDirectionFor } from '@/i18n';
 import { useTheme } from '@/theme';
 import {
+  brandedPillChrome,
   getBadgeContainerStyle,
   getBadgeDotColor,
   getBadgeLabelStyle,
@@ -17,6 +18,8 @@ type StatusBadgeProps = {
   dot?: boolean;
   /** Army Camo wash + Liquorice type — board chips, not cool-grey defaults. */
   ink?: 'semantic' | 'board';
+  /** Cream fill + Army Camo border + Liquorice ink — readable on parchment. */
+  branded?: boolean;
   /** Override status-map fill (Staff Types Active → wood, not mint success). */
   variant?: BadgeVariant;
 };
@@ -26,6 +29,7 @@ export function StatusBadge({
   label,
   dot = false,
   ink = 'semantic',
+  branded = false,
   variant: variantOverride,
 }: StatusBadgeProps) {
   const { theme, colors } = useTheme();
@@ -34,19 +38,20 @@ export function StatusBadge({
   const variant = variantOverride ?? resolveStatusVariant(key);
   const display =
     label && !looksLikeStatusEnum(label) ? label : displayStatusLabel(locale, label ?? status);
-  const board = ink === 'board';
+  const board = ink === 'board' || branded;
+  const chrome = board ? brandedPillChrome(theme) : null;
 
   return (
     <View
       accessibilityRole="text"
       accessibilityLabel={display}
       style={[
-        getBadgeContainerStyle(theme, variant, { isRTL }),
+        getBadgeContainerStyle(theme, variant, { isRTL, branded: board }),
         { alignSelf: alignStart(isRTL), flexDirection: localeRow(isRTL) },
-        board
+        chrome
           ? {
-              backgroundColor: colors.brandSoft,
-              borderColor: colors.brand,
+              backgroundColor: chrome.backgroundColor,
+              borderColor: chrome.borderColor,
             }
           : null,
       ]}
@@ -69,13 +74,13 @@ export function StatusBadge({
         numberOfLines={2}
         maxFontSizeMultiplier={isRTL ? 1.2 : 1.35}
         style={[
-          getBadgeLabelStyle(theme, variant),
+          getBadgeLabelStyle(theme, variant, board),
           {
             textAlign: textAlignFor(isRTL ? 'rtl' : 'ltr'),
             writingDirection: writingDirectionFor(isRTL),
             flexShrink: 1,
             minWidth: 0,
-            ...(board ? { color: colors.textPrimary } : null),
+            ...(chrome ? { color: chrome.color } : null),
           },
         ]}
       >

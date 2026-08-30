@@ -128,13 +128,27 @@ function softFill(colors: ThemeColors, variant: BadgeVariant): { bg: string; fg:
   }
 }
 
+/** Cream fill, Army Camo border, Liquorice ink — readable on Apple White. */
+export function brandedPillChrome(theme: Theme): {
+  backgroundColor: string;
+  borderColor: string;
+  color: string;
+} {
+  return {
+    backgroundColor: theme.colors.brandSoft,
+    borderColor: theme.colors.brand,
+    color: theme.colors.textPrimary,
+  };
+}
+
 export function getBadgeContainerStyle(
   theme: Theme,
   variant: BadgeVariant,
-  opts: { isRTL?: boolean } = {},
+  opts: { isRTL?: boolean; branded?: boolean } = {},
 ): ViewStyle {
   const { bg } = softFill(theme.colors, variant);
   const isRTL = Boolean(opts.isRTL);
+  const chrome = opts.branded ? brandedPillChrome(theme) : null;
   return {
     alignSelf: isRTL ? 'flex-end' : 'flex-start',
     flexDirection: rowDirection(isRTL),
@@ -146,21 +160,29 @@ export function getBadgeContainerStyle(
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: isRTL ? theme.spacing.xs : theme.spacing['2xs'],
     borderRadius: theme.radius.full,
-    backgroundColor: bg,
+    backgroundColor: chrome?.backgroundColor ?? bg,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: chrome?.borderColor ?? theme.colors.border,
   };
 }
 
-export function getBadgeLabelStyle(theme: Theme, variant: BadgeVariant): TextStyle {
+export function getBadgeLabelStyle(
+  theme: Theme,
+  variant: BadgeVariant,
+  branded = false,
+): TextStyle {
   const { fg } = softFill(theme.colors, variant);
   return {
-    color: fg,
+    color: branded ? brandedPillChrome(theme).color : fg,
     fontSize: theme.typography.variants.caption.fontSize,
     lineHeight: theme.typography.variants.caption.lineHeight,
   };
 }
 
-export function getBadgeDotColor(theme: Theme, variant: BadgeVariant): string {
-  return softFill(theme.colors, variant).fg;
+export function getBadgeDotColor(
+  theme: Theme,
+  variant: BadgeVariant,
+  branded = false,
+): string {
+  return branded ? theme.colors.brand : softFill(theme.colors, variant).fg;
 }

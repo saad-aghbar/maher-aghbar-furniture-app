@@ -105,7 +105,7 @@ export function SupplierInvoiceDetailScreen({ invoiceId }: Props) {
           >
             {inv.number}
           </AppText>
-          <StatusBadge status={inv.status} />
+          <StatusBadge status={inv.status} branded />
         </View>
 
         <PurchasingFloorBoard>
