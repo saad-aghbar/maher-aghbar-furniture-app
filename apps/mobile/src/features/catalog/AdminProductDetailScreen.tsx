@@ -57,6 +57,7 @@ import { MeasurementValuePanel } from './components/MeasurementValueSheet';
 import { ProductGalleryBoard } from './components/ProductGalleryBoard';
 import { ProductPhotoSourceSheet } from './components/ProductPhotoSourceSheet';
 import { formatCatalogDimensionHint } from './catalogDimensionHint';
+import { adminProductChromeTitle } from './adminProductChrome';
 import { mergeProductPhotos, splitProductPhotos } from './productPhotos';
 import { ProductWorkflowSection } from '@/features/workflow/components/ProductWorkflowSection';
 import {
@@ -284,11 +285,17 @@ export function AdminProductDetailScreen({ productId }: Props) {
   const productionCost = num(productQuery.data?.productionCost ?? productQuery.data?.manufacturingCost);
   const categories = categoriesQuery.data?.data ?? [];
   const dealerPrices = pricesQuery.data ?? [];
+<<<<<<< HEAD
   /** Same stack inset as order detail so SPEC / materials clear the floating pill. */
   const footerPad =
     theme.spacing['3xl'] +
     surfaceTabBarStackInset(insets.bottom, theme.spacing.sm) +
     theme.spacing['2xl'];
+=======
+  /** Scroll content must clear the floating pill — do not pad/restyle the tab bar. */
+  const footerPad =
+    theme.spacing['5xl'] + SURFACE_TAB_BAR_CLEARANCE + Math.max(insets.bottom, theme.spacing.md);
+>>>>>>> 07be4ab (Fix admin product detail leftover chrome (title, photos, SKU, inset).)
   const sheetLocksPageScroll =
     measureSheet ||
     materialSheet ||
@@ -375,6 +382,16 @@ export function AdminProductDetailScreen({ productId }: Props) {
       </AppScreen>
     );
   }
+
+  const sku = productQuery.data?.sku?.trim() ?? '';
+  const chromeTitle = adminProductChromeTitle({
+    locale,
+    nameEn: draft.nameEn,
+    nameAr: draft.nameAr,
+    nameHe: productQuery.data?.nameHe,
+    sku,
+    fallback: t('catalog.product'),
+  });
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
@@ -476,11 +493,12 @@ export function AdminProductDetailScreen({ productId }: Props) {
       >
         <BackButton onPress={() => router.back()} label={t('mobile.productDetail.back')} />
         <AppText variant="title" weight={titleWeight} style={{ flex: 1 }} numberOfLines={1}>
-          {t('catalog.product')}
+          {chromeTitle}
         </AppText>
       </View>
 
       <ScrollView
+        style={{ flex: 1 }}
         scrollEnabled={!sheetLocksPageScroll}
         style={{ flex: 1 }}
         refreshControl={
@@ -505,7 +523,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
 
         {/* Product board */}
         <ListItemEnter index={0}>
-          <SectionBoard title={t('catalog.product')} titleWeight={titleWeight}>
+          <SectionBoard titleWeight={titleWeight}>
             <ProductGalleryBoard
               photos={draft.photos}
               selectedIndex={photoIndex}
@@ -514,6 +532,31 @@ export function AdminProductDetailScreen({ productId }: Props) {
               onAddPress={() => setPhotoSheet(true)}
               uploading={photoUploading}
             />
+
+            {sku ? (
+              <View style={{ gap: theme.spacing.xs }}>
+                <AppText variant="label" color="secondary">
+                  {t('catalog.sku')}
+                </AppText>
+                <View
+                  style={{
+                    minHeight: theme.sizes.touch.min,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.surfaceSecondary,
+                    paddingHorizontal: theme.spacing.lg,
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    ...orderBoardShadow(colorScheme),
+                  }}
+                >
+                  <AppText variant="body" weight={titleWeight} dir="ltr" numberOfLines={1}>
+                    {sku}
+                  </AppText>
+                </View>
+              </View>
+            ) : null}
 
             <View style={{ gap: theme.spacing.sm }}>
               <View style={{ gap: theme.spacing.xs }}>
@@ -1646,7 +1689,7 @@ function SectionBoard({
   onAction,
   children,
 }: {
-  title: string;
+  title?: string;
   titleWeight: 'medium' | 'semibold';
   actionLabel?: string;
   onAction?: () => void;
@@ -1654,6 +1697,7 @@ function SectionBoard({
 }) {
   const { colors, theme } = useTheme();
   const { isRTL } = useLocale();
+  const showHeader = Boolean(title) || Boolean(actionLabel && onAction);
 
   return (
     <MoreBoard
@@ -1664,35 +1708,41 @@ function SectionBoard({
         gap: theme.spacing.md,
       }}
     >
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: theme.spacing.sm,
-          paddingBottom: theme.spacing.sm,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.border,
-        }}
-      >
-        <AppText variant="label" weight={titleWeight} style={{ flex: 1 }}>
-          {title}
-        </AppText>
-        {actionLabel && onAction ? (
-          <SecondaryButton
-            label={`+ ${actionLabel}`}
-            onPress={() => {
-              void haptics.selection();
-              onAction();
-            }}
-            style={{
-              borderRadius: theme.radius.xl,
-              paddingHorizontal: theme.spacing.md,
-              minHeight: 36,
-            }}
-          />
-        ) : null}
-      </View>
+      {showHeader ? (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.sm,
+            paddingBottom: theme.spacing.sm,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: colors.border,
+          }}
+        >
+          {title ? (
+            <AppText variant="label" weight={titleWeight} style={{ flex: 1 }}>
+              {title}
+            </AppText>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
+          {actionLabel && onAction ? (
+            <SecondaryButton
+              label={`+ ${actionLabel}`}
+              onPress={() => {
+                void haptics.selection();
+                onAction();
+              }}
+              style={{
+                borderRadius: theme.radius.xl,
+                paddingHorizontal: theme.spacing.md,
+                minHeight: 36,
+              }}
+            />
+          ) : null}
+        </View>
+      ) : null}
       {children}
     </MoreBoard>
   );
