@@ -182,7 +182,7 @@ export function OrdersDaySectionHeader({
         >
           <Animated.View style={chevronStyle}>
             <Ionicons
-              name={isRTL ? 'chevron-back' : 'chevron-forward'}
+              name="chevron-forward"
               size={14}
               color={colors.brand}
             />

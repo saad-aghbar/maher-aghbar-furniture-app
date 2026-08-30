@@ -7,6 +7,7 @@ import {
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n/useLocale';
+import { rowDirection, writingDirectionFor } from '@/i18n/rtl';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { AppTextInput } from './AppTextInput';
 import { CopyNotesButton } from './CopyNotesButton';
@@ -87,7 +88,7 @@ export function TextField({
           fontSize: theme.typography.variants.body.fontSize,
           lineHeight: theme.typography.variants.body.lineHeight,
           textAlign: isRTL ? 'right' : 'left',
-          writingDirection: isRTL ? 'rtl' : 'ltr',
+          writingDirection: writingDirectionFor(isRTL),
           ...resolveAppFontStyle(locale, { variant: 'body' }),
         },
         style,
@@ -103,7 +104,7 @@ export function TextField({
       {label || copyable || hint ? (
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: rowDirection(isRTL),
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: theme.spacing.sm,

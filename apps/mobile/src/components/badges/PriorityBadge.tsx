@@ -1,6 +1,7 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
-import { resolveAppFontStyle, useTheme } from '@/theme';
+import { useTheme } from '@/theme';
 import {
   getBadgeContainerStyle,
   getBadgeDotColor,
@@ -8,6 +9,7 @@ import {
   resolvePriorityVariant,
   type PriorityLevel,
 } from './badgeStyles';
+import { displayStatusLabel, looksLikeStatusEnum } from './statusDisplay';
 
 type PriorityBadgeProps = {
   priority: PriorityLevel;
@@ -25,26 +27,22 @@ function priorityMessageKey(priority: PriorityLevel): string {
  */
 export function PriorityBadge({ priority, label, dot = true }: PriorityBadgeProps) {
   const { theme } = useTheme();
-  const { locale, t } = useLocale();
+  const { locale, isRTL, t } = useLocale();
   const variant = resolvePriorityVariant(priority);
   const key = `mobile.production.priority.${priorityMessageKey(priority)}`;
   const translated = t(key);
   const display =
-    label ??
-    (translated !== key
-      ? translated
-      : ({
-          low: 'Low',
-          medium: 'Medium',
-          high: 'High',
-          urgent: 'Urgent',
-        }[priority]));
+    label && !looksLikeStatusEnum(label)
+      ? label
+      : translated !== key
+        ? translated
+        : displayStatusLabel(locale, priorityMessageKey(priority));
 
   return (
     <View
       accessibilityRole="text"
       accessibilityLabel={display}
-      style={getBadgeContainerStyle(theme, variant)}
+      style={getBadgeContainerStyle(theme, variant, { isRTL })}
     >
       {dot ? (
         <View
@@ -58,18 +56,21 @@ export function PriorityBadge({ priority, label, dot = true }: PriorityBadgeProp
           }}
         />
       ) : null}
-      <Text
+      <AppText
+        variant="caption"
+        weight="medium"
+        numberOfLines={2}
+        maxFontSizeMultiplier={isRTL ? 1.2 : 1.35}
         style={[
           getBadgeLabelStyle(theme, variant),
-          resolveAppFontStyle(locale, {
-            weight: 'medium',
-            variant: 'caption',
-            systemWeight: theme.typography.weights.medium,
-          }),
+          {
+            flexShrink: 1,
+            minWidth: 0,
+          },
         ]}
       >
         {display}
-      </Text>
+      </AppText>
     </View>
   );
 }

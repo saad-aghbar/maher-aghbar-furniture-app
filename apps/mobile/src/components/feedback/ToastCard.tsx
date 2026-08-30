@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { rowDirection, startEdge } from '@/i18n/rtl';
 import { AnimatedPressable, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { toastChrome } from './toastChrome';
@@ -57,7 +58,7 @@ function ToastTimer({
       style={{
         height: 3,
         backgroundColor: track,
-        flexDirection: isRTL ? 'row-reverse' : 'row',
+        flexDirection: rowDirection(isRTL),
       }}
     >
       <Animated.View
@@ -93,7 +94,7 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
     <View>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
           alignItems: 'center',
           gap: theme.spacing.sm,
           paddingVertical: theme.spacing.sm + 2,
@@ -170,7 +171,7 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
             backgroundColor: stripe,
             opacity: 0.95,
             zIndex: 1,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
+            [startEdge(isRTL)]: 0,
           }}
         />
         {onPress ? (

@@ -32,8 +32,13 @@ export {
   writingDirectionFor,
   flexDirectionFor,
   localeRow,
+  rowDirection,
   pinStart,
   extraStartPadding,
   alignStart,
+  chevronForwardName,
+  arrowForwardName,
+  startEdge,
+  endEdge,
   mirrorStyle,
 } from './rtl';

@@ -4,7 +4,9 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { TextField } from '@/components/forms/TextField';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
+import { SearchActionRow } from '@/components/layout/SearchActionRow';
 import { useLocale } from '@/i18n';
+import { startEdge } from '@/i18n/rtl';
 import { useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { Href } from 'expo-router';
@@ -52,7 +54,7 @@ export function CatalogStoreChrome({
               position: 'absolute',
               top: 0,
               bottom: 0,
-              ...(isRTL ? { right: 0 } : { left: 0 }),
+              [startEdge(isRTL)]: 0,
               zIndex: 1,
               justifyContent: 'center',
             }}
@@ -73,26 +75,21 @@ export function CatalogStoreChrome({
         </AppText>
       </View>
 
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          gap: theme.spacing.sm,
-        }}
+      <SearchActionRow
+        trailing={
+          <CatalogFilterButton activeCount={filterActiveCount} onPress={onOpenFilters} />
+        }
       >
-        <View style={{ flex: 1 }}>
-          <TextField
-            value={searchInput}
-            onChangeText={onSearchChange}
-            placeholder={t('mobile.catalog.searchPlaceholder')}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            accessibilityLabel={t('mobile.catalog.search')}
-          />
-        </View>
-        <CatalogFilterButton activeCount={filterActiveCount} onPress={onOpenFilters} />
-      </View>
+        <TextField
+          value={searchInput}
+          onChangeText={onSearchChange}
+          placeholder={t('mobile.catalog.searchPlaceholder')}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          accessibilityLabel={t('mobile.catalog.search')}
+        />
+      </SearchActionRow>
 
       {children}
     </View>

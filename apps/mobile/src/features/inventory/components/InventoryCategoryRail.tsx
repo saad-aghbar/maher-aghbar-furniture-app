@@ -13,6 +13,7 @@ import Animated, {
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
+import { rowDirection, startEdge } from '@/i18n/rtl';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryCategoryGroup, InventoryGroupSummary } from '../api';
@@ -63,7 +64,7 @@ export function InventoryCategoryRail({ groups, active, onChange }: Props) {
     >
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: theme.spacing.sm,
@@ -99,7 +100,7 @@ export function InventoryCategoryRail({ groups, active, onChange }: Props) {
       <View
         style={{
           padding: theme.spacing.sm,
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
           flexWrap: 'wrap',
           gap: theme.spacing.xs + 2,
         }}
@@ -227,7 +228,7 @@ function CategoryChip({
           position: 'absolute',
           top: 6,
           bottom: 6,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
+          [startEdge(isRTL)]: 0,
           width: 2.5,
           borderRadius: 2,
           backgroundColor: stripColor,
@@ -253,7 +254,7 @@ function CategoryChip({
         style={[
           {
             flex: 1,
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: rowDirection(isRTL),
             alignItems: 'center',
             gap: theme.spacing.xs + 2,
             paddingVertical: theme.spacing.sm,

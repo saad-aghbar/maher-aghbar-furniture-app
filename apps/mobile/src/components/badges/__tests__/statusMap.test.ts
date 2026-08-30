@@ -1,6 +1,7 @@
 import { lightTheme } from '@/theme';
 import {
   englishStatusFallback,
+  getBadgeContainerStyle,
   resolvePriorityVariant,
   resolveStatusVariant,
 } from '../badgeStyles';
@@ -31,5 +32,16 @@ describe('badge status / priority maps', () => {
   it('uses theme soft fills without throwing', () => {
     expect(lightTheme.colors.successSoft).toBeTruthy();
     expect(lightTheme.colors.errorSoft).toBeTruthy();
+  });
+
+  it('flips badge chrome in RTL and keeps shrink room for Arabic', () => {
+    const ltr = getBadgeContainerStyle(lightTheme, 'warning');
+    const rtl = getBadgeContainerStyle(lightTheme, 'warning', { isRTL: true });
+    expect(ltr.flexDirection).toBe('row');
+    expect(ltr.alignSelf).toBe('flex-start');
+    expect(rtl.flexDirection).toBe('row-reverse');
+    expect(rtl.alignSelf).toBe('flex-end');
+    expect(rtl.maxWidth).toBe('100%');
+    expect(rtl.flexShrink).toBe(1);
   });
 });

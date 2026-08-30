@@ -4,7 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { ToastClearance } from '@/components/feedback/Toast';
 import { Divider } from '@/components/layout/Divider';
+import { SearchActionRow } from '@/components/layout/SearchActionRow';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { InventorySearchField } from './InventorySearchField';
@@ -79,7 +81,7 @@ export function InventoryCompositionChrome({
       <ToastClearance />
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: theme.spacing.md,
@@ -113,7 +115,7 @@ export function InventoryCompositionChrome({
 
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: rowDirection(isRTL),
             flexWrap: 'wrap',
             gap: theme.spacing.sm,
             justifyContent: 'flex-end',
@@ -147,41 +149,44 @@ export function InventoryCompositionChrome({
       {showSearch && setSearchInput ? (
         <View style={{ gap: theme.spacing.sm }}>
           <Divider compact />
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              gap: theme.spacing.sm,
-            }}
+          <SearchActionRow
+            trailing={
+              <View
+                style={{
+                  flexDirection: rowDirection(isRTL),
+                  alignItems: 'center',
+                  gap: theme.spacing.sm,
+                }}
+              >
+                <FloorIconButton
+                  icon="qr-code-outline"
+                  accessibilityLabel={t('mobile.inventory.scanBarcode')}
+                  onPress={() => {
+                    if (section === 'items' && canCreate) onCreate?.();
+                  }}
+                />
+                <FloorIconButton
+                  icon="sync-outline"
+                  accessibilityLabel={
+                    syncVisible
+                      ? t('mobile.inventory.syncFromMaterials')
+                      : t('mobile.inventory.sync')
+                  }
+                  loading={syncing}
+                  onPress={() => {
+                    if (syncVisible) onSync?.();
+                    else onRefresh?.();
+                  }}
+                />
+              </View>
+            }
           >
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <InventorySearchField
-                value={searchInput}
-                onChangeText={setSearchInput}
-                placeholder={searchPlaceholder}
-              />
-            </View>
-            <FloorIconButton
-              icon="qr-code-outline"
-              accessibilityLabel={t('mobile.inventory.scanBarcode')}
-              onPress={() => {
-                if (section === 'items' && canCreate) onCreate?.();
-              }}
+            <InventorySearchField
+              value={searchInput}
+              onChangeText={setSearchInput}
+              placeholder={searchPlaceholder}
             />
-            <FloorIconButton
-              icon="sync-outline"
-              accessibilityLabel={
-                syncVisible
-                  ? t('mobile.inventory.syncFromMaterials')
-                  : t('mobile.inventory.sync')
-              }
-              loading={syncing}
-              onPress={() => {
-                if (syncVisible) onSync?.();
-                else onRefresh?.();
-              }}
-            />
-          </View>
+          </SearchActionRow>
         </View>
       ) : null}
       {children}
@@ -248,7 +253,7 @@ function FloorActionButton({
   loading?: boolean;
   onPress: () => void;
 }) {
-  const { locale } = useLocale();
+  const { locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const solid = tone === 'solid';
 
@@ -270,7 +275,7 @@ function FloorActionButton({
         borderWidth: 1,
         borderColor: solid ? colors.brand : colors.borderStrong,
         backgroundColor: solid ? colors.brand : colors.surface,
-        flexDirection: 'row',
+        flexDirection: rowDirection(isRTL),
         alignItems: 'center',
         gap: theme.spacing.xs,
         overflow: 'hidden',

@@ -20,6 +20,7 @@ import {
   type ToastItem,
 } from './toastQueue';
 import { registerToastListener } from './toastBridge';
+import { isQueryDebugToastMessage } from './queryDebugToast';
 
 export type { ShowToastInput } from './toastQueue';
 export { emitToast, toastCopy } from './toastBridge';
@@ -91,6 +92,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<ToastItem[]>([]);
 
   const showToast = useCallback((input: ShowToastInput) => {
+    if (isQueryDebugToastMessage(input.message)) return;
     setQueue((q) => enqueueToast(q, input));
   }, []);
 

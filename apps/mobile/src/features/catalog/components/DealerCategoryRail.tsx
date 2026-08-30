@@ -1,6 +1,7 @@
 import { Image, Platform, ScrollView, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { BrowseCategory } from '../api';
@@ -49,7 +50,7 @@ export function DealerCategoryRail({ categories, value, onChange }: Props) {
       showsHorizontalScrollIndicator={false}
       style={{ overflow: 'visible' }}
       contentContainerStyle={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
+        flexDirection: rowDirection(isRTL),
         gap: theme.spacing.sm,
         paddingVertical: 6,
         paddingHorizontal: 2,

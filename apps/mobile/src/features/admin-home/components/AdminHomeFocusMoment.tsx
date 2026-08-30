@@ -16,6 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { arrowForwardName, rowDirection } from '@/i18n/rtl';
 import { AnimatedPressable, CountUp, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { HomeFocus } from '../pickHomeFocus';
@@ -111,7 +112,7 @@ export function AdminHomeFocusMoment({ focus }: Props) {
           borderColor: colors.border,
           backgroundColor: colors.surface,
           padding: theme.spacing.lg,
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
           alignItems: 'center',
           gap: theme.spacing.md,
           ...theme.elevation.raised,
@@ -244,7 +245,7 @@ export function AdminHomeFocusMoment({ focus }: Props) {
 
           <View
             style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: rowDirection(isRTL),
               alignItems: 'center',
               justifyContent: 'space-between',
               borderTopWidth: 1,
@@ -263,7 +264,7 @@ export function AdminHomeFocusMoment({ focus }: Props) {
             <Animated.View
               style={[
                 {
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  flexDirection: rowDirection(isRTL),
                   alignItems: 'center',
                   gap: 6,
                   flexShrink: 0,
@@ -275,7 +276,7 @@ export function AdminHomeFocusMoment({ focus }: Props) {
                 {t('mobile.adminHome.queueOpen')}
               </AppText>
               <Ionicons
-                name={isRTL ? 'arrow-back' : 'arrow-forward'}
+                name={arrowForwardName(isRTL)}
                 size={16}
                 color="#F5F1EA"
               />

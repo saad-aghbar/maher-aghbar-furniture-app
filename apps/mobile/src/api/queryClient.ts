@@ -12,6 +12,7 @@ import { isRawNetworkFailure } from './queryErrorToast';
 import { shouldRetryQuery } from './retry';
 import { createSafeAsyncStorage } from './safeAsyncStorage';
 import { QUERY_PERSIST_KEY } from './queryPersist';
+import { isQueryDebugToastMessage } from '@/components/feedback/queryDebugToast';
 
 export { createSafeAsyncStorage } from './safeAsyncStorage';
 export { shouldDehydrateQuery, QUERY_PERSIST_KEY } from './queryPersist';
@@ -72,10 +73,19 @@ export function toastMessageForError(error: unknown, _t?: unknown): string {
   if (isRawNetworkFailure(error)) {
     return translateErrorCode(locale, 'NETWORK');
   }
+  const fallback = translateErrorCode(locale, 'REQUEST_FAILED');
+  let message: string;
   if (isApiError(error)) {
-    if (error.isOffline) return translateErrorCode(locale, 'OFFLINE');
-    return translateApiError(locale, error);
+    message = error.isOffline
+      ? translateErrorCode(locale, 'OFFLINE')
+      : translateApiError(locale, error);
+  } else if (error instanceof Error) {
+    message = translateApiError(locale, error);
+  } else {
+    message = fallback;
   }
-  if (error instanceof Error) return translateApiError(locale, error);
-  return translateErrorCode(locale, 'REQUEST_FAILED');
+  if (isQueryDebugToastMessage(message) || (error instanceof Error && isQueryDebugToastMessage(error.message))) {
+    return fallback;
+  }
+  return message;
 }

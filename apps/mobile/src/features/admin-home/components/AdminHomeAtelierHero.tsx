@@ -20,6 +20,7 @@ import { AppText } from '@/components/AppText';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { CountUp, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { useAtelierScrollY } from '../AtelierScrollContext';
@@ -174,7 +175,7 @@ export function AdminHomeAtelierHero({
 
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: rowDirection(isRTL),
             alignItems: 'center',
             justifyContent: 'space-between',
             zIndex: 20,
@@ -192,7 +193,7 @@ export function AdminHomeAtelierHero({
           </Animated.View>
           <View
             style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: rowDirection(isRTL),
               gap: theme.spacing.xs,
               alignItems: 'center',
             }}
@@ -302,7 +303,7 @@ export function AdminHomeAtelierHero({
         >
           <View
             style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: rowDirection(isRTL),
               justifyContent: 'space-between',
               alignItems: 'baseline',
             }}
@@ -310,7 +311,7 @@ export function AdminHomeAtelierHero({
             <AppText variant="caption" weight="medium" color="secondary">
               {t('mobile.adminHome.pulseEyebrow')}
             </AppText>
-            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'baseline', gap: 6 }}>
+            <View style={{ flexDirection: rowDirection(isRTL), alignItems: 'baseline', gap: 6 }}>
               <CountUp value={attention} variant="title" color={colors.brand} />
               <AppText variant="caption" color="muted">
                 {t('mobile.adminHome.pulseLabel')}

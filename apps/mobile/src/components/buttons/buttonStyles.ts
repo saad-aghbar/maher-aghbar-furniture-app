@@ -1,4 +1,5 @@
 import type { TextStyle, ViewStyle } from 'react-native';
+import { rowDirection } from '@/i18n/rtl';
 import type { Theme } from '@/theme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'tertiary' | 'destructive' | 'success';
@@ -7,6 +8,7 @@ export function getButtonContainerStyle(
   theme: Theme,
   variant: ButtonVariant,
   disabled: boolean,
+  opts: { isRTL?: boolean } = {},
 ): ViewStyle {
   const { colors, spacing, radius, sizes } = theme;
   const base: ViewStyle = {
@@ -16,7 +18,7 @@ export function getButtonContainerStyle(
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
+    flexDirection: rowDirection(Boolean(opts.isRTL)),
     gap: spacing.sm,
   };
 

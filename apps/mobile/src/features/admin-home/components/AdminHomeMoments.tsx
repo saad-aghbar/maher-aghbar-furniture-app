@@ -5,6 +5,7 @@ import Animated, { FadeInRight } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { AdminHomeRecentOrder } from '../api';
@@ -32,7 +33,7 @@ export function AdminHomeMoments({ orders }: Props) {
     <Wrapper {...wrapperProps} style={{ marginBottom: theme.spacing.xl, gap: theme.spacing.md }}>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
           alignItems: 'flex-end',
           justifyContent: 'space-between',
           gap: theme.spacing.md,
