@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Image, Platform, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { EmptyProductImage } from '@/components/media/EmptyProductImage';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -34,6 +36,12 @@ export function DealerProductCard({
   const { colors, theme, colorScheme } = useTheme();
   const dark = colorScheme === 'dark';
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const [imageFailed, setImageFailed] = useState(false);
+  const showPhoto = Boolean(imageUri) && !imageFailed;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUri]);
 
   const lift = {
     ...theme.elevation.card,
@@ -72,27 +80,17 @@ export function DealerProductCard({
               overflow: 'hidden',
             }}
           >
-            <View style={{ aspectRatio: 0.92, backgroundColor: colors.surfaceSecondary }}>
-              {imageUri ? (
+            <View style={{ aspectRatio: 0.92, backgroundColor: colors.background }}>
+              {showPhoto ? (
                 <Image
-                  source={{ uri: imageUri }}
+                  source={{ uri: imageUri! }}
                   style={{ width: '100%', height: '100%' }}
                   resizeMode="cover"
                   accessibilityIgnoresInvertColors
+                  onError={() => setImageFailed(true)}
                 />
               ) : (
-                <View
-                  style={{
-                    flex: 1,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: theme.spacing.sm,
-                  }}
-                >
-                  <AppText variant="caption" color="muted" align="center">
-                    {t('mobile.catalog.noImage')}
-                  </AppText>
-                </View>
+                <EmptyProductImage />
               )}
 
               {orderedBefore ? (
