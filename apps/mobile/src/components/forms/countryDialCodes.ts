@@ -236,3 +236,38 @@ export function parsePhoneValue(
 
   return { country: fallback, national: digits };
 }
+
+/**
+ * Space a stored phone for reading. Digits (and a leading +) are unchanged.
+ * Empty / placeholder values pass through so callers can hide them.
+ */
+export function formatPhoneForDisplay(raw: string | null | undefined): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return '';
+
+  const hadPlus = trimmed.startsWith('+');
+  const digits = digitsOnly(trimmed);
+  if (!digits) return trimmed;
+
+  const { country, national } = parsePhoneValue(trimmed);
+  const canSplit = Boolean(national) && digits.startsWith(country.dial);
+  if (canSplit) {
+    const grouped = groupDigitsFromEnd(national, 3);
+    return `${hadPlus ? '+' : ''}${country.dial} ${grouped}`;
+  }
+
+  const grouped = groupDigitsFromEnd(digits, 3);
+  return hadPlus ? `+${grouped}` : grouped;
+}
+
+function groupDigitsFromEnd(digits: string, size: number): string {
+  if (digits.length <= size) return digits;
+  const parts: string[] = [];
+  let rest = digits;
+  while (rest.length > size) {
+    parts.unshift(rest.slice(-size));
+    rest = rest.slice(0, -size);
+  }
+  if (rest) parts.unshift(rest);
+  return parts.join(' ');
+}
