@@ -22,8 +22,8 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 describe('ProductGalleryBoard', () => {
-  it('keeps a single add control when photos exist (dashed slot, no hero overlay)', () => {
-    const view = render(
+  it('keeps a single add control when photos exist (dashed slot, no hero overlay)', async () => {
+    const view = await render(
       <ProductGalleryBoard
         photos={['https://example.com/a.jpg', 'https://example.com/b.jpg']}
         selectedIndex={0}
@@ -39,8 +39,8 @@ describe('ProductGalleryBoard', () => {
     expect(view.getByText('1/2')).toBeTruthy();
   });
 
-  it('uses the empty hero as the only add control when there are no photos', () => {
-    const view = render(
+  it('uses the empty hero as the only add control when there are no photos', async () => {
+    const view = await render(
       <ProductGalleryBoard
         photos={[]}
         selectedIndex={0}

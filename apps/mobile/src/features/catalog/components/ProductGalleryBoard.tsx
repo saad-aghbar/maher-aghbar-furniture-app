@@ -251,7 +251,7 @@ export function ProductGalleryBoard({
         <AnimatedPressable
           variant="button"
           accessibilityRole="button"
-          accessibilityLabel={label('catalog.addProductPhotos', 'Add photos')}
+          accessibilityLabel={label('catalog.addProductPhotos', 'Add more photos')}
           disabled={uploading}
           onPress={() => {
             void haptics.selection();
