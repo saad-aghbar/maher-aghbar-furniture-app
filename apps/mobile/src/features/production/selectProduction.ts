@@ -86,6 +86,8 @@ export type ProductionTaskRow = {
   elapsedMinutes: number;
   estimatedMinutes: number | null;
   timingStatus: string | null;
+  /** Scheduler / assign planned completion, when the backend sent one. */
+  plannedCompletion: string | null;
 };
 
 export type ProductionDetailModel = ProductionCardModel & {
@@ -105,6 +107,10 @@ export type ProductionDetailModel = ProductionCardModel & {
   actualManufacturingCost: number | null;
   /** Admin production UI never renders a Production Stages section */
   showStages: false;
+  /** Product is bound on the order — setup row, not a Setup screen. */
+  planSetupReady: boolean;
+  assignedWorkerCount: number;
+  taskCount: number;
 };
 
 /**
@@ -248,6 +254,7 @@ export function selectProductionDetail(
       elapsedMinutes,
       estimatedMinutes: task.timing?.estimatedMinutes ?? task.estimatedMinutes ?? null,
       timingStatus: task.timing?.status ?? null,
+      plannedCompletion: task.plannedCompletion ?? task.timing?.plannedCompletion ?? null,
     };
   });
 
@@ -268,5 +275,9 @@ export function selectProductionDetail(
     estimatedManufacturingCost: toFiniteCost(order.product?.manufacturingCost),
     actualManufacturingCost: null,
     showStages: false,
+    planSetupReady: Boolean(order.product?.id),
+    assignedWorkerCount: tasks.filter((task) => Boolean(task.assigneeId || task.assigneeName))
+      .length,
+    taskCount: tasks.length,
   };
 }

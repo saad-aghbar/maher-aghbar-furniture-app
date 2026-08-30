@@ -132,6 +132,33 @@ describe('selectProduction', () => {
     expect(vm).not.toHaveProperty('stages');
     expect(vm.estimatedManufacturingCost).toBeNull();
     expect(vm.actualManufacturingCost).toBeNull();
+    expect(vm.planSetupReady).toBe(true);
+    expect(vm.assignedWorkerCount).toBe(2);
+    expect(vm.taskCount).toBe(3);
+  });
+
+  it('keeps planned completion from the task payload', () => {
+    const vm = selectProductionDetail(
+      {
+        ...detail,
+        tasks: [
+          {
+            ...detail.tasks![0]!,
+            plannedCompletion: '2026-08-16T14:00:00.000Z',
+            assignedEmployee: {
+              id: 'k',
+              firstName: 'Khaled',
+              lastName: 'Obeid',
+            },
+          },
+        ],
+      },
+      'en',
+    );
+    expect(vm.assignedWorkerCount).toBe(1);
+    expect(vm.taskCount).toBe(1);
+    expect(vm.tasks[0]?.assigneeName).toBe('Khaled Obeid');
+    expect(vm.tasks[0]?.plannedCompletion).toBe('2026-08-16T14:00:00.000Z');
   });
 
   it('reads catalog estimate and never fakes actual or zero', () => {

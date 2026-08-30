@@ -22,7 +22,7 @@ function priorityLabel(priority: string, t: (key: string) => string): string {
  * Floor task row: status, progress bar, assignee, priority — tap opens task sheet.
  */
 export function ProductionTaskCard({ task, onPress }: ProductionTaskCardProps) {
-  const { t, isRTL, locale } = useLocale();
+  const { t, isRTL, locale, formatDateTime } = useLocale();
   const { colors, theme } = useTheme();
 
   const pct = Math.max(0, Math.min(100, Math.round(task.progressPercent || 0)));
@@ -172,7 +172,9 @@ export function ProductionTaskCard({ task, onPress }: ProductionTaskCardProps) {
             style={{ flex: 1 }}
             numberOfLines={1}
           >
-            {task.assigneeName ?? t('mobile.production.unassigned')}
+            {task.assigneeName
+              ? t('mobile.production.assignee', { name: task.assigneeName })
+              : t('mobile.production.unassigned')}
           </AppText>
           {!task.canAssign && !task.isCompleted ? (
             <AppText variant="caption" color="muted" numberOfLines={1} style={{ maxWidth: '42%' }}>
@@ -180,6 +182,13 @@ export function ProductionTaskCard({ task, onPress }: ProductionTaskCardProps) {
             </AppText>
           ) : null}
         </View>
+        {task.plannedCompletion ? (
+          <AppText variant="caption" color="secondary" numberOfLines={1}>
+            {t('mobile.production.plannedAt', {
+              when: formatDateTime(task.plannedCompletion),
+            })}
+          </AppText>
+        ) : null}
       </View>
     </AnimatedPressable>
   );
