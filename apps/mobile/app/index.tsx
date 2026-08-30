@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { useAuth } from '@/auth/AuthProvider';
 import { BrandMark } from '@/components/BrandMark';
 import { AppText } from '@/components/AppText';
 import { FadeIn } from '@/motion';
+import { expoDeepLinkPath, isGlobalSearchPath } from '@/navigation/appIndexPath';
 import { resolveMobileHomeHref } from '@/permissions';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -17,6 +19,7 @@ export default function SplashGate() {
   const { status, bootstrap, user } = useAuth();
   const { colors, theme } = useTheme();
   const { t } = useLocale();
+  const incomingUrl = Linking.useURL();
 
   useEffect(() => {
     switch (status) {
@@ -24,7 +27,12 @@ export default function SplashGate() {
       case 'authenticating':
         return;
       case 'authenticated':
-        if (user) router.replace(resolveMobileHomeHref(user) as Href);
+        if (user) {
+          const href = isGlobalSearchPath(expoDeepLinkPath(incomingUrl))
+            ? '/(app)/search'
+            : resolveMobileHomeHref(user);
+          router.replace(href as Href);
+        }
         return;
       case 'needs_biometric':
         router.replace('/(auth)/unlock' as Href);
@@ -42,7 +50,7 @@ export default function SplashGate() {
       default:
         router.replace('/(auth)/login' as Href);
     }
-  }, [status, router, user]);
+  }, [incomingUrl, status, router, user]);
 
   return (
     <View
