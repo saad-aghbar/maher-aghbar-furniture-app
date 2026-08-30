@@ -19,7 +19,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
-import { can, canAny, shouldFetchWorkerQueue } from '@maher/permissions';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { can, canAny } from '@maher/permissions';
 import { createRequestId } from '@/api/requestId';
 import { uploadFile } from '@/api/modules/uploads';
 import { useAuth } from '@/auth/AuthProvider';
@@ -102,6 +103,7 @@ export function TaskDetailScreen({
   const { user } = useAuth();
   const { t, formatDateTime, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { width: windowW } = useWindowDimensions();
   const { showOfflineBanner, isConnected } = useNetwork();
   const { showToast } = useToast();
@@ -116,7 +118,7 @@ export function TaskDetailScreen({
   /** Floating dock (~2 rows) sits above the tab bar. */
   const dockBottom = tabClearance;
 
-  const allowed = shouldFetchWorkerQueue(user);
+  const allowed = can(user, 'production-task.read');
   const canUpdate = canAny(user, [
     'production-task.update-own',
     'production-task.update-any',
@@ -527,12 +529,23 @@ export function TaskDetailScreen({
     return (
       <AppScreen backFallback={TASKS_FALLBACK}>
         {showOfflineBanner ? <OfflineBanner /> : null}
-        <ErrorState
-          title={t('mobile.tasks.detailErrorTitle')}
-          description={t('mobile.tasks.errorBody')}
-          retryLabel={t('mobile.tasks.retry')}
-          onRetry={() => void query.refetch()}
-        />
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            paddingHorizontal: theme.spacing.lg,
+          }}
+        >
+          <ErrorState
+            title={t('mobile.tasks.detailErrorTitle')}
+            description={t('mobile.tasks.errorBody')}
+          />
+          <PrimaryButton
+            label={t('mobile.tasks.retry')}
+            onPress={() => void query.refetch()}
+            style={{ alignSelf: 'stretch' }}
+          />
+        </View>
       </AppScreen>
     );
   }
@@ -586,7 +599,7 @@ export function TaskDetailScreen({
           }
           contentContainerStyle={{
             paddingHorizontal: pad,
-            paddingBottom: theme.spacing.xl + tabClearance + dockScrollPad,
+            paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE + dockScrollPad,
             gap: theme.spacing.md,
           }}
           keyboardShouldPersistTaps="handled"
@@ -696,8 +709,6 @@ export function TaskDetailScreen({
                 style={{
                   color: colors.brand,
                   letterSpacing: locale === 'ar' ? 0 : 0.6,
-                  textTransform:
-                    hideProductionChrome || locale === 'ar' ? 'none' : 'uppercase',
                   fontSize: 11,
                   textAlign: isRTL ? 'right' : 'left',
                 }}
@@ -1035,8 +1046,6 @@ function FloorSection({
           style={{
             color: colors.brand,
             letterSpacing: locale === 'ar' ? 0 : 0.6,
-            textTransform:
-              sentenceCaseStamp || locale === 'ar' ? 'none' : 'uppercase',
             fontSize: 11,
             textAlign: isRTL ? 'right' : 'left',
           }}
