@@ -2,7 +2,8 @@ import { Redirect, Stack } from 'expo-router';
 import type { Href } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
 import { useStackMotionOptions } from '@/navigation/stackMotion';
-import { resolveAppSurface, resolveMobileHomeHref, type AppSurface } from '@/permissions';
+import { wrongSurfaceHref } from '@/navigation/surfaceGuard';
+import { resolveAppSurface, type AppSurface } from '@/permissions';
 
 type SurfaceGateProps = {
   expected: AppSurface;
@@ -21,7 +22,7 @@ export function SurfaceGate({ expected }: SurfaceGateProps) {
   }
 
   if (resolveAppSurface(user) !== expected) {
-    return <Redirect href={resolveMobileHomeHref(user) as Href} />;
+    return <Redirect href={wrongSurfaceHref() as Href} />;
   }
 
   return <Stack screenOptions={stackMotion} />;

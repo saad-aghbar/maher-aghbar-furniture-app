@@ -1,5 +1,10 @@
 import type { AuthUser } from '@maher/types';
-import { correctSurfaceHref, isCorrectSurface, shouldForbidTab } from '../surfaceGuard';
+import {
+  correctSurfaceHref,
+  isCorrectSurface,
+  shouldForbidTab,
+  wrongSurfaceHref,
+} from '../surfaceGuard';
 import { isTabAllowed } from '../tabConfig';
 
 const base: AuthUser = {
@@ -47,5 +52,15 @@ describe('surfaceGuard', () => {
     expect(shouldForbidTab(customer, 'customer', 'orders', isTabAllowed)).toBe(true);
     expect(shouldForbidTab(customer, 'customer', 'catalog', isTabAllowed)).toBe(false);
     expect(shouldForbidTab(customer, 'customer', 'index', isTabAllowed)).toBe(false);
+  });
+
+  it('admin on dealer catalog is a forbidden surface, not Home', () => {
+    const admin: AuthUser = {
+      ...base,
+      permissions: ['quotation.create', 'customer.create'],
+    };
+    expect(isCorrectSurface(admin, 'customer')).toBe(false);
+    expect(shouldForbidTab(admin, 'customer', 'catalog', isTabAllowed)).toBe(true);
+    expect(wrongSurfaceHref()).toBe('/(app)/_forbidden');
   });
 });

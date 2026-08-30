@@ -1,4 +1,6 @@
 import {
+  asAppHref,
+  authenticatedLandingHref,
   expoDeepLinkPath,
   isGlobalSearchPath,
   shouldRedirectAppIndex,
@@ -21,14 +23,28 @@ describe('appIndexPath', () => {
     expect(isGlobalSearchPath('/(app)/(admin)/(tabs)')).toBe(false);
   });
 
-  it('does not let the app index Redirect steal /search', () => {
+  it('does not let the app index Redirect steal real destinations', () => {
     expect(shouldRedirectAppIndex('/search')).toBe(false);
     expect(shouldRedirectAppIndex('/(app)/search')).toBe(false);
     expect(shouldRedirectAppIndex('/notifications')).toBe(false);
+    expect(shouldRedirectAppIndex('/(app)/_forbidden')).toBe(false);
+    expect(shouldRedirectAppIndex('/(app)/(customer)/(tabs)/catalog')).toBe(false);
     expect(shouldRedirectAppIndex('/(app)/(admin)/(tabs)')).toBe(false);
     expect(shouldRedirectAppIndex('/(app)/(admin)/(tabs)/orders')).toBe(false);
     expect(shouldRedirectAppIndex('/')).toBe(true);
     expect(shouldRedirectAppIndex('/(app)')).toBe(true);
     expect(shouldRedirectAppIndex('/(app)/index')).toBe(true);
+  });
+
+  it('preserves catalog and search deep links instead of bouncing to Home', () => {
+    const home = '/(app)/(admin)/(tabs)';
+    expect(
+      authenticatedLandingHref('/(app)/(customer)/(tabs)/catalog', home),
+    ).toBe('/(app)/(customer)/(tabs)/catalog');
+    expect(authenticatedLandingHref('/search', home)).toBe('/(app)/search');
+    expect(authenticatedLandingHref('/', home)).toBe(home);
+    expect(asAppHref('/(app)/(customer)/(tabs)/catalog')).toBe(
+      '/(app)/(customer)/(tabs)/catalog',
+    );
   });
 });

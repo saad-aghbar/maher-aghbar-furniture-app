@@ -6,7 +6,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { BrandMark } from '@/components/BrandMark';
 import { AppText } from '@/components/AppText';
 import { FadeIn } from '@/motion';
-import { expoDeepLinkPath, isGlobalSearchPath } from '@/navigation/appIndexPath';
+import { authenticatedLandingHref, expoDeepLinkPath } from '@/navigation/appIndexPath';
 import { resolveMobileHomeHref } from '@/permissions';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -28,10 +28,12 @@ export default function SplashGate() {
         return;
       case 'authenticated':
         if (user) {
-          const href = isGlobalSearchPath(expoDeepLinkPath(incomingUrl))
-            ? '/(app)/search'
-            : resolveMobileHomeHref(user);
-          router.replace(href as Href);
+          router.replace(
+            authenticatedLandingHref(
+              expoDeepLinkPath(incomingUrl),
+              resolveMobileHomeHref(user),
+            ) as Href,
+          );
         }
         return;
       case 'needs_biometric':

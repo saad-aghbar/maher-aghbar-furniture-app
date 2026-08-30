@@ -2,9 +2,17 @@ import type { AuthUser } from '@maher/types';
 import type { AppSurface } from '@maher/permissions';
 import { resolveAppSurface, resolveMobileHomeHref } from '@maher/permissions';
 
-/** Correct home when user lands on the wrong surface group. */
+/** Existing forbidden screen — wrong-surface deep links land here, not Home. */
+export const FORBIDDEN_HREF = '/(app)/_forbidden';
+
+/** Own-surface home (Home button on the forbidden screen). */
 export function correctSurfaceHref(user: AuthUser): string {
   return resolveMobileHomeHref(user);
+}
+
+/** Deep link hit a surface this role cannot open. */
+export function wrongSurfaceHref(): string {
+  return FORBIDDEN_HREF;
 }
 
 export function isCorrectSurface(user: AuthUser, expected: AppSurface): boolean {
