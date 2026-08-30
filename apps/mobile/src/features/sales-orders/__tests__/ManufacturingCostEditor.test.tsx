@@ -56,8 +56,8 @@ describe('ManufacturingCostEditor math', () => {
 });
 
 describe('ManufacturingCostEditor layout', () => {
-  it('shows every material row with amount and qty', () => {
-    const { getByText, getAllByText } = render(
+  it('shows every material row with amount and qty', async () => {
+    const { getByText, getAllByText } = await render(
       <ManufacturingCostEditor
         edit={{
           ...emptyCostBreakdownEdit(),
