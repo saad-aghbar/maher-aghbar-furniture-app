@@ -6,8 +6,8 @@ import { useAuth } from '@/auth/AuthProvider';
 import { BrandMark } from '@/components/BrandMark';
 import { AppText } from '@/components/AppText';
 import { FadeIn } from '@/motion';
-import { authenticatedLandingHref, expoDeepLinkPath } from '@/navigation/appIndexPath';
-import { resolveMobileHomeHref } from '@/permissions';
+import { authenticatedLandingHref, expoDeepLinkPath, resolveIntentUrl } from '@/navigation/appIndexPath';
+import { resolveAppSurface, resolveMobileHomeHref } from '@/permissions';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
@@ -27,7 +27,7 @@ export default function SplashGate() {
     void Linking.getInitialURL().then(setInitialUrl);
   }, []);
 
-  const incomingUrl = liveUrl ?? initialUrl ?? null;
+  const incomingUrl = resolveIntentUrl(liveUrl, initialUrl);
   const urlReady = liveUrl != null || initialUrl !== undefined;
 
   useEffect(() => {
@@ -42,6 +42,7 @@ export default function SplashGate() {
             authenticatedLandingHref(
               expoDeepLinkPath(incomingUrl),
               resolveMobileHomeHref(user),
+              resolveAppSurface(user),
             ) as Href,
           );
         }

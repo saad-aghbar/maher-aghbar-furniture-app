@@ -78,6 +78,27 @@ export function shouldPresentWrongSurfaceForbidden(
 }
 
 /**
+ * After splash/replace, `useURL()` is often `/` and would mask the Expo
+ * launch URL that still has `(employee)` / `(customer)` / `search`.
+ */
+export function resolveIntentUrl(
+  liveUrl: string | null | undefined,
+  initialUrl: string | null | undefined,
+): string | null {
+  const initial = initialUrl ?? null;
+  const live = liveUrl ?? null;
+  const initialPath = expoDeepLinkPath(initial);
+  if (isGlobalSearchPath(initialPath) || groupedSurfaceFromPath(initialPath)) {
+    return initial;
+  }
+  const livePath = expoDeepLinkPath(live);
+  if (isGlobalSearchPath(livePath) || groupedSurfaceFromPath(livePath)) {
+    return live;
+  }
+  return live ?? initial;
+}
+
+/**
  * Only the bare `(app)` index should redirect into surface tabs.
  * Surface groups and siblings stay put.
  *
@@ -125,7 +146,19 @@ export function asAppHref(pathname: string): string {
  * After session restore: keep a real deep-link destination.
  * SurfaceGate shows ForbiddenView in place — never Home-by-accident.
  */
-export function authenticatedLandingHref(incomingPath: string, homeHref: string): string {
-  if (shouldRedirectAppIndex(incomingPath)) return homeHref;
-  return asAppHref(incomingPath);
+export function authenticatedLandingHref(
+  incomingPath: string,
+  homeHref: string,
+  sessionSurface?: string,
+): string {
+  const path = expoDeepLinkPath(incomingPath) || incomingPath;
+  const intended = groupedSurfaceFromPath(path);
+  if (sessionSurface && intended && intended !== sessionSurface) {
+    // Tab roots have no leaf — replacing into them unmatches and dumps Home.
+    // Land on `(app)` index so ForbiddenView can present. Keep leaf hrefs
+    // (catalog) so SurfaceGate can cover in place.
+    if (nonGroupSegments(path).length === 0) return '/(app)';
+  }
+  if (shouldRedirectAppIndex(incomingPath) || shouldRedirectAppIndex(path)) return homeHref;
+  return asAppHref(path);
 }

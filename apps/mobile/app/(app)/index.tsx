@@ -9,6 +9,7 @@ import {
   shouldPresentGlobalSearch,
   shouldPresentWrongSurfaceForbidden,
   shouldRedirectAppIndex,
+  resolveIntentUrl,
 } from '@/navigation/appIndexPath';
 import { resolveAppSurface, resolveMobileHomeHref } from '@/permissions';
 
@@ -36,7 +37,7 @@ export default function AppIndexRedirect() {
     return null;
   }
 
-  const launchUrl = liveUrl ?? initialUrl ?? null;
+  const launchUrl = resolveIntentUrl(liveUrl, initialUrl);
   if (shouldPresentGlobalSearch(pathname, segments, launchUrl)) {
     return <GlobalSearchScreen />;
   }

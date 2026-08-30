@@ -8,6 +8,7 @@ import {
   shouldPresentGlobalSearch,
   shouldPresentWrongSurfaceForbidden,
   shouldRedirectAppIndex,
+  resolveIntentUrl,
 } from '../appIndexPath';
 
 describe('appIndexPath', () => {
@@ -106,6 +107,34 @@ describe('appIndexPath', () => {
     ).toBe(true);
   });
 
+  it('admin on grouped employee tabs from the Expo launch URL is forbidden, not Home', () => {
+    const exp = 'exp://127.0.0.1:8081/--/(app)/(employee)/(tabs)';
+    expect(groupedSurfaceFromPath(expoDeepLinkPath(exp))).toBe('employee');
+    expect(shouldPresentGlobalSearch('/', ['(app)'], exp)).toBe(false);
+    expect(shouldPresentWrongSurfaceForbidden('/', ['(app)'], exp, 'admin')).toBe(true);
+    expect(shouldPresentWrongSurfaceForbidden('/', [], exp, 'admin')).toBe(true);
+    expect(
+      shouldPresentWrongSurfaceForbidden('/', ['(app)'], exp, 'employee'),
+    ).toBe(false);
+    expect(
+      resolveIntentUrl('exp://127.0.0.1:8081/--/', exp),
+    ).toBe(exp);
+    expect(
+      shouldPresentWrongSurfaceForbidden(
+        '/',
+        ['(app)'],
+        resolveIntentUrl('exp://127.0.0.1:8081/--/', exp),
+        'admin',
+      ),
+    ).toBe(true);
+    expect(authenticatedLandingHref(expoDeepLinkPath(exp), '/(app)/(admin)/(tabs)', 'admin')).toBe(
+      '/(app)',
+    );
+    expect(authenticatedLandingHref(expoDeepLinkPath(exp), '/(app)/(admin)/(tabs)')).toBe(
+      '/(app)/(employee)/(tabs)',
+    );
+  });
+
   it('preserves catalog, search, and employee-tab deep links instead of bouncing to Home', () => {
     const home = '/(app)/(admin)/(tabs)';
     expect(
@@ -113,6 +142,12 @@ describe('appIndexPath', () => {
     ).toBe('/(app)/(customer)/(tabs)/catalog');
     expect(authenticatedLandingHref('/(app)/(customer)/(tabs)', home)).toBe(
       '/(app)/(customer)/(tabs)',
+    );
+    expect(authenticatedLandingHref('/(app)/(customer)/(tabs)', home, 'admin')).toBe(
+      '/(app)',
+    );
+    expect(authenticatedLandingHref('/(app)/(customer)/(tabs)/catalog', home, 'admin')).toBe(
+      '/(app)/(customer)/(tabs)/catalog',
     );
     expect(
       authenticatedLandingHref(
