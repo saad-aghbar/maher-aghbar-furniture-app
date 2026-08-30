@@ -13,6 +13,9 @@ export type NotificationCardModel = {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HUMAN_ORDER_CODE_RE = /^(?:[A-Za-z]{1,8}-?\d[\w-]*|[A-Z]{2,}\d+)$/;
+/** Leftover interpolation slots: `(v)`, `{v}`, `{{v}}`, empty version parens. */
+const LEFTOVER_SLOT_RE =
+  /\(\s*(?:v|version|نسخة|גרסה)\s*\)|（\s*(?:v|version)\s*）|\{\{\s*v\s*\}\}|\{v\}/gi;
 
 const VAR_KEYS = [
   'orderNumber',
@@ -28,6 +31,8 @@ const VAR_KEYS = [
   'amount',
   'jobNumber',
 ] as const;
+
+const ORDER_REF_KEYS = new Set(['orderNumber', 'orderCode', 'orderNo', 'number', 'orderId']);
 
 function asTrimmedString(value: unknown): string | null {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -57,6 +62,23 @@ function orderCodeFromLink(linkUrl?: string | null): string | null {
   return HUMAN_ORDER_CODE_RE.test(decoded) ? decoded : null;
 }
 
+function displayOrderRef(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (UUID_RE.test(value)) return null;
+  return value;
+}
+
+function fillTemplateTokens(text: string, vars: Record<string, string>): string {
+  return text
+    .replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => vars[key] ?? '')
+    .replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? '');
+}
+
+function dropLeftoverSlots(text: string): string {
+  LEFTOVER_SLOT_RE.lastIndex = 0;
+  return text.replace(LEFTOVER_SLOT_RE, '');
+}
+
 /**
  * Pull interpolation values from the notification payload when the API includes them.
  * Never invents ids — empty when the row has none.
@@ -79,11 +101,15 @@ export function notificationTemplateVars(row: AppNotification): Record<string, s
   if (vars.orderNumber && !vars.number) vars.number = vars.orderNumber;
   if (vars.number && !vars.orderNumber) vars.orderNumber = vars.number;
   if (vars.version && vars.v == null) vars.v = vars.version;
-  else if (!vars.version && vars.orderNumber && vars.v == null) vars.v = vars.orderNumber;
+  for (const key of [...Object.keys(vars)]) {
+    if (!ORDER_REF_KEYS.has(key)) continue;
+    if (displayOrderRef(vars[key]) == null) delete vars[key];
+  }
   return vars;
 }
 
 function insertOrderRef(text: string, orderRef: string): string {
+  if (text.includes(orderRef)) return text;
   let out = text;
   out = out.replace(/\bfor order(?=\s+is\b)/i, `for order ${orderRef}`);
   out = out.replace(/لأمر الإنتاج(?=\s+وينتظر)/, `لأمر الإنتاج ${orderRef}`);
@@ -91,28 +117,57 @@ function insertOrderRef(text: string, orderRef: string): string {
   return out;
 }
 
-/**
- * Fill leftover `{{var}}` / `{var}` tokens, drop raw `(v)` / missing i18n holes,
- * and surface a real order code when the payload has one.
- */
-export function polishNotificationCopy(text: string, vars: Record<string, string>): string {
-  if (!text) return '';
-  let out = text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => vars[key] ?? '');
-  out = out.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? '');
-  out = out.replace(/\(\s*(?:v|version|نسخة|גרסה)\s*\)/gi, '');
-  out = out.replace(/\(\s*\)/g, '');
-  out = out.replace(/[ \t]{2,}/g, ' ');
-  out = out.replace(/\s+([,.;:!?])/g, '$1');
+function collapseCopy(text: string): string {
+  return text
+    .replace(/\(\s*\)/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .trim();
+}
 
-  const orderRef = vars.orderNumber || vars.number || vars.orderCode || null;
+function rewriteAnonymousOrder(text: string, anonymousOrder: string): string {
+  let out = text;
+  out = out.replace(/\bfor order(?=\s+is\b)/i, `for ${anonymousOrder}`);
+  out = out.replace(/لأمر الإنتاج(?=\s+وينتظر)/, anonymousOrder);
+  return out;
+}
+
+export type PolishNotificationCopyOptions = {
+  /** Honest fallback when the payload has no order id/name. EN: "an order". */
+  anonymousOrder?: string;
+};
+
+/**
+ * Fill leftover `{{var}}` / `{var}` / `(v)` from the payload only.
+ * Never invents SO-/PO- numbers. Never leaves raw `(v)`.
+ */
+export function polishNotificationCopy(
+  text: string,
+  vars: Record<string, string>,
+  options: PolishNotificationCopyOptions = {},
+): string {
+  if (!text) return '';
+  const anonymousOrder = options.anonymousOrder ?? 'an order';
+  const orderRef =
+    displayOrderRef(vars.orderNumber) ||
+    displayOrderRef(vars.number) ||
+    displayOrderRef(vars.orderCode) ||
+    displayOrderRef(vars.orderId);
+
+  let out = fillTemplateTokens(text, vars);
   if (orderRef) {
+    out = out.replace(/\border\s+(?=\(\s*(?:v|version)\s*\))/gi, `order ${orderRef} `);
+    out = dropLeftoverSlots(out);
+    out = collapseCopy(out);
     out = insertOrderRef(out, orderRef);
   } else {
-    out = out.replace(/\s+for order(?=\s+is\b)/i, '');
+    out = dropLeftoverSlots(out);
+    out = collapseCopy(out);
+    out = rewriteAnonymousOrder(out, anonymousOrder);
   }
 
-  out = out.replace(/[ \t]{2,}/g, ' ');
-  return out.trim();
+  out = dropLeftoverSlots(out);
+  return collapseCopy(out);
 }
 
 export type NotificationDaySection = {
@@ -136,6 +191,7 @@ export type NotificationIconName =
 export function selectNotificationCard(
   row: AppNotification,
   locale: string,
+  anonymousOrder = 'an order',
 ): NotificationCardModel {
   const ar = locale === 'ar' || locale === 'he';
   const vars = notificationTemplateVars(row);
@@ -146,8 +202,8 @@ export function selectNotificationCard(
   return {
     id: row.id,
     type: row.type,
-    title: polishNotificationCopy(rawTitle, vars),
-    body: polishNotificationCopy(rawBody, vars),
+    title: polishNotificationCopy(rawTitle, vars, { anonymousOrder }),
+    body: polishNotificationCopy(rawBody, vars, { anonymousOrder }),
     unread: !row.readAt,
     createdAt: row.createdAt,
     linkUrl: row.linkUrl ?? null,

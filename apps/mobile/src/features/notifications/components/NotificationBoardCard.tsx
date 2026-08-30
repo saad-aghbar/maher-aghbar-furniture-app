@@ -115,7 +115,6 @@ export function NotificationBoardCard({ item, onPress }: Props) {
             style={{
               flexShrink: 1,
               letterSpacing: locale === 'ar' ? 0 : 0.45,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
               fontSize: 11,
             }}
           >

@@ -2695,6 +2695,7 @@
     "unread": "Unread",
     "read": "Read",
     "openHint": "Open",
+    "anOrder": "an order",
     "loading": "Loading…",
     "unreadCountZero": "No unread",
     "unreadCountOne": "{count} unread",

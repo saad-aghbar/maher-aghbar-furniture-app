@@ -73,12 +73,32 @@ describe('polishNotificationCopy', () => {
     expect(polishNotificationCopy(leftoverEn, vars)).not.toMatch(/\(v\)/);
   });
 
-  it('omits the parenthetical when there is no order id', () => {
-    expect(polishNotificationCopy(leftoverEn, {})).toBe(
-      'A proposed production schedule is awaiting your approval.',
+  it('never leaves raw (v) and uses “an order” when the payload has no id', () => {
+    const live = 'A proposed production schedule for order (v) is awaiting your approval.';
+    const stripped = polishNotificationCopy(live, {});
+    expect(stripped).toBe(
+      'A proposed production schedule for an order is awaiting your approval.',
     );
-    expect(polishNotificationCopy(leftoverEn, {})).not.toMatch(/\(v\)/);
-    expect(polishNotificationCopy(leftoverEn, {})).not.toMatch(/\{v\}/);
+    expect(stripped).not.toMatch(/\(v\)/i);
+    expect(stripped).not.toMatch(/\{v\}/);
+    expect(stripped).not.toMatch(/\b(?:SO|PO|ORD)-\S+/i);
+  });
+
+  it('does not invent an order code from copy or a UUID', () => {
+    const live = 'A proposed production schedule for order (v) is awaiting your approval.';
+    expect(polishNotificationCopy(live, { orderId: '3fa85f64-5717-4562-b3fc-2c963f66afa6' })).toBe(
+      'A proposed production schedule for an order is awaiting your approval.',
+    );
+    expect(polishNotificationCopy(live, {})).not.toMatch(/SO-/);
+  });
+
+  it('replaces (v) with vars.number from the payload', () => {
+    expect(
+      polishNotificationCopy(
+        'A proposed production schedule for order (v) is awaiting your approval.',
+        { number: 'PO-1042' },
+      ),
+    ).toBe('A proposed production schedule for order PO-1042 is awaiting your approval.');
   });
 
   it('fills mustache tokens and never leaves raw placeholders', () => {
@@ -107,6 +127,13 @@ describe('polishNotificationCopy', () => {
     expect(polishNotificationCopy(leftoverHe, { orderNumber: 'PO-1', number: 'PO-1' })).toBe(
       'לוח ייצור מוצע להזמנה PO-1 ממתין לאישורך.',
     );
+  });
+
+  it('uses the honest anonymous phrase in AR when there is no id', () => {
+    expect(
+      polishNotificationCopy(leftoverAr, {}, { anonymousOrder: 'لأحد الطلبات' }),
+    ).toBe('تم إنشاء جدول إنتاج مقترح لأحد الطلبات وينتظر موافقتك.');
+    expect(polishNotificationCopy(leftoverHe, {})).not.toMatch(/\b(?:SO|PO)-\S+/);
   });
 });
 
@@ -149,16 +176,23 @@ describe('notificationTemplateVars', () => {
   });
 
   it('selects polished body copy from the payload', () => {
-    const card = selectNotificationCard(
+    const withId = selectNotificationCard(
       {
         ...base,
         orderNumber: 'PO-1042',
       } as AppNotification,
       'en',
     );
-    expect(card.body).toBe(
+    expect(withId.body).toBe(
       'A proposed production schedule for order PO-1042 is awaiting your approval.',
     );
-    expect(card.body).not.toContain('(v)');
+    expect(withId.body).not.toContain('(v)');
+
+    const withoutId = selectNotificationCard(base, 'en');
+    expect(withoutId.body).toBe(
+      'A proposed production schedule for an order is awaiting your approval.',
+    );
+    expect(withoutId.body).not.toMatch(/\b(?:SO|PO)-\S+/);
+    expect(withoutId.body).not.toContain('(v)');
   });
 });

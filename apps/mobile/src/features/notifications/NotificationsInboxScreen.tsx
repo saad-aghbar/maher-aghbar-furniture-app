@@ -11,7 +11,6 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
-import { Divider } from '@/components/layout/Divider';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics } from '@/motion';
@@ -133,10 +132,7 @@ export function NotificationsInboxScreen({
   const { showOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const listBottomClearance =
-    theme.spacing['3xl'] +
-    SURFACE_TAB_BAR_CLEARANCE +
-    Math.max(insets.bottom, theme.spacing.sm);
+  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
   const allowed = can(user, 'notification.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const surface = user ? resolveAppSurface(user) : 'admin';
@@ -153,9 +149,9 @@ export function NotificationsInboxScreen({
   const rows = useMemo(
     () =>
       normalizeNotificationList(query.data).map((n) =>
-        selectNotificationCard(n, locale),
+        selectNotificationCard(n, locale, t('mobile.notifications.anOrder')),
       ),
-    [locale, query.data],
+    [locale, query.data, t],
   );
 
   const unreadTotal = useMemo(() => rows.filter((r) => r.unread).length, [rows]);
@@ -225,20 +221,10 @@ export function NotificationsInboxScreen({
         sections={sections}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
-          gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: visibleRows.length > 0 ? 0 : listBottomClearance,
+          paddingBottom: listBottomClearance,
         }}
-        ListFooterComponent={
-          visibleRows.length > 0 ? (
-            <View
-              pointerEvents="none"
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              style={{ height: listBottomClearance }}
-            />
-          ) : null
-        }
+        ItemSeparatorComponent={() => <View style={{ height: theme.spacing.md }} />}
         refreshControl={
           <RefreshControl
             refreshing={Boolean(query.isRefetching && !query.isFetching)}
@@ -246,7 +232,7 @@ export function NotificationsInboxScreen({
           />
         }
         ListHeaderComponent={
-          <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.xs }}>
+          <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
             <View
               style={{
                 borderRadius: theme.radius.xl,
@@ -279,7 +265,6 @@ export function NotificationsInboxScreen({
                     width: '100%',
                     textAlign: notificationStartAlign(isRTL),
                     letterSpacing: locale === 'ar' ? 0 : 0.45,
-                    textTransform: locale === 'ar' ? 'none' : 'uppercase',
                     fontSize: 11,
                     color: colors.brand,
                   }}
@@ -312,8 +297,6 @@ export function NotificationsInboxScreen({
                 ) : null}
               </View>
             </View>
-
-            <Divider />
           </View>
         }
         ListEmptyComponent={
@@ -339,9 +322,9 @@ export function NotificationsInboxScreen({
             style={{
               width: '100%',
               textAlign: notificationStartAlign(isRTL),
+              marginTop: theme.spacing.xs,
               marginBottom: theme.spacing.xs,
               letterSpacing: locale === 'ar' ? 0 : 0.6,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
             }}
           >
             {section.label}
