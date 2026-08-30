@@ -15,6 +15,7 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { Divider } from '@/components/layout/Divider';
 import { ImageViewer } from '@/components/media/ImageViewer';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
@@ -401,13 +402,7 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
                       />
                     ) : null}
 
-                    <View
-                      style={{
-                        height: StyleSheet.hairlineWidth,
-                        backgroundColor: colors.border,
-                        alignSelf: 'stretch',
-                      }}
-                    />
+                    <Divider compact plain />
 
                     <WorkflowProgressHit
                       progressPercent={pct}
