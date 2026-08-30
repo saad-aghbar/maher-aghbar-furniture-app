@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import type { MapCoords } from '@/components/maps/LocationMapPicker';
+import { formatMapCoord, normalizeMapCoords, type MapCoords } from '@/components/maps/mapCoords';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -22,7 +22,8 @@ export function LocationPinField({ coords, onPress, onClear, label, hint }: Prop
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const pinned = coords != null;
+  const pin = normalizeMapCoords(coords);
+  const pinned = pin != null;
 
   return (
     <View style={{ gap: theme.spacing.sm }}>
@@ -83,10 +84,10 @@ export function LocationPinField({ coords, onPress, onClear, label, hint }: Prop
             color={pinned ? 'brand' : 'primary'}
             style={{ textAlign: isRTL ? 'right' : 'left' }}
           >
-            {pinned
+            {pinned && pin
               ? t('mobile.newOrder.coordsLabel', {
-                  lat: coords.latitude.toFixed(5),
-                  lng: coords.longitude.toFixed(5),
+                  lat: formatMapCoord(pin.latitude),
+                  lng: formatMapCoord(pin.longitude),
                 })
               : t('mobile.newOrder.mapPinShort')}
           </AppText>

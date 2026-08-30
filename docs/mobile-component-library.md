@@ -46,8 +46,10 @@ Import from `@/components`.
 
 ## Dev preview
 
-- Route: `/dev/components`
+- Route: `/dev/tests` (hub) and `/dev/tests/[id]` (inspector)
+- Entry: More / Account / Profile → **Dev tests** above Sign out (`__DEV__` only)
 - Gated by `app/dev/_layout.tsx` (`!__DEV__` → redirect `/`)
+- Docs: [DEV-FRONTEND-COMPONENT-LAB.md](./DEV-FRONTEND-COMPONENT-LAB.md)
 - Boot screen links to the gallery in development only
 
 ### Visual checklist (manual)

@@ -43,4 +43,22 @@ describe('token injection', () => {
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBeUndefined();
   });
+
+  it('returns null for 204 so React Query queryFns stay defined', async () => {
+    const fetchFn = jest.fn(
+      async () =>
+        new Response(null, {
+          status: 204,
+        }),
+    );
+
+    const data = await apiRequest('/scheduling/replan-runs/latest', {
+      fetchFn: fetchFn as unknown as typeof fetch,
+      getAccessTokenFn: async () => 'access-123',
+      getIsConnectedFn: async () => true,
+      skipRefresh: true,
+    });
+
+    expect(data).toBeNull();
+  });
 });

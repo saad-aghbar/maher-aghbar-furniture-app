@@ -21,6 +21,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRef, useState } from 'react';
+import { dealerCanDecideQuotation } from '@/lib/dealer-quotation-ui';
 
 interface QuoteLine {
   id: string;
@@ -28,16 +29,30 @@ interface QuoteLine {
   quantity: string | number;
   unitPrice: string | number;
   lineTotal: string | number;
+  material?: string | null;
+  fabric?: string | null;
+  color?: string | null;
+  width?: string | number | null;
+  height?: string | number | null;
+  depth?: string | number | null;
+  discountValue?: string | number | null;
 }
 
 interface Quotation {
   id: string;
   number: string;
   status: string;
+  version?: number;
   total: string | number;
+  subtotal?: string | number | null;
+  discountTotal?: string | number | null;
+  taxTotal?: string | number | null;
+  taxAmount?: string | number | null;
   currency?: string;
   paymentTerms?: string | null;
   deliveryTerms?: string | null;
+  customerNotes?: string | null;
+  expirationDate?: string | null;
   acceptanceSignature?: string | null;
   lines: QuoteLine[];
   salesOrders?: Array<{ id: string; number: string; status: string }>;
@@ -125,7 +140,7 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
     );
   }
 
-  const canDecide = data.status === 'SENT' || data.status === 'APPROVED';
+  const canDecide = dealerCanDecideQuotation(data.status);
   const so = data.salesOrders?.[0];
 
   return (
@@ -152,9 +167,67 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {data.status === 'ACCEPTED' ? <Alert variant="success">{t('accepted')}</Alert> : null}
+      {data.status === 'REJECTED' ? <Alert variant="error">{t('reject')}</Alert> : null}
       {data.status === 'REVISION_REQUESTED' ? (
         <Alert variant="info">{t('revisionRequested')}</Alert>
       ) : null}
+
+      <MotionSection delayMs={40}>
+        <Card title={tCommon('details')} className="maher-form-section">
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            {data.expirationDate ? (
+              <div>
+                <dt className="text-text-secondary">{t('validUntil')}</dt>
+                <dd>{String(data.expirationDate).slice(0, 10)}</dd>
+              </div>
+            ) : null}
+            {data.paymentTerms ? (
+              <div>
+                <dt className="text-text-secondary">{t('paymentTerms')}</dt>
+                <dd>{data.paymentTerms}</dd>
+              </div>
+            ) : null}
+            {data.deliveryTerms ? (
+              <div>
+                <dt className="text-text-secondary">{t('deliveryTerms')}</dt>
+                <dd>{data.deliveryTerms}</dd>
+              </div>
+            ) : null}
+            {data.customerNotes ? (
+              <div className="sm:col-span-2">
+                <dt className="text-text-secondary">{t('notes')}</dt>
+                <dd>{data.customerNotes}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt className="text-text-secondary">{t('subtotal')}</dt>
+              <dd>
+                {String(data.subtotal ?? '—')} {tCommon('currency')}
+              </dd>
+            </div>
+            {Number(data.discountTotal ?? 0) > 0 ? (
+              <div>
+                <dt className="text-text-secondary">{t('discount')}</dt>
+                <dd>
+                  {String(data.discountTotal)} {tCommon('currency')}
+                </dd>
+              </div>
+            ) : null}
+            <div>
+              <dt className="text-text-secondary">{t('tax')}</dt>
+              <dd>
+                {String(data.taxAmount ?? data.taxTotal ?? '—')} {tCommon('currency')}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-text-secondary">{t('total')}</dt>
+              <dd className="font-semibold">
+                {String(data.total)} {tCommon('currency')}
+              </dd>
+            </div>
+          </dl>
+        </Card>
+      </MotionSection>
 
       <MotionSection delayMs={60}>
         <Card title={t('lines')} padded={false} className="maher-form-section">
@@ -162,20 +235,31 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
             <TableHead>
               <TableRow>
                 <TableHeaderCell>{tc('description')}</TableHeaderCell>
+                <TableHeaderCell>{t('specs')}</TableHeaderCell>
                 <TableHeaderCell>{tc('qty')}</TableHeaderCell>
                 <TableHeaderCell>{tc('price')}</TableHeaderCell>
                 <TableHeaderCell>{tCommon('total')}</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {(data.lines ?? []).map((line) => (
-                <TableRow key={line.id}>
-                  <TableCell>{line.description}</TableCell>
-                  <TableCell>{String(line.quantity)}</TableCell>
-                  <TableCell>{String(line.unitPrice)}</TableCell>
-                  <TableCell>{String(line.lineTotal)}</TableCell>
-                </TableRow>
-              ))}
+              {(data.lines ?? []).map((line) => {
+                const spec = [line.material, line.fabric, line.color]
+                  .filter(Boolean)
+                  .join(' / ');
+                const dims = [line.width, line.height, line.depth]
+                  .filter((v) => v != null && v !== '')
+                  .map(String)
+                  .join('×');
+                return (
+                  <TableRow key={line.id}>
+                    <TableCell>{line.description}</TableCell>
+                    <TableCell>{[spec, dims].filter(Boolean).join(' · ') || '—'}</TableCell>
+                    <TableCell>{String(line.quantity)}</TableCell>
+                    <TableCell>{String(line.unitPrice)}</TableCell>
+                    <TableCell>{String(line.lineTotal)}</TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </Card>

@@ -98,7 +98,9 @@ describe('format', () => {
 
   it('formats percent and compact hours as stable number+unit groups', () => {
     expect(formatPercent('en', 29)).toBe('29%');
-    expect(stripBidiIsolates(formatPercent('ar', 29))).toBe('29٪');
+    expect(stripBidiIsolates(formatPercent('ar', 29))).toBe('29%');
+    expect(stripBidiIsolates(formatPercent('he', 29))).toBe('29%');
+    expect(formatPercent('ar', 1)).toContain('%');
     expect(formatCompactHours('en', 14)).toBe('14h');
     expect(stripBidiIsolates(formatCompactHours('ar', 14))).toMatch(/14/);
     expect(stripBidiIsolates(formatCompactHours('ar', 14))).not.toMatch(/h$/);

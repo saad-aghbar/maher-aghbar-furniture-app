@@ -202,3 +202,10 @@ An Admin can see, without opening two full orders:
 - What Resolve changed, or why it could not
 
 **Conflict ≠ busy ≠ late.** Busy is capacity. Late is risk. Conflict is an invalid physical overlap or invalid allocation.
+
+## PAST-SAFE
+
+Resolve one / resolve-all will not move a side into a slot before
+`resolveSchedulingFloor`. IN_PROGRESS may keep its window. Completed history
+is not rewritten. See [scheduling-past-floor-closure-report.md](./scheduling-past-floor-closure-report.md).
+

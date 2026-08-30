@@ -140,7 +140,7 @@ export function AdminOrderCard({ order, index = 0, onPress }: AdminOrderCardProp
               style={{ letterSpacing: 0.2 }}
             >
               {order.kind === 'rfq'
-                ? `${t('mobile.orders.unapprovedLabel')} · ${order.number}`
+                ? `${t('mobile.orders.customerRequestLabel')} · ${order.number}`
                 : order.number}
             </AppText>
             <AppText variant="caption" color="muted" style={{ width: '100%' }}>

@@ -7,12 +7,36 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { ProductionSetupService } from './production-setup.service';
 import { STAGE_INVENTORY_BEHAVIORS } from '../../common/helpers/inventory-stage-behavior.util';
+
+class ProductionSetupMaterialInputDto {
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
+  @IsOptional()
+  @IsString()
+  inventoryItemId?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  qtyPerUnit!: number;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  required?: boolean;
+}
 
 class ProductionSetupStageDto {
   @IsString()
@@ -57,6 +81,20 @@ class ProductionSetupStageDto {
   defaultWarehouseId?: string | null;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  expectedPieceCount?: number | null;
+
+  @IsOptional()
+  @IsArray()
+  pieceLabels?: Array<{
+    nameEn?: string;
+    nameAr?: string | null;
+    nameHe?: string | null;
+  }> | null;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   consumeOutputIds?: string[];
@@ -65,6 +103,12 @@ class ProductionSetupStageDto {
   @IsArray()
   @IsString({ each: true })
   consumeWorkflowNodeIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductionSetupMaterialInputDto)
+  materialInputs?: ProductionSetupMaterialInputDto[];
 }
 
 class ProductionSetupPutDto {

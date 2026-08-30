@@ -5,8 +5,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -15,7 +14,6 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
-import { Divider } from '@/components/layout/Divider';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import {
@@ -23,14 +21,12 @@ import {
   CountUp,
   ListItemEnter,
   haptics,
-  useReducedMotion,
 } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { ProductionListBucket } from './api';
 import { ProductionDealerBar } from './components/ProductionDealerBar';
 import { ProductionDealerSheet } from './components/ProductionDealerSheet';
-import { ProductionFilterChips } from './components/ProductionFilterChips';
 import { ProductionOrderCard } from './components/ProductionOrderCard';
 import { ProductionListSkeleton } from './components/ProductionSkeleton';
 import {
@@ -41,9 +37,14 @@ import {
 } from './query';
 import { selectProductionCard } from './selectProduction';
 
-type MetricAccent = 'brand' | 'info' | 'success' | 'late';
+type MetricAccent = 'brand' | 'info' | 'success' | 'late' | 'warning';
 
-type MetricKey = Exclude<ProductionListBucket, 'all'>;
+type MetricKey =
+  | 'needs_setup'
+  | 'ready_to_start'
+  | 'on_floor'
+  | 'blocked'
+  | 'inspection_packaging';
 
 type MetricDef = {
   key: MetricKey;
@@ -52,23 +53,49 @@ type MetricDef = {
   accent?: MetricAccent;
 };
 
+const BOARD_BUCKETS = new Set<string>([
+  'needs_setup',
+  'ready_to_start',
+  'on_floor',
+  'blocked',
+  'inspection_packaging',
+  'completed',
+  'in_production',
+  'late',
+  'all',
+]);
+
 export function ProductionOverviewScreen() {
   const { user, refreshUser } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
-  const reduce = useReducedMotion();
+  const params = useLocalSearchParams<{ bucket?: string; section?: string; quality?: string }>();
   const listRef = useRef<FlatList>(null);
+  /** Stagger enter only on first paint — filter swaps remount rows and must stay opaque. */
+  const [staggerListEnter, setStaggerListEnter] = useState(true);
   const allowed = canAny(user, ['production-order.read', 'production-task.read']);
   const canWorkflow = canAny(user, ['production.workflow.read', 'production-order.update']);
 
-  const [bucket, setBucket] = useState<ProductionListBucket>('in_production');
+  const initialBucket = (() => {
+    const raw = String(params.bucket ?? params.section ?? 'on_floor');
+    return BOARD_BUCKETS.has(raw) ? (raw as ProductionListBucket) : 'on_floor';
+  })();
+
+  const [bucket, setBucket] = useState<ProductionListBucket>(initialBucket);
   const [searchInput, setSearchInput] = useState('');
   const [q, setQ] = useState('');
   const [dealerId, setDealerId] = useState<string | null>(null);
   const [dealerLabel, setDealerLabel] = useState<string | null>(null);
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
+
+  useEffect(() => {
+    const raw = String(params.bucket ?? params.section ?? '');
+    if (raw && BOARD_BUCKETS.has(raw)) {
+      setBucket(raw as ProductionListBucket);
+    }
+  }, [params.bucket, params.section, params.quality]);
 
   // Pick up newly seeded production.workflow.* grants without forcing a full reinstall.
   useEffect(() => {
@@ -77,9 +104,13 @@ export function ProductionOverviewScreen() {
   }, [allowed, refreshUser]);
 
   useEffect(() => {
-    const id = setTimeout(() => setQ(searchInput.trim()), 300);
+    const id = setTimeout(() => {
+      const next = searchInput.trim();
+      if (next !== q) setStaggerListEnter(false);
+      setQ(next);
+    }, 300);
     return () => clearTimeout(id);
-  }, [searchInput]);
+  }, [searchInput, q]);
 
   const summaryQuery = useProductionSummaryQuery(allowed);
   const dealersQuery = useProductionDealersQuery(allowed);
@@ -94,7 +125,14 @@ export function ProductionOverviewScreen() {
 
   const refreshing =
     (summaryQuery.isRefetching || listQuery.isRefetching) &&
-    !listQuery.isFetchingNextPage;
+    !listQuery.isFetchingNextPage &&
+    !listQuery.isPlaceholderData;
+
+  /** Soft indicator while keepPreviousData shows the prior list. */
+  const isFilterUpdating =
+    listQuery.isFetching &&
+    !listQuery.isFetchingNextPage &&
+    Boolean(listQuery.data);
 
   const cards = useMemo(
     () =>
@@ -104,15 +142,23 @@ export function ProductionOverviewScreen() {
     [listQuery.data, locale],
   );
 
+  useEffect(() => {
+    if (!staggerListEnter) return;
+    if (listQuery.isPending || !listQuery.data) return;
+    const t = setTimeout(() => setStaggerListEnter(false), 520);
+    return () => clearTimeout(t);
+  }, [listQuery.data, listQuery.isPending, staggerListEnter]);
+
   const selectBucket = (next: ProductionListBucket) => {
-    const isPeriod =
-      next === 'daily' || next === 'weekly' || next === 'monthly';
-    const resolved =
-      isPeriod && next === bucket ? 'all' : next === bucket ? null : next;
-    if (resolved == null) return;
+    // Tap active lane again → clear filter and show all orders.
+    const resolved = next === bucket ? 'all' : next;
+    if (resolved === bucket) return;
+    setStaggerListEnter(false);
     void haptics.selection();
     setBucket(resolved);
-    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    // Persist lane in URL so list → detail → back restores Attention/Needs planning/etc.
+    router.setParams({ bucket: resolved === 'all' ? undefined : resolved });
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
   };
 
   if (!allowed) {
@@ -153,55 +199,46 @@ export function ProductionOverviewScreen() {
 
   const summary = summaryQuery.data;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const HeaderShell = reduce ? View : Animated.View;
-  const headerEnter = reduce
-    ? {}
-    : { entering: FadeInDown.delay(40).duration(220) };
 
-  const topMetrics: MetricDef[] | null = summary
+  const setupMetrics: MetricDef[] | null = summary
     ? [
         {
-          key: 'daily',
-          label: t('mobile.production.daily'),
-          value: summary.dailyProduction,
+          key: 'needs_setup',
+          label: t('mobile.production.needsSetup'),
+          value: summary.needsSetup ?? 0,
+          accent: 'warning',
         },
         {
-          key: 'weekly',
-          label: t('mobile.production.weekly'),
-          value: summary.weeklyProduction,
+          key: 'ready_to_start',
+          label: t('mobile.production.readyToStart'),
+          value: summary.readyToStart ?? 0,
+          accent: 'brand',
         },
         {
-          key: 'monthly',
-          label: t('mobile.production.monthly'),
-          value: summary.monthlyProduction,
+          key: 'on_floor',
+          label: t('mobile.production.onFloor'),
+          value: summary.onFloor ?? 0,
+          accent: 'info',
         },
       ]
     : null;
 
-  const floorMetrics: MetricDef[] | null = summary
+  const attentionMetrics: MetricDef[] | null = summary
     ? [
         {
-          key: 'in_production',
-          label: t('mobile.production.inProduction'),
-          value: summary.inProduction,
-          accent: 'info',
+          key: 'blocked',
+          label: t('mobile.production.blocked'),
+          value: summary.blocked ?? 0,
+          accent: summary.blocked && summary.blocked > 0 ? 'late' : undefined,
         },
         {
-          key: 'late',
-          label: t('mobile.production.lateOrders'),
-          value: summary.lateOrders,
-          accent: summary.lateOrders > 0 ? 'late' : undefined,
-        },
-        {
-          key: 'completed',
-          label: t('mobile.production.completed'),
-          value: summary.completedOrders,
+          key: 'inspection_packaging',
+          label: t('mobile.production.inspectionPackaging'),
+          value: summary.inspectionPackaging ?? 0,
           accent: 'success',
         },
       ]
     : null;
-
-  const boardShadow = theme.elevation.raised;
 
   return (
     <AppScreen>
@@ -210,6 +247,8 @@ export function ProductionOverviewScreen() {
         ref={listRef}
         data={cards}
         keyExtractor={(item) => item.id}
+        style={{ opacity: isFilterUpdating ? 0.72 : 1 }}
+        extraData={`${bucket}:${q}:${dealerId}:${isFilterUpdating}`}
         contentContainerStyle={{
           gap: theme.spacing.md,
           paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
@@ -231,10 +270,16 @@ export function ProductionOverviewScreen() {
         }}
         onEndReachedThreshold={0.4}
         ListHeaderComponent={
-          <HeaderShell
-            {...headerEnter}
-            style={{ gap: theme.spacing.lg, marginBottom: theme.spacing.sm }}
-          >
+          <View style={{ gap: theme.spacing.lg, marginBottom: theme.spacing.sm }}>
+            {isFilterUpdating ? (
+              <AppText
+                variant="caption"
+                color="muted"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {t('mobile.production.updatingList')}
+              </AppText>
+            ) : null}
             <View style={{ gap: theme.spacing.xs }}>
               <AppText
                 variant="caption"
@@ -297,34 +342,67 @@ export function ProductionOverviewScreen() {
               </AnimatedPressable>
             ) : null}
 
-            {topMetrics && floorMetrics ? (
-              <View style={[{ borderRadius: theme.radius.xl }, boardShadow]}>
+            {setupMetrics && attentionMetrics ? (
+              <View
+                style={{
+                  borderRadius: theme.radius.xl,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                  overflow: 'hidden',
+                  ...theme.elevation.card,
+                }}
+              >
                 <View
                   style={{
-                    borderRadius: theme.radius.xl,
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: colors.borderStrong,
-                    backgroundColor: colors.surface,
-                    overflow: 'hidden',
+                    paddingHorizontal: theme.spacing.md,
+                    paddingTop: theme.spacing.md,
+                    paddingBottom: theme.spacing.sm,
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    gap: theme.spacing.sm,
+                    backgroundColor: colors.surfaceElevated,
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: colors.borderMuted,
                   }}
                 >
-                  <View
+                  <AppText
+                    variant="caption"
+                    weight="semibold"
                     style={{
-                      height: 3,
-                      backgroundColor: colors.brand,
-                      opacity: 0.55,
+                      color: colors.brand,
+                      letterSpacing: locale === 'ar' ? 0 : 1.1,
+                      textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                      fontSize: 10,
+                      lineHeight: 12,
                     }}
-                  />
+                  >
+                    {t('mobile.production.boardSections')}
+                  </AppText>
+                  <AppText variant="caption" color="muted" numberOfLines={1}>
+                    {bucket === 'all'
+                      ? t('mobile.production.boardShowingAll')
+                      : t('mobile.production.boardTapAgain')}
+                  </AppText>
+                </View>
+
+                <View
+                  style={{
+                    padding: theme.spacing.sm,
+                    gap: theme.spacing.sm,
+                    backgroundColor: colors.background,
+                  }}
+                >
                   <MetricRow
                     isRTL={isRTL}
-                    items={topMetrics}
+                    items={setupMetrics}
                     selected={bucket}
                     onSelect={selectBucket}
                   />
-                  <Divider compact />
                   <MetricRow
                     isRTL={isRTL}
-                    items={floorMetrics}
+                    items={attentionMetrics}
                     selected={bucket}
                     onSelect={selectBucket}
                   />
@@ -337,13 +415,12 @@ export function ProductionOverviewScreen() {
                 label={dealerLabel}
                 onPress={() => setDealerSheetOpen(true)}
                 onClear={() => {
+                  setStaggerListEnter(false);
                   setDealerId(null);
                   setDealerLabel(null);
-                  listRef.current?.scrollToOffset({ offset: 0, animated: true });
+                  listRef.current?.scrollToOffset({ offset: 0, animated: false });
                 }}
               />
-              <ProductionFilterChips value={bucket} onChange={selectBucket} />
-              <Divider compact />
               <TextField
                 value={searchInput}
                 onChangeText={setSearchInput}
@@ -353,14 +430,18 @@ export function ProductionOverviewScreen() {
                 returnKeyType="search"
               />
             </View>
-          </HeaderShell>
+          </View>
         }
         ListEmptyComponent={
-          listQuery.isFetching ? (
+          listQuery.isFetching && cards.length === 0 ? (
             <ProductionListSkeleton />
-          ) : (
+          ) : cards.length === 0 && !listQuery.isFetching ? (
             <EmptyState
-              title={t('mobile.production.emptyTitle')}
+              title={
+                q
+                  ? t('mobile.production.searchEmpty')
+                  : t('mobile.production.emptyTitle')
+              }
               description={
                 dealerLabel
                   ? t('mobile.production.emptyDealerBody', { dealer: dealerLabel })
@@ -369,7 +450,7 @@ export function ProductionOverviewScreen() {
                     : t('mobile.production.emptyBody')
               }
             />
-          )
+          ) : null
         }
         ListFooterComponent={
           listQuery.isFetchingNextPage ? (
@@ -383,7 +464,7 @@ export function ProductionOverviewScreen() {
           ) : null
         }
         renderItem={({ item, index }) => (
-          <ListItemEnter index={index}>
+          <ListItemEnter index={index} enabled={staggerListEnter}>
             <ProductionOrderCard
               order={item}
               onPress={() => {
@@ -401,9 +482,10 @@ export function ProductionOverviewScreen() {
         loading={dealersQuery.isPending && !dealersQuery.data}
         selectedId={dealerId}
         onSelect={(next) => {
+          setStaggerListEnter(false);
           setDealerId(next?.id ?? null);
           setDealerLabel(next?.name ?? null);
-          listRef.current?.scrollToOffset({ offset: 0, animated: true });
+          listRef.current?.scrollToOffset({ offset: 0, animated: false });
         }}
       />
     </AppScreen>
@@ -429,9 +511,10 @@ function MetricRow({
       style={{
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'stretch',
+        gap: theme.spacing.sm,
       }}
     >
-      {items.map((item, index) => {
+      {items.map((item) => {
         const isSelected = selected === item.key;
         const tint =
           item.accent === 'late'
@@ -440,17 +523,21 @@ function MetricRow({
               ? colors.success
               : item.accent === 'info'
                 ? colors.info
-                : item.accent === 'brand'
-                  ? colors.brand
-                  : isSelected
+                : item.accent === 'warning'
+                  ? colors.warning
+                  : item.accent === 'brand'
                     ? colors.brand
-                    : colors.textPrimary;
+                    : colors.brand;
         const soft =
-          item.accent === 'late' && !isSelected
+          item.accent === 'late'
             ? colors.errorSoft
-            : isSelected
-              ? colors.brandSoft
-              : colors.surface;
+            : item.accent === 'success'
+              ? colors.successSoft
+              : item.accent === 'info'
+                ? colors.infoSoft
+                : item.accent === 'warning'
+                  ? colors.warningSoft
+                  : colors.brandSoft;
 
         return (
           <AnimatedPressable
@@ -462,36 +549,34 @@ function MetricRow({
             onPress={() => onSelect(item.key)}
             style={{
               flex: 1,
-              paddingVertical: theme.spacing.lg,
+              minHeight: 104,
+              borderRadius: theme.radius.lg,
+              paddingTop: theme.spacing.md + 4,
+              paddingBottom: theme.spacing.md,
               paddingHorizontal: theme.spacing.sm,
               alignItems: 'center',
               justifyContent: 'center',
-              gap: theme.spacing.xs,
-              minHeight: 92,
-              backgroundColor: soft,
-              borderLeftWidth:
-                !isRTL && index > 0 ? StyleSheet.hairlineWidth : 0,
-              borderRightWidth:
-                isRTL && index > 0 ? StyleSheet.hairlineWidth : 0,
-              borderColor: colors.border,
+              gap: 6,
+              backgroundColor: isSelected ? soft : colors.surface,
+              borderWidth: isSelected ? 1.5 : 1,
+              borderColor: isSelected ? tint : colors.borderMuted,
+              overflow: 'hidden',
+              ...(isSelected ? theme.elevation.rest : null),
             }}
           >
-            {isSelected ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: theme.spacing.md,
-                  right: theme.spacing.md,
-                  height: 2,
-                  borderRadius: 1,
-                  backgroundColor: tint,
-                }}
-              />
-            ) : null}
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 3,
+                backgroundColor: tint,
+                opacity: isSelected ? 1 : 0.35,
+              }}
+            />
             <AppText
               variant="caption"
-              color={isSelected ? 'brand' : 'muted'}
               align="center"
               numberOfLines={2}
               weight={
@@ -503,13 +588,18 @@ function MetricRow({
                     ? 'regular'
                     : 'medium'
               }
+              style={{
+                color: isSelected ? tint : colors.textMuted,
+                fontSize: 11,
+                lineHeight: 14,
+              }}
             >
               {item.label}
             </AppText>
             <CountUp
               value={item.value}
               variant="heading"
-              color={tint}
+              color={isSelected || item.accent === 'late' ? tint : colors.textPrimary}
               accessibilityLabel={`${item.label}: ${item.value}`}
             />
           </AnimatedPressable>

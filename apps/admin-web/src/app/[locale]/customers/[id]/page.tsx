@@ -91,6 +91,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const t = useTranslations('customers');
   const tNav = useTranslations('navigation');
   const tCommon = useTranslations('common');
+  const tAccounting = useTranslations('accounting');
   const queryClient = useQueryClient();
   const [banner, setBanner] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -114,6 +115,16 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['customer', params.id],
     queryFn: () => apiFetch<CustomerDetail>(`/api/v1/customers/${params.id}`),
+  });
+
+  const financeQuery = useQuery({
+    queryKey: ['dealer-finance', params.id],
+    queryFn: () =>
+      apiFetch<{
+        amountDue: number;
+        availableCredit: number;
+        currency?: string;
+      }>(`/api/v1/payments/dealer/${params.id}/summary`),
   });
 
   const notesQuery = useQuery({
@@ -315,6 +326,24 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           <p className="text-[11px] text-text-tertiary">{t('ordersDone')}</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight" dir="ltr">
             {data.doneOrdersCount ?? 0}
+          </p>
+        </div>
+      </div>
+
+      <div className="maher-stagger grid gap-4 sm:grid-cols-2">
+        <div className="maher-list-card rounded-2xl border border-border bg-surface px-5 py-4">
+          <p className="text-[11px] text-text-tertiary">{tAccounting('amountDue')}</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight" dir="ltr">
+            {money(
+              financeQuery.data?.amountDue ?? data.outstandingTotal,
+              tCommon('currency'),
+            )}
+          </p>
+        </div>
+        <div className="maher-list-card rounded-2xl border border-border bg-surface px-5 py-4">
+          <p className="text-[11px] text-text-tertiary">{tAccounting('accountCredit')}</p>
+          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight" dir="ltr">
+            {money(financeQuery.data?.availableCredit ?? 0, tCommon('currency'))}
           </p>
         </div>
       </div>

@@ -8,6 +8,7 @@ const LEAK_KEYS = [
   'costBreakdown',
   'productionPrice',
   'profit',
+  'manufacturingCosting',
   'bomDefaults',
   'currentStageCode',
   'currentStage',
@@ -76,6 +77,10 @@ describe('SalesOrdersService.list scope', () => {
       { createSnapshotForProductionOrder: jest.fn() } as any,
       { tryReserveForSalesOrder: jest.fn(), releaseForSalesOrder: jest.fn() } as any,
       { onProductionOrdersCancelled: jest.fn() } as any,
+      { ensureSetup: jest.fn(), isReleased: jest.fn().mockResolvedValue(false) } as any,
+      {
+        summaryForSalesOrder: jest.fn().mockResolvedValue(null),
+      } as any,
     );
 
     // Avoid hydrate / catalog side effects

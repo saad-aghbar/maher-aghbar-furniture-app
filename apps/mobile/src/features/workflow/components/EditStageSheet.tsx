@@ -3,7 +3,7 @@ import { Keyboard, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
-import type { WorkflowNode, WorkflowVersion } from '@/api/modules/workflow';
+import { type WorkflowNode, type WorkflowVersion } from '@/api/modules/workflow';
 import { AppText } from '@/components/AppText';
 import { DestructiveButton } from '@/components/buttons/DestructiveButton';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
@@ -12,22 +12,36 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { isLockedAnchorStageCode } from '@maher/types';
+import {
+  clampParallelReferenceIds,
+  clampPredecessorIds,
+  materialPrepSuccessorIds,
+  productionSuccessorIds,
+  simulateWorkflowMutation,
+  validParallelReferenceCandidateIds,
+  validPredecessorCandidateIds,
+  validSuccessorCandidateIds,
+  withSuccessorIds,
+  type PlacementIntent,
+} from '@maher/workflow-domain';
+import {
+  isLockedAnchorNode,
+  lockedAnchorNodeIds,
+  middleProductionNodes,
+} from '../workflowTerminal';
 import { stageNodeLabel } from '../stageNodeLabel';
 import {
   commitEditWorkflowStage,
   commitRemoveWorkflowStage,
   useApplyWorkflowVersionCache,
 } from '../commitWorkflowGraph';
+import { canonicalEdgesForLayout, toDomainGraph } from '../toDomainGraph';
+import { PlacementArrowPreview } from './PlacementArrowPreview';
 import {
-  predecessorsOf,
-  resolveLeadsIntoForSave,
-  resolveSinkId,
-  successorsOf,
-  validLeadsIntoCandidates,
-  validRunsAfterCandidates,
-  wouldCreateCycle,
-} from '../rewireWorkflowEdges';
-import { WorkflowCompactPickRow, WorkflowFloorBoard } from './WorkflowFloorList';
+  PlacementModeHint,
+  PlacementTogetherPickList,
+} from './PlacementTogetherPickList';
 
 type Props = {
   open: boolean;
@@ -38,29 +52,36 @@ type Props = {
   onDirty?: () => void;
 };
 
+type Placement = 'start' | 'after' | 'parallel';
+type AfterScope = 'one' | 'band';
+
 function toggleId(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 }
 
 function sheetErrorMessage(err: unknown, t: (key: string) => string): string {
-  const code =
-    err && typeof err === 'object' && 'code' in err
-      ? String((err as { code: string }).code)
-      : '';
-  if (code === 'WORKFLOW_CYCLE') return t('mobile.production.workflow.invalidCycle');
-  if (code === 'VALIDATION_ERROR' || code === 'INTERNAL_ERROR') {
-    return t('mobile.production.workflow.saveConnectionsError');
-  }
   if (isApiError(err)) {
-    if (err.code === 'VALIDATION_ERROR' || /validation failed/i.test(err.message)) {
-      return t('mobile.production.workflow.saveConnectionsError');
+    if (err.code === 'WORKFLOW_VERSION_STALE') {
+      return t('mobile.production.workflow.errors.WORKFLOW_VERSION_STALE');
     }
-    if (/unexpected error/i.test(err.message)) {
-      return t('mobile.production.workflow.saveConnectionsError');
+    if (err.code.startsWith('TERMINAL_CHAIN_') || err.code.startsWith('OPENING_CHAIN_')) {
+      const key = `production.workflow.errors.${err.code}`;
+      const msg = t(key);
+      return msg === key ? err.message : msg;
     }
+    if (err.message && err.message.trim()) return err.message;
     return toastMessageForError(err);
   }
-  return t('mobile.production.workflow.loadError');
+  if (err && typeof err === 'object' && 'code' in err) {
+    const code = String((err as { code: string }).code);
+    if (code === 'WORKFLOW_VALIDATION') {
+      return err instanceof Error && err.message
+        ? err.message
+        : t('mobile.production.workflow.saveConnectionsError');
+    }
+  }
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return t('mobile.production.workflow.saveConnectionsError');
 }
 
 export function EditStageSheet({
@@ -80,156 +101,221 @@ export function EditStageSheet({
   const busyRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  const [required, setRequired] = useState(true);
-  const [runsAfterIds, setRunsAfterIds] = useState<string[]>([]);
+  const [placement, setPlacement] = useState<Placement>('after');
+  const [afterIds, setAfterIds] = useState<string[]>([]);
+  const [afterScope, setAfterScope] = useState<AfterScope>('one');
+  const [parallelIds, setParallelIds] = useState<string[]>([]);
   const [leadsIntoIds, setLeadsIntoIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const otherNodes = useMemo(
-    () =>
-      [...version.nodes]
-        .filter((n) => n.id !== node?.id)
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [version.nodes, node?.id],
-  );
-
-  const nodeSort = useMemo(
-    () => version.nodes.map((n) => ({ id: n.id, sortOrder: n.sortOrder })),
+  const domain = useMemo(() => toDomainGraph(version), [version]);
+  const sortedNodes = useMemo(
+    () => [...version.nodes].sort((a, b) => a.sortOrder - b.sortOrder),
     [version.nodes],
   );
-
-  const targetId = node?.id ?? '__edit__';
-
-  const validRunIds = useMemo(
-    () =>
-      new Set(
-        validRunsAfterCandidates(
-          nodeSort,
-          version.edges,
-          targetId,
-          runsAfterIds,
-          leadsIntoIds,
-          true,
-        ),
-      ),
-    [nodeSort, version.edges, targetId, runsAfterIds, leadsIntoIds],
+  const editableNodes = useMemo(
+    () => middleProductionNodes(sortedNodes).filter((n) => n.id !== node?.id),
+    [sortedNodes, node?.id],
   );
+  const lockedIds = useMemo(() => lockedAnchorNodeIds(sortedNodes), [sortedNodes]);
 
-  const validLeadIds = useMemo(
-    () =>
-      new Set(
-        validLeadsIntoCandidates(
-          nodeSort,
-          version.edges,
-          targetId,
-          runsAfterIds,
-          leadsIntoIds,
-          true,
-        ),
-      ),
-    [nodeSort, version.edges, targetId, runsAfterIds, leadsIntoIds],
-  );
+  const afterPoolNodes = useMemo(() => {
+    const opening = sortedNodes.filter((n) => n.stageDefinition?.code === 'MATERIAL_PREP');
+    const prod = editableNodes.filter((n) => {
+      const code = n.stageDefinition?.code ?? '';
+      return code !== 'INSPECTION' && code !== 'PACKAGING' && code !== 'DELIVERY';
+    });
+    return [...opening, ...prod];
+  }, [sortedNodes, editableNodes]);
 
-  const runsAfterOptions = useMemo(
-    () => otherNodes.filter((n) => validRunIds.has(n.id)),
-    [otherNodes, validRunIds],
-  );
-  const leadsIntoOptions = useMemo(
-    () => otherNodes.filter((n) => validLeadIds.has(n.id)),
-    [otherNodes, validLeadIds],
-  );
-
-  const resolvedLeadsInto = useMemo(() => {
-    if (!node) return leadsIntoIds;
-    return resolveLeadsIntoForSave({
-      nodes: nodeSort,
-      edges: version.edges,
-      targetId: node.id,
-      runsAfterIds,
+  const afterCandidateIds = useMemo(() => {
+    if (!node) return [];
+    return validPredecessorCandidateIds(domain, node.id, afterIds, {
       leadsIntoIds,
     });
-  }, [node, nodeSort, version.edges, runsAfterIds, leadsIntoIds]);
+  }, [domain, node, afterIds, leadsIntoIds]);
 
-  const sinkId = useMemo(
-    () => resolveSinkId(nodeSort, version.edges),
-    [nodeSort, version.edges],
-  );
+  const afterPickNodes = useMemo(() => {
+    const allow = new Set(afterCandidateIds);
+    return afterPoolNodes.filter((n) => allow.has(n.id));
+  }, [afterPoolNodes, afterCandidateIds]);
 
-  const sinkNode = sinkId ? version.nodes.find((n) => n.id === sinkId) : undefined;
-  const sinkName = sinkNode ? stageNodeLabel(locale, sinkNode.stageDefinition) : '';
+  const parallelCandidateIds = useMemo(() => {
+    if (!node) return [];
+    return validParallelReferenceCandidateIds(domain, node.id, parallelIds);
+  }, [domain, node, parallelIds]);
 
-  const becomingNewLast =
-    Boolean(node) &&
-    leadsIntoIds.length === 0 &&
-    Boolean(sinkId) &&
-    node!.id !== sinkId &&
-    runsAfterIds.includes(sinkId!) &&
-    resolvedLeadsInto.length === 0;
+  const parallelPickNodes = useMemo(() => {
+    const allow = new Set(parallelCandidateIds);
+    return editableNodes.filter((n) => allow.has(n.id));
+  }, [parallelCandidateIds, editableNodes]);
 
-  const willLeadIntoSink =
-    Boolean(node) &&
-    leadsIntoIds.length === 1 &&
-    sinkId != null &&
-    leadsIntoIds[0] === sinkId;
+  const bandForAfter = useMemo(() => {
+    if (afterIds.length !== 1) return null;
+    const id = afterIds[0]!;
+    return domain.parallelBands.find((b) => b.nodeIds.includes(id)) ?? null;
+  }, [afterIds, domain.parallelBands]);
 
-  // Seed only when opening / switching node — never when version refetches mid-edit.
+  const placementIntent: PlacementIntent = useMemo(() => {
+    let base: PlacementIntent;
+    if (placement === 'start') {
+      base = { kind: 'START' };
+    } else if (placement === 'parallel') {
+      base = { kind: 'PARALLEL', referenceNodeIds: parallelIds };
+    } else {
+      let predecessorIds = [...afterIds];
+      if (afterScope === 'band' && bandForAfter) {
+        predecessorIds = [...bandForAfter.nodeIds];
+      }
+      if (predecessorIds.length === 0) {
+        const tails = domain.frontierNodeIds.filter((id) => id !== node?.id);
+        predecessorIds = tails.length > 0 ? [tails[tails.length - 1]!] : [];
+      }
+      base = { kind: 'AFTER', predecessorIds };
+    }
+    return withSuccessorIds(base, leadsIntoIds);
+  }, [
+    placement,
+    afterIds,
+    afterScope,
+    bandForAfter,
+    parallelIds,
+    domain.frontierNodeIds,
+    node?.id,
+    leadsIntoIds,
+  ]);
+
+  const leadPredIds = useMemo(() => {
+    if (placement === 'start') return [];
+    if (placement === 'parallel') {
+      const ref = parallelIds[0];
+      return ref ? (domain.predecessorsByNode[ref] ?? []) : [];
+    }
+    if (placementIntent.kind === 'AFTER') return placementIntent.predecessorIds;
+    return [];
+  }, [placement, parallelIds, domain.predecessorsByNode, placementIntent]);
+
+  const leadCandidateIds = useMemo(() => {
+    if (!node) return [];
+    if (placement === 'start') {
+      return validSuccessorCandidateIds(domain, node.id, [], {
+        restrictToIds: materialPrepSuccessorIds(domain),
+      });
+    }
+    if (placement === 'parallel') {
+      return validSuccessorCandidateIds(domain, node.id, leadPredIds, {
+        excludeIds: parallelIds,
+      });
+    }
+    return validSuccessorCandidateIds(domain, node.id, leadPredIds);
+  }, [domain, node, leadPredIds, placement, parallelIds]);
+
+  const leadsPickNodes = useMemo(() => {
+    const allow = new Set(leadCandidateIds);
+    return editableNodes.filter((n) => allow.has(n.id));
+  }, [editableNodes, leadCandidateIds]);
+
+  const simulated = useMemo(() => {
+    if (!node) return domain;
+    return simulateWorkflowMutation(domain, {
+      kind: 'EDIT_PLACEMENT',
+      nodeId: node.id,
+      placement: placementIntent,
+    });
+  }, [domain, node, placementIntent]);
+
+  const previewEdges = useMemo(() => canonicalEdgesForLayout(simulated), [simulated]);
+  const previewRunsAfter = simulated.predecessorsByNode[node?.id ?? ''] ?? [];
+  const previewLeadsInto = node
+    ? (simulated.successorsByNode[node.id] ?? []).filter((id) => {
+        const code = simulated.nodes.find((n) => n.id === id)?.code ?? '';
+        return code !== 'PACKAGING' && code !== 'DELIVERY';
+      })
+    : [];
+
+  const locked = node ? isLockedAnchorNode(node) : false;
+
   useEffect(() => {
     if (!open || !node) return;
     busyRef.current = false;
     setSaving(false);
     setRemoving(false);
     setFormError(null);
-    setRequired(node.isRequiredByDefault);
-    setRunsAfterIds(predecessorsOf(version.edges, node.id));
-    const succs = successorsOf(version.edges, node.id);
-    const sink = resolveSinkId(
-      version.nodes.map((n) => ({ id: n.id, sortOrder: n.sortOrder })),
-      version.edges,
-    );
-    // Dead-end non-sink: pre-select the sink so Delivery is visible.
-    if (succs.length === 0 && sink && node.id !== sink) {
-      setLeadsIntoIds([sink]);
+    const preds = domain.predecessorsByNode[node.id] ?? [];
+    if (preds.length === 0) {
+      setPlacement('start');
+      setAfterIds([]);
+      setParallelIds([]);
     } else {
-      setLeadsIntoIds(succs);
+      const band = domain.parallelBands.find((b) =>
+        b.nodeIds.some((id) => id !== node.id && (domain.predecessorsByNode[id] ?? []).join() === preds.join()),
+      );
+      const siblings =
+        band?.nodeIds.filter((id) => id !== node.id) ??
+        editableNodes
+          .filter((n) => (domain.predecessorsByNode[n.id] ?? []).join() === preds.join())
+          .map((n) => n.id);
+      if (siblings.length > 0) {
+        setPlacement('parallel');
+        setParallelIds(siblings);
+        setAfterIds([]);
+      } else {
+        setPlacement('after');
+        setAfterIds(preds);
+        setParallelIds([]);
+      }
     }
+    setAfterScope('one');
+    setLeadsIntoIds(productionSuccessorIds(domain, node.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, node?.id]);
 
   useEffect(() => {
-    if (!sinkId || !node || node.id === sinkId) return;
-    if (!runsAfterIds.includes(sinkId)) return;
-    setLeadsIntoIds((ids) => (ids.length === 0 ? ids : []));
-  }, [sinkId, runsAfterIds, node]);
-
-  useEffect(() => {
-    setRunsAfterIds((ids) => {
-      const next = ids.filter((id) => validRunIds.has(id));
-      return next.length === ids.length ? ids : next;
-    });
-  }, [validRunIds]);
-
-  useEffect(() => {
+    if (!open) return;
     setLeadsIntoIds((ids) => {
-      const next = ids.filter((id) => validLeadIds.has(id));
-      return next.length === ids.length ? ids : next;
+      const next = ids.filter((id) => leadCandidateIds.includes(id));
+      if (next.length === ids.length && next.every((id, i) => id === ids[i])) return ids;
+      return next;
     });
-  }, [validLeadIds]);
+  }, [open, leadCandidateIds]);
+
+  useEffect(() => {
+    if (!open || !node) return;
+    setAfterIds((ids) => {
+      const next = clampPredecessorIds(domain, node.id, ids, { leadsIntoIds });
+      if (next.length === ids.length && next.every((id, i) => id === ids[i])) return ids;
+      return next;
+    });
+  }, [open, node, domain, leadsIntoIds, afterCandidateIds]);
+
+  useEffect(() => {
+    if (!open || !node) return;
+    setParallelIds((ids) => {
+      const next = clampParallelReferenceIds(domain, node.id, ids);
+      if (next.length === ids.length && next.every((id, i) => id === ids[i])) return ids;
+      return next;
+    });
+  }, [open, node, domain, parallelCandidateIds]);
 
   function Segment({
     active,
     label,
     onPress,
+    disabled,
   }: {
     active: boolean;
     label: string;
     onPress: () => void;
+    disabled?: boolean;
   }) {
     return (
       <AnimatedPressable
         variant="button"
+        disabled={disabled}
         onPress={() => {
+          if (disabled) return;
           void haptics.selection();
           onPress();
         }}
@@ -242,6 +328,7 @@ export function EditStageSheet({
           backgroundColor: active ? colors.brand : colors.surface,
           borderWidth: 1,
           borderColor: active ? colors.brand : colors.border,
+          opacity: disabled ? 0.5 : 1,
         }}
       >
         <AppText
@@ -256,33 +343,18 @@ export function EditStageSheet({
   }
 
   async function onSave() {
-    if (!node || busyRef.current || saving || removing) return;
-    if (wouldCreateCycle(version.edges, node.id, runsAfterIds, resolvedLeadsInto, true)) {
-      setFormError(t('mobile.production.workflow.invalidCycle'));
-      scrollRef.current?.scrollToEnd({ animated: true });
-      void haptics.error();
-      return;
-    }
-
+    if (!node || busyRef.current || locked) return;
+    if (placement === 'parallel' && parallelIds.length === 0) return;
     busyRef.current = true;
     setSaving(true);
     setFormError(null);
     Keyboard.dismiss();
-
-    const versionSnapshot = version;
-    const nodeId = node.id;
-    const runsAfterSnapshot = [...runsAfterIds];
-    const leadsIntoSnapshot = [...leadsIntoIds];
-    const requiredSnapshot = required;
-
     try {
       const healed = await commitEditWorkflowStage({
         workflowId,
-        version: versionSnapshot,
-        nodeId,
-        required: requiredSnapshot,
-        runsAfterIds: runsAfterSnapshot,
-        leadsIntoIds: leadsIntoSnapshot,
+        version,
+        nodeId: node.id,
+        placement: placementIntent,
       });
       await applyCache(healed);
       onDirty?.();
@@ -305,9 +377,11 @@ export function EditStageSheet({
   }
 
   async function onRemove() {
-    if (!node || busyRef.current || saving || removing) return;
+    if (!node || busyRef.current || locked) return;
+    if (isLockedAnchorStageCode(node.stageDefinition?.code ?? '')) return;
     busyRef.current = true;
     setRemoving(true);
+    setFormError(null);
     try {
       const healed = await commitRemoveWorkflowStage({
         workflowId,
@@ -327,22 +401,20 @@ export function EditStageSheet({
     } catch (err) {
       void haptics.error();
       setFormError(sheetErrorMessage(err, t));
-      scrollRef.current?.scrollToEnd({ animated: true });
     } finally {
       busyRef.current = false;
       setRemoving(false);
     }
   }
 
-  const title = node
-    ? stageNodeLabel(locale, node.stageDefinition)
-    : t('mobile.production.workflow.editStage');
+  const stageName = node ? stageNodeLabel(locale, node.stageDefinition) : '';
+  const title = t('mobile.production.workflow.placementTitle');
 
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
-      title={t('mobile.production.workflow.editStage')}
+      title={title}
       fitContent
       maxHeight={Math.round(windowH * 0.9)}
     >
@@ -354,87 +426,138 @@ export function EditStageSheet({
         }}
         keyboardShouldPersistTaps="handled"
       >
-        <AppText variant="body" weight="semibold">
-          {title}
-        </AppText>
-
-        <View style={{ gap: theme.spacing.sm }}>
-          <AppText variant="caption" color="secondary">
-            {t('mobile.production.workflow.required')} / {t('mobile.production.workflow.optional')}
-          </AppText>
-          <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
-            <Segment
-              active={required}
-              label={t('mobile.production.workflow.required')}
-              onPress={() => setRequired(true)}
-            />
-            <Segment
-              active={!required}
-              label={t('mobile.production.workflow.optional')}
-              onPress={() => setRequired(false)}
-            />
-          </View>
-        </View>
-
-        <View style={{ gap: theme.spacing.md }}>
+        {locked ? (
           <AppText variant="caption" color="muted">
-            {t('mobile.production.workflow.connectionHint')}
+            {t('mobile.production.workflow.anchorLockedHint')}
           </AppText>
+        ) : (
+          <>
+            {stageName ? (
+              <AppText variant="body" weight="semibold" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                {stageName}
+              </AppText>
+            ) : null}
 
-          <View style={{ gap: theme.spacing.sm }}>
-            <AppText variant="caption" color="muted">
-              {t('mobile.production.workflow.runsAfterEmptyHint')}
-            </AppText>
-            <WorkflowFloorBoard
-              title={t('mobile.production.workflow.runsAfter')}
-              count={runsAfterOptions.length}
-            >
-              {runsAfterOptions.map((item) => (
-                <WorkflowCompactPickRow
-                  key={`p-${item.id}`}
-                  label={stageNodeLabel(locale, item.stageDefinition)}
-                  active={runsAfterIds.includes(item.id)}
+            <View style={{ gap: theme.spacing.sm }}>
+              <AppText variant="caption" color="secondary">
+                {t('mobile.production.workflow.placementWhere')}
+              </AppText>
+              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
+                <Segment
+                  active={placement === 'start'}
+                  label={t('mobile.production.workflow.placementStart')}
                   onPress={() => {
-                    void haptics.selection();
-                    setRunsAfterIds((ids) => toggleId(ids, item.id));
+                    setPlacement('start');
+                    setLeadsIntoIds([]);
                   }}
                 />
-              ))}
-            </WorkflowFloorBoard>
-          </View>
-
-          <View style={{ gap: theme.spacing.sm }}>
-            <AppText variant="caption" color="muted">
-              {t('mobile.production.workflow.leadsIntoEmptyHint')}
-            </AppText>
-            <WorkflowFloorBoard
-              title={t('mobile.production.workflow.leadsInto')}
-              count={leadsIntoOptions.length}
-            >
-              {leadsIntoOptions.map((item) => (
-                <WorkflowCompactPickRow
-                  key={`s-${item.id}`}
-                  label={stageNodeLabel(locale, item.stageDefinition)}
-                  active={leadsIntoIds.includes(item.id)}
+                <Segment
+                  active={placement === 'after'}
+                  label={t('mobile.production.workflow.placementAfter')}
                   onPress={() => {
-                    void haptics.selection();
-                    setLeadsIntoIds((ids) => toggleId(ids, item.id));
+                    setPlacement('after');
+                    setLeadsIntoIds([]);
                   }}
                 />
-              ))}
-            </WorkflowFloorBoard>
-          </View>
-        </View>
+                <Segment
+                  active={placement === 'parallel'}
+                  label={t('mobile.production.workflow.placementParallel')}
+                  onPress={() => {
+                    setPlacement('parallel');
+                    setLeadsIntoIds([]);
+                  }}
+                />
+              </View>
+              <PlacementModeHint>
+                {placement === 'start'
+                  ? t('mobile.production.workflow.placementStartHint')
+                  : placement === 'after'
+                    ? t('mobile.production.workflow.placementAfterHint')
+                    : t('mobile.production.workflow.placementParallelHint')}
+              </PlacementModeHint>
+            </View>
 
-        {becomingNewLast ? (
-          <AppText variant="caption" color="muted">
-            {t('mobile.production.workflow.willBecomeLast')}
-          </AppText>
-        ) : willLeadIntoSink && sinkName ? (
-          <AppText variant="caption" color="muted">
-            {t('mobile.production.workflow.willLeadInto', { stage: sinkName })}
-          </AppText>
-        ) : null}
+            {placement === 'after' && afterPickNodes.length > 0 ? (
+              <>
+                <PlacementTogetherPickList
+                  title={t('mobile.production.workflow.placementAfterPick')}
+                  count={afterIds.length}
+                  nodes={afterPickNodes}
+                  edges={canonicalEdgesForLayout(domain)}
+                  selectedIds={afterIds}
+                  lockedIds={lockedIds}
+                  onToggle={(id) => {
+                    if (!node) return;
+                    setAfterIds((ids) =>
+                      clampPredecessorIds(domain, node.id, toggleId(ids, id), {
+                        leadsIntoIds,
+                      }),
+                    );
+                    setAfterScope('one');
+                  }}
+                  labelFor={(n) => stageNodeLabel(locale, n.stageDefinition)}
+                />
+                {bandForAfter ? (
+                  <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.sm }}>
+                    <Segment
+                      active={afterScope === 'one'}
+                      label={t('mobile.production.workflow.afterThisStageOnly')}
+                      onPress={() => setAfterScope('one')}
+                    />
+                    <Segment
+                      active={afterScope === 'band'}
+                      label={t('mobile.production.workflow.afterWholeParallelGroup')}
+                      onPress={() => setAfterScope('band')}
+                    />
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+
+            {placement === 'parallel' && parallelPickNodes.length > 0 ? (
+              <PlacementTogetherPickList
+                title={t('mobile.production.workflow.placementParallelPick')}
+                count={parallelIds.length}
+                nodes={parallelPickNodes}
+                edges={canonicalEdgesForLayout(domain)}
+                selectedIds={parallelIds}
+                onToggle={(id) => {
+                  if (!node) return;
+                  setParallelIds((ids) =>
+                    clampParallelReferenceIds(domain, node.id, toggleId(ids, id)),
+                  );
+                }}
+                labelFor={(n) => stageNodeLabel(locale, n.stageDefinition)}
+              />
+            ) : null}
+
+            <PlacementTogetherPickList
+              title={t('mobile.production.workflow.leadsIntoThoseStages')}
+              count={leadsIntoIds.length}
+              nodes={leadsPickNodes}
+              edges={canonicalEdgesForLayout(domain)}
+              selectedIds={leadsIntoIds}
+              lockedIds={lockedIds}
+              onToggle={(id) => setLeadsIntoIds((ids) => toggleId(ids, id))}
+              labelFor={(n) => stageNodeLabel(locale, n.stageDefinition)}
+            />
+            <PlacementModeHint>
+              {t('mobile.production.workflow.leadsIntoPickHint')}
+            </PlacementModeHint>
+
+            <PlacementArrowPreview
+              nodes={sortedNodes}
+              edges={previewEdges}
+              youLabel={stageName || title}
+              runsAfterIds={previewRunsAfter}
+              leadsIntoIds={previewLeadsInto}
+              parallelSiblingIds={placement === 'parallel' ? parallelIds : []}
+              lockedIds={lockedIds}
+              startBesidePrep={placement === 'start'}
+              targetId={node?.id ?? null}
+            />
+          </>
+        )}
 
         {formError ? (
           <View
@@ -452,21 +575,22 @@ export function EditStageSheet({
           </View>
         ) : null}
 
-        <PrimaryButton
-          label={t('mobile.production.workflow.saveStage')}
-          loading={saving}
-          disabled={saving || removing || !node}
-          onPress={() => void onSave()}
-          style={{ borderRadius: theme.radius.xl }}
-        />
-
-        <DestructiveButton
-          label={t('mobile.production.workflow.removeStage')}
-          loading={removing}
-          disabled={saving || removing || !node}
-          onPress={() => void onRemove()}
-          style={{ borderRadius: theme.radius.xl }}
-        />
+        {!locked ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            <PrimaryButton
+              label={t('common.save')}
+              onPress={() => void onSave()}
+              loading={saving}
+              disabled={saving || removing || (placement === 'parallel' && parallelIds.length === 0)}
+            />
+            <DestructiveButton
+              label={t('mobile.production.workflow.removeStage')}
+              onPress={() => void onRemove()}
+              loading={removing}
+              disabled={saving || removing}
+            />
+          </View>
+        ) : null}
       </ScrollView>
     </BottomSheet>
   );

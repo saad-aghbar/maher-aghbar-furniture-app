@@ -24,6 +24,12 @@ export type StageDefinition = {
   nameHe?: string | null;
   sortOrder: number;
   isActive: boolean;
+  estimatedHours?: number | null;
+  requiresInspection?: boolean;
+  requiresPhotos?: boolean;
+  responsibleDepartment?: string | null;
+  schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED' | null;
+  resourceSlots?: number | null;
 };
 
 export type WorkflowNode = {
@@ -147,13 +153,41 @@ export function listStageLibrary() {
 }
 
 export function createStageDefinition(body: {
-  code: string;
+  code?: string;
   nameEn: string;
   nameAr: string;
   nameHe?: string;
   workerIds?: string[];
+  estimatedHours?: number;
+  requiresInspection?: boolean;
+  requiresPhotos?: boolean;
+  schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
+  resourceSlots?: number;
 }) {
   return apiPost<StageDefinition>('/production-stage-library', body);
+}
+
+export function updateStageDefinition(
+  stageId: string,
+  body: {
+    nameEn?: string;
+    nameAr?: string;
+    nameHe?: string | null;
+    responsibleDepartment?: string | null;
+    estimatedHours?: number | null;
+    requiresInspection?: boolean;
+    requiresPhotos?: boolean;
+    schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
+    resourceSlots?: number;
+  },
+) {
+  return apiPatch<StageDefinition>(`/production-stage-library/${stageId}`, body);
+}
+
+export function deleteStageDefinition(stageId: string) {
+  return apiDelete<{ id: string; deleted?: boolean; isActive?: boolean }>(
+    `/production-stage-library/${stageId}`,
+  );
 }
 
 export function listStageWorkers(stageId: string) {
@@ -177,7 +211,7 @@ export function addWorkflowNode(
   versionId: string,
   body: {
     stageDefinitionId: string;
-    nodeKey: string;
+    nodeKey?: string;
     sortOrder?: number;
     isRequiredByDefault?: boolean;
     canBeSkipped?: boolean;
@@ -207,9 +241,11 @@ export function removeWorkflowNode(
   versionId: string,
   nodeId: string,
   expectedRevision: number,
+  options?: { reconnect?: boolean },
 ) {
+  const reconnect = options?.reconnect === false ? 'false' : 'true';
   return apiDelete(
-    `/production-workflows/${workflowId}/versions/${versionId}/nodes/${nodeId}?reconnect=true&expectedRevision=${expectedRevision}`,
+    `/production-workflows/${workflowId}/versions/${versionId}/nodes/${nodeId}?reconnect=${reconnect}&expectedRevision=${expectedRevision}`,
   );
 }
 
@@ -228,6 +264,28 @@ export function publishWorkflowVersion(
   return apiPost(`/production-workflows/${workflowId}/versions/${versionId}/publish`, {
     expectedRevision,
   });
+}
+
+export function ensureTerminalChain(
+  workflowId: string,
+  versionId: string,
+  expectedRevision: number,
+) {
+  return apiPost<{ applied: boolean; revision: number }>(
+    `/production-workflows/${workflowId}/versions/${versionId}/ensure-terminal-chain`,
+    { expectedRevision },
+  );
+}
+
+export function ensureOpeningChain(
+  workflowId: string,
+  versionId: string,
+  expectedRevision: number,
+) {
+  return apiPost<{ applied: boolean; revision: number }>(
+    `/production-workflows/${workflowId}/versions/${versionId}/ensure-opening-chain`,
+    { expectedRevision },
+  );
 }
 
 export function discardWorkflowDraft(workflowId: string, versionId: string) {
@@ -265,6 +323,12 @@ export type ProductionSetupBehavior =
   | 'USES_AND_PRODUCES'
   | 'PRODUCES_FINISHED';
 
+export type ProductionSetupPieceLabel = {
+  nameEn: string;
+  nameAr?: string | null;
+  nameHe?: string | null;
+};
+
 export type ProductionSetupStage = {
   workflowNodeId: string;
   nodeKey: string;
@@ -276,21 +340,61 @@ export type ProductionSetupStage = {
   consumesRawMaterials: boolean;
   consumesSemiFinished: boolean;
   consumeOutputIds: string[];
+  consumeWorkflowNodeIds?: string[];
+  materialInputs?: Array<{
+    sku: string;
+    qtyPerUnit: number;
+    unit?: string;
+    imageUrl?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+  }>;
   output: {
     id: string | null;
     nameEn: string | null;
     nameAr: string | null;
     nameHe?: string | null;
     qtyPerUnit: number | null;
+    expectedPieceCount?: number | null;
+    pieceLabels?: ProductionSetupPieceLabel[] | null;
     defaultWarehouseId: string | null;
   } | null;
+  /** SEMI outputs from DAG predecessor stages only (empty for first stage). */
+  upstreamOutputs?: Array<{
+    id: string;
+    workflowNodeId: string | null;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+  }>;
+  /** Longest-path depth in the workflow DAG (parallels share a level). */
+  flowLevel?: number;
+  /** 1-based step shown in setup list (parallels share a step). */
+  flowStep?: number;
+  stageCode?: string;
 };
 
 export type ProductionSetupResponse = {
   status: 'READY' | 'NEEDS_SETUP' | 'INVALID';
   issues: Array<{ code: string; message: string }>;
+  product?: {
+    id: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    sku?: string | null;
+  } | null;
   workflow: { id: string; nameEn: string; nameAr: string; nameHe?: string | null } | null;
-  bomLines?: Array<{ sku: string; qty: number; exists: boolean }>;
+  bomLines?: Array<{
+    sku: string;
+    qty: number;
+    exists: boolean;
+    imageUrl?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    unit?: string | null;
+  }>;
   stages: ProductionSetupStage[];
   warehouses: Array<{
     id: string;
@@ -306,31 +410,12 @@ export type ProductionSetupResponse = {
     nameEn: string;
     nameAr: string;
     nameHe?: string | null;
-  }>;
-};
-
-export type ProductionSetupPreview = {
-  steps: Array<{
-    stageNameEn: string;
-    stageNameAr: string;
-    stageNameHe?: string | null;
-    behavior: ProductionSetupBehavior;
-    consumes: string[];
-    consumeOutputs?: Array<{ nameEn: string; nameAr: string; nameHe?: string | null }>;
-    produces: {
-      nameEn: string | null;
-      nameAr: string | null;
-      nameHe?: string | null;
-    } | null;
+    itemClass?: string | null;
   }>;
 };
 
 export function getProductProductionSetup(productId: string) {
   return apiGet<ProductionSetupResponse>(`/products/${productId}/production-setup`);
-}
-
-export function getProductProductionSetupPreview(productId: string) {
-  return apiGet<ProductionSetupPreview>(`/products/${productId}/production-setup/preview`);
 }
 
 export function putProductProductionSetup(
@@ -346,8 +431,12 @@ export function putProductProductionSetup(
       outputNameAr?: string | null;
       outputNameHe?: string | null;
       outputQtyPerUnit?: number | null;
+      expectedPieceCount?: number | null;
+      pieceLabels?: ProductionSetupPieceLabel[] | null;
       defaultWarehouseId?: string | null;
       consumeOutputIds?: string[];
+      consumeWorkflowNodeIds?: string[];
+      materialInputs?: Array<{ sku: string; qtyPerUnit: number }>;
     }>;
   },
 ) {

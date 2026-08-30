@@ -12,6 +12,7 @@ type InventoryMaterialCardProps = {
   onIssue?: () => void;
   onEdit?: () => void;
   onLabelPdf?: () => void;
+  onQrCode?: () => void;
 };
 
 /** Classic list card — delegates to signature material row. */

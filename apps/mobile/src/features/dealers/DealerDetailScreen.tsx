@@ -783,11 +783,39 @@ export function DealerDetailScreen({ dealerId }: Props) {
                   >
                     <MetaRow
                       icon="wallet-outline"
-                      label={t('customers.balance')}
-                      value={formatCurrency(Number(statementQuery.data.outstandingBalance))}
+                      label={t('accounting.amountDue')}
+                      value={formatCurrency(
+                        Number(
+                          statementQuery.data.amountDue ??
+                            statementQuery.data.outstandingBalance,
+                        ),
+                      )}
                       valueLtr
                       emphasize
                     />
+                    <Divider compact />
+                    <MetaRow
+                      icon="cash-outline"
+                      label={t('accounting.accountCredit')}
+                      value={formatCurrency(
+                        Number(statementQuery.data.availableCredit ?? 0),
+                      )}
+                      valueLtr
+                    />
+                    {Math.abs(Number(statementQuery.data.openingBalance ?? 0)) >
+                    0.0005 ? (
+                      <>
+                        <Divider compact />
+                        <MetaRow
+                          icon="ellipse-outline"
+                          label={t('accounting.openingBalance')}
+                          value={formatCurrency(
+                            Number(statementQuery.data.openingBalance),
+                          )}
+                          valueLtr
+                        />
+                      </>
+                    ) : null}
                     <Divider compact />
                     <MetaRow
                       icon="checkmark-circle-outline"
@@ -797,8 +825,8 @@ export function DealerDetailScreen({ dealerId }: Props) {
                     />
                     <Divider compact />
                     <MetaRow
-                      icon="alert-circle-outline"
-                      label={t('customers.amountLeft')}
+                      icon="document-text-outline"
+                      label={t('accounting.closingBalance')}
                       value={formatCurrency(Number(statementQuery.data.closingBalance))}
                       valueLtr
                     />

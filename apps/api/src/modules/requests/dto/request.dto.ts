@@ -24,6 +24,14 @@ export class ListRequestsDto extends PaginationDto {
   @IsEnum(RequestStatus)
   status?: RequestStatus;
 
+  @ApiPropertyOptional({
+    description:
+      'Business filter alias: drafts | waiting_review | needs_information | quoted | closed | open_inbox',
+  })
+  @IsOptional()
+  @IsString()
+  statusGroup?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsUUID()

@@ -2,6 +2,11 @@
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
 import { PageHeader } from '@/components/admin/page-header';
+import { ProductionHubNav, type ProductionHubTab } from '@/components/production/production-hub-nav';
+import { ProductionLifecyclePanel } from '@/components/production/production-lifecycle-panel';
+import { ProductionMaterialsPanel } from '@/components/production/production-materials-panel';
+import { ProductionQualityPanel } from '@/components/production/production-quality-panel';
+import { ProductionWipPanel } from '@/components/production/production-wip-panel';
 import { OrderWorkflowSection } from '@/components/workflow/order-workflow-section';
 import { Link } from '@/i18n/navigation';
 import { API_URL, apiFetch, apiUpload, apiUploadFromUrl, ApiClientError } from '@/lib/api-client';
@@ -122,6 +127,13 @@ interface ProductionDetail {
   salesOrder?: { id: string; number: string; externalOrderNumber?: string | null } | null;
   stages: Stage[];
   documents?: TaskDocument[];
+  manufacturingCosting?: {
+    status?: string | null;
+    incomplete?: boolean;
+    estimatedTotal?: number | null;
+    actualTotal?: number | null;
+    varianceCost?: number | null;
+  } | null;
 }
 
 function toDateInput(value?: string | null) {
@@ -185,7 +197,7 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
   const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
   const [uploadingTaskId, setUploadingTaskId] = useState<string | null>(null);
 
-  const [returnQty, setReturnQty] = useState<Record<string, string>>({});
+  const [hubTab, setHubTab] = useState<ProductionHubTab>('overview');
 
   const priorityOpts = statusOptions(tStatus, PRIORITY_STATUSES);
 
@@ -200,30 +212,65 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
     },
   });
 
+  const deliveryQuery = useQuery({
+    queryKey: ['production-order-delivery', detailQuery.data?.salesOrder?.id],
+    enabled: Boolean(detailQuery.data?.salesOrder?.id),
+    queryFn: async () => {
+      const soNumber = detailQuery.data!.salesOrder!.number;
+      const res = await apiFetch<{
+        data: Array<{ status: string; id: string; number: string }>;
+      }>(`/api/v1/deliveries?q=${encodeURIComponent(soNumber)}&pageSize=5`);
+      return res.data[0] ?? null;
+    },
+  });
+
   const materialsQuery = useQuery({
-    queryKey: ['production-order-materials', params.id],
+    queryKey: ['production-order-material-usage', params.id],
     queryFn: () =>
       apiFetch<{
         materials: Array<{
-          inventoryItem: { id: string; sku: string; nameEn: string; nameAr: string; nameHe?: string | null; unit: string };
-          issuedQty: number;
+          inventoryItemId: string;
+          sku: string;
+          nameEn: string;
+          nameAr: string;
+          nameHe?: string | null;
+          unit: string;
+          imageUrl?: string | null;
+          itemClass?: string | null;
+          assignedQty: number;
+          usedQty: number;
           returnedQty: number;
-          returnableQty: number;
+          scrapQty: number;
+          varianceQty: number;
+          status: 'ON_TARGET' | 'OVER' | 'UNDER' | 'EXTRA' | 'UNUSED';
+          isExtra?: boolean;
+          tasks?: Array<{
+            taskId: string;
+            taskNumber: string;
+            stageCode?: string | null;
+            stageNameEn?: string | null;
+            stageNameAr?: string | null;
+            stageNameHe?: string | null;
+            actualQty: number;
+            expectedQty: number;
+            returnedQty?: number;
+            issueWarehouse?: {
+              id: string;
+              code: string;
+              nameEn: string;
+              nameAr: string;
+              nameHe?: string | null;
+            } | null;
+            returnWarehouse?: {
+              id: string;
+              code: string;
+              nameEn: string;
+              nameAr: string;
+              nameHe?: string | null;
+            } | null;
+          }>;
         }>;
-      }>(`/api/v1/production-orders/${params.id}/materials`),
-  });
-
-  const returnMaterialMutation = useMutation({
-    mutationFn: (body: { inventoryItemId: string; quantity: number; idempotencyKey: string }) =>
-      apiFetch(`/api/v1/production-orders/${params.id}/materials/return`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-    onSuccess: async () => {
-      setBanner(tp('materialReturned'));
-      await qc.invalidateQueries({ queryKey: ['production-order-materials', params.id] });
-    },
-    onError: (err) => setError(mutationErrorMessage(err)),
+      }>(`/api/v1/production-orders/${params.id}/material-usage`),
   });
 
   const workersQuery = useQuery({
@@ -614,7 +661,60 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
       {error && !confirmStart ? <Alert variant="error">{error}</Alert> : null}
       {isCompleted ? <Alert variant="info">{tp('orderCompletedReadOnly')}</Alert> : null}
 
+      <ProductionLifecyclePanel
+        poStatus={order.status}
+        currentStageCode={order.currentStageCode}
+        stages={order.stages}
+        deliveryStatus={deliveryQuery.data?.status ?? null}
+      />
+
+      {order.manufacturingCosting ? (
+        <Card className="space-y-2 p-4">
+          <h2 className="text-base font-semibold">{tSales('mfgCostTitle')}</h2>
+          <p className="text-xs text-text-secondary">
+            {(() => {
+              const st = String(order.manufacturingCosting.status ?? '').toUpperCase();
+              if (st === 'FINAL') return tSales('mfgCostStatusFinal');
+              if (st === 'IN_PROGRESS') return tSales('mfgCostStatusInProgress');
+              if (st === 'INCOMPLETE') return tSales('mfgCostStatusIncomplete');
+              return tSales('mfgCostStatusEstimatedOnly');
+            })()}
+            {order.manufacturingCosting.incomplete ? ` · ${tSales('mfgCostIncomplete')}` : ''}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3 text-sm">
+            <div>
+              <p className="text-xs text-text-secondary">{tSales('mfgCostEstimated')}</p>
+              <p className="font-semibold tabular-nums" dir="ltr">
+                {order.manufacturingCosting.estimatedTotal != null
+                  ? Number(order.manufacturingCosting.estimatedTotal).toFixed(2)
+                  : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-text-secondary">{tSales('mfgCostActual')}</p>
+              <p className="font-semibold tabular-nums" dir="ltr">
+                {order.manufacturingCosting.actualTotal != null
+                  ? Number(order.manufacturingCosting.actualTotal).toFixed(2)
+                  : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-text-secondary">{tSales('mfgCostVariance')}</p>
+              <p className="font-semibold tabular-nums" dir="ltr">
+                {order.manufacturingCosting.varianceCost != null
+                  ? Number(order.manufacturingCosting.varianceCost).toFixed(2)
+                  : '—'}
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
+      <ProductionHubNav active={hubTab} onChange={setHubTab} />
+
       <div className="maher-stagger space-y-6">
+      {(hubTab === 'overview' || hubTab === 'stages') && (
+      <>
       <MotionSection className="maher-form-section space-y-4" as="div">
       <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary">
         <StatusBadge status={order.status} />
@@ -735,57 +835,29 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
           </Button>
         </div>
       ) : null}
+      </>
+      )}
 
-      {(materialsQuery.data?.materials?.length ?? 0) > 0 ? (
+      {hubTab === 'materials' && (
         <MotionSection className="maher-form-section" as="div">
-          <Card className="space-y-3 p-4">
-            <h2 className="text-base font-semibold">{tp('materials')}</h2>
-            <ul className="space-y-3">
-              {(materialsQuery.data?.materials ?? []).map((row) => {
-                const name = localizedName(locale, row.inventoryItem);
-                const qty = Number(returnQty[row.inventoryItem.id] ?? row.returnableQty);
-                return (
-                  <li key={row.inventoryItem.id} className="flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{name}</p>
-                      <p className="text-xs text-text-secondary">
-                        {tp('issuedQty')} {row.issuedQty} · {tp('returnedQty')} {row.returnedQty} · {tp('returnableQty')} {row.returnableQty}
-                      </p>
-                    </div>
-                    {row.returnableQty > 0 ? (
-                      <div className="flex flex-wrap items-end gap-2">
-                        <Input
-                          label={tp('returnQuantity')}
-                          type="number"
-                          dir="ltr"
-                          value={returnQty[row.inventoryItem.id] ?? String(row.returnableQty)}
-                          onChange={(e) =>
-                            setReturnQty((prev) => ({ ...prev, [row.inventoryItem.id]: e.target.value }))
-                          }
-                        />
-                        <Button
-                          size="sm"
-                          loading={returnMaterialMutation.isPending}
-                          onClick={() =>
-                            returnMaterialMutation.mutate({
-                              inventoryItemId: row.inventoryItem.id,
-                              quantity: Math.min(qty, row.returnableQty),
-                              idempotencyKey: `prod-return:${params.id}:${row.inventoryItem.id}:${Math.min(qty, row.returnableQty)}`,
-                            })
-                          }
-                        >
-                          {tp('returnUnused')}
-                        </Button>
-                      </div>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
+          <ProductionMaterialsPanel materials={materialsQuery.data?.materials ?? []} />
         </MotionSection>
-      ) : null}
+      )}
 
+      {(hubTab === 'overview' || hubTab === 'wip') && (
+        <MotionSection className="maher-form-section" as="div">
+          <ProductionWipPanel productionOrderId={params.id} />
+        </MotionSection>
+      )}
+
+      {(hubTab === 'overview' || hubTab === 'quality') && (
+        <MotionSection className="maher-form-section" as="div">
+          <ProductionQualityPanel productionOrderId={params.id} />
+        </MotionSection>
+      )}
+
+      {(hubTab === 'overview' || hubTab === 'stages') && (
+      <>
       <MotionSection className="maher-form-section maher-table-shell" as="div">
       <Table>
         <TableHead>
@@ -1250,6 +1322,8 @@ export default function ProductionDetailPage({ params }: { params: { id: string 
         )}
       </Card>
       </MotionSection>
+      </>
+      )}
       </div>
 
       <ConfirmDialog

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, useWindowDimensions, StyleSheet } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import Animated, {
@@ -10,14 +10,21 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
-import {
-  displayStageEdges,
-  layoutStageGraph,
-} from '@/features/sales-orders/stageGraphLayout';
+import { useLocale } from '@/i18n';
+import { layoutStageGraph } from '@/features/sales-orders/stageGraphLayout';
 import type { OrderStageView } from '@/features/sales-orders/selectOrderDetail';
 import type { ProductionFlowStage } from '../selectProductionFlow';
+import {
+  insertParallelJoinHubs,
+  isJoinHubCode,
+  joinHubProgress,
+  layoutMapEdges,
+  type ParallelJoinMeta,
+} from '../parallelJoinLayout';
 import { FLOW_NODE, FlowStageNode } from './FlowStageNode';
+import { FLOW_JOIN, FlowJoinHub } from './FlowJoinHub';
 import { FlowMapAtmosphere } from './FlowMapAtmosphere';
+import { ParallelJoinSheet } from './ParallelJoinSheet';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -29,14 +36,33 @@ type Props = {
 };
 
 function toOrderStages(stages: ProductionFlowStage[]): OrderStageView[] {
-  return stages.map((s) => ({
-    code: s.code,
-    name: s.name,
-    status: s.status,
-    progressPercent: s.progressPercent,
-    dependsOnCodes: s.dependsOnCodes,
-    sortOrder: s.sortOrder,
-  }));
+  const resolveKey = (s: ProductionFlowStage, index: number) =>
+    s.graphKey || s.snapshotNodeId || `${s.code}#${index}`;
+
+  // Map library codes and graph keys → layout identity so deps still resolve.
+  const keyAlias = new Map<string, string>();
+  stages.forEach((s, i) => {
+    const gk = resolveKey(s, i);
+    keyAlias.set(gk, gk);
+    if (!keyAlias.has(s.code)) keyAlias.set(s.code, gk);
+  });
+
+  return stages.map((s, index) => {
+    const graphKey = resolveKey(s, index);
+    return {
+      // Layout identity must be unique — library codes can repeat (e.g. two CARPENTRY).
+      code: graphKey,
+      name: s.name,
+      status: s.status,
+      progressPercent: s.progressPercent,
+      dependsOnCodes: (s.dependsOnCodes ?? []).map((d) => keyAlias.get(d) ?? d),
+      sortOrder: s.sortOrder,
+    };
+  });
+}
+
+function stageLookupKey(stage: ProductionFlowStage, index: number): string {
+  return stage.graphKey || stage.snapshotNodeId || `${stage.code}#${index}`;
 }
 
 function normalizeStatus(status: string): string {
@@ -50,7 +76,6 @@ function isDone(status: string): boolean {
   return s === 'COMPLETED' || s === 'SKIPPED';
 }
 
-/** Smooth vertical S-curve — fans out for splits, funnels for merges. */
 function barrelPath(x1: number, y1: number, x2: number, y2: number): string {
   const dy = Math.max(24, y2 - y1);
   const bend = Math.min(56, dy * 0.48);
@@ -144,10 +169,26 @@ function EdgePath({
 export function ProductionFlowMap({ stages, onStagePress, preview = false }: Props) {
   const { width: winW } = useWindowDimensions();
   const { colors } = useTheme();
+  const { t } = useLocale();
   const reduceMotion = useReducedMotion();
-  const layout = layoutStageGraph(toOrderStages(stages));
-  const edges = useMemo(() => displayStageEdges(layout), [layout]);
-  const stageByCode = useMemo(() => new Map(stages.map((s) => [s.code, s])), [stages]);
+  const [selectedJoin, setSelectedJoin] = useState<ParallelJoinMeta | null>(null);
+
+  const baseLayout = useMemo(() => layoutStageGraph(toOrderStages(stages)), [stages]);
+  const layout = useMemo(() => insertParallelJoinHubs(baseLayout), [baseLayout]);
+  const edges = useMemo(() => layoutMapEdges(layout), [layout]);
+  const stageByKey = useMemo(() => {
+    const map = new Map<string, ProductionFlowStage>();
+    stages.forEach((s, i) => {
+      map.set(stageLookupKey(s, i), s);
+      // Fallback for graphs that still edge by library code only.
+      if (!map.has(s.code)) map.set(s.code, s);
+    });
+    return map;
+  }, [stages]);
+  const joinByCode = useMemo(
+    () => new Map(layout.joins.map((j) => [j.joinCode, j])),
+    [layout.joins],
+  );
 
   const lanesByLevel = useMemo(() => {
     const map = new Map<number, number>();
@@ -158,15 +199,13 @@ export function ProductionFlowMap({ stages, onStagePress, preview = false }: Pro
   }, [layout.nodes]);
 
   const maxLanes = Math.max(1, layout.maxLanes);
-  // Breathe more when the graph is wide / deep.
   const colGap = maxLanes >= 4 ? 72 : maxLanes >= 3 ? 64 : 56;
   const rowGap = layout.levelCount >= 5 ? 64 : 56;
   const labelBand = 48;
   const padY = 32;
-  const padX = 40;
   const colW = FLOW_NODE + colGap;
   const rowH = FLOW_NODE + labelBand + rowGap;
-  const contentW = Math.max(winW - 16, maxLanes * colW + padX * 2);
+  const contentW = Math.max(winW - 16, maxLanes * colW + padY * 2);
   const height = Math.max(
     160,
     padY +
@@ -183,126 +222,171 @@ export function ProductionFlowMap({ stages, onStagePress, preview = false }: Pro
     return centerX - span / 2 + lane * colW;
   };
 
+  const nodeSize = (code: string) => (isJoinHubCode(code) ? FLOW_JOIN : FLOW_NODE);
+
   const nodeCenter = (code: string) => {
     const node = layout.nodes.find((n) => n.code === code);
     if (!node) return null;
+    const size = nodeSize(code);
     return {
-      x: laneX(node.lane, node.level),
-      top: padY + node.level * rowH,
-      bottom: padY + node.level * rowH + FLOW_NODE,
+      x: isJoinHubCode(code) ? centerX : laneX(node.lane, node.level),
+      top: padY + node.level * rowH + (FLOW_NODE - size) / 2,
+      bottom: padY + node.level * rowH + (FLOW_NODE - size) / 2 + size,
       level: node.level,
       lane: node.lane,
-      stage: stageByCode.get(code),
+      stage: stageByKey.get(code),
+      join: joinByCode.get(code),
     };
   };
 
   const trackColor = colors.textMuted;
   const fillColor = colors.brand;
 
+  const feederStagesForJoin = (join: ParallelJoinMeta | null) => {
+    if (!join) return [];
+    return join.feederCodes
+      .map((c) => stageByKey.get(c))
+      .filter((s): s is ProductionFlowStage => Boolean(s));
+  };
+
   return (
-    <View
-      style={{
-        width: contentW,
-        height,
-        alignSelf: 'center',
-        overflow: 'hidden',
-        borderRadius: 16,
-      }}
-    >
-      <FlowMapAtmosphere />
-
-      {/* Soft center rail for visual spine */}
+    <>
       <View
-        pointerEvents="none"
         style={{
-          position: 'absolute',
-          left: centerX - 1,
-          top: padY,
-          bottom: padY,
-          width: 2,
-          borderRadius: 1,
-          backgroundColor: colors.border,
-          opacity: 0.35,
+          width: contentW,
+          height,
+          alignSelf: 'center',
+          overflow: 'hidden',
+          borderRadius: 16,
         }}
-      />
-
-      <Svg
-        width={contentW}
-        height={height}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
       >
-        <Defs>
-          <LinearGradient id="flowEdgeFade" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={trackColor} stopOpacity="0.35" />
-            <Stop offset="1" stopColor={trackColor} stopOpacity="0.85" />
-          </LinearGradient>
-        </Defs>
-        {edges.map((e, i) => {
-          const a = nodeCenter(e.from);
-          const b = nodeCenter(e.to);
-          if (!a || !b) return null;
-          const d = barrelPath(a.x, a.bottom, b.x, b.top);
-          const pathLength = approxPathLength(a.x, a.bottom, b.x, b.top);
-          const fillRatio = stageFillRatio(a.stage, preview);
-          return (
-            <EdgePath
-              key={`${e.from}-${e.to}`}
-              d={d}
-              index={i}
-              pathLength={pathLength}
-              fillRatio={fillRatio}
-              trackColor={trackColor}
-              fillColor={fillColor}
-              reduceMotion={reduceMotion}
-            />
-          );
-        })}
-        {edges.map((e) => {
-          const b = nodeCenter(e.to);
-          if (!b) return null;
-          return (
-            <Circle
-              key={`dot-${e.from}-${e.to}`}
-              cx={b.x}
-              cy={b.top}
-              r={3}
-              fill={colors.brandSoft}
-              stroke={colors.brand}
-              strokeWidth={1.25}
-              opacity={0.9}
-            />
-          );
-        })}
-      </Svg>
+        <FlowMapAtmosphere />
 
-      {layout.nodes.map((node, index) => {
-        const stage = stageByCode.get(node.code);
-        if (!stage) return null;
-        const cx = laneX(node.lane, node.level);
-        const left = cx - FLOW_NODE / 2;
-        const top = padY + node.level * rowH;
-        const previewStage = preview
-          ? {
-              ...stage,
-              progressPercent: 0,
-              status: 'PENDING',
-              estimateReviewRequired: false,
-            }
-          : stage;
-        return (
-          <FlowStageNode
-            key={node.code}
-            stage={previewStage}
-            index={typeof stage.sortOrder === 'number' ? stage.sortOrder : index}
-            left={left}
-            top={top}
-            reduceMotion={reduceMotion}
-            preview={preview}
-            onPress={onStagePress ? () => onStagePress(stage) : undefined}
-          />
-        );
-      })}
-    </View>
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: centerX - 1,
+            top: padY,
+            bottom: padY,
+            width: 2,
+            borderRadius: 1,
+            backgroundColor: colors.border,
+            opacity: 0.35,
+          }}
+        />
+
+        <Svg
+          width={contentW}
+          height={height}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        >
+          <Defs>
+            <LinearGradient id="flowEdgeFade" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={trackColor} stopOpacity="0.35" />
+              <Stop offset="1" stopColor={trackColor} stopOpacity="0.85" />
+            </LinearGradient>
+          </Defs>
+          {edges.map((e, i) => {
+            const a = nodeCenter(e.from);
+            const b = nodeCenter(e.to);
+            if (!a || !b) return null;
+            const d = barrelPath(a.x, a.bottom, b.x, b.top);
+            const pathLength = approxPathLength(a.x, a.bottom, b.x, b.top);
+            const fromJoin = isJoinHubCode(e.from);
+            const fillRatio = fromJoin
+              ? preview
+                ? 0
+                : joinHubProgress(a.join?.feederCodes ?? [], stageByKey).percent / 100
+              : stageFillRatio(a.stage, preview);
+            return (
+              <EdgePath
+                key={`${e.from}-${e.to}`}
+                d={d}
+                index={i}
+                pathLength={pathLength}
+                fillRatio={fillRatio}
+                trackColor={trackColor}
+                fillColor={fillColor}
+                reduceMotion={reduceMotion}
+              />
+            );
+          })}
+          {edges.map((e) => {
+            const b = nodeCenter(e.to);
+            if (!b) return null;
+            return (
+              <Circle
+                key={`dot-${e.from}-${e.to}`}
+                cx={b.x}
+                cy={b.top}
+                r={3}
+                fill={colors.brandSoft}
+                stroke={colors.brand}
+                strokeWidth={1.25}
+                opacity={0.9}
+              />
+            );
+          })}
+        </Svg>
+
+        {layout.nodes.map((node, index) => {
+          if (isJoinHubCode(node.code)) {
+            const join = joinByCode.get(node.code);
+            if (!join) return null;
+            const { percent, allDone } = joinHubProgress(join.feederCodes, stageByKey);
+            const top = padY + node.level * rowH + (FLOW_NODE - FLOW_JOIN) / 2;
+            const left = centerX - FLOW_JOIN / 2;
+            return (
+              <FlowJoinHub
+                key={node.code}
+                left={left}
+                top={top}
+                label={t('mobile.productionFlow.joinLabel')}
+                progressPercent={preview ? 0 : percent}
+                allDone={allDone}
+                preview={preview}
+                onPress={() => setSelectedJoin(join)}
+              />
+            );
+          }
+
+          const stage = stageByKey.get(node.code);
+          if (!stage) return null;
+          const cx = laneX(node.lane, node.level);
+          const left = cx - FLOW_NODE / 2;
+          const top = padY + node.level * rowH;
+          const previewStage = preview
+            ? {
+                ...stage,
+                progressPercent: 0,
+                status: 'PENDING',
+                estimateReviewRequired: false,
+              }
+            : stage;
+          return (
+            <FlowStageNode
+              key={node.code}
+              stage={previewStage}
+              index={typeof stage.sortOrder === 'number' ? stage.sortOrder : index}
+              left={left}
+              top={top}
+              reduceMotion={reduceMotion}
+              preview={preview}
+              onPress={onStagePress ? () => onStagePress(stage) : undefined}
+            />
+          );
+        })}
+      </View>
+
+      <ParallelJoinSheet
+        open={Boolean(selectedJoin)}
+        onClose={() => setSelectedJoin(null)}
+        feederStages={feederStagesForJoin(selectedJoin)}
+        preview={preview}
+        onFeederPress={onStagePress}
+      />
+    </>
   );
 }

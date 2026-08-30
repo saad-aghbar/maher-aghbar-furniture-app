@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import { can, canAny } from '@maher/permissions';
 import { createRequestId } from '@/api/requestId';
+import { ApiError } from '@/api/errors';
 import { uploadFile } from '@/api/modules/uploads';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -48,12 +49,29 @@ import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { PendingOutboxBanner } from './components/PendingOutboxBanner';
+import {
+  TaskMaterialsFloorSection,
+  type TaskMaterialsFloorHandle,
+} from './components/TaskMaterialsFloorSection';
+import {
+  TaskIncomingWorkFloorSection,
+  type TaskIncomingFloorHandle,
+} from './components/TaskIncomingWorkFloorSection';
+import {
+  TaskSemiOutputFloorSection,
+  type TaskSemiOutputFloorHandle,
+} from './components/TaskSemiOutputFloorSection';
 import { TaskActionDock, type TaskDockAction } from './components/TaskActionDock';
 import { TaskDetailSkeleton } from './components/TasksListSkeleton';
 import { TaskFilePreview } from './components/TaskFilePreview';
 import { TaskTimerBoard } from './components/TaskTimerBoard';
 import { flushTaskOutbox } from './flushOutbox';
 import { enqueueTaskPhoto, listTaskOutbox, type TaskOutboxItem } from './outbox';
+import {
+  getTaskWipIncoming,
+  type FloorTaskHint,
+  type WipIncomingLine,
+} from '@/api/modules/tasks';
 import {
   useBlockTaskMutation,
   useCompleteTaskMutation,
@@ -62,8 +80,31 @@ import {
   useStartTaskMutation,
   useTaskQuery,
 } from './query';
+import { floorHintFromIncoming } from './floorPhase';
 import { selectTaskDetail } from './selectTask';
 import type { TaskBlockerCategory, TaskDetail } from './api';
+import {
+  createInspection,
+  getFloorContext,
+  submitInspection,
+  type DefectCategory,
+  type QualityFloorContext,
+  type QualityInspection,
+} from '@/features/quality/api';
+import { InspectionFloorPanel } from '@/features/quality/components/InspectionFloorPanel';
+import {
+  PackagingConfirmPanel,
+  allPackagesConfirmed,
+  confirmedPackageLabels,
+} from '@/features/quality/components/PackagingConfirmPanel';
+import { QcFailSheet } from '@/features/quality/components/QcFailSheet';
+import { ReinspectionBanner } from '@/features/quality/components/ReinspectionBanner';
+import { ReworkFloorBanner } from '@/features/quality/components/ReworkFloorBanner';
+import {
+  classifyTaskQualityKind,
+  countPriorFails,
+  isQcFailResult,
+} from '@/features/quality/taskQualityKind';
 
 if (
   Platform.OS === 'android' &&
@@ -76,6 +117,8 @@ type TaskDetailScreenProps = {
   taskId: string;
   forceState?: 'loading' | 'error' | 'offline' | 'success';
   fixture?: TaskDetail;
+  /** Override back target (e.g. admin PO hub → floor). */
+  backFallback?: Href;
 };
 
 const BLOCK_CATEGORIES: TaskBlockerCategory[] = [
@@ -93,6 +136,7 @@ export function TaskDetailScreen({
   taskId,
   forceState,
   fixture,
+  backFallback = TASKS_FALLBACK,
 }: TaskDetailScreenProps) {
   const { user } = useAuth();
   const { t, formatDateTime, isRTL, locale } = useLocale();
@@ -101,11 +145,11 @@ export function TaskDetailScreen({
   const { showOfflineBanner, isConnected } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
-  const onBack = useSmartBack(TASKS_FALLBACK);
+  const onBack = useSmartBack(backFallback);
   const { openAccessoryCamera } = useAccessoryCamera();
   const offline = isConnected === false || forceState === 'offline';
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const pad = theme.spacing.lg;
+  const pad = theme.spacing.md;
   const mediaW = Math.max(0, windowW - pad * 2);
   const tabClearance = SURFACE_TAB_BAR_CLEARANCE;
   /** Floating dock (~2 rows) sits above the tab bar. */
@@ -117,6 +161,8 @@ export function TaskDetailScreen({
     'production-task.update-any',
   ]);
   const canComplete = can(user, 'production-task.complete');
+  const canRecordUsage = can(user, 'production.material-usage.record');
+  const canPerformQc = can(user, 'quality-inspection.perform');
 
   const query = useTaskQuery(taskId, allowed && !forceState);
   const startMutation = useStartTaskMutation(taskId);
@@ -134,7 +180,20 @@ export function TaskDetailScreen({
   const [outbox, setOutbox] = useState<TaskOutboxItem[]>([]);
   const [flushing, setFlushing] = useState(false);
   const [finishedBurst, setFinishedBurst] = useState(false);
+  const materialsRef = useRef<TaskMaterialsFloorHandle>(null);
+  const semiOutputRef = useRef<TaskSemiOutputFloorHandle>(null);
+  const incomingRef = useRef<TaskIncomingFloorHandle>(null);
   const completeKeyRef = useRef(`complete-${createRequestId()}`);
+
+  const [qcContext, setQcContext] = useState<QualityFloorContext | null>(null);
+  const [qcInspection, setQcInspection] = useState<QualityInspection | null>(null);
+  const [qcChecklist, setQcChecklist] = useState<Record<string, boolean>>({});
+  const [qcNotes, setQcNotes] = useState('');
+  const [qcFailOpen, setQcFailOpen] = useState(false);
+  const [qcBusy, setQcBusy] = useState(false);
+  const [packageChecked, setPackageChecked] = useState<Record<string, boolean>>({});
+  const qcCreateKeyRef = useRef(`qc-create-${createRequestId()}`);
+  const qcSubmitKeyRef = useRef(`qc-submit-${createRequestId()}`);
 
   const raw: TaskDetail | undefined =
     forceState === 'success' || forceState === 'offline' ? fixture : query.data;
@@ -148,7 +207,135 @@ export function TaskDetailScreen({
     completeMutation.isPending ||
     blockMutation.isPending ||
     uploading ||
-    flushing;
+    flushing ||
+    qcBusy;
+
+  const [incomingInfo, setIncomingInfo] = useState<{
+    required: boolean;
+    allReceived: boolean;
+    lines: WipIncomingLine[];
+  }>({ required: false, allReceived: true, lines: [] });
+
+  const floorHint: FloorTaskHint | null = useMemo(() => {
+    if (!vm) return null;
+    return floorHintFromIncoming({
+      taskStatus: vm.status,
+      openBlockerCount: vm.openBlockers.length,
+      required: incomingInfo.required,
+      allReceived: incomingInfo.allReceived,
+      lines: incomingInfo.lines,
+    });
+  }, [vm, incomingInfo]);
+
+  const needsWipReceive =
+    Boolean(incomingInfo.required) && !incomingInfo.allReceived;
+
+  const qualityKind = useMemo(() => {
+    if (!vm) return 'production' as const;
+    return classifyTaskQualityKind({
+      stageCode: vm.stageCode,
+      executionKind: vm.executionKind,
+      isRework: vm.isRework,
+      priorFailCount: countPriorFails(qcContext?.inspections),
+    });
+  }, [vm, qcContext?.inspections]);
+
+  const isQcGate =
+    qualityKind === 'inspection' || qualityKind === 'reinspection';
+  const isPackaging = qualityKind === 'packaging';
+  const isReworkTask = qualityKind === 'rework';
+
+  const packagesAllConfirmed = useMemo(() => {
+    if (!isPackaging) return true;
+    if (!qcContext) return false;
+    return allPackagesConfirmed(qcContext.expectedPackages ?? [], packageChecked);
+  }, [isPackaging, qcContext, packageChecked]);
+
+  const refreshQcContext = useCallback(async () => {
+    if (!vm?.productionOrderId || (!isQcGate && !isPackaging && !isReworkTask)) {
+      return;
+    }
+    try {
+      const ctx = await getFloorContext(vm.productionOrderId);
+      setQcContext(ctx);
+      if (isPackaging && ctx.expectedPackages?.length) {
+        setPackageChecked((prev) => {
+          const next = { ...prev };
+          for (const p of ctx.expectedPackages) {
+            if (next[p.code] == null) next[p.code] = false;
+          }
+          return next;
+        });
+      }
+      if (isQcGate) {
+        const open =
+          ctx.latestInspection && !ctx.latestInspection.result
+            ? ctx.latestInspection
+            : null;
+        if (open) {
+          setQcInspection(open);
+          setQcNotes(open.notes ?? '');
+          setQcChecklist(
+            Object.fromEntries(
+              (open.items ?? []).map((i) => [
+                i.checklistCode,
+                i.result === 'PASS' || i.result === 'NOT_APPLICABLE',
+              ]),
+            ),
+          );
+        } else if (canPerformQc && !offline) {
+          const created = await createInspection({
+            productionOrderId: vm.productionOrderId,
+            stageCode: vm.stageCode ?? 'INSPECTION',
+            idempotencyKey: qcCreateKeyRef.current,
+          });
+          setQcInspection(created);
+          setQcNotes(created.notes ?? '');
+          setQcChecklist(
+            Object.fromEntries(
+              (created.items ?? []).map((i) => [i.checklistCode, false]),
+            ),
+          );
+        }
+      }
+    } catch {
+      if (isPackaging) {
+        setQcContext((prev) =>
+          prev ??
+            ({
+              productionOrderId: vm.productionOrderId!,
+              productionOrderNumber: '',
+              quantity: 1,
+              orderStatus: '',
+              itemUnderInspection: null,
+              manufacturingSpec: null,
+              latestInspection: null,
+              inspections: [],
+              openRework: null,
+              expectedPackages: [],
+              packagingUnlocked: true,
+              lightAnalytics: {
+                inspectionAttempts: 0,
+                reworkCount: 0,
+                failureCategories: [],
+              },
+            } satisfies QualityFloorContext),
+        );
+      }
+    }
+  }, [
+    vm?.productionOrderId,
+    vm?.stageCode,
+    isQcGate,
+    isPackaging,
+    isReworkTask,
+    canPerformQc,
+    offline,
+  ]);
+
+  useEffect(() => {
+    void refreshQcContext();
+  }, [refreshQcContext]);
 
   const refreshOutbox = useCallback(async () => {
     const items = await listTaskOutbox(taskId);
@@ -190,19 +377,48 @@ export function TaskDetailScreen({
     }
   }
 
+  function actionErrorMessage(err: unknown, fallbackKey = 'mobile.tasks.actionFailed') {
+    if (err instanceof ApiError && err.message.trim()) return err.message;
+    if (err && typeof err === 'object' && 'message' in err) {
+      const msg = String((err as { message?: string }).message ?? '').trim();
+      if (msg) return msg;
+    }
+    return t(fallbackKey);
+  }
+
   async function onStart() {
     if (offline) {
       void haptics.error();
       showToast({ variant: 'error', message: t('mobile.tasks.onlineRequired') });
       return;
     }
+    if (needsWipReceive) {
+      void haptics.error();
+      showToast({
+        variant: 'error',
+        message: t('mobile.tasks.incomingStartBlocked'),
+      });
+      return;
+    }
     try {
       await startMutation.mutateAsync();
       void haptics.confirmMedium();
       showToast({ variant: 'success', message: t('mobile.tasks.startedToast') });
-    } catch {
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: string }).code)
+          : '';
+      if (code === 'WIP_CLAIM_REQUIRED') {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: t('mobile.tasks.incomingStartBlocked'),
+        });
+        return;
+      }
       void haptics.error();
-      showToast({ variant: 'error', message: t('mobile.tasks.actionFailed') });
+      showToast({ variant: 'error', message: actionErrorMessage(err) });
     }
   }
 
@@ -216,9 +432,9 @@ export function TaskDetailScreen({
       await pauseMutation.mutateAsync();
       void haptics.confirmMedium();
       showToast({ variant: 'success', message: t('mobile.tasks.stoppedToast') });
-    } catch {
+    } catch (err) {
       void haptics.error();
-      showToast({ variant: 'error', message: t('mobile.tasks.actionFailed') });
+      showToast({ variant: 'error', message: actionErrorMessage(err) });
     }
   }
 
@@ -232,9 +448,9 @@ export function TaskDetailScreen({
       await resumeMutation.mutateAsync();
       void haptics.confirmMedium();
       showToast({ variant: 'success', message: t('mobile.tasks.resumedToast') });
-    } catch {
+    } catch (err) {
       void haptics.error();
-      showToast({ variant: 'error', message: t('mobile.tasks.actionFailed') });
+      showToast({ variant: 'error', message: actionErrorMessage(err) });
     }
   }
 
@@ -245,16 +461,91 @@ export function TaskDetailScreen({
       showToast({ variant: 'error', message: t('mobile.tasks.finishRequiresOnline') });
       return;
     }
-    if (vm?.requiresPhotos && !(vm.photos.length > 0) && outbox.every((i) => i.kind !== 'photo')) {
+    try {
+      const incoming = await getTaskWipIncoming(taskId);
+      if (incoming.required && !incoming.allReceived) {
+        const line = (incoming.lines ?? []).find((l) => l.statusKey !== 'RECEIVED');
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: line
+            ? t('mobile.tasks.incomingFinishBlockedDetail', {
+                stage: line.fromStageNameEn,
+                received: line.received,
+                expected: line.expected,
+              })
+            : t('mobile.tasks.incomingFinishBlocked'),
+        });
+        return;
+      }
+    } catch {
+      /* fall through — server will re-check */
+    }
+    if (vm?.producesSemiFinished && vm.requiresPhotos) {
+      const piecePhotos = semiOutputRef.current?.piecePhotoCount() ?? 0;
+      if (piecePhotos < 1) {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: t('mobile.tasks.semiOutputFinishNeedsPiece'),
+        });
+        return;
+      }
+    } else if (
+      vm?.requiresPhotos &&
+      !(vm.photos.length > 0) &&
+      outbox.every((i) => i.kind !== 'photo')
+    ) {
       void haptics.error();
       showToast({ variant: 'error', message: t('mobile.tasks.photosRequired') });
       return;
     }
+    if (canRecordUsage) {
+      if (!materialsRef.current?.hasSelection()) {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: t('mobile.tasks.materialsMustChoose'),
+        });
+        return;
+      }
+      try {
+        await materialsRef.current.commit();
+      } catch (err) {
+        void haptics.error();
+        if (!(err instanceof Error && err.message === 'WAREHOUSE_REQUIRED')) {
+          showToast({ variant: 'error', message: t('mobile.tasks.materialsSaveFailed') });
+        }
+        return;
+      }
+    }
+    if (isPackaging) {
+      if (!packagesAllConfirmed) {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: t('mobile.quality.confirmAllPackagesHint'),
+        });
+        return;
+      }
+      const labels = confirmedPackageLabels(
+        qcContext?.expectedPackages ?? [],
+        packageChecked,
+      );
+      await finishTaskAfterMaterials({ confirmedPackageLabels: labels });
+      return;
+    }
+    await finishTaskAfterMaterials();
+  }
+
+  async function finishTaskAfterMaterials(extra?: {
+    confirmedPackageLabels?: string[];
+  }) {
     try {
-      // Flush pending photos first so requiresPhotos checks pass server-side.
       await flushTaskOutbox(taskId);
       await completeMutation.mutateAsync({
         idempotencyKey: completeKeyRef.current,
+        confirmedPackageLabels: extra?.confirmedPackageLabels,
       });
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setFinishedBurst(true);
@@ -262,9 +553,117 @@ export function TaskDetailScreen({
       setTimeout(() => {
         router.replace('/(app)/(employee)/(tabs)/completed' as Href);
       }, 700);
-    } catch {
+    } catch (err) {
       void haptics.error();
-      showToast({ variant: 'error', message: t('mobile.tasks.actionFailed') });
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: string }).code)
+          : '';
+      if (code === 'WIP_RECEIVE_REQUIRED' || code === 'WIP_CLAIM_REQUIRED') {
+        showToast({
+          variant: 'error',
+          message: t('mobile.tasks.incomingFinishBlocked'),
+        });
+        return;
+      }
+      if (code === 'PACKAGES_INCOMPLETE') {
+        showToast({
+          variant: 'error',
+          message: t('mobile.quality.confirmAllPackagesHint'),
+        });
+        return;
+      }
+      if (code === 'USE_QUALITY_SUBMIT') {
+        showToast({
+          variant: 'error',
+          message: t('mobile.quality.usePassNotComplete'),
+        });
+        return;
+      }
+      showToast({ variant: 'error', message: actionErrorMessage(err) });
+    }
+  }
+
+  async function onPassInspection() {
+    if (offline) {
+      void haptics.error();
+      showToast({ variant: 'error', message: t('mobile.tasks.onlineRequired') });
+      return;
+    }
+    if (!qcInspection?.id) {
+      void haptics.error();
+      showToast({ variant: 'error', message: t('mobile.quality.inspectionNotReady') });
+      return;
+    }
+    setQcBusy(true);
+    try {
+      const items = qcInspection.items ?? [];
+      await submitInspection(qcInspection.id, {
+        result: 'PASSED',
+        notes: qcNotes.trim() || undefined,
+        checklistResults: items.map((i) => ({
+          checklistCode: i.checklistCode,
+          result: qcChecklist[i.checklistCode] ? 'PASS' : 'FAIL',
+        })),
+        photoDocumentIds: vm?.photos.map((p) => p.id),
+        idempotencyKey: qcSubmitKeyRef.current,
+      });
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setFinishedBurst(true);
+      void haptics.confirmMedium();
+      showToast({ variant: 'success', message: t('mobile.quality.inspectionPassed') });
+      await query.refetch();
+      setTimeout(() => {
+        router.replace('/(app)/(employee)/(tabs)/completed' as Href);
+      }, 700);
+    } catch (err) {
+      void haptics.error();
+      showToast({ variant: 'error', message: actionErrorMessage(err) });
+    } finally {
+      setQcBusy(false);
+    }
+  }
+
+  async function onConfirmQcFail(args: {
+    defectCategory: DefectCategory;
+    defectDescription: string;
+    affectedQty: number;
+    severity: string;
+    reentryStageInstanceId?: string;
+  }) {
+    if (!qcInspection?.id) {
+      void haptics.error();
+      showToast({ variant: 'error', message: t('mobile.quality.inspectionNotReady') });
+      return;
+    }
+    setQcBusy(true);
+    try {
+      const items = qcInspection.items ?? [];
+      await submitInspection(qcInspection.id, {
+        result: 'FAILED_REWORK_REQUIRED',
+        notes: qcNotes.trim() || undefined,
+        defectCategory: args.defectCategory,
+        defectDescription: args.defectDescription,
+        affectedQty: args.affectedQty,
+        severity: args.severity,
+        reentryStageInstanceId: args.reentryStageInstanceId,
+        checklistResults: items.map((i) => ({
+          checklistCode: i.checklistCode,
+          result: qcChecklist[i.checklistCode] ? 'PASS' : 'FAIL',
+        })),
+        photoDocumentIds: vm?.photos.map((p) => p.id),
+        idempotencyKey: `qc-fail-${createRequestId()}`,
+      });
+      setQcFailOpen(false);
+      void haptics.confirmMedium();
+      showToast({ variant: 'success', message: t('mobile.quality.problemFound') });
+      await query.refetch();
+      await refreshQcContext();
+    } catch (err) {
+      void haptics.error();
+      showToast({ variant: 'error', message: actionErrorMessage(err) });
+    } finally {
+      setQcBusy(false);
     }
   }
 
@@ -423,8 +822,50 @@ export function TaskDetailScreen({
 
   const dockActions = useMemo(() => {
     const actions: TaskDockAction[] = [];
-    if (!vm) return actions;
-    if (canUpdate && vm.canStart) {
+    if (!vm || !floorHint) return actions;
+
+    const primary = floorHint.primaryAction;
+
+    // Piece 9 — inspection: Pass / Report problem (never floor Complete).
+    if (isQcGate && canPerformQc && vm.canFinish && !finishedBurst) {
+      actions.push({
+        key: 'qc-pass',
+        label: t('mobile.quality.passInspection'),
+        icon: 'checkmark-circle-outline',
+        primary: true,
+        onPress: () => void onPassInspection(),
+        loading: qcBusy,
+        disabled: busy || offline || qcBusy,
+      });
+      actions.push({
+        key: 'qc-fail',
+        label: t('mobile.quality.reportProblem'),
+        icon: 'warning-outline',
+        onPress: () => setQcFailOpen(true),
+        disabled: busy || offline || qcBusy,
+      });
+      if (canUpdate && vm.canUploadPhoto) {
+        actions.push({
+          key: 'photo',
+          label: t('mobile.tasks.uploadPhoto'),
+          icon: 'camera-outline',
+          onPress: () => setUploadSheetOpen(true),
+          disabled: busy,
+        });
+      }
+      return actions.slice(0, 4);
+    }
+
+    if (primary === 'RECEIVE_SEMI' && canUpdate) {
+      actions.push({
+        key: 'receive',
+        label: t('mobile.tasks.dockReceiveSemi'),
+        icon: 'download-outline',
+        primary: true,
+        onPress: () => incomingRef.current?.openReceive(),
+        disabled: busy || offline,
+      });
+    } else if (primary === 'START' && canUpdate && vm.canStart) {
       actions.push({
         key: 'start',
         label: t('mobile.tasks.startTask'),
@@ -433,15 +874,6 @@ export function TaskDetailScreen({
         onPress: () => void onStart(),
         loading: startMutation.isPending,
         disabled: busy,
-      });
-    } else if (canUpdate && vm.canStop) {
-      actions.push({
-        key: 'stop',
-        label: t('mobile.tasks.stopTask'),
-        icon: 'pause',
-        onPress: () => void onStop(),
-        loading: pauseMutation.isPending,
-        disabled: busy || offline,
       });
     } else if (canUpdate && vm.canResume) {
       actions.push({
@@ -454,7 +886,38 @@ export function TaskDetailScreen({
         disabled: busy || offline,
       });
     }
-    if (canUpdate && vm.canUploadPhoto) {
+
+    if (canUpdate && vm.canStop) {
+      actions.push({
+        key: 'stop',
+        label: t('mobile.tasks.stopTask'),
+        icon: 'pause',
+        onPress: () => void onStop(),
+        loading: pauseMutation.isPending,
+        disabled: busy || offline,
+      });
+    }
+
+    if (primary === 'COMPLETE' && canComplete && vm.canFinish && !finishedBurst) {
+      const packagingBlocked = isPackaging && !packagesAllConfirmed;
+      actions.push({
+        key: 'finish',
+        label: isPackaging
+          ? packagesAllConfirmed
+            ? t('mobile.quality.completePackaging')
+            : t('mobile.quality.confirmPackages')
+          : t('mobile.tasks.markFinished'),
+        holdLabel: t('mobile.tasks.holdToFinish'),
+        icon: 'checkmark-circle-outline',
+        holdConfirm: true,
+        primary: true,
+        onPress: () => void onFinish(),
+        loading: completeMutation.isPending,
+        disabled: busy || offline || packagingBlocked,
+      });
+    }
+
+    if (canUpdate && vm.canUploadPhoto && !vm.producesSemiFinished) {
       actions.push({
         key: 'photo',
         label: t('mobile.tasks.uploadPhoto'),
@@ -463,7 +926,7 @@ export function TaskDetailScreen({
         disabled: busy,
       });
     }
-    if (canUpdate && vm.canReportProblem) {
+    if (canUpdate && vm.canReportProblem && !isQcGate) {
       actions.push({
         key: 'problem',
         label: t('mobile.tasks.reportProblem'),
@@ -472,28 +935,24 @@ export function TaskDetailScreen({
         disabled: busy,
       });
     }
-    if (canComplete && vm.canFinish && !finishedBurst) {
-      actions.push({
-        key: 'finish',
-        label: t('mobile.tasks.markFinished'),
-        holdLabel: t('mobile.tasks.holdToFinish'),
-        icon: 'checkmark-circle-outline',
-        holdConfirm: true,
-        onPress: () => void onFinish(),
-        loading: completeMutation.isPending,
-        disabled: busy || offline,
-      });
-    }
+
+    // Cap secondary tiles — primary already included.
     return actions.slice(0, 4);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers stable enough for dock
   }, [
     busy,
     canComplete,
+    canPerformQc,
     canUpdate,
     completeMutation.isPending,
     finishedBurst,
+    floorHint,
+    isPackaging,
+    isQcGate,
     offline,
+    packagesAllConfirmed,
     pauseMutation.isPending,
+    qcBusy,
     resumeMutation.isPending,
     startMutation.isPending,
     t,
@@ -504,7 +963,7 @@ export function TaskDetailScreen({
 
   if (forceState === 'loading' || (allowed && query.isLoading && !query.data && !forceState)) {
     return (
-      <AppScreen backFallback={TASKS_FALLBACK}>
+      <AppScreen backFallback={backFallback}>
         <TaskDetailSkeleton />
       </AppScreen>
     );
@@ -512,7 +971,7 @@ export function TaskDetailScreen({
 
   if (!allowed && !forceState) {
     return (
-      <AppScreen backFallback={TASKS_FALLBACK}>
+      <AppScreen backFallback={backFallback}>
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -520,7 +979,7 @@ export function TaskDetailScreen({
 
   if (forceState === 'error' || (query.isError && !raw && !forceState)) {
     return (
-      <AppScreen backFallback={TASKS_FALLBACK}>
+      <AppScreen backFallback={backFallback}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.tasks.detailErrorTitle')}
@@ -534,7 +993,7 @@ export function TaskDetailScreen({
 
   if (!vm) {
     return (
-      <AppScreen backFallback={TASKS_FALLBACK}>
+      <AppScreen backFallback={backFallback}>
         <EmptyState
           title={t('mobile.tasks.detailErrorTitle')}
           description={t('mobile.tasks.errorBody')}
@@ -572,6 +1031,7 @@ export function TaskDetailScreen({
               onRefresh={() => {
                 void query.refetch();
                 void refreshOutbox();
+                void refreshQcContext();
                 if (!offline) void onFlushOutbox();
               }}
               tintColor={colors.brand}
@@ -694,6 +1154,48 @@ export function TaskDetailScreen({
                   textAlign: isRTL ? 'right' : 'left',
                 }}
               >
+                {t('mobile.tasks.whatYouAreMaking')}
+              </AppText>
+              {floorHint ? (
+                <View
+                  style={{
+                    alignSelf: isRTL ? 'flex-end' : 'flex-start',
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                    borderRadius: theme.radius.full,
+                    backgroundColor: colors.brandSoft,
+                    borderWidth: 1,
+                    borderColor: colors.brand,
+                  }}
+                >
+                  <AppText
+                    variant="caption"
+                    weight="semibold"
+                    style={{ color: colors.brand, fontSize: 11 }}
+                  >
+                    {isReworkTask
+                      ? t('mobile.quality.stampRework')
+                      : isQcGate
+                        ? qualityKind === 'reinspection'
+                          ? t('mobile.quality.readyForReinspection')
+                          : t('mobile.quality.readyForInspection')
+                        : isPackaging
+                          ? t('mobile.quality.stampPackaging')
+                          : t(floorHint.labelKey)}
+                  </AppText>
+                </View>
+              ) : null}
+              <AppText
+                variant="caption"
+                weight="semibold"
+                style={{
+                  color: colors.textSecondary,
+                  letterSpacing: locale === 'ar' ? 0 : 0.4,
+                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  fontSize: 11,
+                  textAlign: isRTL ? 'right' : 'left',
+                }}
+              >
                 {vm.requiredWork}
               </AppText>
               <AppText
@@ -723,6 +1225,11 @@ export function TaskDetailScreen({
                   }}
                 >
                   {vm.orderNumber}
+                  {raw?.productionOrder?.quantity != null
+                    ? ` · ${t('mobile.tasks.qtyLabel', {
+                        n: String(raw.productionOrder.quantity),
+                      })}`
+                    : ''}
                 </AppText>
                 <PriorityBadge priority={vm.priority} />
               </View>
@@ -741,24 +1248,125 @@ export function TaskDetailScreen({
             </View>
           </View>
 
-          <TaskTimerBoard
-            timing={vm.timing}
-            formatDateTime={formatDateTime}
-            isScheduledToday={vm.isScheduledToday}
-          />
+          <View style={{ gap: theme.spacing.sm }}>
+              <AppText
+                variant="caption"
+                weight="semibold"
+                style={{
+                  color: colors.brand,
+                  letterSpacing: locale === 'ar' ? 0 : 0.8,
+                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  fontSize: 11,
+                  textAlign: isRTL ? 'right' : 'left',
+                  paddingHorizontal: 2,
+                }}
+              >
+                {t('mobile.tasks.whatYouNeed')}
+              </AppText>
+              {canRecordUsage ? (
+                <TaskMaterialsFloorSection ref={materialsRef} taskId={taskId} />
+              ) : null}
 
-          <FloorSection
-            title={t('mobile.tasks.instructions')}
-            isRTL={isRTL}
-            locale={locale}
-          >
-            <AppText
-              variant="body"
-              style={{ textAlign: isRTL ? 'right' : 'left' }}
+              <TaskIncomingWorkFloorSection
+                ref={incomingRef}
+                taskId={taskId}
+                showNoneWhenEmpty
+                onReceived={() => {
+                  /* availability callback refreshes floorHint */
+                }}
+                onAvailabilityChange={(info) => {
+                  setIncomingInfo(info);
+                }}
+              />
+            </View>
+          {isReworkTask ? (
+            <ReworkFloorBanner
+              problemText={
+                qcContext?.openRework?.description ??
+                qcContext?.openRework?.inspection?.defects?.[0]?.description ??
+                null
+              }
+              hasPhotos={Boolean(vm.photos.length)}
+            />
+          ) : null}
+
+          {qualityKind === 'reinspection' ? (
+            <ReinspectionBanner
+              previousFailure={
+                qcContext?.inspections?.find((i) => isQcFailResult(i.result))
+                  ?.defects?.[0]?.description ??
+                qcContext?.inspections?.find((i) => isQcFailResult(i.result))?.notes ??
+                null
+              }
+              reworkedBy={
+                qcContext?.openRework?.tasks?.[0]?.assignedEmployee?.fullName ||
+                qcContext?.inspections
+                  ?.flatMap((i) => i.rework ?? [])
+                  .find((r) => r.status === 'COMPLETED')
+                  ?.tasks?.[0]?.assignedEmployee?.fullName ||
+                null
+              }
+            />
+          ) : null}
+
+          {isQcGate ? (
+            <InspectionFloorPanel
+              itemUnderInspection={qcContext?.itemUnderInspection ?? null}
+              manufacturingSpec={qcContext?.manufacturingSpec ?? null}
+              checklist={qcInspection?.items ?? []}
+              checked={qcChecklist}
+              onToggle={(code, next) =>
+                setQcChecklist((prev) => ({ ...prev, [code]: next }))
+              }
+              notes={qcNotes}
+              onNotesChange={setQcNotes}
+              onPass={() => void onPassInspection()}
+              onReportProblem={() => setQcFailOpen(true)}
+              busy={qcBusy}
+              disabled={!canPerformQc || offline || Boolean(finishedBurst)}
+            />
+          ) : null}
+
+          {isPackaging ? (
+            <PackagingConfirmPanel
+              packages={qcContext?.expectedPackages ?? []}
+              checked={packageChecked}
+              onToggle={(code, next) =>
+                setPackageChecked((prev) => ({ ...prev, [code]: next }))
+              }
+              onReportProblem={() => setProblemSheetOpen(true)}
+              onComplete={
+                canComplete && vm.canFinish && packagesAllConfirmed && !finishedBurst
+                  ? () => void onFinish()
+                  : undefined
+              }
+              completeBusy={completeMutation.isPending}
+              disabled={offline || Boolean(finishedBurst)}
+            />
+          ) : null}
+
+          {!isQcGate ? (
+            <FloorSection
+              title={t('mobile.tasks.yourWork')}
+              isRTL={isRTL}
+              locale={locale}
             >
-              {vm.instructions || t('mobile.tasks.noInstructions')}
-            </AppText>
-          </FloorSection>
+              <AppText
+                variant="caption"
+                weight="semibold"
+                color="muted"
+                style={{ textAlign: isRTL ? 'right' : 'left', marginBottom: 4 }}
+              >
+                {t('mobile.tasks.instructions')}
+              </AppText>
+              <AppText
+                variant="body"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {vm.instructions || t('mobile.tasks.noInstructions')}
+              </AppText>
+            </FloorSection>
+          ) : null}
 
           {vm.notes ? (
             <FloorSection title={t('mobile.tasks.notes')} isRTL={isRTL} locale={locale}>
@@ -796,20 +1404,49 @@ export function TaskDetailScreen({
             </View>
           ) : null}
 
-          <TaskFilePreview
-            title={t('mobile.tasks.attachments')}
-            files={vm.attachments}
-            emptyLabel={t('mobile.tasks.noAttachments')}
-            icon="document-attach-outline"
+          <TaskTimerBoard
+            timing={vm.timing}
+            formatDateTime={formatDateTime}
+            isScheduledToday={vm.isScheduledToday}
           />
 
-          <TaskFilePreview
-            title={t('mobile.tasks.photos')}
-            files={vm.photos}
-            emptyLabel={t('mobile.noPhotos')}
-            icon="camera-outline"
-            preferImages
-          />
+          {vm.attachments.length > 0 ? (
+            <TaskFilePreview
+              title={t('mobile.tasks.attachments')}
+              files={vm.attachments}
+              emptyLabel={t('mobile.tasks.noAttachments')}
+              icon="document-attach-outline"
+            />
+          ) : null}
+
+          {!vm.producesSemiFinished && vm.photos.length > 0 ? (
+            <TaskFilePreview
+              title={t('mobile.tasks.photos')}
+              files={vm.photos}
+              emptyLabel={t('mobile.noPhotos')}
+              icon="camera-outline"
+              preferImages
+            />
+          ) : null}
+
+          {vm.producesSemiFinished ? (
+            <TaskSemiOutputFloorSection
+              ref={semiOutputRef}
+              taskId={taskId}
+              productionOrderId={vm.productionOrderId}
+              expectedPieceCount={vm.expectedPieceCount ?? 1}
+            />
+          ) : (
+            <FloorSection
+              title={t('mobile.tasks.outputHandoffTitle')}
+              isRTL={isRTL}
+              locale={locale}
+            >
+              <AppText variant="body" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                {t('mobile.tasks.outputHandoffNone')}
+              </AppText>
+            </FloorSection>
+          )}
 
           {offline && canComplete && vm.canFinish ? (
             <AppText variant="caption" color="muted" align="center">
@@ -900,6 +1537,17 @@ export function TaskDetailScreen({
           />
         </View>
       </BottomSheet>
+
+      {vm.productionOrderId ? (
+        <QcFailSheet
+          open={qcFailOpen}
+          onClose={() => setQcFailOpen(false)}
+          productionOrderId={vm.productionOrderId}
+          quantity={Number(raw?.productionOrder?.quantity) || 1}
+          busy={qcBusy}
+          onConfirm={(args) => void onConfirmQcFail(args)}
+        />
+      ) : null}
     </AppScreen>
   );
 }

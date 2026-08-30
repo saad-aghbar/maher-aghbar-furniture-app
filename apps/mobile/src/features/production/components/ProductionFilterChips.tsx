@@ -11,7 +11,16 @@ import { useDraggablePillBar, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { ProductionListBucket } from '../api';
 
-const CHIPS = ['all', 'in_production', 'late', 'completed'] as const;
+const CHIPS = [
+  'all',
+  'needs_setup',
+  'ready_to_start',
+  'on_floor',
+  'blocked',
+  'inspection_packaging',
+  'late',
+  'completed',
+] as const;
 type ChipKey = (typeof CHIPS)[number];
 
 const SHELL_PAD_Y = 6;
@@ -22,15 +31,46 @@ const CHIP_MIN_WIDTH = 52;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
-const FILL_LIGHT = ['#F3EEE5', '#EEEAE4', '#F2E8E4', '#E9EBE3'] as const;
-const BORDER_LIGHT = ['#8F7A58', '#6E6254', '#7A4538', '#5A6348'] as const;
+const FILL_LIGHT = [
+  '#F3EEE5',
+  '#F3EDE3',
+  '#E9EBE3',
+  '#EEEAE4',
+  '#F2E8E4',
+  '#EDE6DA',
+  '#F2E8E4',
+  '#E9EBE3',
+] as const;
+const BORDER_LIGHT = [
+  '#8F7A58',
+  '#8B7049',
+  '#5A6348',
+  '#6E6254',
+  '#7A4538',
+  '#776245',
+  '#7A4538',
+  '#5A6348',
+] as const;
 const FILL_DARK = [
   'rgba(168,144,108,0.18)',
+  'rgba(196,160,106,0.18)',
+  'rgba(154,170,122,0.18)',
   'rgba(181,164,140,0.20)',
+  'rgba(196,137,122,0.18)',
+  'rgba(168,144,108,0.18)',
   'rgba(196,137,122,0.18)',
   'rgba(154,170,122,0.18)',
 ] as const;
-const BORDER_DARK = ['#A8906C', '#B5A48C', '#C4897A', '#9AAA7A'] as const;
+const BORDER_DARK = [
+  '#A8906C',
+  '#C4A06A',
+  '#9AAA7A',
+  '#B5A48C',
+  '#C4897A',
+  '#A8906C',
+  '#C4897A',
+  '#9AAA7A',
+] as const;
 
 type ChipLayout = { x: number; width: number };
 
@@ -55,13 +95,17 @@ function accentFor(
     info: string;
     error: string;
     success: string;
+    warning: string;
     textSecondary: string;
   },
   focused: boolean,
 ): string {
   if (!focused) return colors.textSecondary;
-  if (chip === 'in_production') return colors.info;
-  if (chip === 'late') return colors.error;
+  if (chip === 'needs_setup') return colors.warning;
+  if (chip === 'ready_to_start') return colors.success;
+  if (chip === 'on_floor') return colors.info;
+  if (chip === 'blocked' || chip === 'late') return colors.error;
+  if (chip === 'inspection_packaging') return colors.brand;
   if (chip === 'completed') return colors.success;
   return colors.brand;
 }
@@ -123,10 +167,14 @@ export function ProductionFilterChips({ value, onChange }: ProductionFilterChips
     opacity: active != null ? 1 : 0,
     backgroundColor: interpolateColor(
       hoverIndex.value,
-      [0, 1, 2, 3],
+      [0, 1, 2, 3, 4, 5, 6, 7],
       [...fills],
     ),
-    borderColor: interpolateColor(hoverIndex.value, [0, 1, 2, 3], [...borders]),
+    borderColor: interpolateColor(
+      hoverIndex.value,
+      [0, 1, 2, 3, 4, 5, 6, 7],
+      [...borders],
+    ),
   }));
 
   const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;

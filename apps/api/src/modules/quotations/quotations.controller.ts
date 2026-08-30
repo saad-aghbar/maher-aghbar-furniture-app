@@ -48,8 +48,8 @@ export class QuotationsController {
 
   @RequirePermissions('quotation.update')
   @Post(':id/submit-for-approval')
-  submitForApproval(@Param('id') id: string) {
-    return this.quotations.submitForApproval(id);
+  submitForApproval(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.quotations.submitForApproval(id, user);
   }
 
   @RequirePermissions('quotation.approve')
@@ -64,8 +64,8 @@ export class QuotationsController {
 
   @RequirePermissions('quotation.send')
   @Post(':id/send')
-  send(@Param('id') id: string) {
-    return this.quotations.send(id);
+  send(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.quotations.send(id, user);
   }
 
   @RequirePermissions('quotation.accept')
@@ -75,7 +75,7 @@ export class QuotationsController {
     @Body() dto: AcceptQuotationDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.quotations.accept(id, dto.signatureData, user.id);
+    return this.quotations.accept(id, user, dto.signatureData);
   }
 
   @RequirePermissions('quotation.reject')
@@ -85,7 +85,7 @@ export class QuotationsController {
     @Body() dto: RejectQuotationDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.quotations.reject(id, user.id, dto.comment);
+    return this.quotations.reject(id, user, dto.comment);
   }
 
   @RequirePermissions('quotation.accept')
@@ -101,12 +101,12 @@ export class QuotationsController {
   @RequirePermissions('quotation.update')
   @Post(':id/revise')
   revise(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.quotations.revise(id, user.id);
+    return this.quotations.revise(id, user);
   }
 
   @RequirePermissions('quotation.read')
   @Get(':id/versions')
-  versions(@Param('id') id: string) {
-    return this.quotations.compareVersions(id);
+  versions(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.quotations.compareVersions(id, user);
   }
 }

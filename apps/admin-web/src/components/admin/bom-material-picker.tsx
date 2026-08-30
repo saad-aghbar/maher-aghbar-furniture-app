@@ -1,6 +1,7 @@
 'use client';
 
 import { apiFetch, ApiClientError } from '@/lib/api-client';
+import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
 import { localizedName } from '@maher/i18n';
 import { Alert, Button, EmptyState, Input, Modal, Skeleton } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -20,6 +21,7 @@ export type PickedMaterial = {
   unit?: string;
   /** Fixed purchase cost from inventory (standardCost). */
   standardCost?: number;
+  imageUrl?: string | null;
 };
 
 const CATEGORY_TILES: Array<{ key: MaterialCategoryGroup; labelKey: string }> = [
@@ -55,6 +57,7 @@ type InventoryRow = {
   unit?: string | null;
   standardCost?: string | number | null;
   materialId?: string | null;
+  imageUrl?: string | null;
 };
 
 type MaterialRow = {
@@ -129,6 +132,7 @@ export function BomMaterialPicker({
             category: row.category,
             unit: row.unit ?? 'pcs',
             standardCost: Number(row.standardCost ?? 0) || 0,
+            imageUrl: row.imageUrl ?? null,
           }));
         }
       } catch (err) {
@@ -221,13 +225,16 @@ export function BomMaterialPicker({
                       }}
                       className="bom-picker__row"
                     >
-                      <span className="min-w-0">
+                      <span className="flex min-w-0 items-center gap-3">
+                        <InventoryItemThumb src={m.imageUrl} alt="" size={36} />
+                        <span className="min-w-0">
                         <span className="block truncate font-medium text-text-primary">
                           {localizedName(locale, m)}
                         </span>
                         <span className="block truncate text-xs text-text-secondary" dir="ltr">
                           {m.sku}
                           {m.category ? ` · ${m.category}` : ''}
+                        </span>
                         </span>
                       </span>
                       {already ? (

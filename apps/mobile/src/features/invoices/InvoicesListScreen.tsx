@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { useAuth } from '@/auth/AuthProvider';
@@ -99,6 +99,7 @@ export function InvoicesListScreen({
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
+  const params = useLocalSearchParams<{ chip?: string }>();
   const allowed = can(user, 'invoice.read');
   const canCreate = adminControls && can(user, 'invoice.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -115,6 +116,14 @@ export function InvoicesListScreen({
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
   useEffect(() => {
+    const raw = String(params.chip ?? '').trim().toUpperCase();
+    if (!raw) return;
+    if (raw === 'OVERDUE' || raw === 'OPEN' || raw === 'DRAFT' || raw === 'PARTIAL' || raw === 'PAID') {
+      setChip(raw as InvoiceStatusFilter);
+    }
+  }, [params.chip]);
+
+  useEffect(() => {
     const id = setTimeout(() => setQ(search.trim()), 300);
     return () => clearTimeout(id);
   }, [search]);
@@ -123,7 +132,8 @@ export function InvoicesListScreen({
   const query = useInvoicesInfiniteQuery(
     {
       q: q || undefined,
-      status: chip === 'ALL' ? undefined : chip,
+      status: chip === 'ALL' || chip === 'OVERDUE' ? undefined : chip,
+      overdue: chip === 'OVERDUE' ? true : undefined,
       customerId: customerId || undefined,
     },
     allowed,

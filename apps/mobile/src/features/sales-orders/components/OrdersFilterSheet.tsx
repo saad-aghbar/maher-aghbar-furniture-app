@@ -185,7 +185,7 @@ export function OrdersFilterSheet({
   onReset,
   dealers = [],
   showDealers = false,
-  showApproval = true,
+  showApproval = false,
 }: OrdersFilterSheetProps) {
   const { t, isRTL, formatDate } = useLocale();
   const { theme, colors, colorScheme } = useTheme();

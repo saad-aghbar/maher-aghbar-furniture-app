@@ -12,6 +12,11 @@ export type ProductionFlowStage = {
   progressPercent: number;
   dependsOnCodes: string[];
   sortOrder: number;
+  /**
+   * Unique graph identity (workflow nodeKey / snapshot node id).
+   * Required when the same library stage code appears more than once.
+   */
+  graphKey?: string;
   /** Snapshot / workflow node id when available (order customize). */
   snapshotNodeId?: string | null;
   stageDefinitionId?: string | null;
@@ -95,6 +100,8 @@ function emptyAdminFields(): Pick<
 }
 
 type LooseStage = SalesOrderStage & {
+  id?: string;
+  nodeKey?: string | null;
   nameHe?: string | null;
   plannedEnd?: string | null;
   notes?: string | null;
@@ -154,6 +161,7 @@ function mapLooseStage(
   raw: LooseStage,
   locale: string,
   role: ProductionFlowRole,
+  index = 0,
 ): ProductionFlowStage {
   const def = raw.stageDefinition;
   const code = raw.code || def?.code || '';
@@ -165,13 +173,16 @@ function mapLooseStage(
     { nameEn, nameAr, nameHe },
     code,
   );
+  const graphKey = raw.nodeKey || raw.id || `${code}#${index}`;
   const base: ProductionFlowStage = {
     code,
+    graphKey,
     name,
     status: String(raw.status ?? 'PENDING'),
     progressPercent: Number(raw.progressPercent ?? 0),
     dependsOnCodes: raw.dependsOnCodes ?? def?.dependsOnCodes ?? [],
     sortOrder: Number(raw.sortOrder ?? def?.sortOrder ?? 0),
+    snapshotNodeId: raw.id ?? null,
     photos: (raw.photos ?? []).map((p) => ({
       id: p.id,
       fileName: p.fileName,
@@ -337,8 +348,8 @@ export function selectProductionFlowFromSalesOrder(
   role: ProductionFlowRole,
   locale = 'en',
 ): ProductionFlowModel {
-  let stages = pickStagesFromSalesOrder(order).map((s) =>
-    mapLooseStage(s, locale, role),
+  let stages = pickStagesFromSalesOrder(order).map((s, i) =>
+    mapLooseStage(s, locale, role, i),
   );
   if (role === 'dealer') {
     stages = stages.map(enforceDealerStageStrip);
@@ -369,8 +380,8 @@ export function selectProductionFlowFromProductionOrder(
   role: ProductionFlowRole,
   locale = 'en',
 ): ProductionFlowModel {
-  let stages = ((order.stages ?? []) as LooseStage[]).map((s) =>
-    mapLooseStage(s, locale, role),
+  let stages = ((order.stages ?? []) as LooseStage[]).map((s, i) =>
+    mapLooseStage(s, locale, role, i),
   );
   if (role === 'dealer') {
     stages = stages.map(enforceDealerStageStrip);

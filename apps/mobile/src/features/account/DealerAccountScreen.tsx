@@ -19,6 +19,7 @@ import { DealerAiSpotlight } from './components/DealerAiSpotlight';
 import { DealerIdentityBoard } from './components/DealerIdentityBoard';
 import { DealerPlacesDock } from './components/DealerPlacesDock';
 import { DealerPreferencesBoard } from './components/DealerPreferencesBoard';
+import { DevTestsEntryRow } from '@/dev/component-lab/screens/DevTestsEntryRow';
 
 /**
  * Dealer Account hub — floor / atelier composition matching Admin More.
@@ -150,6 +151,7 @@ export function DealerAccountScreen() {
         <Divider />
 
         <Footer {...footerProps} style={{ gap: theme.spacing.sm }}>
+          <DevTestsEntryRow />
           <DestructiveButton
             label={t('auth.logout')}
             onPress={() => {

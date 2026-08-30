@@ -25,7 +25,7 @@ const PILL_HEIGHT = 36;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
-/** All → Pending → Approved → Rejected */
+/** All → Open → In progress → Done (dealer human labels; same filter keys). */
 const FILL_LIGHT = ['#F5F1EA', '#F3EDE3', '#E9EBE3', '#F2E8E4'] as const;
 const BORDER_LIGHT = ['#C4BDB0', '#8B7049', '#5A6348', '#7A4538'] as const;
 const FILL_DARK = [
@@ -39,7 +39,8 @@ const BORDER_DARK = ['#A8906C', '#C4A06A', '#9AAA7A', '#C4897A'] as const;
 type ChipLayout = { x: number; width: number };
 
 /**
- * All / Pending / Approved / Rejected — Fabric touch bar for dealer returns.
+ * All / Open / In progress / Done — Fabric touch bar for dealer returns.
+ * Filter keys stay PENDING/APPROVED/REJECTED; labels are dealerChips.*.
  */
 export function ReturnsStatusRail({ value, onChange }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -143,7 +144,7 @@ export function ReturnsStatusRail({ value, onChange }: Props) {
 
         {RETURN_STATUS_FILTERS.map((segment) => {
           const focused = segment === value;
-          const label = t(`mobile.returns.chips.${segment}`);
+          const label = t(`mobile.returns.dealerChips.${segment}`);
 
           return (
             <Pressable

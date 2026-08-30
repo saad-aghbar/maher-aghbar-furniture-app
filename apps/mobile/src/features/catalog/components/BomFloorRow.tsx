@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
@@ -14,6 +15,9 @@ type Props = {
   unitCostLabel: string;
   lineTotalLabel: string;
   qty: string;
+  imageUrl?: string | null;
+  /** Hide unit cost / line total (production setup — qty + remove only). */
+  showCosts?: boolean;
   onQtyChange: (v: string) => void;
   onRemove: () => void;
 };
@@ -22,9 +26,12 @@ type Props = {
 export function BomFloorRow({
   index,
   name,
+  sku,
   unitCostLabel,
   lineTotalLabel,
   qty,
+  imageUrl,
+  showCosts = true,
   onQtyChange,
   onRemove,
 }: Props) {
@@ -85,21 +92,7 @@ export function BomFloorRow({
               gap: theme.spacing.md,
             }}
           >
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.brandSoft,
-                borderWidth: 1,
-                borderColor: colors.border,
-                marginTop: 2,
-              }}
-            >
-              <Ionicons name="cube-outline" size={18} color={colors.brand} />
-            </View>
+            <InventorySkuThumb uri={imageUrl} size={40} rounded="full" />
 
             <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
               <AppText
@@ -115,7 +108,7 @@ export function BomFloorRow({
                 dir="ltr"
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
-                {t('catalog.unitCost')}: {unitCostLabel}
+                {showCosts ? `${t('catalog.unitCost')}: ${unitCostLabel}` : sku}
               </AppText>
             </View>
           </View>
@@ -159,16 +152,18 @@ export function BomFloorRow({
                 gap: theme.spacing.sm,
               }}
             >
-              <View style={chipStyle}>
-                <AppText
-                  variant="label"
-                  weight={titleWeight}
-                  dir="ltr"
-                  style={{ color: colors.brand }}
-                >
-                  {lineTotalLabel}
-                </AppText>
-              </View>
+              {showCosts ? (
+                <View style={chipStyle}>
+                  <AppText
+                    variant="label"
+                    weight={titleWeight}
+                    dir="ltr"
+                    style={{ color: colors.brand }}
+                  >
+                    {lineTotalLabel}
+                  </AppText>
+                </View>
+              ) : null}
 
               <AnimatedPressable
                 variant="button"

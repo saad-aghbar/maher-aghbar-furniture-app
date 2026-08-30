@@ -13,6 +13,12 @@ describe('orders stageCounts', () => {
     expect(classifyOrderStage({ status: 'CONFIRMED' })).toBe('pending');
     expect(classifyOrderStage({ status: 'IN_PRODUCTION' })).toBe('production');
     expect(classifyOrderStage({ status: 'READY_FOR_DELIVERY' })).toBe('ready');
+    expect(
+      classifyOrderStage({
+        status: 'READY_FOR_DELIVERY',
+        deliveryStatus: 'OUT_FOR_DELIVERY',
+      }),
+    ).toBe('shipped');
     expect(classifyOrderStage({ status: 'DELIVERED' })).toBe('delivered');
     expect(
       classifyOrderStage({
@@ -26,16 +32,24 @@ describe('orders stageCounts', () => {
     expect(matchesStatusChip({ status: 'CONFIRMED' }, 'pending')).toBe(true);
     expect(matchesStatusChip({ status: 'IN_PRODUCTION' }, 'production')).toBe(true);
     expect(matchesStatusChip({ status: 'READY_FOR_DELIVERY' }, 'ready')).toBe(true);
+    expect(
+      matchesStatusChip(
+        { status: 'READY_FOR_DELIVERY', deliveryStatus: 'OUT_FOR_DELIVERY' },
+        'shipped',
+      ),
+    ).toBe(true);
     expect(matchesStatusChip({ status: 'DELIVERED' }, 'delivered')).toBe(true);
-    expect(matchesStatusChip({ status: 'DRAFT' }, 'drafts')).toBe(true);
-    expect(matchesStatusChip({ status: 'DRAFT' }, 'pending')).toBe(false);
+    expect(matchesStatusChip({ status: 'DRAFT' }, 'pending')).toBe(true);
+    expect(matchesStatusChip({ status: 'DRAFT', kind: 'rfq' }, 'drafts')).toBe(true);
     expect(matchesStatusChip({ status: 'CONFIRMED' }, 'production')).toBe(false);
     expect(matchesStatusChip({ status: 'CONFIRMED' }, 'all')).toBe(true);
   });
 
-  it('classifies draft separately from pending', () => {
-    expect(classifyOrderStage({ status: 'DRAFT' })).toBe('drafts');
-    expect(classifyOrderStage({ status: 'SUBMITTED' })).toBe('pending');
+  it('classifies RFQ draft/waiting vs SO draft production-setup', () => {
+    expect(classifyOrderStage({ status: 'DRAFT', kind: 'rfq' })).toBe('drafts');
+    expect(classifyOrderStage({ status: 'DRAFT', kind: 'order' })).toBe('pending');
+    expect(classifyOrderStage({ status: 'SUBMITTED' })).toBe('waiting');
+    expect(classifyOrderStage({ status: 'NEEDS_INFORMATION' })).toBe('needsInformation');
   });
 
   it('counts stages and filters client-side without collapsing other lanes', () => {

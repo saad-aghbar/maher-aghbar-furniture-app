@@ -6,10 +6,19 @@ export type StatementDatePreset = 'all' | '30d' | '90d';
 
 export type StatementSummaryModel = {
   customerLabel: string;
+  /** Canonical Piece 7 — Σ open invoice remaining. */
+  amountDue: number;
+  amountDueLabel: string;
+  /** Canonical Piece 7 — unallocated payment credit. */
+  availableCredit: number;
+  availableCreditLabel: string;
+  opening: number;
+  openingLabel: string;
+  hasOpening: boolean;
+  /** @deprecated prefer amountDue */
   outstandingLabel: string;
   outstanding: number;
   closingLabel: string;
-  openingLabel: string;
   totalInvoicedLabel: string;
   totalPaidLabel: string;
   totalInvoiced: number;
@@ -45,28 +54,42 @@ function parseMoney(value: string | number | undefined | null): number {
 export function selectStatementSummary(stmt: AccountStatement): StatementSummaryModel {
   const payments = stmt.payments ?? [];
   const entries = stmt.entries ?? [];
+  const currency = stmt.currency || 'ILS';
+  const amountDue = parseMoney(
+    stmt.amountDue ?? stmt.outstandingBalance,
+  );
+  const availableCredit = parseMoney(stmt.availableCredit);
+  const opening = parseMoney(stmt.openingBalance);
   const outstanding = parseMoney(stmt.outstandingBalance);
   const totalInvoiced = parseMoney(stmt.totalInvoiced);
   const totalPaid = parseMoney(stmt.totalPaid);
   const paidRatio =
     totalInvoiced > 0
       ? Math.min(1, Math.max(0, totalPaid / totalInvoiced))
-      : outstanding <= 0
+      : amountDue <= 0
         ? 1
         : 0;
 
+  const fmt = (n: number) => `${n.toFixed(2)} ${currency}`.trim();
+
   return {
     customerLabel: stmt.customer.name,
-    outstandingLabel: `${stmt.outstandingBalance} ${stmt.currency}`.trim(),
+    amountDue,
+    amountDueLabel: fmt(amountDue),
+    availableCredit,
+    availableCreditLabel: fmt(availableCredit),
+    opening,
+    openingLabel: fmt(opening),
+    hasOpening: Math.abs(opening) > 0.0005,
+    outstandingLabel: fmt(outstanding),
     outstanding,
-    closingLabel: `${stmt.closingBalance} ${stmt.currency}`.trim(),
-    openingLabel: `${stmt.openingBalance} ${stmt.currency}`.trim(),
+    closingLabel: fmt(parseMoney(stmt.closingBalance)),
     totalInvoicedLabel: String(stmt.totalInvoiced),
     totalPaidLabel: String(stmt.totalPaid),
     totalInvoiced,
     totalPaid,
     paidRatio,
-    currency: stmt.currency,
+    currency,
     asOf: stmt.asOf,
     entryCount: entries.length,
     paymentCount: payments.length,

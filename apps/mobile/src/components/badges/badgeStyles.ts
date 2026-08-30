@@ -81,6 +81,9 @@ export const statusVariantMap: Record<string, BadgeVariant> = {
   REWORK: 'warning',
   IN_TRANSIT: 'info',
   POSTED: 'success',
+  NEED_INFO: 'warning',
+  WAITING_RETURN: 'brand',
+  RESOLVED: 'success',
 };
 
 export const priorityVariantMap: Record<PriorityLevel, BadgeVariant> = {

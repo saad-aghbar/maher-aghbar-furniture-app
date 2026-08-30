@@ -255,6 +255,7 @@ enum InventoryLotStatus {
   DAMAGED
   SCRAPPED
   CONSUMED
+  PARTIALLY_CONSUMED
   DELIVERED
   REQUIRES_REVIEW
 }
@@ -268,6 +269,14 @@ enum InventoryTracking {
   NONE
   PRODUCES_SEMI_FINISHED
   PRODUCES_FINISHED
+}
+
+enum WipKitStatus {
+  OPEN
+  READY
+  CLAIMED
+  CONSUMED
+  CANCELLED
 }
 
 enum ReturnInventoryFate {
@@ -364,6 +373,14 @@ enum SchedulingResourceMode {
   RESOURCE_CONSTRAINED
 }
 
+/// How a stage executes in the factory vs logistics lifecycle.
+/// LOGISTICS stages (DELIVERY) never create ProductionTasks or consume capacity.
+enum StageExecutionKind {
+  PRODUCTION
+  QUALITY
+  LOGISTICS
+}
+
 enum SchedulePlanningMode {
   FORWARD
   BACKWARD
@@ -373,6 +390,36 @@ enum SchedulePlanningMode {
 enum ManufacturingComplexity {
   STANDARD
   MODIFIED
+  CUSTOM
+}
+
+/// Piece 7 — commercial sale-price readiness on SO lines.
+enum CommercialPriceStatus {
+  /// STANDARD catalog/dealer list price snapshot.
+  CATALOG
+  /// MODIFIED/CUSTOM awaiting authorized final price.
+  REQUIRED
+  /// Staff confirmed final dealer sale price.
+  CONFIRMED
+}
+
+/// Piece 2: order-level production setup gate (pre-PO).
+enum SalesOrderProductionSetupStatus {
+  SETUP_REQUIRED
+  SETUP_IN_PROGRESS
+  READY_FOR_RELEASE
+  RELEASED
+}
+
+enum SalesOrderLineSetupStatus {
+  NOT_STARTED
+  NEEDS_REVIEW
+  READY
+}
+
+enum SalesOrderMaterialRequirementSource {
+  CATALOG
+  FACTORY_MODIFIED
   CUSTOM
 }
 
@@ -461,6 +508,7 @@ model User {
   communications     CommunicationLog[]
   assignedRequests   RequestForQuotation[]  @relation("RequestAssignee")
   quotationsAsSales  Quotation[]            @relation("QuotationSalesRep")
+  quotationsAccepted Quotation[]            @relation("QuotationAcceptedBy")
   quotationApprovals QuotationApproval[]
   productionTasks    ProductionTask[]       @relation("TaskAssignee")
   inspections        QualityInspection[]
@@ -468,12 +516,17 @@ model User {
   pushTokens         DevicePushToken[]
   documentsUploaded  Document[]             @relation("DocumentUploader")
   timeEntries        TaskTimeEntry[]
+  materialUsagesRecorded ProductionTaskMaterialUsage[] @relation("MaterialUsageRecorder")
   blockersReported   TaskBlocker[]          @relation("BlockerReporter")
   deliveriesAsDriver Delivery[]             @relation("DeliveryDriver")
+  deliveriesConfirmed Delivery[]            @relation("DeliveryCustomerConfirm")
+  deliveryLoadPiecesLoaded DeliveryLoadPiece[] @relation("DeliveryLoadPieceLoader")
   aiChatConversations AiChatConversation[]
   workerSkills       WorkerSkill[]
   scheduleAllocations ScheduleAllocation[]  @relation("AllocationEmployee")
   schedulesApproved  ProductionSchedule[]   @relation("ScheduleApprover")
+  wipKitsClaimed     WipKit[]               @relation("WipKitClaimer")
+  wipHandoffsReceived WipHandoff[]          @relation("WipHandoffReceiver")
 
   @@index([customerId])
   @@index([departmentId])
@@ -762,6 +815,7 @@ model Product {
   inventoryItems        InventoryItem[]
   stageInventoryOutputs ProductStageInventoryOutput[]
   stageInventoryInputs  ProductStageInventoryInput[]
+  stageMaterialInputs   ProductStageMaterialInput[]
 
   @@index([categoryId])
   @@map("products")
@@ -999,6 +1053,8 @@ model GoodsReceipt {
   receiptDate     DateTime      @default(now())
   deliveryDocRef  String?
   notes           String?
+  /// Request-level idempotency so retries do not create duplicate GRNs.
+  idempotencyKey  String?       @unique
   createdAt       DateTime      @default(now())
   createdById     String?
 
@@ -1018,6 +1074,10 @@ model GoodsReceiptLine {
   orderedQty      Decimal      @db.Decimal(18, 3)
   receivedQty     Decimal      @db.Decimal(18, 3)
   rejectedQty     Decimal      @default(0) @db.Decimal(18, 3)
+  /// Actual unit cost at receipt (feeds PURCHASE_RECEIPT.unitCost → Piece 5 map).
+  unitCost        Decimal?     @db.Decimal(18, 3)
+  /// acceptedQty × unitCost at receipt.
+  extendedCost    Decimal?     @db.Decimal(18, 3)
   batchNumber     String?
   qualityStatus   String?
 
@@ -1054,6 +1114,9 @@ model Warehouse {
   stageOutputs     ProductStageInventoryOutput[] @relation("OutputDefaultWarehouse")
   workflowNodes    ProductionWorkflowNode[] @relation("NodeDefaultWarehouse")
   snapshotNodes    ProductionOrderWorkflowSnapshotNode[] @relation("SnapshotNodeDefaultWarehouse")
+  wipKits          WipKit[]
+  materialUsagesIssued  ProductionTaskMaterialUsage[] @relation("MaterialUsageIssueWarehouse")
+  materialUsagesReturned ProductionTaskMaterialUsage[] @relation("MaterialUsageReturnWarehouse")
 
   @@index([type])
   @@map("warehouses")
@@ -1069,6 +1132,7 @@ model WarehouseLocation {
 
   balances InventoryBalance[]
   lots     InventoryLot[]
+  wipKits  WipKit[]
 
   @@unique([warehouseId, code])
   @@map("warehouse_locations")
@@ -1091,7 +1155,7 @@ model InventoryItem {
   size        String?
   /// Extra named measurements: [{ id, nameEn, nameAr, nameHe?, value, unit }]
   customMeasurements Json?
-  /// Optional photo URL (accessories) — durable /uploads download link
+  /// Optional photo URL (inventory SKU) — durable /uploads download link
   imageUrl    String?
   unit        String            @default("pcs")
   /// Fixed purchase / catalog unit cost used when creating purchase orders
@@ -1122,7 +1186,11 @@ model InventoryItem {
   transferLines        WarehouseTransferLine[]
   lots                 InventoryLot[]
   stageOutputs         ProductStageInventoryOutput[]
+  stageMaterialInputs  ProductStageMaterialInput[]
   snapshotOutputNodes  ProductionOrderWorkflowSnapshotNode[] @relation("SnapshotOutputItem")
+  snapshotMaterialInputs ProductionOrderWorkflowSnapshotMaterialInput[]
+  taskMaterialUsages     ProductionTaskMaterialUsage[]
+  salesOrderMaterialRequirements SalesOrderLineMaterialRequirement[]
 
   @@index([category])
   @@index([itemClass])
@@ -1250,6 +1318,8 @@ model InventoryLot {
   stageInstanceId   String?
   stageInstance     ProductionStageInstance? @relation(fields: [stageInstanceId], references: [id])
   outputDefinitionId String?
+  /// Plain scan payload for lot/kit labels (not a URL). Often equals WipKit.qrCode or WipPiece.qrCode.
+  qrCode            String?                 @unique
   quantity          Decimal                 @db.Decimal(18, 3)
   producedAt        DateTime                @default(now())
   status            InventoryLotStatus      @default(AVAILABLE)
@@ -1258,12 +1328,102 @@ model InventoryLot {
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
+  wipPiece WipPiece?
+  wipHandoffs WipHandoff[]
+  deliveryLoadPieces DeliveryLoadPiece[]
+
   @@index([inventoryItemId])
   @@index([warehouseId])
   @@index([productionOrderId])
   @@index([salesOrderId])
   @@index([status])
   @@map("inventory_lots")
+}
+
+/// Order × producing-stage card on the semi-finished board.
+model WipKit {
+  id                    String                 @id @default(uuid())
+  productionOrderId     String
+  productionOrder       ProductionOrder        @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  stageInstanceId       String                 @unique
+  stageInstance         ProductionStageInstance @relation(fields: [stageInstanceId], references: [id], onDelete: Cascade)
+  snapshotNodeId        String?
+  producingTaskId       String?
+  producingTask         ProductionTask?        @relation("WipKitProducingTask", fields: [producingTaskId], references: [id], onDelete: SetNull)
+  status                WipKitStatus           @default(OPEN)
+  expectedPieceCount    Int                    @default(1)
+  qrCode                String                 @unique
+  warehouseId           String?
+  warehouse             Warehouse?             @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  /// Floor bin under the SEMI warehouse (e.g. CARPENTRY rack).
+  locationId            String?
+  location              WarehouseLocation?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  /// Snapshot node ids this kit should feed next (JSON string[]).
+  nextSnapshotNodeIds   Json?
+  claimedAt             DateTime?
+  claimedByUserId       String?
+  claimedByUser         User?                  @relation("WipKitClaimer", fields: [claimedByUserId], references: [id], onDelete: SetNull)
+  claimedByTaskId       String?
+  claimedByTask         ProductionTask?        @relation("WipKitClaimedTask", fields: [claimedByTaskId], references: [id], onDelete: SetNull)
+  materialOverageNotes  String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  pieces   WipPiece[]
+  handoffs WipHandoff[]
+
+  @@index([productionOrderId])
+  @@index([status])
+  @@index([warehouseId])
+  @@index([locationId])
+  @@map("wip_kits")
+}
+
+/// Physical receive of SEMI/WIP from a producing stage into a consuming stage (partial allowed).
+model WipHandoff {
+  id                         String          @id @default(uuid())
+  kitId                      String
+  kit                        WipKit          @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  lotId                      String?
+  inventoryLot               InventoryLot?   @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  productionOrderId          String
+  productionOrder            ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  sourceStageInstanceId      String
+  destinationStageInstanceId String
+  quantity                   Decimal         @db.Decimal(18, 3)
+  receivedById               String
+  receivedBy                 User            @relation("WipHandoffReceiver", fields: [receivedById], references: [id], onDelete: Restrict)
+  receivedAt                 DateTime        @default(now())
+  receivingTaskId            String?
+  receivingTask              ProductionTask? @relation("WipHandoffReceivingTask", fields: [receivingTaskId], references: [id], onDelete: SetNull)
+  /// Client retry key — same key returns the existing handoff.
+  idempotencyKey             String?         @unique
+  createdAt                  DateTime        @default(now())
+
+  @@index([kitId])
+  @@index([productionOrderId])
+  @@index([destinationStageInstanceId])
+  @@index([receivingTaskId])
+  @@index([sourceStageInstanceId])
+  @@map("wip_handoffs")
+}
+
+model WipPiece {
+  id               String       @id @default(uuid())
+  kitId            String
+  kit              WipKit       @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  sortOrder        Int          @default(0)
+  label            String?
+  photoDocumentId  String?
+  photoDocument    Document?    @relation(fields: [photoDocumentId], references: [id], onDelete: SetNull)
+  inventoryLotId   String?      @unique
+  inventoryLot     InventoryLot? @relation(fields: [inventoryLotId], references: [id], onDelete: SetNull)
+  qrCode           String?      @unique
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([kitId])
+  @@map("wip_pieces")
 }
 
 model ProductStageInventoryOutput {
@@ -1280,6 +1440,11 @@ model ProductStageInventoryOutput {
   outputNameEn         String
   outputNameHe         String?
   outputQtyPerUnit     Decimal            @default(1) @db.Decimal(18, 3)
+  /// Expected photographed pieces per order unit for WIP kit registration.
+  /// For PACKAGING finished goods: shippable packages per product unit.
+  expectedPieceCount   Int                @default(1)
+  /// Named pieces inside a SEMI kit: [{ nameEn, nameAr?, nameHe? }, ...]. Length drives expectedPieceCount.
+  pieceLabels          Json?
   unit                 String             @default("pcs")
   defaultWarehouseId   String?
   defaultWarehouse     Warehouse?         @relation("OutputDefaultWarehouse", fields: [defaultWarehouseId], references: [id])
@@ -1314,6 +1479,32 @@ model ProductStageInventoryInput {
   @@map("product_stage_inventory_inputs")
 }
 
+/// Raw SKU consumed by a product stage. Separate from ProductStageInventoryInput (WIP consume-by-output).
+model ProductStageMaterialInput {
+  id                String               @id @default(uuid())
+  productId         String
+  product           Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  workflowNodeId    String?
+  workflowNode      ProductionWorkflowNode? @relation(fields: [workflowNodeId], references: [id], onDelete: SetNull)
+  stageDefinitionId String?
+  stageDefinition   ProductionStageDefinition? @relation(fields: [stageDefinitionId], references: [id], onDelete: SetNull)
+  inventoryItemId   String
+  inventoryItem     InventoryItem        @relation(fields: [inventoryItemId], references: [id])
+  qtyPerUnit        Decimal              @default(1) @db.Decimal(18, 3)
+  quantityMode      QuantityScalingMode  @default(LINEAR)
+  unit              String               @default("pcs")
+  required          Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([productId, workflowNodeId, inventoryItemId])
+  @@index([productId])
+  @@index([workflowNodeId])
+  @@index([inventoryItemId])
+  @@index([stageDefinitionId])
+  @@map("product_stage_material_inputs")
+}
+
 // ─── RFQ & Quotations ────────────────────────────────────────────────────────
 
 model RequestForQuotation {
@@ -1341,6 +1532,10 @@ model RequestForQuotation {
   currency             String        @default("ILS")
   notes                String?
   internalNotes        String?
+  /// Dealer-visible reason when status is NEEDS_INFORMATION.
+  informationRequestReason String?
+  /// Append-only audit: { at, by, action, message }[]
+  reviewHistory        Json?
   aiProcessingStatus   AIJobStatus?
   /// Set when the dealer (or staff) first submits the RFQ. Edit window anchors here.
   submittedAt          DateTime?
@@ -1385,6 +1580,8 @@ model RequestItem {
   accessories String?
   notes       String?
   customMeasurements Json?
+  /// STANDARD | MODIFIED | CUSTOM — order line vs catalog template.
+  manufacturingComplexity ManufacturingComplexity?
   sortOrder   Int                 @default(0)
 
   @@index([requestId])
@@ -1418,6 +1615,8 @@ model Quotation {
   sentAt               DateTime?
   viewedAt             DateTime?
   acceptedAt           DateTime?
+  acceptedById         String?
+  acceptedBy           User?           @relation("QuotationAcceptedBy", fields: [acceptedById], references: [id])
   rejectedAt           DateTime?
   acceptanceSignature  String?
   parentQuotationId    String?
@@ -1436,6 +1635,8 @@ model Quotation {
   @@unique([number, version])
   @@index([customerId])
   @@index([status])
+  @@index([requestId])
+  @@index([acceptedById])
   @@map("quotations")
 }
 
@@ -1461,6 +1662,7 @@ model QuotationLine {
   subtotal      Decimal    @db.Decimal(18, 3)
   taxAmount     Decimal    @db.Decimal(18, 3)
   lineTotal     Decimal    @db.Decimal(18, 3)
+  manufacturingComplexity ManufacturingComplexity?
   sortOrder     Int        @default(0)
 
   @@index([quotationId])
@@ -1525,6 +1727,7 @@ model SalesOrder {
   returns          ReturnRequest[]
   documents        Document[]
   inventoryLots    InventoryLot[]
+  productionSetup  SalesOrderProductionSetup?
 
   @@index([customerId])
   @@index([status])
@@ -1546,13 +1749,98 @@ model SalesOrderLine {
   lineTotal          Decimal    @db.Decimal(18, 3)
   productionRequired Boolean    @default(true)
   deliveryRequired   Boolean    @default(true)
+  manufacturingComplexity ManufacturingComplexity?
+  /// Piece 7 — commercial price readiness (STANDARD=CATALOG; MOD/CUSTOM often REQUIRED→CONFIRMED).
+  commercialPriceStatus CommercialPriceStatus @default(CATALOG)
+  commercialPriceSource String?
+  commercialPriceNote   String?
+  /// Immutable commercial snapshot at SO creation (dims, fabric, catalog refs). Never mutates Product.
+  orderSpec          Json?
   sortOrder          Int        @default(0)
 
   productionOrders ProductionOrder[]
   inventoryLots    InventoryLot[]
+  productionSetup  SalesOrderLineSetup?
 
   @@index([salesOrderId])
   @@map("sales_order_lines")
+}
+
+/// Authoritative manufacturing snapshot for a sales order before PO release (Piece 2).
+model SalesOrderProductionSetup {
+  id            String                          @id @default(uuid())
+  salesOrderId  String                          @unique
+  salesOrder    SalesOrder                      @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  status        SalesOrderProductionSetupStatus @default(SETUP_REQUIRED)
+  releasedAt    DateTime?
+  releasedById  String?
+  createdAt     DateTime                        @default(now())
+  updatedAt     DateTime                        @updatedAt
+
+  lines SalesOrderLineSetup[]
+
+  @@index([status])
+  @@map("sales_order_production_setups")
+}
+
+model SalesOrderLineSetup {
+  id                      String                   @id @default(uuid())
+  productionSetupId       String
+  productionSetup         SalesOrderProductionSetup @relation(fields: [productionSetupId], references: [id], onDelete: Cascade)
+  salesOrderLineId        String                   @unique
+  salesOrderLine          SalesOrderLine           @relation(fields: [salesOrderLineId], references: [id], onDelete: Cascade)
+  status                  SalesOrderLineSetupStatus @default(NOT_STARTED)
+  manufacturingName       String?
+  manufacturingComplexity ManufacturingComplexity?
+  /// Catalog template dims snapshot { width, height, depth, seatHeight }
+  catalogDimensions       Json?
+  /// Order dims from orderSpec { width, height, depth, seatHeight }
+  orderDimensions         Json?
+  /// Extensible named measurements: [{ key, label, value, unit, catalogValue? }]
+  measurements            Json?
+  workflowId              String?
+  workflow                ProductionWorkflow?      @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  workflowConfirmedAt     DateTime?
+  factoryNotes            String?
+  /// { pieceLabels, expectedPieceCount }
+  packagingExpectation    Json?
+  /// Document ids from the commercial order / RFQ
+  referenceDocumentIds    Json?
+  materialsReviewedAt     DateTime?
+  requestedFabricLabel    String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  materialRequirements SalesOrderLineMaterialRequirement[]
+
+  @@index([productionSetupId])
+  @@index([workflowId])
+  @@map("sales_order_line_setups")
+}
+
+model SalesOrderLineMaterialRequirement {
+  id              String                            @id @default(uuid())
+  lineSetupId     String
+  lineSetup       SalesOrderLineSetup               @relation(fields: [lineSetupId], references: [id], onDelete: Cascade)
+  inventoryItemId String?
+  inventoryItem   InventoryItem?                    @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  sku             String?
+  displayName     String?
+  category        InventoryCategory?
+  unit            String                            @default("pcs")
+  expectedQty     Decimal                           @db.Decimal(18, 3)
+  source          SalesOrderMaterialRequirementSource @default(CATALOG)
+  needsReview     Boolean                           @default(false)
+  notes           String?
+  /// Dealer fabric intent (preserved separately from selected InventoryItem)
+  requestedFabricLabel String?
+  sortOrder       Int                               @default(0)
+  createdAt       DateTime                          @default(now())
+  updatedAt       DateTime                          @updatedAt
+
+  @@index([lineSetupId])
+  @@index([inventoryItemId])
+  @@map("sales_order_line_material_requirements")
 }
 
 model Contract {
@@ -1599,6 +1887,8 @@ model ProductionStageDefinition {
   schedulingResourceMode SchedulingResourceMode @default(WORKER_CONSTRAINED)
   /// Parallel slots for RESOURCE_CONSTRAINED stages. 0 = unschedulable (fail closed).
   resourceSlots         Int      @default(1)
+  /// PRODUCTION floor work, QUALITY gate, or LOGISTICS (no worker task / capacity).
+  executionKind         StageExecutionKind @default(PRODUCTION)
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -1611,6 +1901,7 @@ model ProductionStageDefinition {
   workflowNodes  ProductionWorkflowNode[]
   snapshotNodes  ProductionOrderWorkflowSnapshotNode[]
   stageOverrides ProductWorkflowStageOverride[]
+  stageMaterialInputs ProductStageMaterialInput[]
 
   @@map("production_stage_definitions")
 }
@@ -1648,6 +1939,7 @@ model ProductionOrder {
 
   stages       ProductionStageInstance[]
   tasks        ProductionTask[]
+  materialUsages ProductionTaskMaterialUsage[]
   inspections  QualityInspection[]
   reworkRequests ReworkRequest[]
   documents    Document[]
@@ -1655,6 +1947,8 @@ model ProductionOrder {
   estimateProposals SchedulingEstimateProposal[]
   workflowSnapshot ProductionOrderWorkflowSnapshot?
   inventoryLots InventoryLot[]
+  wipKits       WipKit[]
+  wipHandoffs   WipHandoff[]
 
   @@index([salesOrderId])
   @@index([status])
@@ -1684,6 +1978,7 @@ model ProductionStageInstance {
   allocations ScheduleAllocation[]
   inventoryLots InventoryLot[]
   reworkRequests ReworkRequest[]
+  wipKit      WipKit?
 
   @@index([productionOrderId])
   @@index([plannedStart])
@@ -1711,6 +2006,10 @@ model ProductionTask {
   actualCompletion    DateTime?
   progressPercent     Int                        @default(0)
   status              TaskStatus                 @default(NOT_STARTED)
+  /** Order-line qty this task aims to produce/process (defaults from PO quantity at create). */
+  targetQty           Decimal?                   @db.Decimal(18, 3)
+  /** Cumulative qty posted through inventory for this task (delta-safe). */
+  completedQty        Decimal                    @default(0) @db.Decimal(18, 3)
   estimatedMinutes    Int?
   actualMinutes       Int?
   notes               String?
@@ -1723,6 +2022,10 @@ model ProductionTask {
   timeEntries TaskTimeEntry[]
   blockers    TaskBlocker[]
   allocations ScheduleAllocation[]
+  materialUsages ProductionTaskMaterialUsage[]
+  producedWipKits WipKit[] @relation("WipKitProducingTask")
+  claimedWipKits  WipKit[] @relation("WipKitClaimedTask")
+  wipHandoffsReceived WipHandoff[] @relation("WipHandoffReceivingTask")
 
   @@index([productionOrderId])
   @@index([assignedEmployeeId])
@@ -1732,6 +2035,61 @@ model ProductionTask {
   @@index([assignedEmployeeId, plannedStart])
   @@index([reworkRequestId])
   @@map("production_tasks")
+}
+
+enum MaterialScrapReason {
+  CUTTING_WASTE
+  DAMAGED
+  DEFECTIVE_MATERIAL
+  MACHINE_DAMAGE
+  MEASUREMENT_ERROR
+  REWORK
+  OTHER
+}
+
+/// Hybrid worker material confirmation for a production task (expected from frozen snapshot).
+model ProductionTaskMaterialUsage {
+  id                     String               @id @default(uuid())
+  taskId                 String
+  task                   ProductionTask       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  productionOrderId      String
+  productionOrder        ProductionOrder      @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  inventoryItemId        String
+  inventoryItem          InventoryItem        @relation(fields: [inventoryItemId], references: [id])
+  sku                    String
+  expectedQty            Decimal              @db.Decimal(18, 3)
+  actualQty              Decimal?             @db.Decimal(18, 3)
+  returnedQty            Decimal              @default(0) @db.Decimal(18, 3)
+  scrapQty               Decimal              @default(0) @db.Decimal(18, 3)
+  varianceQty            Decimal?             @db.Decimal(18, 3)
+  scrapReason            MaterialScrapReason?
+  reasonNotes            String?
+  isExtra                Boolean              @default(false)
+  /// RAW warehouse for PRODUCTION_ISSUE (required when over-use / EXTRA).
+  issueWarehouseId       String?
+  issueWarehouse         Warehouse?           @relation("MaterialUsageIssueWarehouse", fields: [issueWarehouseId], references: [id])
+  /// RAW warehouse for PRODUCTION_RETURN (required when returnedQty > 0).
+  returnWarehouseId      String?
+  returnWarehouse        Warehouse?           @relation("MaterialUsageReturnWarehouse", fields: [returnWarehouseId], references: [id])
+  recordedById           String?
+  recordedBy             User?                @relation("MaterialUsageRecorder", fields: [recordedById], references: [id])
+  finalizedAt            DateTime?
+  finalizeIdempotencyKey String?              @unique
+  /// Unit valuation frozen at finalize (standardCost + latest PURCHASE_RECEIPT map).
+  unitCost               Decimal?             @db.Decimal(18, 3)
+  /// costedQty × unitCost at finalize; null when valuation unavailable.
+  extendedCost           Decimal?             @db.Decimal(18, 3)
+  valuedAt               DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  @@unique([taskId, inventoryItemId])
+  @@index([productionOrderId])
+  @@index([taskId])
+  @@index([inventoryItemId])
+  @@index([issueWarehouseId])
+  @@index([returnWarehouseId])
+  @@map("production_task_material_usages")
 }
 
 model TaskTimeEntry {
@@ -1887,15 +2245,25 @@ model Delivery {
   status          DeliveryStatus @default(PLANNED)
   recipientName   String?
   signatureData   String?
+  /// Dealer/customer receipt confirmation (commercial close). Not inventory.
+  customerConfirmedAt   DateTime?
+  customerConfirmedById String?
+  customerConfirmedBy   User?    @relation("DeliveryCustomerConfirm", fields: [customerConfirmedById], references: [id])
+  /// Canonical actual delivery timestamp (= customerConfirmedAt when dealer confirms).
+  actualDeliveredAt DateTime?
   failureReason   String?
   notes           String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  items DeliveryItem[]
+  items      DeliveryItem[]
+  loadPieces DeliveryLoadPiece[]
+  returnRequests ReturnRequest[]
 
   @@index([customerId])
   @@index([status])
+  @@index([driverId])
+  @@index([customerConfirmedById])
   @@map("deliveries")
 }
 
@@ -1908,6 +2276,27 @@ model DeliveryItem {
 
   @@index([deliveryId])
   @@map("delivery_items")
+}
+
+/// Checklist row for packages the driver must load onto the truck.
+/// Expanded from FG lots × packaging expectedPieceCount (not separate inventory lots).
+model DeliveryLoadPiece {
+  id             String    @id @default(uuid())
+  deliveryId     String
+  delivery       Delivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  inventoryLotId String
+  inventoryLot   InventoryLot @relation(fields: [inventoryLotId], references: [id], onDelete: Cascade)
+  pieceIndex     Int
+  loadedAt       DateTime?
+  loadedById     String?
+  loadedBy       User?     @relation("DeliveryLoadPieceLoader", fields: [loadedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([deliveryId, inventoryLotId, pieceIndex])
+  @@index([deliveryId])
+  @@index([inventoryLotId])
+  @@map("delivery_load_pieces")
 }
 
 // ─── Accounting ──────────────────────────────────────────────────────────────
@@ -1941,6 +2330,7 @@ model Invoice {
 
   lines    InvoiceLine[]
   payments Payment[]
+  allocations PaymentAllocation[]
 
   @@index([customerId])
   @@index([status])
@@ -1967,6 +2357,7 @@ model Payment {
   number          String        @unique
   customerId      String
   customer        Customer      @relation(fields: [customerId], references: [id])
+  /// Legacy single-invoice link; Piece 7 prefers PaymentAllocation. Kept for dual-write/compat.
   invoiceId       String?
   invoice         Invoice?      @relation(fields: [invoiceId], references: [id])
   paymentDate     DateTime      @default(now())
@@ -1980,9 +2371,28 @@ model Payment {
   createdById     String?
   idempotencyKey  String?       @unique
 
+  allocations PaymentAllocation[]
+
   @@index([customerId])
   @@index([invoiceId])
   @@map("payments")
+}
+
+/// Piece 7 — splits a Payment across invoices. Unallocated = payment.amount − Σ(allocations) = advance credit.
+model PaymentAllocation {
+  id        String   @id @default(uuid())
+  paymentId String
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amount    Decimal  @db.Decimal(18, 3)
+  createdAt DateTime @default(now())
+  createdById String?
+
+  @@index([paymentId])
+  @@index([invoiceId])
+  @@unique([paymentId, invoiceId])
+  @@map("payment_allocations")
 }
 
 model StatementEntry {
@@ -2080,6 +2490,9 @@ model ReturnRequest {
   customer       Customer          @relation(fields: [customerId], references: [id])
   salesOrderId   String?
   salesOrder     SalesOrder?       @relation(fields: [salesOrderId], references: [id])
+  /// Optional link to the outbound delivery this return refers to.
+  deliveryId     String?
+  delivery       Delivery?         @relation(fields: [deliveryId], references: [id])
   productDesc    String
   quantity       Decimal           @db.Decimal(18, 3)
   reason         ReturnReason
@@ -2089,6 +2502,12 @@ model ReturnRequest {
   /// Local storage key or absolute URL for the damage / issue photo
   issuePhotoKey  String?
   approvalStatus String            @default("PENDING")
+  /// Piece 11 physical lifecycle: NONE | WAITING_RETURN | RETURNED | INSPECTING | RESOLVED
+  physicalStatus String            @default("NONE")
+  receivedAt     DateTime?
+  receivedById   String?
+  /// Admin request for more dealer information (Need info loop).
+  needInfoNote   String?
   resolution     ReturnResolution?
   inventoryFate  ReturnInventoryFate @default(PENDING)
   createdAt      DateTime          @default(now())
@@ -2097,6 +2516,7 @@ model ReturnRequest {
   reworkRequests ReworkRequest[]
 
   @@index([customerId])
+  @@index([deliveryId])
   @@map("return_requests")
 }
 
@@ -2126,6 +2546,8 @@ model Document {
   productionOrder  ProductionOrder?   @relation(fields: [productionOrderId], references: [id])
   createdAt        DateTime           @default(now())
   archivedAt       DateTime?
+
+  wipPieces WipPiece[]
 
   @@index([customerId])
   @@map("documents")
@@ -2359,6 +2781,10 @@ model FactoryCalendar {
   shiftEnd         String   @default("16:00")
   /// Working days production must finish before the requested delivery date.
   deliveryBufferWorkingDays Int @default(1)
+  /// Healthy dated work should not finish more than this many working days early merely to fill capacity.
+  maxProductionEarlyWorkingDays Int @default(10)
+  /// Occupancy reporting/heuristic ceiling for capacity optimize. Not a fake capacity cap.
+  targetFactoryUtilizationPercent Int @default(85)
   /// [{ start: "12:00", end: "13:00" }]
   breaks           Json?
   overtimeConfig   Json?
@@ -2565,6 +2991,7 @@ model ProductionWorkflow {
   versions                ProductionWorkflowVersion[] @relation("WorkflowVersions")
   productConfigurations   ProductWorkflowConfiguration[]
   orderSnapshots          ProductionOrderWorkflowSnapshot[]
+  salesOrderLineSetups    SalesOrderLineSetup[]
 
   @@index([status])
   @@map("production_workflows")
@@ -2619,6 +3046,7 @@ model ProductionWorkflowNode {
   schedulingResourceMode       SchedulingResourceMode?
   resourceSlots                Int?
   outputQtyPerUnit             Decimal?          @db.Decimal(18, 3)
+  expectedPieceCount           Int?
   outputNameAr                 String?
   outputNameEn                 String?
   outputNameHe                 String?
@@ -2631,6 +3059,7 @@ model ProductionWorkflowNode {
   outgoingEdges ProductionWorkflowEdge[] @relation("WorkflowEdgeFrom")
   incomingEdges ProductionWorkflowEdge[] @relation("WorkflowEdgeTo")
   productOverrides ProductWorkflowStageOverride[]
+  materialInputs ProductStageMaterialInput[]
 
   @@unique([workflowVersionId, nodeKey])
   @@index([workflowVersionId])
@@ -2735,12 +3164,17 @@ model ProductionOrderWorkflowSnapshotNode {
   estimateReviewRequired Boolean @default(false)
   requiresInspection    Boolean  @default(false)
   requiresPhotos        Boolean  @default(false)
+  /** When false (default), consumers wait for full producer qty. */
+  allowPartialFlow      Boolean  @default(false)
   inventoryTracking     InventoryTracking @default(NONE)
   consumesRawMaterials  Boolean  @default(false)
   consumesSemiFinished  Boolean  @default(false)
   schedulingResourceMode SchedulingResourceMode @default(WORKER_CONSTRAINED)
   resourceSlots         Int      @default(1)
+  /// Frozen from stage definition: LOGISTICS = no ProductionTask / no capacity.
+  executionKind         StageExecutionKind @default(PRODUCTION)
   outputQtyPerUnit      Decimal? @db.Decimal(18, 3)
+  expectedPieceCount    Int      @default(1)
   outputNameAr          String?
   outputNameEn          String?
   outputNameHe          String?
@@ -2761,6 +3195,7 @@ model ProductionOrderWorkflowSnapshotNode {
 
   outgoingEdges ProductionOrderWorkflowSnapshotEdge[] @relation("SnapshotEdgeFrom")
   incomingEdges ProductionOrderWorkflowSnapshotEdge[] @relation("SnapshotEdgeTo")
+  materialInputs ProductionOrderWorkflowSnapshotMaterialInput[]
 
   @@unique([snapshotId, nodeKey])
   @@index([snapshotId])
@@ -2783,5 +3218,27 @@ model ProductionOrderWorkflowSnapshotEdge {
   @@unique([snapshotId, fromSnapshotNodeId, toSnapshotNodeId])
   @@index([snapshotId])
   @@map("production_order_workflow_snapshot_edges")
+}
+
+/// Frozen raw SKU consumption for a snapshot node. Historical POs stay stable if the product map later changes.
+model ProductionOrderWorkflowSnapshotMaterialInput {
+  id                String   @id @default(uuid())
+  snapshotNodeId    String
+  snapshotNode      ProductionOrderWorkflowSnapshotNode @relation(fields: [snapshotNodeId], references: [id], onDelete: Cascade)
+  stageCode         String
+  inventoryItemId   String
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  sku               String
+  qtyPerUnit        Decimal  @db.Decimal(18, 3)
+  quantityMode      QuantityScalingMode @default(LINEAR)
+  unit              String   @default("pcs")
+  required          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  @@unique([snapshotNodeId, inventoryItemId])
+  @@index([snapshotNodeId])
+  @@index([inventoryItemId])
+  @@index([sku])
+  @@map("production_order_workflow_snapshot_material_inputs")
 }
 

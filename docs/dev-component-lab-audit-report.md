@@ -1,0 +1,17 @@
+# Dev Component Lab — Audit Report
+
+Generated: 2026-08-30T06:11:48.144Z
+
+| Metric | Count |
+|--------|------:|
+| TOTAL VISUAL FILES AUDITED | 636 |
+| TOTAL VISUAL EXPORTS/CANDIDATES | 726 |
+| REGISTERED | 74 |
+| REPRESENTED BY PARENT | 381 |
+| SCREEN-LINK | 175 |
+| EXCLUDED NON-VISUAL | 6 |
+| UNCLASSIFIED | 0 |
+
+## UNCLASSIFIED files
+
+None.

@@ -9,14 +9,17 @@ import { resourceCapacityKey } from './schedule-planner';
 import type { OccupancyInterval, PrioritySortItem } from './types';
 import { addDaysYmd, parseYmd, type WorkingCalendar } from './working-calendar';
 
-export type CapacityDelta = 'increase' | 'decrease' | 'none';
+export type CapacityDelta = 'increase' | 'decrease' | 'none' | 'sync' | 'optimize';
 
 export type FactoryReplanUrgency =
   | 'late'
   | 'atRisk'
   | 'blockedRecoverable'
   | 'forward'
-  | 'decreaseUnpinned';
+  | 'decreaseUnpinned'
+  | 'invalidSchedule'
+  | 'unscheduledReady'
+  | 'clearedBlocker';
 
 export const FACTORY_REPLAN_HORIZON_DAYS = 90;
 
@@ -62,9 +65,12 @@ const IMMUTABLE_TASK = new Set(['COMPLETED', 'IN_PROGRESS']);
 const URGENCY_RANK: Record<FactoryReplanUrgency, number> = {
   late: 0,
   atRisk: 1,
-  blockedRecoverable: 2,
-  forward: 3,
-  decreaseUnpinned: 4,
+  invalidSchedule: 2,
+  unscheduledReady: 3,
+  clearedBlocker: 4,
+  blockedRecoverable: 5,
+  forward: 6,
+  decreaseUnpinned: 7,
 };
 
 export function ymdInTimezone(date: Date, timeZone: string): string {

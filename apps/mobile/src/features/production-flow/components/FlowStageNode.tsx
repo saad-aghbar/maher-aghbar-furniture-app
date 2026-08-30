@@ -60,14 +60,14 @@ export function FlowStageNode({
           ? colors.brand
           : colors.borderStrong;
 
-  const enter = useSharedValue(reduceMotion ? 1 : 0);
+  const enter = useSharedValue(preview || reduceMotion ? 1 : 0);
   const pulse = useSharedValue(1);
   const arcProgress = useSharedValue(
     completed ? 1 : Math.max(0.08, Math.min(1, stage.progressPercent / 100)),
   );
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (preview || reduceMotion) {
       enter.value = 1;
       return;
     }
@@ -75,7 +75,7 @@ export function FlowStageNode({
       index * 55,
       withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }),
     );
-  }, [enter, index, reduceMotion]);
+  }, [enter, index, preview, reduceMotion]);
 
   useEffect(() => {
     if (!inProgress || reduceMotion) {

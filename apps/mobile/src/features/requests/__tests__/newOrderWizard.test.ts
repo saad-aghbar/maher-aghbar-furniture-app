@@ -136,4 +136,30 @@ describe('normalizeLocalDraft', () => {
   it('rejects unknown draft versions', () => {
     expect(normalizeLocalDraft({ version: 99 as 1, step: 1 })).toBeNull();
   });
+
+  it('coerces string delivery coordinates from persisted drafts', () => {
+    const restored = normalizeLocalDraft({
+      version: 3,
+      step: 3,
+      productId: '',
+      customProductName: '',
+      quantity: '1',
+      externalOrderNumber: '',
+      priority: 'NORMAL',
+      fabric: '',
+      fabricDescription: '',
+      dimensionsNotes: '',
+      orderNotes: '',
+      deliveryAddress: 'Ramallah',
+      endCustomerName: '',
+      endCustomerPhone: '',
+      deliveryNotes: '',
+      deliveryLat: '31.95220',
+      deliveryLng: '35.23320',
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    });
+    expect(restored?.deliveryLat).toBeCloseTo(31.9522);
+    expect(restored?.deliveryLng).toBeCloseTo(35.2332);
+    expect(typeof restored?.deliveryLat).toBe('number');
+  });
 });

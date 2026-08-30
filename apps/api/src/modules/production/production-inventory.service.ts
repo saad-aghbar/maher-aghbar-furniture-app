@@ -19,6 +19,7 @@ import {
   type ResolvedStageOutput,
 } from './product-inventory-output.resolver';
 import { jsonIdList } from '../../common/helpers/inventory-stage-behavior.util';
+import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 
 const QC_PASS: QualityResult[] = [QualityResult.PASSED, QualityResult.PASSED_WITH_NOTES];
 
@@ -70,22 +71,26 @@ export class ProductionInventoryService {
     private readonly inventory: InventoryService,
   ) {}
 
-  async onStageTaskComplete(params: {
+  /**
+   * Post inventory for a qty delta when a stage task progresses.
+   * Called for each partial or full completion; idempotent via completed watermark.
+   */
+  async onStageQtyProgress(params: {
     productionOrderId: string;
     stageInstanceId: string | null;
     userId: string;
     tx: Tx;
+    qtyDelta: number;
+    taskId: string;
+    completedQtyAfter: number;
+    /** When true, hybrid material usage already posted raw issues for this progress. */
+    skipRawConsume?: boolean;
   }) {
     if (!params.stageInstanceId) return;
-    const stageInstanceId = params.stageInstanceId;
-    const remaining = await params.tx.productionTask.count({
-      where: {
-        stageInstanceId,
-        status: { notIn: ['COMPLETED', 'CANCELLED'] },
-      },
-    });
-    if (remaining > 0) return;
+    const qtyDelta = Number(params.qtyDelta);
+    if (!(qtyDelta > 0)) return;
 
+    const stageInstanceId = params.stageInstanceId;
     const snap = await params.tx.productionOrderWorkflowSnapshotNode.findFirst({
       where: { stageInstanceId },
     });
@@ -102,25 +107,54 @@ export class ProductionInventoryService {
       where: { id: params.productionOrderId },
       include: { product: true, salesOrderLine: true },
     });
-    const qty = Number(po.quantity) || 1;
 
-    if (snap.consumesRawMaterials) {
+    // Piece 9: FIN only after Inspection PASS when the PO has an INSPECTION stage
+    // (or snap.requiresInspection). Never post FIN on FAIL / missing QC.
+    if (snap.inventoryTracking === InventoryTracking.PRODUCES_FINISHED) {
+      const needsQc =
+        snap.requiresInspection || (await this.orderHasInspectionStage(params.tx, po.id));
+      if (needsQc) {
+        const orderQty = Number(po.quantity) || 1;
+        if (params.completedQtyAfter + 1e-9 < orderQty) {
+          throw new BadRequestException({
+            code: 'PARTIAL_FINISHED_REQUIRES_QTY_QC',
+            message:
+              'Partial finished-goods receipt is blocked while QC is all-or-nothing. Complete full order qty after inspection, or enable quantity-based QC.',
+          });
+        }
+        if (!(await this.hasPassedInspection(params.tx, po.id))) {
+          throw new BadRequestException({
+            code: 'INSPECTION_PASS_REQUIRED',
+            message:
+              'Packaging cannot post finished goods until inspection has passed. Failures must go to rework first.',
+          });
+        }
+      }
+    }
+
+    if (snap.consumesRawMaterials && !params.skipRawConsume) {
       await this.consumeRawMaterials(
         {
           tx: params.tx,
           userId: params.userId,
           stageInstanceId,
           productionOrderId: params.productionOrderId,
+          progressKey: `${params.taskId}:${params.completedQtyAfter}`,
         },
         po,
-        qty,
+        qtyDelta,
       );
     }
     if (snap.consumesSemiFinished) {
       await this.consumeSemiFinished(
-        { tx: params.tx, userId: params.userId, stageInstanceId },
+        {
+          tx: params.tx,
+          userId: params.userId,
+          stageInstanceId,
+          progressKey: `${params.taskId}:${params.completedQtyAfter}`,
+        },
         po.id,
-        qty,
+        qtyDelta,
         snap,
       );
     }
@@ -131,30 +165,67 @@ export class ProductionInventoryService {
           userId: params.userId,
           productionOrderId: params.productionOrderId,
           stageInstanceId,
+          progressKey: `${params.taskId}:${params.completedQtyAfter}`,
         },
         po,
         snap,
         InventoryItemClass.SEMI_FINISHED_GOOD,
-        qty,
+        qtyDelta,
       );
     }
     if (snap.inventoryTracking === InventoryTracking.PRODUCES_FINISHED) {
-      if (snap.requiresInspection && !(await this.hasPassedInspection(params.tx, po.id))) {
-        return;
-      }
       await this.produceOutput(
         {
           tx: params.tx,
           userId: params.userId,
           productionOrderId: params.productionOrderId,
           stageInstanceId,
+          progressKey: `${params.taskId}:${params.completedQtyAfter}`,
         },
         po,
         snap,
         InventoryItemClass.FINISHED_GOOD,
-        qty,
+        qtyDelta,
       );
     }
+  }
+
+  /** @deprecated Prefer onStageQtyProgress — kept for callers that finish the whole stage at once. */
+  async onStageTaskComplete(params: {
+    productionOrderId: string;
+    stageInstanceId: string | null;
+    userId: string;
+    tx: Tx;
+  }) {
+    if (!params.stageInstanceId) return;
+    const remaining = await params.tx.productionTask.count({
+      where: {
+        stageInstanceId: params.stageInstanceId,
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+    });
+    if (remaining > 0) return;
+
+    const tasks = await params.tx.productionTask.findMany({
+      where: { stageInstanceId: params.stageInstanceId, status: 'COMPLETED' },
+      select: { id: true, completedQty: true, targetQty: true },
+    });
+    // Legacy path: if qty progress already posted via onStageQtyProgress, skip.
+    const anyProgress = tasks.some((t) => Number(t.completedQty) > 0);
+    if (anyProgress) return;
+
+    const po = await params.tx.productionOrder.findUniqueOrThrow({
+      where: { id: params.productionOrderId },
+      select: { quantity: true },
+    });
+    const qty = Number(po.quantity) || 1;
+    const taskId = tasks[0]?.id ?? `stage:${params.stageInstanceId}`;
+    await this.onStageQtyProgress({
+      ...params,
+      qtyDelta: qty,
+      taskId,
+      completedQtyAfter: qty,
+    });
   }
 
   async assertStageInventoryReady(params: {
@@ -282,7 +353,15 @@ export class ProductionInventoryService {
       where: { referenceType: 'ProductionOrder', referenceId: productionOrderId },
       include: {
         inventoryItem: {
-          select: { id: true, sku: true, nameEn: true, nameAr: true, nameHe: true, unit: true },
+          select: {
+            id: true,
+            sku: true,
+            nameEn: true,
+            nameAr: true,
+            nameHe: true,
+            unit: true,
+            imageUrl: true,
+          },
         },
         warehouse: { select: { id: true, code: true, nameEn: true, nameAr: true, nameHe: true, type: true } },
       },
@@ -317,7 +396,10 @@ export class ProductionInventoryService {
       byItem.set(row.inventoryItemId, current);
     }
     const materials = [...byItem.values()].map((row) => ({
-      inventoryItem: row.inventoryItem,
+      inventoryItem: {
+        ...row.inventoryItem,
+        imageUrl: canonicalInventoryImageUrl(row.inventoryItem),
+      },
       issuedQty: row.issued,
       returnedQty: row.returned,
       returnableQty: Math.max(0, row.issued - row.returned),
@@ -331,7 +413,10 @@ export class ProductionInventoryService {
         type: row.type,
         quantity: Number(row.quantity),
         createdAt: row.createdAt,
-        inventoryItem: row.inventoryItem,
+        inventoryItem: {
+          ...row.inventoryItem,
+          imageUrl: canonicalInventoryImageUrl(row.inventoryItem),
+        },
         warehouse: row.warehouse,
         notes: row.notes,
       })),
@@ -427,6 +512,17 @@ export class ProductionInventoryService {
     return true;
   }
 
+  private async orderHasInspectionStage(tx: Tx, productionOrderId: string) {
+    const row = await tx.productionStageInstance.findFirst({
+      where: {
+        productionOrderId,
+        stageDefinition: { code: 'INSPECTION' },
+      },
+      select: { id: true },
+    });
+    return Boolean(row);
+  }
+
   private async hasPassedInspection(tx: Tx, productionOrderId: string) {
     const latest = await tx.qualityInspection.findFirst({
       where: { productionOrderId, result: { not: null } },
@@ -493,20 +589,65 @@ export class ProductionInventoryService {
   }
 
   private async consumeRawMaterials(
-    params: { tx: Tx; userId: string; stageInstanceId: string; productionOrderId: string },
+    params: {
+      tx: Tx;
+      userId: string;
+      stageInstanceId: string;
+      productionOrderId: string;
+      progressKey?: string;
+    },
     po: { id: string; product: { bomDefaults: Prisma.JsonValue } | null },
     qty: number,
   ) {
-    const already = await params.tx.inventoryTransaction.findFirst({
-      where: {
-        idempotencyKey: {
-          startsWith: `raw-issue:${params.productionOrderId}:${params.stageInstanceId}:`,
+    const progress = params.progressKey?.trim() || 'full';
+
+    type Need = { itemId: string; sku: string; qty: number };
+    const needs: Need[] = [];
+
+    const snap = await params.tx.productionOrderWorkflowSnapshotNode.findFirst({
+      where: { stageInstanceId: params.stageInstanceId },
+      include: {
+        materialInputs: {
+          include: {
+            inventoryItem: { select: { id: true, sku: true, itemClass: true } },
+          },
         },
       },
     });
-    if (already) return;
+    const stageInputs = (snap?.materialInputs ?? []).filter(
+      (row) =>
+        row.inventoryItem?.itemClass === InventoryItemClass.RAW_MATERIAL &&
+        (row.required || Number(row.qtyPerUnit) > 0),
+    );
 
-    const needs = bomReservationNeeds((po.product?.bomDefaults ?? null) as BomDefaults | null, qty);
+    if (stageInputs.length) {
+      for (const row of stageInputs) {
+        const qtyPerUnit = Number(row.qtyPerUnit) || 0;
+        const needQty = qtyPerUnit * qty;
+        if (!(needQty > 0)) continue;
+        needs.push({
+          itemId: row.inventoryItemId,
+          sku: row.sku || row.inventoryItem?.sku || '',
+          qty: needQty,
+        });
+      }
+    } else {
+      const bomNeeds = bomReservationNeeds(
+        (po.product?.bomDefaults ?? null) as BomDefaults | null,
+        qty,
+      );
+      for (const need of bomNeeds) {
+        const item = await this.resolveRawItem(params.tx, need);
+        if (!item) {
+          throw new BadRequestException({
+            code: 'INSUFFICIENT_STOCK',
+            message: 'Required raw material cannot be resolved for this stage.',
+          });
+        }
+        needs.push({ itemId: item.id, sku: item.sku, qty: need.qty });
+      }
+    }
+
     if (!needs.length) {
       throw new BadRequestException({
         code: 'INSUFFICIENT_STOCK',
@@ -521,16 +662,9 @@ export class ProductionInventoryService {
       reserved: number;
     }> = [];
     for (const need of needs) {
-      const item = await this.resolveRawItem(params.tx, need);
-      if (!item) {
-        throw new BadRequestException({
-          code: 'INSUFFICIENT_STOCK',
-          message: 'Required raw material cannot be resolved for this stage.',
-        });
-      }
       const balance = await params.tx.inventoryBalance.findFirst({
         where: {
-          inventoryItemId: item.id,
+          inventoryItemId: need.itemId,
           warehouse: { type: 'RAW_MATERIALS', isActive: true },
         },
         orderBy: { availableQty: 'desc' },
@@ -542,7 +676,7 @@ export class ProductionInventoryService {
         });
       }
       planned.push({
-        itemId: item.id,
+        itemId: need.itemId,
         warehouseId: balance.warehouseId,
         qty: need.qty,
         reserved: Number(balance.reservedQty),
@@ -556,7 +690,7 @@ export class ProductionInventoryService {
         warehouseId: line.warehouseId,
         quantity: line.qty,
         userId: params.userId,
-        idempotencyKey: `raw-issue:${params.productionOrderId}:${params.stageInstanceId}:${line.itemId}`,
+        idempotencyKey: `raw-issue:${params.productionOrderId}:${params.stageInstanceId}:${line.itemId}:${progress}`,
         referenceType: 'ProductionOrder',
         referenceId: po.id,
         reservedDelta: -Math.min(line.qty, line.reserved),
@@ -681,26 +815,60 @@ export class ProductionInventoryService {
   }
 
   private async consumeSemiFinished(
-    params: { tx: Tx; userId: string; stageInstanceId: string },
+    params: {
+      tx: Tx;
+      userId: string;
+      stageInstanceId: string;
+      progressKey?: string;
+    },
     productionOrderId: string,
     qty: number,
     snap?: Pick<SnapshotNode, 'consumeInventoryItemIds'>,
   ) {
-    const already = await params.tx.inventoryTransaction.findFirst({
-      where: {
-        idempotencyKey: { startsWith: `semi-issue:${productionOrderId}:${params.stageInstanceId}:` },
-      },
-    });
-    if (already) return;
-
+    const progress = params.progressKey?.trim() || 'full';
     const needs = await this.semiFinishedNeeds(params.tx, productionOrderId, qty, snap);
     await this.assertSemiFinishedReady(params.tx, productionOrderId, qty, snap ?? {});
+
+    const totalNeed = needs.reduce((s, n) => s + Number(n.qty), 0);
+    if (totalNeed > 0) {
+      const receivedAgg = await params.tx.wipHandoff.aggregate({
+        where: {
+          productionOrderId,
+          destinationStageInstanceId: params.stageInstanceId,
+        },
+        _sum: { quantity: true },
+      });
+      const received = Number(receivedAgg._sum.quantity ?? 0);
+      const issuedTxs = await params.tx.inventoryTransaction.findMany({
+        where: {
+          type: InventoryTxType.SEMI_FINISHED_ISSUE,
+          referenceId: productionOrderId,
+          idempotencyKey: {
+            startsWith: `semi-issue:${productionOrderId}:${params.stageInstanceId}:`,
+          },
+        },
+        select: { quantity: true },
+      });
+      const alreadyConsumed = issuedTxs.reduce((s, t) => s + Number(t.quantity), 0);
+      if (alreadyConsumed + totalNeed > received + 1e-9) {
+        throw new BadRequestException({
+          code: 'WIP_CONSUME_EXCEEDS_RECEIVED',
+          message:
+            'Cannot consume more semi-finished quantity than was physically received at this stage.',
+          received,
+          alreadyConsumed,
+          consumeQty: totalNeed,
+        });
+      }
+    }
 
     for (const need of needs) {
       const lots = await params.tx.inventoryLot.findMany({
         where: {
           productionOrderId,
-          status: InventoryLotStatus.AVAILABLE,
+          status: {
+            in: [InventoryLotStatus.AVAILABLE, InventoryLotStatus.PARTIALLY_CONSUMED],
+          },
           inventoryItem: { itemClass: InventoryItemClass.SEMI_FINISHED_GOOD },
           ...(need.inventoryItemId ? { inventoryItemId: need.inventoryItemId } : {}),
         },
@@ -711,7 +879,7 @@ export class ProductionInventoryService {
         if (remaining <= 0) break;
         const take = Math.min(remaining, Number(lot.quantity));
         if (take <= 0) continue;
-        const key = `semi-issue:${productionOrderId}:${params.stageInstanceId}:${lot.id}`;
+        const key = `semi-issue:${productionOrderId}:${params.stageInstanceId}:${lot.id}:${progress}`;
         await this.inventory.applyMovement({
           type: InventoryTxType.SEMI_FINISHED_ISSUE,
           inventoryItemId: lot.inventoryItemId,
@@ -729,7 +897,10 @@ export class ProductionInventoryService {
           where: { id: lot.id },
           data: {
             quantity: nextQty,
-            status: nextQty <= 0 ? InventoryLotStatus.CONSUMED : lot.status,
+            status:
+              nextQty <= 0
+                ? InventoryLotStatus.CONSUMED
+                : InventoryLotStatus.PARTIALLY_CONSUMED,
           },
         });
         remaining -= take;
@@ -743,6 +914,7 @@ export class ProductionInventoryService {
       userId: string;
       productionOrderId: string;
       stageInstanceId: string;
+      progressKey?: string;
     },
     po: ProductionOrderRow,
     snap: SnapshotNode,
@@ -751,32 +923,35 @@ export class ProductionInventoryService {
   ) {
     const qtyPerUnit = Number(snap.outputQtyPerUnit);
     const outputQty = outputQtyForOrder(Number.isFinite(qtyPerUnit) ? qtyPerUnit : 1, productionQty);
+    if (!(outputQty > 0)) return;
+
     const txType =
       itemClass === InventoryItemClass.FINISHED_GOOD
         ? InventoryTxType.FINISHED_GOODS_RECEIPT
         : InventoryTxType.SEMI_FINISHED_RECEIPT;
     const definitionKey = snap.outputDefinitionId || snap.id;
     const baseKey = `${txType}:${params.productionOrderId}:${params.stageInstanceId}:${definitionKey}`;
-    const activeLot = await params.tx.inventoryLot.findFirst({
-      where: {
-        sourceKey: { startsWith: baseKey },
-        status: { in: [InventoryLotStatus.AVAILABLE, InventoryLotStatus.RESERVED] },
-      },
-    });
-    if (activeLot) return;
+    const progress = params.progressKey?.trim() || 'full';
+    const movementKey = `${baseKey}:${progress}`;
 
-    const priorCount = await params.tx.inventoryLot.count({
-      where: { sourceKey: { startsWith: baseKey } },
+    const existingTx = await params.tx.inventoryTransaction.findFirst({
+      where: { idempotencyKey: movementKey },
     });
-    const key = priorCount === 0 ? baseKey : `${baseKey}:r${priorCount}`;
+    if (existingTx) return;
 
     const warehouse = await this.resolveOutputWarehouse(params.tx, snap, itemClass);
     const nameEn =
-      snap.outputNameEn ||
-      (itemClass === InventoryItemClass.FINISHED_GOOD
-        ? po.product?.nameEn || po.productDescription
-        : null);
-    const nameAr = snap.outputNameAr || po.product?.nameAr || nameEn;
+      itemClass === InventoryItemClass.FINISHED_GOOD
+        ? po.product?.nameEn || po.productDescription || snap.outputNameEn
+        : snap.outputNameEn;
+    const nameAr =
+      itemClass === InventoryItemClass.FINISHED_GOOD
+        ? po.product?.nameAr || nameEn
+        : snap.outputNameAr || nameEn;
+    const nameHe =
+      itemClass === InventoryItemClass.FINISHED_GOOD
+        ? po.product?.nameHe ?? null
+        : snap.outputNameHe ?? null;
     if (!nameEn) {
       return;
     }
@@ -790,8 +965,37 @@ export class ProductionInventoryService {
         productId: po.productId,
         nameEn,
         nameAr: nameAr || nameEn,
-        nameHe: snap.outputNameHe || po.product?.nameHe,
+        nameHe,
       }));
+
+    // Keep FG catalog item names aligned with the product.
+    if (
+      itemClass === InventoryItemClass.FINISHED_GOOD &&
+      (resolvedItem.nameEn !== nameEn ||
+        resolvedItem.nameAr !== (nameAr || nameEn) ||
+        (nameHe && resolvedItem.nameHe !== nameHe))
+    ) {
+      await params.tx.inventoryItem.update({
+        where: { id: resolvedItem.id },
+        data: {
+          nameEn,
+          nameAr: nameAr || nameEn,
+          nameHe,
+        },
+      });
+    }
+
+    const reserved = Boolean(
+      itemClass === InventoryItemClass.FINISHED_GOOD && po.salesOrderId,
+    );
+
+    const activeLot = await params.tx.inventoryLot.findFirst({
+      where: {
+        sourceKey: { startsWith: baseKey },
+        status: { in: [InventoryLotStatus.AVAILABLE, InventoryLotStatus.RESERVED] },
+      },
+      orderBy: { producedAt: 'asc' },
+    });
 
     await this.inventory.applyMovement({
       type: txType,
@@ -799,13 +1003,20 @@ export class ProductionInventoryService {
       warehouseId: warehouse.id,
       quantity: outputQty,
       userId: params.userId,
-      idempotencyKey: key,
+      idempotencyKey: movementKey,
       referenceType: 'ProductionOrder',
       referenceId: po.id,
-      reservedDelta:
-        itemClass === InventoryItemClass.FINISHED_GOOD && po.salesOrderId ? outputQty : 0,
+      reservedDelta: reserved ? outputQty : 0,
       db: params.tx,
     });
+
+    if (activeLot) {
+      await params.tx.inventoryLot.update({
+        where: { id: activeLot.id },
+        data: { quantity: Number(activeLot.quantity) + outputQty },
+      });
+      return;
+    }
 
     await params.tx.inventoryLot.create({
       data: {
@@ -815,16 +1026,14 @@ export class ProductionInventoryService {
         salesOrderId: po.salesOrderId,
         salesOrderLineId: po.salesOrderLineId,
         stageInstanceId: params.stageInstanceId,
-        outputDefinitionId: definitionKey,
+        outputDefinitionId: snap.outputDefinitionId,
         quantity: outputQty,
-        status:
-          itemClass === InventoryItemClass.FINISHED_GOOD && po.salesOrderId
-            ? InventoryLotStatus.RESERVED
-            : InventoryLotStatus.AVAILABLE,
+        status: reserved ? InventoryLotStatus.RESERVED : InventoryLotStatus.AVAILABLE,
         allocationMode: po.salesOrderId
           ? InventoryAllocationMode.ORDER_ALLOCATED
           : InventoryAllocationMode.GENERAL_STOCK,
-        sourceKey: key,
+        sourceKey: baseKey,
+        producedAt: new Date(),
       },
     });
   }

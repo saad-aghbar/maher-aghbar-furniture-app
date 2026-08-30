@@ -1,8 +1,7 @@
 'use client';
 
-import { Link } from '@/i18n/navigation';
+import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
-import { DELIVERY_STATUSES, statusOptions } from '@/lib/status-options';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
   Alert,
@@ -26,7 +25,8 @@ import {
 import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 interface SalesOrder {
   id: string;
@@ -45,6 +45,9 @@ interface DeliveryRow {
   number: string;
   status: string;
   deliveryAddress: string;
+  deliveryDate?: string | null;
+  customerConfirmedAt?: string | null;
+  actualDeliveredAt?: string | null;
   customer?: {
     name: string;
     nameAr?: string | null;
@@ -56,24 +59,135 @@ interface DeliveryRow {
     number: string;
     externalOrderNumber?: string | null;
   } | null;
+  load?: { total: number; loaded: number; incomplete: boolean } | null;
+  attentionReasons?: Array<'OVERDUE_PLANNED' | 'INCOMPLETE_LOAD'>;
 }
 
 const STATUS_FLOW = ['PLANNED', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
 
+type DeliverySection = 'planned' | 'ready' | 'shipped' | 'delivered' | 'attention';
+
+const DELIVERY_SECTIONS: DeliverySection[] = [
+  'planned',
+  'ready',
+  'shipped',
+  'delivered',
+  'attention',
+];
+
+const SECTION_STATUS: Partial<Record<DeliverySection, string>> = {
+  planned: 'PLANNED',
+  ready: 'READY',
+  shipped: 'OUT_FOR_DELIVERY',
+  delivered: 'DELIVERED',
+};
+
+function parseDeliverySection(value: string | null): DeliverySection {
+  if (value && DELIVERY_SECTIONS.includes(value as DeliverySection)) {
+    return value as DeliverySection;
+  }
+  return 'ready';
+}
+
 function nextStatus(current: string): string | null {
+  // Commercial DELIVERED is dealer confirm-receipt only — staff may only advance to truck departed.
+  if (current === 'OUT_FOR_DELIVERY' || current === 'DELIVERED') return null;
   const i = STATUS_FLOW.indexOf(current as (typeof STATUS_FLOW)[number]);
   if (i < 0 || i >= STATUS_FLOW.length - 1) return null;
-  return STATUS_FLOW[i + 1]!;
+  const next = STATUS_FLOW[i + 1]!;
+  if (next === 'DELIVERED') return null;
+  return next;
+}
+
+function advanceActionLabel(
+  next: string,
+  tStatus: (key: string) => string,
+  tc: (key: string, values?: Record<string, string>) => string,
+  tl: (key: string) => string,
+): string {
+  if (next === 'OUT_FOR_DELIVERY') return tl('markTruckDeparted');
+  return tc('advanceTo', { status: tStatus(next) });
+}
+
+function sectionEmptyTitle(
+  section: DeliverySection,
+  tc: (key: string) => string,
+  tl: (key: string) => string,
+): string {
+  switch (section) {
+    case 'ready':
+      return tl('noReady');
+    case 'planned':
+      return tc('noDeliveries');
+    case 'shipped':
+      return tl('noShipped');
+    case 'delivered':
+      return tl('noDelivered');
+    case 'attention':
+      return tl('noAttentionDeliveries');
+  }
+}
+
+function sectionTabLabel(section: DeliverySection, tl: (key: string) => string): string {
+  switch (section) {
+    case 'ready':
+      return tl('adminDeliveryReady');
+    case 'planned':
+      return tl('adminDeliveryPlanned');
+    case 'shipped':
+      return tl('adminDeliveryShipped');
+    case 'delivered':
+      return tl('adminDeliveryDelivered');
+    case 'attention':
+      return tl('adminDeliveryAttention');
+  }
+}
+
+function attentionWhy(
+  row: DeliveryRow,
+  tl: (key: string, values?: Record<string, string | number>) => string,
+): string[] {
+  const reasons = row.attentionReasons ?? [];
+  const lines: string[] = [];
+  for (const reason of reasons) {
+    if (reason === 'OVERDUE_PLANNED') {
+      lines.push(tl('attentionOverduePlanned'));
+    } else if (reason === 'INCOMPLETE_LOAD') {
+      const total = row.load?.total ?? 0;
+      const loaded = row.load?.loaded ?? 0;
+      lines.push(tl('attentionIncompleteLoad', { loaded, total }));
+    }
+  }
+  return lines;
 }
 
 export default function DeliveriesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      }
+    >
+      <DeliveriesPageInner />
+    </Suspense>
+  );
+}
+
+function DeliveriesPageInner() {
   const locale = useLocale();
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
   const tSales = useTranslations('sales');
   const tStatus = useTranslations('statuses');
   const tCommon = useTranslations('common');
+  const tl = useTranslations('lifecycle');
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
   const [banner, setBanner] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -83,19 +197,40 @@ export default function DeliveriesPage() {
   const [notes, setNotes] = useState('');
   const [driverId, setDriverId] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [section, setSection] = useState<DeliverySection>(() =>
+    parseDeliverySection(searchParams.get('section')),
+  );
+
+  useEffect(() => {
+    setSection(parseDeliverySection(searchParams.get('section')));
+  }, [searchParams]);
+
+  function selectSection(next: DeliverySection) {
+    if (next === section) return;
+    setSection(next);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('section', next);
+    router.replace(`${pathname}?${params.toString()}`);
+  }
 
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ pageSize: '100' });
+    if (section === 'attention') {
+      params.set('attention', 'true');
+    } else {
+      params.set('status', SECTION_STATUS[section]!);
+    }
     if (search.trim()) params.set('q', search.trim());
-    if (statusFilter) params.set('status', statusFilter);
     return params.toString();
-  }, [search, statusFilter]);
+  }, [search, section]);
 
   const listQuery = useQuery({
     queryKey: ['deliveries', listParams],
     queryFn: () =>
-      apiFetch<{ data: DeliveryRow[] }>(`/api/v1/deliveries?${listParams}`).then((r) => r.data),
+      apiFetch<{
+        data: DeliveryRow[];
+        meta?: { totalItems: number; page: number; pageSize: number };
+      }>(`/api/v1/deliveries?${listParams}`),
     placeholderData: keepPreviousData,
   });
   const driversQuery = useQuery({
@@ -127,11 +262,8 @@ export default function DeliveriesPage() {
     enabled: createOpen,
   });
 
-  const statusFilterOpts = statusOptions(tStatus, DELIVERY_STATUSES, {
-    label: tCommon('all'),
-  });
-
-  const rows = listQuery.data ?? [];
+  const rows = listQuery.data?.data ?? [];
+  const datasetCount = listQuery.data?.meta?.totalItems ?? rows.length;
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -157,6 +289,7 @@ export default function DeliveriesPage() {
       await queryClient.invalidateQueries({ queryKey: ['deliveries'] });
       setCreateOpen(false);
       setBanner(tc('deliveryPlanned'));
+      selectSection('planned');
     },
     onError: (err) => setFormError(mutationErrorMessage(err)),
   });
@@ -169,6 +302,11 @@ export default function DeliveriesPage() {
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['deliveries'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-finished-lots'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-semi-finished'] });
+      await queryClient.invalidateQueries({ queryKey: ['production-orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['production-order'] });
       setBanner(tc('deliveryStatusUpdated'));
     },
     onError: (err) => setBanner(mutationErrorMessage(err)),
@@ -208,19 +346,39 @@ export default function DeliveriesPage() {
       />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
 
-      <div className="flex flex-wrap gap-3">
+      <div
+        role="tablist"
+        aria-label={t('deliveries')}
+        className="flex flex-wrap gap-2"
+      >
+        {DELIVERY_SECTIONS.map((key) => {
+          const selected = section === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => selectSection(key)}
+              className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                selected
+                  ? 'border-brand bg-brand/10 text-brand'
+                  : 'border-border bg-surface text-text-secondary hover:border-border-strong hover:text-text-primary'
+              }`}
+            >
+              {sectionTabLabel(key, tl)}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={tCommon('search')}
-        withSearchIcon
+          withSearchIcon
           className="max-w-xs"
-        />
-        <Select
-          label={tCommon('status')}
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          options={statusFilterOpts}
         />
         <Select
           label={tc('defaultDriver')}
@@ -234,10 +392,13 @@ export default function DeliveriesPage() {
             </option>
           ))}
         </Select>
+        <p className="text-sm text-text-tertiary" dir="ltr">
+          {tl('adminDeliveryDatasetCount', { count: datasetCount })}
+        </p>
       </div>
 
       {rows.length === 0 ? (
-        <EmptyState title={tc('noDeliveries')} />
+        <EmptyState title={sectionEmptyTitle(section, tc, tl)} />
       ) : (
         <Table>
           <TableHead>
@@ -254,6 +415,7 @@ export default function DeliveriesPage() {
           <TableBody>
             {rows.map((row) => {
               const next = nextStatus(row.status);
+              const why = section === 'attention' ? attentionWhy(row, tl) : [];
               return (
                 <TableRow key={row.id}>
                   <TableCell>
@@ -275,7 +437,19 @@ export default function DeliveriesPage() {
                   </TableCell>
                   <TableCell>{row.deliveryAddress}</TableCell>
                   <TableCell>
-                    <StatusBadge status={row.status} />
+                    <div className="space-y-1">
+                      <StatusBadge status={row.status} />
+                      {row.status === 'OUT_FOR_DELIVERY' ? (
+                        <p className="text-xs font-medium text-brand">
+                          {tl('awaitingDealerConfirmation')}
+                        </p>
+                      ) : null}
+                      {why.map((line) => (
+                        <p key={line} className="text-xs text-amber-800 dark:text-amber-200">
+                          {line}
+                        </p>
+                      ))}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-2">
@@ -299,7 +473,7 @@ export default function DeliveriesPage() {
                             })
                           }
                         >
-                          {tc('advanceTo', { status: tStatus(next as never) })}
+                          {advanceActionLabel(next, tStatus, tc, tl)}
                         </Button>
                       ) : null}
                     </div>

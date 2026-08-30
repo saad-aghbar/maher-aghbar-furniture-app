@@ -1,10 +1,10 @@
 'use client';
 
+import { ReturnDetailSheet } from '@/components/returns/return-detail-sheet';
+import type { ReturnRow } from '@/components/returns/return-types';
 import { Link } from '@/i18n/navigation';
 import { apiFetch, API_URL } from '@/lib/api-client';
-import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
-  Alert,
   Button,
   EmptyState,
   ErrorState,
@@ -16,8 +16,8 @@ import {
   StatusBadge,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Armchair, Camera, ImageOff, Store, X } from 'lucide-react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { Armchair, Camera, Store, X } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -30,64 +30,10 @@ interface DealerOption {
   nameHe?: string | null;
 }
 
-interface ReturnRow {
-  id: string;
-  number: string;
-  productDesc: string;
-  quantity: string | number;
-  reason: string;
-  description?: string | null;
-  approvalStatus?: string;
-  inventoryFate?: string | null;
-  productImageUrl?: string | null;
-  reasonPhotoUrl?: string | null;
-  issuePhotoUrl?: string | null;
-  customer?: {
-    id?: string;
-    code?: string;
-    name: string;
-    nameAr?: string | null;
-    nameEn?: string | null;
-    nameHe?: string | null;
-  };
-  salesOrder?: {
-    id: string;
-    number: string;
-    externalOrderNumber?: string | null;
-  } | null;
-}
-
 function mediaSrc(url: string | null | undefined): string | null {
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;
   return `${API_URL}${url}`;
-}
-
-function PhotoThumb({
-  src,
-  label,
-  emptyLabel,
-}: {
-  src: string | null;
-  label: string;
-  emptyLabel: string;
-}) {
-  return (
-    <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-[var(--maher-surface-muted)]">
-      {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={label} className="h-full w-full object-cover" />
-      ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-2 text-text-tertiary">
-          <ImageOff className="h-4 w-4 opacity-50" />
-          <span className="text-center text-[10px] leading-tight">{emptyLabel}</span>
-        </div>
-      )}
-      <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-1.5 pb-1 pt-4 text-[10px] font-medium text-white">
-        {label}
-      </span>
-    </div>
-  );
 }
 
 function OptionalLink({
@@ -107,52 +53,50 @@ function OptionalLink({
   );
 }
 
-function ReturnCard({
+function attentionKey(row: ReturnRow): string | null {
+  const approval = (row.approvalStatus ?? 'PENDING').toUpperCase();
+  const physical = (row.physicalStatus ?? 'NONE').toUpperCase();
+  if (approval === 'PENDING') return 'pendingReview';
+  if (approval === 'NEED_INFO') return 'needInfo';
+  if (approval === 'APPROVED' && physical === 'WAITING_RETURN') return 'waitingReturn';
+  if (
+    (physical === 'RETURNED' || physical === 'INSPECTING') &&
+    (!row.inventoryFate || row.inventoryFate === 'PENDING')
+  ) {
+    return 'awaitingInspection';
+  }
+  return null;
+}
+
+function ReturnBoardCard({
   row,
   customerLabel,
   reasonLabel,
-  productPhotoLabel,
-  reasonPhotoLabel,
-  issuePhotoLabel,
-  noPhotoLabel,
+  physicalLabel,
+  attentionLabel,
   dealerOrderLabel,
-  resolving,
-  resolvingAction,
-  onApprove,
-  onReject,
-  onApplyFate,
-  fateApplying,
-  tCommon,
-  tc,
-  ti,
+  openLabel,
+  onOpen,
 }: {
   row: ReturnRow;
   customerLabel: string;
   reasonLabel: string;
-  productPhotoLabel: string;
-  reasonPhotoLabel: string;
-  issuePhotoLabel: string;
-  noPhotoLabel: string;
+  physicalLabel: string;
+  attentionLabel: string | null;
   dealerOrderLabel: string;
-  resolving: boolean;
-  resolvingAction: 'APPROVED' | 'REJECTED' | null;
-  onApprove: () => void;
-  onReject: () => void;
-  onApplyFate: (fate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP') => void;
-  fateApplying: boolean;
-  tCommon: ReturnType<typeof useTranslations>;
-  tc: ReturnType<typeof useTranslations>;
-  ti: ReturnType<typeof useTranslations>;
+  openLabel: string;
+  onOpen: () => void;
 }) {
-  const pending = (row.approvalStatus ?? 'PENDING') === 'PENDING';
   const productSrc = mediaSrc(row.productImageUrl);
-  const reasonSrc = mediaSrc(row.reasonPhotoUrl);
-  const issueSrc = mediaSrc(row.issuePhotoUrl);
   const orderHref = row.salesOrder?.id ? `/sales-orders/${row.salesOrder.id}` : null;
   const dealerNo = row.salesOrder?.externalOrderNumber?.trim() || null;
+  const resolution =
+    row.inventoryFate && row.inventoryFate !== 'PENDING'
+      ? row.inventoryFate
+      : row.resolution ?? row.approvalStatus ?? 'PENDING';
 
   return (
-    <article className="maher-list-card group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition hover:border-brand/40 hover:shadow-sm">
+    <article className="maher-list-card group flex flex-col overflow-hidden rounded-xl border border-border bg-[color-mix(in_srgb,var(--maher-surface)_92%,var(--maher-brand)_3%)] shadow-card transition hover:border-brand/40 hover:shadow-elevated">
       <OptionalLink
         href={orderHref}
         className="relative block aspect-[5/4] overflow-hidden bg-[var(--maher-surface-muted)]"
@@ -173,34 +117,25 @@ function ReturnCard({
         <div className="absolute start-1.5 top-1.5 origin-top-start scale-90">
           <StatusBadge status={row.approvalStatus ?? 'PENDING'} />
         </div>
-        <span className="absolute end-1.5 top-1.5 rounded-md bg-black/45 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-          {productPhotoLabel}
-        </span>
       </OptionalLink>
 
-      <div className="grid grid-cols-2 gap-1.5 p-2.5 pb-0">
-        <PhotoThumb src={reasonSrc} label={reasonPhotoLabel} emptyLabel={noPhotoLabel} />
-        <PhotoThumb src={issueSrc} label={issuePhotoLabel} emptyLabel={noPhotoLabel} />
-      </div>
-
-      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
+      <div className="flex flex-1 flex-col gap-2 p-3">
         <div className="space-y-0.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
             <Ltr>{row.number}</Ltr>
-            {row.salesOrder?.number && orderHref ? (
+            {row.salesOrder?.number ? (
               <>
                 <span className="mx-1 text-border">·</span>
-                <Link
-                  href={orderHref}
-                  className="text-text-secondary underline-offset-2 hover:text-brand hover:underline"
-                >
+                {orderHref ? (
+                  <Link
+                    href={orderHref}
+                    className="text-text-secondary underline-offset-2 hover:text-brand hover:underline"
+                  >
+                    <Ltr>{row.salesOrder.number}</Ltr>
+                  </Link>
+                ) : (
                   <Ltr>{row.salesOrder.number}</Ltr>
-                </Link>
-              </>
-            ) : row.salesOrder?.number ? (
-              <>
-                <span className="mx-1 text-border">·</span>
-                <Ltr>{row.salesOrder.number}</Ltr>
+                )}
               </>
             ) : null}
           </p>
@@ -210,96 +145,32 @@ function ReturnCard({
               <Ltr>{dealerNo}</Ltr>
             </p>
           ) : null}
-          {orderHref ? (
-            <Link
-              href={orderHref}
-              className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary hover:text-brand"
-            >
-              {row.productDesc}
-            </Link>
-          ) : (
-            <h2 className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary">
-              {row.productDesc}
-            </h2>
-          )}
+          <h2 className="line-clamp-2 text-sm font-semibold leading-snug text-text-primary">
+            {row.productDesc}
+          </h2>
           <p className="truncate text-xs text-text-secondary">{customerLabel}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-text-tertiary">
-          <span className="font-medium text-text-secondary">{reasonLabel}</span>
-          <span aria-hidden="true">·</span>
-          <span>
-            {tc('qty')}: <Ltr>{Number(row.quantity)}</Ltr>
+        <div className="flex flex-wrap gap-1.5 text-[11px]">
+          <span className="rounded-md bg-[var(--maher-surface-muted)] px-1.5 py-0.5 font-medium text-text-secondary">
+            {reasonLabel}
           </span>
+          <span className="rounded-md bg-[var(--maher-surface-muted)] px-1.5 py-0.5 text-text-tertiary">
+            {physicalLabel}
+          </span>
+          <StatusBadge status={resolution} />
         </div>
 
-        {row.description ? (
-          <p className="line-clamp-2 text-[11px] leading-relaxed text-text-secondary">
-            {row.description}
+        {attentionLabel ? (
+          <p className="rounded-md border border-[var(--maher-warning)]/30 bg-[var(--maher-warning-soft)] px-2 py-1 text-[11px] font-medium text-[var(--maher-warning)]">
+            {attentionLabel}
           </p>
         ) : null}
 
         <div className="mt-auto maher-card-rule-t pt-2">
-          {pending ? (
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                className="flex-1"
-                loading={resolving && resolvingAction === 'APPROVED'}
-                disabled={resolving}
-                onClick={onApprove}
-              >
-                {tCommon('approve')}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="flex-1"
-                loading={resolving && resolvingAction === 'REJECTED'}
-                disabled={resolving}
-                onClick={onReject}
-              >
-                {tCommon('reject')}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] text-text-tertiary">{tCommon('status')}</span>
-                <StatusBadge status={row.approvalStatus ?? 'PENDING'} />
-              </div>
-              {row.approvalStatus === 'APPROVED' ? (
-                row.inventoryFate && row.inventoryFate !== 'PENDING' ? (
-                  <StatusBadge status={row.inventoryFate} />
-                ) : (
-                  <div className="grid gap-2">
-                    <p className="text-[11px] text-text-secondary">{ti('fatePending')}</p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {(
-                        [
-                          ['RETURN_TO_STOCK', 'fateReturnToStock'],
-                          ['REWORK', 'fateRework'],
-                          ['DAMAGED', 'fateDamaged'],
-                          ['SCRAP', 'fateScrap'],
-                        ] as const
-                      ).map(([value, key]) => (
-                        <Button
-                          key={value}
-                          size="sm"
-                          variant="subtle"
-                          disabled={fateApplying}
-                          loading={fateApplying}
-                          onClick={() => onApplyFate(value)}
-                        >
-                          {ti(key)}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                )
-              ) : null}
-            </div>
-          )}
+          <Button size="sm" className="w-full" variant="secondary" onClick={onOpen}>
+            {openLabel}
+          </Button>
         </div>
       </div>
     </article>
@@ -310,16 +181,13 @@ export default function ReturnsPage() {
   const locale = useLocale();
   const t = useTranslations('navigation');
   const tc = useTranslations('catalog');
-  const ti = useTranslations('inventory');
+  const tLife = useTranslations('lifecycle');
   const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
-  const queryClient = useQueryClient();
   const [q, setQ] = useState('');
   const [dealerId, setDealerId] = useState('');
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
-  const [resolvingAction, setResolvingAction] = useState<'APPROVED' | 'REJECTED' | null>(null);
-  const [fateId, setFateId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailRow, setDetailRow] = useState<ReturnRow | null>(null);
 
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ page: '1', pageSize: '100' });
@@ -340,54 +208,6 @@ export default function ReturnsPage() {
     queryFn: () =>
       apiFetch<{ data: ReturnRow[] }>(`/api/v1/returns?${listParams}`).then((r) => r.data),
     placeholderData: keepPreviousData,
-  });
-
-  const resolveMutation = useMutation({
-    mutationFn: ({
-      id,
-      approvalStatus,
-    }: {
-      id: string;
-      approvalStatus: 'APPROVED' | 'REJECTED';
-    }) =>
-      apiFetch(`/api/v1/returns/${id}/resolve`, {
-        method: 'PATCH',
-        body: JSON.stringify({ approvalStatus }),
-      }),
-    onMutate: ({ id, approvalStatus }) => {
-      setResolvingId(id);
-      setResolvingAction(approvalStatus);
-    },
-    onSuccess: async () => {
-      setActionError(null);
-      await queryClient.invalidateQueries({ queryKey: ['returns'] });
-    },
-    onError: (err) => setActionError(mutationErrorMessage(err)),
-    onSettled: () => {
-      setResolvingId(null);
-      setResolvingAction(null);
-    },
-  });
-
-  const fateMutation = useMutation({
-    mutationFn: ({
-      id,
-      inventoryFate,
-    }: {
-      id: string;
-      inventoryFate: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP';
-    }) =>
-      apiFetch(`/api/v1/returns/${id}/inventory-fate`, {
-        method: 'PATCH',
-        body: JSON.stringify({ inventoryFate }),
-      }),
-    onMutate: ({ id }) => setFateId(id),
-    onSuccess: async () => {
-      setActionError(null);
-      await queryClient.invalidateQueries({ queryKey: ['returns'] });
-    },
-    onError: (err) => setActionError(mutationErrorMessage(err)),
-    onSettled: () => setFateId(null),
   });
 
   const dealerOptions = useMemo(() => {
@@ -413,13 +233,29 @@ export default function ReturnsPage() {
     }
   }
 
+  function physicalLabel(status: string | null | undefined) {
+    const key = (status ?? 'NONE').toUpperCase();
+    try {
+      return tLife(`returnPhysical.${key}` as 'returnPhysical.NONE');
+    } catch {
+      return key;
+    }
+  }
+
+  function attentionLabel(row: ReturnRow) {
+    const key = attentionKey(row);
+    if (!key) return null;
+    return tLife(`returnAttention.${key}` as 'returnAttention.pendingReview');
+  }
+
   const rows = listQuery.data ?? [];
+  const detail =
+    (detailId ? rows.find((r) => r.id === detailId) : null) ?? detailRow;
   const initialLoading = listQuery.isLoading && !listQuery.data;
 
   return (
     <div className="space-y-6">
       <PageHero title={t('returns')} description={tc('returnsDescription')} tone="soft" />
-      {actionError ? <Alert variant="error">{actionError}</Alert> : null}
 
       <div className="maher-animate-rise flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="block min-w-0 flex-1 sm:max-w-md">
@@ -491,37 +327,34 @@ export default function ReturnsPage() {
           }`}
         >
           {rows.map((row) => (
-            <ReturnCard
+            <ReturnBoardCard
               key={row.id}
               row={row}
               customerLabel={
                 row.customer ? localizedName(locale, row.customer, row.customer.name) : '—'
               }
               reasonLabel={reasonLabel(row.reason)}
-              productPhotoLabel={tc('productPhoto')}
-              reasonPhotoLabel={tc('reasonPhoto')}
-              issuePhotoLabel={tc('issuePhoto')}
-              noPhotoLabel={tc('noReturnPhoto')}
+              physicalLabel={physicalLabel(row.physicalStatus)}
+              attentionLabel={attentionLabel(row)}
               dealerOrderLabel={tSales('dealerOrderNumber')}
-              resolving={resolvingId === row.id}
-              resolvingAction={resolvingId === row.id ? resolvingAction : null}
-              onApprove={() =>
-                resolveMutation.mutate({ id: row.id, approvalStatus: 'APPROVED' })
-              }
-              onReject={() =>
-                resolveMutation.mutate({ id: row.id, approvalStatus: 'REJECTED' })
-              }
-              onApplyFate={(inventoryFate) =>
-                fateMutation.mutate({ id: row.id, inventoryFate })
-              }
-              fateApplying={fateId === row.id}
-              tCommon={tCommon}
-              tc={tc}
-              ti={ti}
+              openLabel={tLife('returnDetail.open')}
+              onOpen={() => {
+                setDetailId(row.id);
+                setDetailRow(row);
+              }}
             />
           ))}
         </div>
       )}
+
+      <ReturnDetailSheet
+        open={Boolean(detailId)}
+        row={detail}
+        onClose={() => {
+          setDetailId(null);
+          setDetailRow(null);
+        }}
+      />
     </div>
   );
 }

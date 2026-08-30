@@ -59,12 +59,27 @@ describe('ProductionService dealer visibility', () => {
     const prisma = {
       productionOrder: {
         findFirst: jest.fn().mockResolvedValue(order),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'po-1',
+          quantity: 1,
+          productDescription: 'Sofa',
+          status: 'IN_PROGRESS',
+          stages: [],
+        }),
       },
       product: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      productionSchedule: { count: jest.fn().mockResolvedValue(0) },
     } as unknown as PrismaService;
-    const service = new ProductionService(prisma, {} as StagePipelineService);
+    const service = new ProductionService(
+      prisma,
+      {} as StagePipelineService,
+      { next: jest.fn().mockResolvedValue('TSK-1') } as never,
+      {
+        summaryForProductionOrder: jest.fn().mockResolvedValue(null),
+      } as never,
+    );
     const dealer: AuthUser = {
       id: 'u-dealer',
       username: 'dealer',
@@ -96,12 +111,38 @@ describe('ProductionService dealer visibility', () => {
     const prisma = {
       productionOrder: {
         findFirst: jest.fn().mockResolvedValue(order),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'po-1',
+          quantity: 1,
+          productDescription: 'Sofa',
+          status: 'IN_PROGRESS',
+          stages: [
+            {
+              id: 'si1',
+              stageDefinitionId: 'sd1',
+              stageDefinition: {
+                code: 'CUT',
+                nameEn: 'Cut',
+                executionKind: 'PRODUCTION',
+              },
+              tasks: [{ id: 't1' }],
+            },
+          ],
+        }),
       },
       product: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      productionSchedule: { count: jest.fn().mockResolvedValue(0) },
     } as unknown as PrismaService;
-    const service = new ProductionService(prisma, {} as StagePipelineService);
+    const service = new ProductionService(
+      prisma,
+      {} as StagePipelineService,
+      { next: jest.fn().mockResolvedValue('TSK-1') } as never,
+      {
+        summaryForProductionOrder: jest.fn().mockResolvedValue(null),
+      } as never,
+    );
     const admin: AuthUser = {
       id: 'u-admin',
       username: 'admin',

@@ -4,6 +4,7 @@ import { dirname, join, extname } from 'path';
 import { pipeline } from 'stream/promises';
 import type { Readable } from 'stream';
 import type { ObjectStorage, StoredObject } from './storage.types';
+import { resolveJwtAccessSecret } from '../../common/helpers/jwt-secret';
 
 /** Local filesystem backend under LOCAL_UPLOAD_DIR (default ./uploads). */
 export class LocalDiskStorage implements ObjectStorage {
@@ -47,7 +48,7 @@ export class LocalDiskStorage implements ObjectStorage {
 
   createAccessToken(key: string, ttlSeconds = 900): string {
     const exp = Date.now() + ttlSeconds * 1000;
-    const secret = process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me-min-32-chars!!';
+    const secret = resolveJwtAccessSecret();
     const payload = `${key}|${exp}`;
     const sig = createHash('sha256').update(`${payload}|${secret}`).digest('hex').slice(0, 24);
     return Buffer.from(`${payload}|${sig}`).toString('base64url');
@@ -57,7 +58,7 @@ export class LocalDiskStorage implements ObjectStorage {
     const raw = Buffer.from(token, 'base64url').toString('utf8');
     const [key, expStr, sig] = raw.split('|');
     if (!key || !expStr || !sig) throw new Error('Invalid token');
-    const secret = process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me-min-32-chars!!';
+    const secret = resolveJwtAccessSecret();
     const expected = createHash('sha256')
       .update(`${key}|${expStr}|${secret}`)
       .digest('hex')

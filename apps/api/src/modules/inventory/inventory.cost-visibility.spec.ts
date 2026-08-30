@@ -17,6 +17,7 @@ const baseItem = {
   materialType: 'Linen',
   minStock: 10,
   standardCost: 42.5,
+  imageUrl: 'https://images.unsplash.com/photo-velvet-demo',
   archivedAt: null,
   balances: [
     {
@@ -37,6 +38,14 @@ describe('inventory cost visibility', () => {
     expect(stripped).toEqual({ sku: 'X' });
     expect(stripped).not.toHaveProperty('standardCost');
     expect(stripped).not.toHaveProperty('unitCost');
+  });
+
+  it('stripInventoryCostFields keeps imageUrl', () => {
+    const stripped = stripInventoryCostFields(
+      { standardCost: 10, imageUrl: 'https://cdn.example/x.jpg', sku: 'X' },
+      ['inventory.read'],
+    );
+    expect(stripped).toEqual({ sku: 'X', imageUrl: 'https://cdn.example/x.jpg' });
   });
 
   it('stripInventoryCostFields keeps costs with inventory.cost.read', () => {
@@ -101,11 +110,21 @@ describe('inventory cost visibility', () => {
     };
   }
 
-  it('getItem omits standardCost for unauthorized readers', async () => {
+  it('getItem includes imageUrl for a raw material without inventory.cost.read', async () => {
     const { service } = makeService();
     const result = await service.getItem(ITEM_ID, ['inventory.read']);
+    expect(result).toHaveProperty('imageUrl', 'https://images.unsplash.com/photo-velvet-demo');
     expect(result).not.toHaveProperty('standardCost');
-    expect(result).toMatchObject({ id: ITEM_ID, sku: 'FAB-001' });
+  });
+
+  it('updateItem stores a raw-material imageUrl and clears it with null', async () => {
+    const { service, prisma } = makeService();
+    await service.updateItem(ITEM_ID, { imageUrl: ' https://cdn.example/foam.jpg ' }, 'admin-1');
+    expect((prisma.inventoryItem.update as jest.Mock).mock.calls[0][0].data.imageUrl).toBe(
+      'https://cdn.example/foam.jpg',
+    );
+    await service.updateItem(ITEM_ID, { imageUrl: null }, 'admin-1');
+    expect((prisma.inventoryItem.update as jest.Mock).mock.calls[1][0].data.imageUrl).toBeNull();
   });
 
   it('getItem includes standardCost when inventory.cost.read is granted', async () => {
@@ -125,6 +144,7 @@ describe('inventory cost visibility', () => {
     );
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).not.toHaveProperty('standardCost');
+    expect(result.data[0]).toHaveProperty('imageUrl', 'https://images.unsplash.com/photo-velvet-demo');
   });
 
   it('listItemTransactions omits unitCost for unauthorized readers', async () => {

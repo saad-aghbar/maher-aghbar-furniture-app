@@ -6,6 +6,7 @@
  * - QC / delivery / invoice / payment rows match service invariants, timestamps frozen to DEMO_AS_OF.
  */
 import {
+  InventoryTracking,
   InventoryTxType,
   Prisma,
   PrismaClient,
@@ -51,9 +52,19 @@ import {
 } from './chronology';
 import type { DealerRef } from './people';
 import type { ProductRef } from './catalog';
+import {
+  loadProductInventoryInputs,
+  loadProductInventoryOutputs,
+  loadProductMaterialInputs,
+  postDemoPhysicalOutputs,
+  resolveDemoSnapshotInventory,
+  seedDemoMaterialUsageStories,
+  type DemoSnapNodeRow,
+} from './inventory-lifecycle';
 import { applyDemoMovement } from './stock';
 import { nextDoc, type SeqBag } from './seq';
 import { buildDemoStories, type DemoStory, type StoryKind } from './stories';
+import { seedDemoQuotationLifecycle } from './quotation-lifecycle';
 
 async function loadCompiledWorkflow(prisma: PrismaClient, productId: string) {
   const config = await prisma.productWorkflowConfiguration.findUnique({
@@ -194,6 +205,7 @@ function soStatusFor(kind: StoryKind): SalesOrderStatus {
     case 'ready_delivery':
       return SalesOrderStatus.READY_FOR_DELIVERY;
     default:
+      // in_production, fresh_production, packaging, qc, at_risk_*, rework_current, …
       return SalesOrderStatus.IN_PRODUCTION;
   }
 }
@@ -219,6 +231,7 @@ function poStatusFor(kind: StoryKind): ProductionOrderStatus {
         ? ProductionOrderStatus.ON_HOLD
         : ProductionOrderStatus.QUALITY_CHECK;
     default:
+      // in_production + fresh_production → IN_PROGRESS with empty/progressed floor
       return ProductionOrderStatus.IN_PROGRESS;
   }
 }
@@ -231,7 +244,14 @@ function completeThroughFor(kind: StoryKind, story: DemoStory, includedCodes: st
     const idx = includedCodes.indexOf('INSPECTION');
     return idx > 0 ? includedCodes[idx - 1]! : story.completeThrough ?? null;
   }
-  if (kind === 'not_started' || kind === 'proposed' || kind === 'waiting_materials' || kind === 'at_risk_material' || kind === 'draft') {
+  if (
+    kind === 'not_started' ||
+    kind === 'proposed' ||
+    kind === 'waiting_materials' ||
+    kind === 'at_risk_material' ||
+    kind === 'fresh_production' ||
+    kind === 'draft'
+  ) {
     return null;
   }
   if (story.completeThrough && includedCodes.includes(story.completeThrough)) {
@@ -284,6 +304,15 @@ export async function seedDemoOrders(
   const stories = buildDemoStories().sort((a, b) => a.orderDay - b.orderDay || a.id.localeCompare(b.id));
   const dealerByUser = new Map(opts.dealers.map((d) => [d.username, d]));
   const productBySku = new Map(opts.products.map((p) => [p.sku, p]));
+  const dealerUsers = await prisma.user.findMany({
+    where: { customerId: { in: opts.dealers.map((d) => d.id) } },
+    select: { id: true, customerId: true },
+  });
+  const dealerUserByCustomerId = new Map(
+    dealerUsers
+      .filter((u): u is { id: string; customerId: string } => Boolean(u.customerId))
+      .map((u) => [u.customerId, u.id]),
+  );
   const itemsBySku = new Map(
     (await prisma.inventoryItem.findMany({ select: { id: true, sku: true, standardCost: true } })).map((i) => [
       i.sku,
@@ -377,24 +406,31 @@ export async function seedDemoOrders(
     });
 
     const qNumber = await nextDoc(prisma, 'quotation', opts.counters);
+    const isDraftQuote = story.kind === 'draft';
+    const dealerUserId = dealerUserByCustomerId.get(dealer.id);
+    if (!isDraftQuote && !dealerUserId) {
+      throw new Error(`Dealer user missing for ${dealer.username} — cannot stamp acceptedById.`);
+    }
+    const sentAt = addDays(createdAt, -1);
     const quote = await prisma.quotation.create({
       data: {
         number: qNumber,
         version: 1,
         customerId: dealer.id,
         requestId: rfq.id,
-        status: story.kind === 'draft' ? QuotationStatus.SENT : QuotationStatus.ACCEPTED,
-        issueDate: addDays(createdAt, -1),
+        status: isDraftQuote ? QuotationStatus.SENT : QuotationStatus.ACCEPTED,
+        issueDate: sentAt,
         expirationDate: addDays(createdAt, 21),
         salesRepId: opts.salesId,
         createdById: opts.salesId,
-        sentAt: addDays(createdAt, -1),
-        acceptedAt: story.kind === 'draft' ? undefined : createdAt,
+        sentAt,
+        acceptedAt: isDraftQuote ? undefined : createdAt,
+        acceptedById: isDraftQuote ? undefined : dealerUserId,
         subtotal: money(totals.subtotal),
         taxTotal: money(totals.taxAmount),
         total: money(totals.lineTotal),
         paymentTerms: `${dealer.username === 'qasr' ? 60 : 30} days`,
-        createdAt: addDays(createdAt, -1),
+        createdAt: sentAt,
         updatedAt: createdAt,
         lines: {
           create: [
@@ -413,7 +449,18 @@ export async function seedDemoOrders(
         },
       },
     });
+    await prisma.quotationApproval.create({
+      data: {
+        quotationId: quote.id,
+        approverId: opts.adminId,
+        decision: 'APPROVED',
+        comment: '[step:SYSTEM_ADMINISTRATOR] Internal send gate',
+        decidedAt: sentAt,
+      },
+    });
     void needsQuote;
+
+    if (story.projectName === 'Noor club chair hold') continue;
 
     const soNumber = await nextDoc(prisma, 'sales_order', opts.counters);
     const address = `${dealer.street}, ${dealer.area}, ${dealer.city}`;
@@ -460,8 +507,6 @@ export async function seedDemoOrders(
       include: { lines: true },
     });
     salesOrders += 1;
-
-    if (story.kind === 'draft') continue;
 
     const line = so.lines[0]!;
     const { workflowId, versionId, versionNumber, compiled } = await loadCompiledWorkflow(
@@ -522,6 +567,10 @@ export async function seedDemoOrders(
       stageCode: string;
       estimatedMinutes: number;
     }> = [];
+    const demoSnapNodes: DemoSnapNodeRow[] = [];
+    const productOutputs = await loadProductInventoryOutputs(prisma, product.id);
+    const productInputs = await loadProductInventoryInputs(prisma, product.id);
+    const productMaterialInputs = await loadProductMaterialInputs(prisma, product.id);
 
     for (const n of included) {
       const completed = done.has(n.stageCode);
@@ -544,6 +593,22 @@ export async function seedDemoOrders(
           progressPercent: completed ? 100 : inProgress ? 45 : 0,
         },
       });
+      const resolved = resolveDemoSnapshotInventory(
+        {
+          sourceWorkflowNodeId: n.sourceWorkflowNodeId,
+          stageDefinitionId: n.stageDefinitionId,
+          stageCode: n.stageCode,
+          nodeKey: n.nodeKey,
+        },
+        productOutputs,
+      );
+      const consumeRows = productInputs.filter(
+        (row) => row.workflowNodeId === n.sourceWorkflowNodeId,
+      );
+      const consumeOutputDefinitionIds = consumeRows.map((row) => row.outputId);
+      const consumeInventoryItemIds = consumeRows
+        .map((row) => row.output.inventoryItemId)
+        .filter((id): id is string => Boolean(id));
       const snapNode = await prisma.productionOrderWorkflowSnapshotNode.create({
         data: {
           snapshotId: snapshot.id,
@@ -563,52 +628,110 @@ export async function seedDemoOrders(
           estimateReviewRequired: false,
           requiresInspection: n.requiresInspection,
           requiresPhotos: false,
+          inventoryTracking: resolved.tracking as InventoryTracking,
+          consumesRawMaterials: resolved.consumesRawMaterials,
+          consumesSemiFinished: resolved.consumesSemiFinished,
+          outputQtyPerUnit: resolved.qtyPerUnit ?? undefined,
+          outputNameAr: resolved.nameAr ?? undefined,
+          outputNameEn: resolved.nameEn ?? undefined,
+          outputNameHe: resolved.nameHe ?? undefined,
+          outputUnit: resolved.unit ?? undefined,
+          outputDefinitionId: resolved.outputDefinitionId ?? undefined,
+          outputInventoryItemId: resolved.inventoryItemId ?? undefined,
+          consumeOutputDefinitionIds:
+            consumeOutputDefinitionIds.length > 0 ? consumeOutputDefinitionIds : undefined,
+          consumeInventoryItemIds:
+            consumeInventoryItemIds.length > 0 ? consumeInventoryItemIds : undefined,
+          defaultWarehouseId: resolved.warehouseId ?? undefined,
           sortOrder: n.sortOrder,
           displayX: n.displayX,
           displayY: n.displayY,
+          executionKind: n.executionKind ?? 'PRODUCTION',
           metadata: n.metadata as Prisma.InputJsonValue | undefined,
         },
       });
       nodeIdByKey.set(n.nodeKey, snapNode.id);
-      const estimatedMinutes =
-        n.estimatedMinutes ?? Math.max(30, Math.round((Number(line.quantity) || 1) * 45));
-      const task = await prisma.productionTask.create({
-        data: {
-          number: await nextDoc(prisma, 'task', opts.counters),
-          productionOrderId: po.id,
-          stageDefinitionId: n.stageDefinitionId,
-          stageInstanceId: stageInstance.id,
-          name: n.nameEn,
-          description: buildStageTaskInstructions({
-            stageCode: n.stageCode,
-            stageNameEn: n.nameEn,
-            productDescription: line.description,
-            quantity: Number(line.quantity),
-            specifications: line.specifications,
-          }),
-          status: completed
-            ? TaskStatus.COMPLETED
-            : inProgress
-              ? n.requiresInspection
-                ? TaskStatus.READY_FOR_INSPECTION
-                : TaskStatus.IN_PROGRESS
-              : st === StageInstanceStatus.READY
-                ? TaskStatus.READY
-                : TaskStatus.NOT_STARTED,
-          progressPercent: completed ? 100 : inProgress ? 45 : 0,
-          estimatedMinutes,
-          priority: so.priority,
-          createdAt,
-          updatedAt: createdAt,
-        },
-      });
-      taskRows.push({
-        id: task.id,
-        stageDefinitionId: n.stageDefinitionId,
+      demoSnapNodes.push({
+        id: snapNode.id,
         stageInstanceId: stageInstance.id,
         stageCode: n.stageCode,
-        estimatedMinutes,
+        inventoryTracking: resolved.tracking as InventoryTracking,
+        consumesSemiFinished: resolved.consumesSemiFinished,
+        outputQtyPerUnit: resolved.qtyPerUnit ?? null,
+        outputNameEn: resolved.nameEn ?? null,
+        outputNameAr: resolved.nameAr ?? null,
+        outputNameHe: resolved.nameHe ?? null,
+        outputUnit: resolved.unit ?? null,
+        outputDefinitionId: resolved.outputDefinitionId ?? null,
+        outputInventoryItemId: resolved.inventoryItemId ?? null,
+        defaultWarehouseId: resolved.warehouseId ?? null,
       });
+
+      const materialRows = productMaterialInputs.filter(
+        (row) => row.workflowNodeId === n.sourceWorkflowNodeId,
+      );
+      for (const row of materialRows) {
+        const sku = row.inventoryItem.sku?.trim();
+        if (!sku) continue;
+        await prisma.productionOrderWorkflowSnapshotMaterialInput.create({
+          data: {
+            snapshotNodeId: snapNode.id,
+            stageCode: n.stageCode,
+            inventoryItemId: row.inventoryItemId,
+            sku,
+            qtyPerUnit: row.qtyPerUnit,
+            quantityMode: row.quantityMode,
+            unit: row.unit || row.inventoryItem.unit || 'pcs',
+            required: row.required,
+          },
+        });
+      }
+
+      const estimatedMinutes =
+        n.estimatedMinutes ?? Math.max(30, Math.round((Number(line.quantity) || 1) * 45));
+      if (n.executionKind !== 'LOGISTICS') {
+        const task = await prisma.productionTask.create({
+          data: {
+            number: await nextDoc(prisma, 'task', opts.counters),
+            productionOrderId: po.id,
+            stageDefinitionId: n.stageDefinitionId,
+            stageInstanceId: stageInstance.id,
+            name: n.nameEn,
+            description: buildStageTaskInstructions({
+              stageCode: n.stageCode,
+              stageNameEn: n.nameEn,
+              productDescription: line.description,
+              quantity: Number(line.quantity),
+              specifications: line.specifications,
+            }),
+            status: completed
+              ? TaskStatus.COMPLETED
+              : inProgress
+                ? n.requiresInspection
+                  ? TaskStatus.READY_FOR_INSPECTION
+                  : TaskStatus.IN_PROGRESS
+                : st === StageInstanceStatus.READY
+                  ? TaskStatus.READY
+                  : TaskStatus.NOT_STARTED,
+            progressPercent: completed ? 100 : inProgress ? 45 : 0,
+            estimatedMinutes,
+            targetQty: Number(line.quantity) || 1,
+            completedQty: completed
+              ? Number(story.physicalOutputQty ?? line.quantity) || 1
+              : 0,
+            priority: so.priority,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+        taskRows.push({
+          id: task.id,
+          stageDefinitionId: n.stageDefinitionId,
+          stageInstanceId: stageInstance.id,
+          stageCode: n.stageCode,
+          estimatedMinutes,
+        });
+      }
     }
 
     for (const e of compiled.edges) {
@@ -665,6 +788,7 @@ export async function seedDemoOrders(
       taskRows,
       stages,
       included,
+      demoSnapNodes,
     });
   }
 
@@ -697,7 +821,24 @@ export async function seedDemoOrders(
   }
 
   for (const p of pending) {
-    const { story, dealer, product, so, po, address, createdAt, requiredDelivery, totals, unit, done, nextReady, taskRows, included } = p;
+    const {
+      story,
+      dealer,
+      product,
+      so,
+      po,
+      line,
+      address,
+      createdAt,
+      requiredDelivery,
+      totals,
+      unit,
+      done,
+      nextReady,
+      taskRows,
+      included,
+      demoSnapNodes,
+    } = p;
     const result = planned.get(po.id);
     if (!result) throw new Error(`Missing plan for ${po.number}`);
 
@@ -934,7 +1075,21 @@ export async function seedDemoOrders(
           },
         },
       });
-      void delivery;
+      await postDemoPhysicalOutputs({
+        prisma,
+        productionOrderId: po.id,
+        salesOrderId: so.id,
+        salesOrderLineId: line.id,
+        orderQty: story.physicalOutputQty ?? story.qty,
+        adminId: opts.adminId,
+        counters: opts.counters,
+        at: deliveredAt,
+        completedStageCodes: done,
+        snapNodes: demoSnapNodes,
+        keepFinInFactory: false,
+        leaveFactoryViaDelivery: true,
+        deliveryId: delivery.id,
+      });
       const paymentKind = story.payment ?? 'paid';
       const paid =
         paymentKind === 'paid' ? totals.lineTotal : paymentKind === 'partial' ? totals.lineTotal * 0.4 : 0;
@@ -1061,6 +1216,44 @@ export async function seedDemoOrders(
           },
         },
       });
+      await postDemoPhysicalOutputs({
+        prisma,
+        productionOrderId: po.id,
+        salesOrderId: so.id,
+        salesOrderLineId: line.id,
+        orderQty: story.physicalOutputQty ?? story.qty,
+        adminId: opts.adminId,
+        counters: opts.counters,
+        at: asOf,
+        completedStageCodes: done,
+        snapNodes: demoSnapNodes,
+        keepFinInFactory: true,
+        leaveFactoryViaDelivery: false,
+      });
+    } else if (done.size > 0) {
+      await postDemoPhysicalOutputs({
+        prisma,
+        productionOrderId: po.id,
+        salesOrderId: so.id,
+        salesOrderLineId: line.id,
+        orderQty: story.physicalOutputQty ?? story.qty,
+        adminId: opts.adminId,
+        counters: opts.counters,
+        at: createdAt,
+        completedStageCodes: done,
+        snapNodes: demoSnapNodes,
+        keepFinInFactory: false,
+        leaveFactoryViaDelivery: false,
+      });
+      if (story.id === 'oasis-sweifieh-sectional') {
+        await seedDemoMaterialUsageStories({
+          prisma,
+          productionOrderId: po.id,
+          adminId: opts.adminId,
+          counters: opts.counters,
+          at: createdAt,
+        });
+      }
     }
   }
 
@@ -1092,6 +1285,15 @@ export async function seedDemoOrders(
         ],
       },
     },
+  });
+
+  await seedDemoQuotationLifecycle(prisma, {
+    adminId: opts.adminId,
+    salesId: opts.salesId,
+    dealers: opts.dealers,
+    products: opts.products,
+    counters: opts.counters,
+    dealerUserByCustomerId,
   });
 
   console.log(`  sales: ${salesOrders} SO · ${productionOrders} PO`);

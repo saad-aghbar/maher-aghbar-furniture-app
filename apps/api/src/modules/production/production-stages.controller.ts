@@ -30,7 +30,8 @@ import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { ListQueryDto, pageSkipTake } from '../../common/dto/list-query.dto';
 import { buildDependencyGraph, detectCycles } from '../scheduling/domain';
 import { SchedulingService } from '../scheduling/scheduling.service';
-import type { AuthUser } from '@maher/types';
+import { isLockedAnchorStageCode, type AuthUser } from '@maher/types';
+import { lockedAnchorNameChanged, pickStagePatch } from './workflow/domain/technical-id';
 
 class StageDto {
   @IsString() @MinLength(1) code!: string;
@@ -118,6 +119,37 @@ export class ProductionStagesController {
   ) {
     const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
+    if (isLockedAnchorStageCode(existing.code)) {
+      if (lockedAnchorNameChanged(existing, dto as unknown as Record<string, unknown>)) {
+        throw new BadRequestException({
+          code: 'LOCKED_ANCHOR_NAME',
+          message:
+            'The name of Material Prep, Inspection, Packaging, and Delivery cannot be changed.',
+        });
+      }
+      const row = await this.prisma.productionStageDefinition.update({
+        where: { id },
+        data: pickStagePatch(dto as unknown as Record<string, unknown>, { omitNames: true }),
+      });
+      await this.prisma.auditEvent.create({
+        data: {
+          userId: user.id,
+          action: 'stage.update',
+          entityType: 'ProductionStageDefinition',
+          entityId: id,
+          newValues: row as unknown as Prisma.InputJsonValue,
+        },
+      });
+      if (dto.resourceSlots != null && dto.resourceSlots !== (existing.resourceSlots ?? 1)) {
+        const capacityDelta = dto.resourceSlots > (existing.resourceSlots ?? 1) ? 'increase' : 'decrease';
+        await this.scheduling?.enqueueFactoryReplan(user.id, {
+          changeType: 'resource-slots-updated',
+          capacityDelta,
+          reason: `resource-slots:${existing.code}`,
+        });
+      }
+      return row;
+    }
     if (dto.code || dto.dependsOnCodes) {
       await this.assertNoCycle(dto.code ?? existing.code, dto.dependsOnCodes ?? existing.dependsOnCodes, id);
     }
@@ -163,6 +195,14 @@ export class ProductionStagesController {
   @Delete(':id')
   @RequirePermissions('production-order.update')
   async remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
+    if (isLockedAnchorStageCode(existing.code)) {
+      throw new BadRequestException({
+        code: 'LOCKED_ANCHOR_STAGE',
+        message: 'Material Prep, Inspection, Packaging, and Delivery cannot be deleted.',
+      });
+    }
     const used = await this.prisma.productionStageInstance.count({ where: { stageDefinitionId: id } });
     if (used > 0) {
       await this.prisma.productionStageDefinition.update({
@@ -171,8 +211,6 @@ export class ProductionStagesController {
       });
       return { ok: true, deactivated: true };
     }
-    const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
     await this.prisma.productionStageDefinition.delete({ where: { id } });
     await this.prisma.auditEvent.create({
       data: {

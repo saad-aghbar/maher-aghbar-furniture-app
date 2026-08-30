@@ -139,35 +139,102 @@ export class ProductionReworkService {
   }
 
   async completeRework(reworkId: string, userId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const rework = await tx.reworkRequest.findUniqueOrThrow({
-        where: { id: reworkId },
-        include: { tasks: true },
-      });
-      const open = rework.tasks.filter((t) => !['COMPLETED', 'CANCELLED'].includes(t.status));
-      if (open.length) {
-        throw new BadRequestException({
-          code: 'INVALID_STATUS',
-          message: 'Finish the rework task before completing this request.',
+    return this.prisma
+      .$transaction(async (tx) => {
+        const rework = await tx.reworkRequest.findUniqueOrThrow({
+          where: { id: reworkId },
+          include: { tasks: true },
         });
-      }
-      await tx.reworkRequest.update({
-        where: { id: reworkId },
-        data: { status: 'COMPLETED', completedAt: new Date() },
+        if (rework.status === 'COMPLETED') {
+          return tx.reworkRequest.findUniqueOrThrow({
+            where: { id: reworkId },
+            include: { inspection: true, tasks: true },
+          });
+        }
+        const open = rework.tasks.filter((t) => !['COMPLETED', 'CANCELLED'].includes(t.status));
+        if (open.length) {
+          throw new BadRequestException({
+            code: 'INVALID_STATUS',
+            message: 'Finish the rework task before completing this request.',
+          });
+        }
+        await tx.reworkRequest.update({
+          where: { id: reworkId },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        });
+
+        // Piece 9: reopen Inspection for reinspection — do NOT unlock Packaging.
+        const inspectionStage = await tx.productionStageInstance.findFirst({
+          where: {
+            productionOrderId: rework.productionOrderId,
+            stageDefinition: { code: 'INSPECTION' },
+          },
+          include: { stageDefinition: true, tasks: true },
+        });
+        if (inspectionStage) {
+          await tx.productionStageInstance.update({
+            where: { id: inspectionStage.id },
+            data: {
+              status: 'READY',
+              progressPercent: 0,
+              actualEnd: null,
+              inspectionStatus: 'PENDING_REINSPECTION',
+            },
+          });
+          for (const task of inspectionStage.tasks) {
+            if (task.isRework) continue;
+            await tx.productionTask.update({
+              where: { id: task.id },
+              data: {
+                status: 'READY_FOR_INSPECTION',
+                progressPercent: 0,
+                actualCompletion: null,
+                actualStart: null,
+              },
+            });
+          }
+          // Keep Packaging locked until a new QC PASS.
+          const packaging = await tx.productionStageInstance.findFirst({
+            where: {
+              productionOrderId: rework.productionOrderId,
+              stageDefinition: { code: { in: ['PACKAGING', 'PACK'] } },
+            },
+          });
+          if (packaging && packaging.status !== 'COMPLETED') {
+            await tx.productionStageInstance.update({
+              where: { id: packaging.id },
+              data: { status: 'PENDING', progressPercent: 0 },
+            });
+          }
+          await tx.productionOrder.update({
+            where: { id: rework.productionOrderId },
+            data: {
+              status: 'QUALITY_CHECK',
+              currentStageCode: 'INSPECTION',
+            },
+          });
+        }
+
+        await tx.auditEvent.create({
+          data: {
+            userId,
+            action: 'quality.rework.complete',
+            entityType: 'ReworkRequest',
+            entityId: reworkId,
+            newValues: { reopenedInspection: Boolean(inspectionStage) },
+          },
+        });
+        return tx.reworkRequest.findUniqueOrThrow({
+          where: { id: reworkId },
+          include: { inspection: true, tasks: true },
+        });
+      })
+      .then(async (rework) => {
+        await this.scheduling
+          ?.enqueueTargetedReplan(rework.productionOrderId, 'rework-complete')
+          .catch(() => undefined);
+        return rework;
       });
-      await tx.auditEvent.create({
-        data: {
-          userId,
-          action: 'quality.rework.complete',
-          entityType: 'ReworkRequest',
-          entityId: reworkId,
-        },
-      });
-      return tx.reworkRequest.findUniqueOrThrow({
-        where: { id: reworkId },
-        include: { inspection: true, tasks: true },
-      });
-    });
   }
 
   async createForReturn(params: {

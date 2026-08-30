@@ -19,6 +19,12 @@ export type ReturnRequest = {
   reason: ReturnReason | string;
   description?: string | null;
   approvalStatus: string;
+  /** NONE | WAITING_RETURN | RETURNED | INSPECTING | RESOLVED */
+  physicalStatus?: string | null;
+  /** Dealer-visible note when approvalStatus is NEED_INFO. */
+  needInfoNote?: string | null;
+  /** Admin disposition — dealers only see resolved via lifecycle, never scrap labels. */
+  inventoryFate?: string | null;
   resolution?: string | null;
   reasonPhotoUrl?: string | null;
   issuePhotoUrl?: string | null;

@@ -128,10 +128,12 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
     return () => clearTimeout(id);
   }, [animateEnter, query.isFetched, query.isPlaceholderData]);
 
-  const liveItems = flattenTasksPages(query.data).map((item) =>
-    selectTaskCard(item, locale),
-  );
-  const fixtureItems = (fixture ?? []).map((item) => selectTaskCard(item, locale));
+  const liveItems = flattenTasksPages(query.data)
+    .filter((item) => item.stageDefinition?.code !== 'DELIVERY')
+    .map((item) => selectTaskCard(item, locale));
+  const fixtureItems = (fixture ?? [])
+    .filter((item) => item.stageDefinition?.code !== 'DELIVERY')
+    .map((item) => selectTaskCard(item, locale));
 
   const items =
     forceState === 'success' || forceState === 'empty' || forceState === 'offline'

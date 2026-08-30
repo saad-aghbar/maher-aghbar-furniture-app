@@ -80,6 +80,8 @@ export default function SettingsPage() {
   const [shiftStart, setShiftStart] = useState('08:00');
   const [shiftEnd, setShiftEnd] = useState('16:00');
   const [deliveryBufferWorkingDays, setDeliveryBufferWorkingDays] = useState(1);
+  const [maxProductionEarlyWorkingDays, setMaxProductionEarlyWorkingDays] = useState(10);
+  const [targetFactoryUtilizationPercent, setTargetFactoryUtilizationPercent] = useState(85);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [exceptionDate, setExceptionDate] = useState('');
   const [exceptionAction, setExceptionAction] = useState<'open' | 'close' | 'overtime'>('open');
@@ -122,6 +124,8 @@ export default function SettingsPage() {
     setShiftStart(cal.shiftStart);
     setShiftEnd(cal.shiftEnd);
     setDeliveryBufferWorkingDays(cal.deliveryBufferWorkingDays ?? 1);
+    setMaxProductionEarlyWorkingDays(cal.maxProductionEarlyWorkingDays ?? 10);
+    setTargetFactoryUtilizationPercent(cal.targetFactoryUtilizationPercent ?? 85);
   }, [calendarSettingsQuery.data]);
 
   const saveMutation = useMutation({
@@ -195,6 +199,8 @@ export default function SettingsPage() {
           shiftStart,
           shiftEnd,
           deliveryBufferWorkingDays,
+          maxProductionEarlyWorkingDays,
+          targetFactoryUtilizationPercent,
         }),
       }),
     onSuccess: async (data) => {
@@ -661,9 +667,33 @@ export default function SettingsPage() {
               value={String(deliveryBufferWorkingDays)}
               onChange={(e) => setDeliveryBufferWorkingDays(Number(e.target.value) || 0)}
             />
+            <Input
+              label={tc('maxProductionEarlyWorkingDays')}
+              type="number"
+              min={0}
+              max={60}
+              dir="ltr"
+              value={String(maxProductionEarlyWorkingDays)}
+              onChange={(e) => setMaxProductionEarlyWorkingDays(Number(e.target.value) || 0)}
+            />
+            <Input
+              label={tc('targetFactoryUtilizationPercent')}
+              type="number"
+              min={1}
+              max={100}
+              dir="ltr"
+              value={String(targetFactoryUtilizationPercent)}
+              onChange={(e) => setTargetFactoryUtilizationPercent(Number(e.target.value) || 85)}
+            />
           </div>
           <p className="-mt-1 text-xs text-[var(--maher-text-secondary)]">
             {tc('deliveryBufferWorkingDaysHint')}
+          </p>
+          <p className="-mt-1 text-xs text-[var(--maher-text-secondary)]">
+            {tc('maxProductionEarlyWorkingDaysHint')}
+          </p>
+          <p className="-mt-1 text-xs text-[var(--maher-text-secondary)]">
+            {tc('targetFactoryUtilizationPercentHint')}
           </p>
           <div>
             <p className="mb-2 text-sm font-medium text-[var(--maher-text-primary)]">

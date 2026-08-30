@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
 type BoardProps = {
@@ -86,6 +86,41 @@ type RowProps = {
   showChevron?: boolean;
 };
 
+/** Quiet trash to remove a stage from this workflow graph (not the library). */
+export function WorkflowStageRowActions({
+  onDelete,
+  disabled,
+}: {
+  onDelete: () => void;
+  disabled?: boolean;
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      accessibilityLabel="Remove from workflow"
+      disabled={disabled}
+      onPress={() => {
+        void haptics.selection();
+        onDelete();
+      }}
+      hitSlop={8}
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: disabled ? 0.45 : 0.85,
+      }}
+    >
+      <Ionicons name="trash-outline" size={16} color={colors.textSecondary} />
+    </AnimatedPressable>
+  );
+}
+
 export function WorkflowFloorRow({
   label,
   meta,
@@ -100,7 +135,82 @@ export function WorkflowFloorRow({
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const body = (
+  const main = (
+    <View
+      style={{
+        flex: 1,
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        gap: theme.spacing.md,
+        minWidth: 0,
+        ...(isRTL
+          ? { paddingRight: theme.spacing.md + 4 }
+          : { paddingLeft: theme.spacing.md + 4 }),
+        paddingVertical: theme.spacing.md,
+      }}
+    >
+      <View
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: active ? colors.surface : colors.brandSoft,
+          borderWidth: 1,
+          borderColor: active ? colors.brand : colors.border,
+        }}
+      >
+        {badge ? (
+          <AppText
+            variant="caption"
+            weight="semibold"
+            style={{ color: active ? colors.brand : colors.textSecondary, fontSize: 13 }}
+          >
+            {badge}
+          </AppText>
+        ) : (
+          <Ionicons
+            name={icon}
+            size={18}
+            color={active ? colors.brand : colors.textSecondary}
+          />
+        )}
+      </View>
+      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+        <AppText
+          variant="label"
+          weight={active ? titleWeight : 'medium'}
+          numberOfLines={1}
+          style={{
+            color: active ? colors.brand : colors.textPrimary,
+            textAlign: isRTL ? 'right' : 'left',
+          }}
+        >
+          {label}
+        </AppText>
+        {meta ? (
+          <AppText
+            variant="caption"
+            color="muted"
+            numberOfLines={1}
+            style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 11 }}
+          >
+            {meta}
+          </AppText>
+        ) : null}
+      </View>
+      {!trailing && showChevron ? (
+        <Ionicons
+          name={isRTL ? 'chevron-back' : 'chevron-forward'}
+          size={16}
+          color={colors.textMuted}
+        />
+      ) : null}
+    </View>
+  );
+
+  return (
     <View
       style={{
         borderRadius: theme.radius.xl,
@@ -109,6 +219,10 @@ export function WorkflowFloorRow({
         backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
         overflow: 'hidden',
         ...orderBoardShadow(colorScheme),
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        paddingRight: trailing ? theme.spacing.sm : theme.spacing.md,
+        paddingLeft: trailing ? 0 : undefined,
       }}
     >
       {active ? (
@@ -125,87 +239,20 @@ export function WorkflowFloorRow({
           }}
         />
       ) : null}
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          gap: theme.spacing.md,
-          paddingVertical: theme.spacing.md,
-          paddingHorizontal: theme.spacing.md,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
-        }}
-      >
-        <View
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: active ? colors.surface : colors.brandSoft,
-            borderWidth: 1,
-            borderColor: active ? colors.brand : colors.border,
-          }}
+      {onPress ? (
+        <AnimatedPressable
+          variant="button"
+          accessibilityRole="button"
+          onPress={onPress}
+          style={{ flex: 1, minWidth: 0 }}
         >
-          {badge ? (
-            <AppText
-              variant="caption"
-              weight="semibold"
-              style={{ color: active ? colors.brand : colors.textSecondary, fontSize: 13 }}
-            >
-              {badge}
-            </AppText>
-          ) : (
-            <Ionicons
-              name={icon}
-              size={18}
-              color={active ? colors.brand : colors.textSecondary}
-            />
-          )}
-        </View>
-        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-          <AppText
-            variant="label"
-            weight={active ? titleWeight : 'medium'}
-            numberOfLines={1}
-            style={{
-              color: active ? colors.brand : colors.textPrimary,
-              textAlign: isRTL ? 'right' : 'left',
-            }}
-          >
-            {label}
-          </AppText>
-          {meta ? (
-            <AppText
-              variant="caption"
-              color="muted"
-              numberOfLines={1}
-              style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 11 }}
-            >
-              {meta}
-            </AppText>
-          ) : null}
-        </View>
-        {trailing}
-        {!trailing && showChevron ? (
-          <Ionicons
-            name={isRTL ? 'chevron-back' : 'chevron-forward'}
-            size={16}
-            color={colors.textMuted}
-          />
-        ) : null}
-      </View>
+          {main}
+        </AnimatedPressable>
+      ) : (
+        main
+      )}
+      {trailing ? <View style={{ paddingVertical: theme.spacing.sm }}>{trailing}</View> : null}
     </View>
-  );
-
-  if (!onPress) return body;
-
-  return (
-    <AnimatedPressable variant="button" accessibilityRole="button" onPress={onPress}>
-      {body}
-    </AnimatedPressable>
   );
 }
 
@@ -213,6 +260,7 @@ type CompactPickProps = {
   label: string;
   meta?: string | null;
   active?: boolean;
+  locked?: boolean;
   onPress: () => void;
 };
 
@@ -221,6 +269,7 @@ export function WorkflowCompactPickRow({
   label,
   meta,
   active = false,
+  locked = false,
   onPress,
 }: CompactPickProps) {
   const { locale, isRTL } = useLocale();
@@ -270,7 +319,7 @@ export function WorkflowCompactPickRow({
             textAlign: isRTL ? 'right' : 'left',
           }}
         >
-          {label}
+          {locked ? `🔒 ${label}` : label}
         </AppText>
         {meta ? (
           <AppText
@@ -285,6 +334,8 @@ export function WorkflowCompactPickRow({
       </View>
       {active ? (
         <Ionicons name="checkmark" size={16} color={colors.brand} />
+      ) : locked ? (
+        <Ionicons name="lock-closed" size={14} color={colors.textSecondary} />
       ) : null}
     </AnimatedPressable>
   );

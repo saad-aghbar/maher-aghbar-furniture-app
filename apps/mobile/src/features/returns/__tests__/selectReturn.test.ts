@@ -2,7 +2,12 @@ import {
   filterDealersByQuery,
   isReturnStatusFilterActive,
 } from '../returnFilters';
-import { returnReasonLabelKey, selectReturnCard } from '../selectReturn';
+import {
+  mapReturnLifecyclePhase,
+  returnMatchesStatusChip,
+  returnReasonLabelKey,
+  selectReturnCard,
+} from '../selectReturn';
 import type { ReturnRequest } from '../api';
 
 describe('returnFilters', () => {
@@ -21,6 +26,56 @@ describe('returnFilters', () => {
   });
 });
 
+describe('mapReturnLifecyclePhase', () => {
+  it('maps approval + physical to dealer human phases', () => {
+    expect(mapReturnLifecyclePhase({ approvalStatus: 'PENDING' })).toBe('REPORTED');
+    expect(mapReturnLifecyclePhase({ approvalStatus: 'NEED_INFO' })).toBe('UNDER_REVIEW');
+    expect(
+      mapReturnLifecyclePhase({
+        approvalStatus: 'APPROVED',
+        physicalStatus: 'NONE',
+      }),
+    ).toBe('APPROVED');
+    expect(
+      mapReturnLifecyclePhase({
+        approvalStatus: 'APPROVED',
+        physicalStatus: 'WAITING_RETURN',
+      }),
+    ).toBe('WAITING_RETURN');
+    expect(
+      mapReturnLifecyclePhase({
+        approvalStatus: 'APPROVED',
+        physicalStatus: 'RETURNED',
+      }),
+    ).toBe('BEING_RESOLVED');
+    expect(
+      mapReturnLifecyclePhase({
+        approvalStatus: 'APPROVED',
+        physicalStatus: 'RETURNED',
+        inventoryFate: 'RETURN_TO_STOCK',
+      }),
+    ).toBe('RESOLVED');
+    expect(mapReturnLifecyclePhase({ approvalStatus: 'REJECTED' })).toBe('RESOLVED');
+  });
+});
+
+describe('returnMatchesStatusChip', () => {
+  it('groups NEED_INFO with open / PENDING chip', () => {
+    expect(
+      returnMatchesStatusChip({ approvalStatus: 'NEED_INFO' }, 'PENDING'),
+    ).toBe(true);
+    expect(
+      returnMatchesStatusChip(
+        { approvalStatus: 'APPROVED', physicalStatus: 'WAITING_RETURN' },
+        'APPROVED',
+      ),
+    ).toBe(true);
+    expect(
+      returnMatchesStatusChip({ approvalStatus: 'REJECTED' }, 'REJECTED'),
+    ).toBe(true);
+  });
+});
+
 describe('selectReturnCard', () => {
   const row: ReturnRequest = {
     id: 'r1',
@@ -30,6 +85,8 @@ describe('selectReturnCard', () => {
     reason: 'MANUFACTURING_DEFECT',
     description: 'Edge scuff',
     approvalStatus: 'APPROVED',
+    physicalStatus: 'WAITING_RETURN',
+    needInfoNote: null,
     reasonPhotoUrl: '/uploads/r.jpg',
     issuePhotoUrl: null,
     productImageUrl: null,
@@ -57,7 +114,25 @@ describe('selectReturnCard', () => {
     expect(card.dealerOrderNumber).toBe('EXT-4390');
     expect(card.quantityLabel).toBe('1');
     expect(card.isPending).toBe(false);
+    expect(card.lifecyclePhase).toBe('WAITING_RETURN');
+    expect(card.lifecycleLabelKey).toBe('mobile.returns.lifecycle.WAITING_RETURN');
     expect(card.reasonLabelKey).toContain('MANUFACTURING_DEFECT');
+  });
+
+  it('exposes needInfoNote when NEED_INFO', () => {
+    const card = selectReturnCard(
+      {
+        ...row,
+        approvalStatus: 'NEED_INFO',
+        physicalStatus: 'NONE',
+        needInfoNote: 'Please add damage photos',
+      },
+      'en',
+    );
+    expect(card.lifecyclePhase).toBe('UNDER_REVIEW');
+    expect(card.needsInfo).toBe(true);
+    expect(card.needInfoNote).toBe('Please add damage photos');
+    expect(card.isPending).toBe(true);
   });
 
   it('uses Arabic dealer name', () => {

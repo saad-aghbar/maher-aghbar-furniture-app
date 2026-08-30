@@ -19,7 +19,7 @@ type Props = {
 };
 
 /**
- * Outstanding-first invoice floor card — matches admin-web list cards.
+ * Amount-due-first invoice floor card — Paid / Account credit / Overdue tones.
  */
 export function InvoiceBoardCard({
   invoice,
@@ -34,6 +34,7 @@ export function InvoiceBoardCard({
   const overdue = invoice.isOverdue;
   const accent = overdue ? colors.error : colors.brand;
   const showPdf = Boolean(onPdf);
+  const showCredit = invoice.availableCredit > 0.001;
   const dealerOrderLabel = dealerFacing
     ? (() => {
         const v = t('mobile.dealerAccount.yourOrderNumber');
@@ -184,7 +185,7 @@ export function InvoiceBoardCard({
               gap: theme.spacing.sm,
             }}
           >
-            {invoice.factoryOrderNumber ? (
+            {!dealerFacing && invoice.factoryOrderNumber ? (
               <RefChip
                 label={`${t('accounting.factoryOrderShort')} ${invoice.factoryOrderNumber}`}
               />
@@ -192,6 +193,11 @@ export function InvoiceBoardCard({
             {invoice.dealerOrderNumber ? (
               <RefChip
                 label={`${dealerOrderLabel} ${invoice.dealerOrderNumber}`}
+              />
+            ) : null}
+            {dealerFacing && !invoice.dealerOrderNumber && invoice.factoryOrderNumber ? (
+              <RefChip
+                label={`${dealerOrderLabel} ${invoice.factoryOrderNumber}`}
               />
             ) : null}
           </View>
@@ -224,7 +230,7 @@ export function InvoiceBoardCard({
                 textAlign: isRTL ? 'right' : 'left',
               }}
             >
-              {t('accounting.outstanding')}
+              {t('accounting.amountDue')}
             </AppText>
             <AppText
               weight={titleWeight}
@@ -243,7 +249,7 @@ export function InvoiceBoardCard({
                 color: overdue ? colors.error : colors.textPrimary,
               }}
             >
-              {`${invoice.outstandingLabel} ${currencySuffix}`}
+              {`${invoice.amountDueLabel} ${currencySuffix}`}
             </AppText>
             {overdue ? (
               <AppText
@@ -257,6 +263,24 @@ export function InvoiceBoardCard({
 
           <Divider compact />
 
+          <MoneyRow
+            label={t('accounting.paidAmount')}
+            value={`${invoice.paidLabel} ${currencySuffix}`}
+            isRTL={isRTL}
+            valueColor={invoice.paid > 0 ? colors.success : undefined}
+          />
+          {showCredit ? (
+            <>
+              <Divider compact />
+              <MoneyRow
+                label={t('accounting.accountCredit')}
+                value={`${invoice.availableCreditLabel} ${currencySuffix}`}
+                isRTL={isRTL}
+                valueColor={colors.success}
+              />
+            </>
+          ) : null}
+          <Divider compact />
           <MoneyRow
             label={t('accounting.total')}
             value={`${invoice.totalLabel} ${currencySuffix}`}
@@ -302,10 +326,12 @@ function MoneyRow({
   label,
   value,
   isRTL,
+  valueColor,
 }: {
   label: string;
   value: string;
   isRTL: boolean;
+  valueColor?: string;
 }) {
   const { colors, theme } = useTheme();
   return (
@@ -339,7 +365,7 @@ function MoneyRow({
         style={{
           flex: 1,
           minWidth: 0,
-          color: colors.textPrimary,
+          color: valueColor ?? colors.textPrimary,
           textAlign: isRTL ? 'left' : 'right',
           fontSize: 13,
         }}

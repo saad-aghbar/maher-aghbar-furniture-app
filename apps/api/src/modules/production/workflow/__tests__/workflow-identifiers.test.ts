@@ -6,6 +6,7 @@ import {
   nextNodeSortOrder,
   nextUniqueCode,
   pickStagePatch,
+  lockedAnchorNameChanged,
   resolveGeneratedCode,
   resolveNodeKey,
   slugFromEnglishName,
@@ -37,6 +38,10 @@ describe('technical identifiers', () => {
     expect(resolveGeneratedCode('  cnc mill ', 'X', [])).toBe('CNC_MILL');
   });
 
+  it('uniquifies an explicit code that already exists', () => {
+    expect(resolveGeneratedCode('FOAM', 'Foam prep', ['FOAM'])).toBe('FOAM_2');
+  });
+
   it('does not change a stored code when renaming (patch strips code)', () => {
     const patch = pickStagePatch({
       nameEn: 'Hand Finish',
@@ -45,6 +50,25 @@ describe('technical identifiers', () => {
     });
     expect(patch).toEqual({ nameEn: 'Hand Finish', nameAr: 'تشطيب يدوي' });
     expect(patch.code).toBeUndefined();
+  });
+
+  it('omits names from a locked-anchor patch', () => {
+    const patch = pickStagePatch(
+      {
+        nameEn: 'Should stay',
+        estimatedHours: 3,
+        requiresPhotos: true,
+      },
+      { omitNames: true },
+    );
+    expect(patch).toEqual({ estimatedHours: 3, requiresPhotos: true });
+  });
+
+  it('detects locked-anchor name changes and ignores identical names', () => {
+    const existing = { nameEn: 'Inspection', nameAr: 'الفحص', nameHe: 'בדיקה' };
+    expect(lockedAnchorNameChanged(existing, { estimatedHours: 2 })).toBe(false);
+    expect(lockedAnchorNameChanged(existing, { nameEn: 'Inspection', nameAr: 'الفحص' })).toBe(false);
+    expect(lockedAnchorNameChanged(existing, { nameEn: ' QC ' })).toBe(true);
   });
 
   it('assigns library sortOrder as max+10 when omitted', () => {
@@ -176,7 +200,13 @@ describe('WorkflowVersionService identifier generation', () => {
         }),
         deleteMany: jest.fn().mockResolvedValue({ count: 3 }),
       },
-      productionWorkflowNode: { delete: jest.fn().mockResolvedValue({}) },
+      productionWorkflowNode: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'mid',
+          stageDefinition: { code: 'FOAM' },
+        }),
+        delete: jest.fn().mockResolvedValue({}),
+      },
       auditEvent: { create: jest.fn().mockResolvedValue({}) },
     };
     const service = makeService(tx);

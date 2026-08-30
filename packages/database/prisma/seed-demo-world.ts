@@ -18,6 +18,8 @@ import { attachProductWorkflowConfigurations } from './seed/workflow';
 import { seedProductEstimates } from './seed/product-estimates';
 import { seedDealerOrdersRecent } from './seed/dealer-orders-recent';
 import { seedDealerFinance } from './seed/dealer-finance';
+import { seedPiece1LifecycleExamples } from './demo/piece1-lifecycle';
+import { seedPiece2ProductionSetupExamples } from './demo/piece2-production-setup';
 
 export { wipeOperationalData };
 
@@ -141,6 +143,20 @@ export async function seedFullDemoWorld(
   console.log(
     `  dealer orders (14d): ${dealerOrders.salesOrders} SO · ${dealerOrders.productionOrders} PO · ${dealerOrders.schedules} schedules`,
   );
+
+  await seedPiece1LifecycleExamples(prisma, {
+    dealers,
+    products,
+    adminUserId: admin.id,
+  });
+  console.log('  Piece 1 lifecycle examples (draft / waiting / needs-info / setup SOs)');
+
+  await seedPiece2ProductionSetupExamples(prisma, {
+    dealers,
+    products,
+    adminUserId: admin.id,
+  });
+  console.log('  Piece 2 production setup examples (SO-P2-A…F)');
 
   const finance = await seedDealerFinance(prisma, {
     adminId: admin.id,

@@ -258,7 +258,7 @@ export async function seedDemoStock(
       spec.status === PurchaseOrderStatus.RECEIVED || spec.status === PurchaseOrderStatus.PARTIALLY_RECEIVED;
     if (shouldReceive) {
       const receiptDate = new Date(spec.day.getTime() + 7 * 86400000);
-      const grnNumber = `GRN-${poNumber.slice(5)}`;
+      const grnNumber = await nextDoc(prisma, 'grn', opts.counters);
       const grn = await prisma.goodsReceipt.create({
         data: {
           number: grnNumber,

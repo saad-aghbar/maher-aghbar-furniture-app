@@ -24,7 +24,9 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { localizedName } from '@maher/i18n';
-import { useMemo, useState } from 'react';
+import { usePathname, useRouter } from '@/i18n/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface DashboardReport {
   newOrders?: number;
@@ -229,6 +231,47 @@ function buildQuery(params: Record<string, string>) {
   return s ? `?${s}` : '';
 }
 
+/** UTC calendar day YYYY-MM-DD (matches API dateRange gte/lte Z bounds). */
+function utcYmd(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function utcTodayBounds(): { from: string; to: string } {
+  const now = new Date();
+  const ymd = utcYmd(now);
+  return { from: ymd, to: ymd };
+}
+
+/** ISO week Monday–Sunday in UTC. */
+function utcThisWeekBounds(): { from: string; to: string } {
+  const now = new Date();
+  const day = now.getUTCDay(); // 0 Sun
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + mondayOffset));
+  const sunday = new Date(Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + 6));
+  return { from: utcYmd(monday), to: utcYmd(sunday) };
+}
+
+function utcThisMonthBounds(): { from: string; to: string } {
+  const now = new Date();
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+  return { from: utcYmd(from), to: utcYmd(to) };
+}
+
+type DatePreset = 'today' | 'week' | 'month' | 'custom';
+
+function detectPreset(from: string, to: string): DatePreset {
+  if (!from && !to) return 'custom';
+  const today = utcTodayBounds();
+  if (from === today.from && to === today.to) return 'today';
+  const week = utcThisWeekBounds();
+  if (from === week.from && to === week.to) return 'week';
+  const month = utcThisMonthBounds();
+  if (from === month.from && to === month.to) return 'month';
+  return 'custom';
+}
+
 async function downloadCsv(path: string, filename: string) {
   const res = await fetch(`${API_URL}${path}`, { credentials: 'include' });
   if (!res.ok) throw new ApiClientError(`Export failed (${res.status})`, res.status);
@@ -257,11 +300,76 @@ export default function ReportsPage() {
   const ta = useTranslations('accounting');
   const tCommon = useTranslations('common');
   const locale = useLocale();
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [customerId, setCustomerId] = useState('');
-  const [productId, setProductId] = useState('');
-  const [salesRepId, setSalesRepId] = useState('');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [dateFrom, setDateFrom] = useState(() => searchParams.get('from') ?? '');
+  const [dateTo, setDateTo] = useState(() => searchParams.get('to') ?? '');
+  const [customerId, setCustomerId] = useState(() => searchParams.get('customerId') ?? '');
+  const [productId, setProductId] = useState(() => searchParams.get('productId') ?? '');
+  const [salesRepId, setSalesRepId] = useState(() => searchParams.get('salesRepId') ?? '');
+  const [preset, setPreset] = useState<DatePreset>(() =>
+    detectPreset(searchParams.get('from') ?? '', searchParams.get('to') ?? ''),
+  );
+
+  const syncUrl = useCallback(
+    (next: { from?: string; to?: string; customerId?: string; productId?: string; salesRepId?: string }) => {
+      const qs = new URLSearchParams(searchParams.toString());
+      const apply = (key: string, value: string | undefined) => {
+        if (value === undefined) return;
+        if (value.trim()) qs.set(key, value.trim());
+        else qs.delete(key);
+      };
+      apply('from', next.from);
+      apply('to', next.to);
+      apply('customerId', next.customerId);
+      apply('productId', next.productId);
+      apply('salesRepId', next.salesRepId);
+      const s = qs.toString();
+      router.replace(s ? `${pathname}?${s}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
+
+  useEffect(() => {
+    const from = searchParams.get('from') ?? '';
+    const to = searchParams.get('to') ?? '';
+    setDateFrom(from);
+    setDateTo(to);
+    setCustomerId(searchParams.get('customerId') ?? '');
+    setProductId(searchParams.get('productId') ?? '');
+    setSalesRepId(searchParams.get('salesRepId') ?? '');
+    setPreset(detectPreset(from, to));
+  }, [searchParams]);
+
+  function applyPreset(next: DatePreset) {
+    setPreset(next);
+    if (next === 'custom') return;
+    const bounds =
+      next === 'today' ? utcTodayBounds() : next === 'week' ? utcThisWeekBounds() : utcThisMonthBounds();
+    setDateFrom(bounds.from);
+    setDateTo(bounds.to);
+    syncUrl({
+      from: bounds.from,
+      to: bounds.to,
+      customerId,
+      productId,
+      salesRepId,
+    });
+  }
+
+  function onFromChange(value: string) {
+    setDateFrom(value);
+    setPreset('custom');
+    syncUrl({ from: value, to: dateTo, customerId, productId, salesRepId });
+  }
+
+  function onToChange(value: string) {
+    setDateTo(value);
+    setPreset('custom');
+    syncUrl({ from: dateFrom, to: value, customerId, productId, salesRepId });
+  }
 
   const filterQs = useMemo(
     () =>
@@ -414,135 +522,185 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <PageHero
         title={t('reports')}
-        description={ta('reportsSubtitle')}
+        description={`${ta('reportsSubtitle')} ${ta('exportGapsNote')}`}
         tone="soft"
         actions={
-          <div className="flex flex-wrap items-end gap-2">
-            <Input
-              type="date"
-              label={ta('dateFrom')}
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-40"
-            />
-            <Input
-              type="date"
-              label={ta('dateTo')}
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-40"
-            />
-            <Select
-              label={ta('filterCustomer')}
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              className="min-w-[10rem]"
-              options={[
-                { value: '', label: ta('allCustomers') },
-                ...(dealersQuery.data ?? []).map((c) => ({
-                  value: c.id,
-                  label: localizedName(locale, c) || c.name || c.id,
-                })),
-              ]}
-            />
-            <Select
-              label={ta('filterProduct')}
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              className="min-w-[10rem]"
-              options={[
-                { value: '', label: ta('allProducts') },
-                ...(productsQuery.data ?? []).map((p) => ({
-                  value: p.id,
-                  label: localizedName(locale, p),
-                })),
-              ]}
-            />
-            <Select
-              label={ta('filterSalesRep')}
-              value={salesRepId}
-              onChange={(e) => setSalesRepId(e.target.value)}
-              className="min-w-[10rem]"
-              options={[
-                { value: '', label: ta('allSalesReps') },
-                ...(usersQuery.data ?? []).map((u) => ({
-                  value: u.id,
-                  label: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || u.id,
-                })),
-              ]}
-            />
-            {showSales ? (
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() =>
-                  void downloadCsv(`/api/v1/reports/export/sales.csv${filterQs}`, 'sales-report.csv')
-                }
-              >
-                {ta('exportSalesCsv')}
-              </Button>
-            ) : null}
-            {showOrderProfit ? (
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() =>
-                  void downloadCsv(
-                    `/api/v1/reports/export/order-profit.csv${periodQs}`,
-                    'order-profit.csv',
-                  )
-                }
-              >
-                {ta('exportProfitCsv')}
-              </Button>
-            ) : null}
-            {showApLedger ? (
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() =>
-                  void downloadCsv(`/api/v1/reports/export/ap-ledger.csv${periodQs}`, 'ap-ledger.csv')
-                }
-              >
-                {ta('exportApCsv')}
-              </Button>
-            ) : null}
-            {showPeriodPl ? (
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() =>
-                  void downloadCsv(`/api/v1/reports/export/period-pl.csv${periodQs}`, 'period-pl.csv')
-                }
-              >
-                {ta('exportPeriodPlCsv')}
-              </Button>
-            ) : null}
-            {showCashFlow ? (
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() =>
-                  void downloadCsv(`/api/v1/reports/export/cash-flow.csv${periodQs}`, 'cash-flow.csv')
-                }
-              >
-                {ta('exportCashFlowCsv')}
-              </Button>
-            ) : null}
-            {showFinancial ? (
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() =>
-                  void downloadCsv('/api/v1/reports/export/financial.csv', 'financial-aging.csv')
-                }
-              >
-                {ta('exportFinancialCsv')}
-              </Button>
-            ) : null}
+          <div className="flex flex-col items-stretch gap-3 sm:items-end">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ['today', ta('presetToday')],
+                  ['week', ta('presetThisWeek')],
+                  ['month', ta('presetThisMonth')],
+                  ['custom', ta('presetCustom')],
+                ] as const
+              ).map(([key, label]) => (
+                <Button
+                  key={key}
+                  size="sm"
+                  variant={preset === key ? 'primary' : 'subtle'}
+                  onClick={() => applyPreset(key)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <Input
+                type="date"
+                label={ta('dateFrom')}
+                value={dateFrom}
+                onChange={(e) => onFromChange(e.target.value)}
+                className="w-40"
+              />
+              <Input
+                type="date"
+                label={ta('dateTo')}
+                value={dateTo}
+                onChange={(e) => onToChange(e.target.value)}
+                className="w-40"
+              />
+              <Select
+                label={ta('filterCustomer')}
+                value={customerId}
+                onChange={(e) => {
+                  setCustomerId(e.target.value);
+                  syncUrl({
+                    from: dateFrom,
+                    to: dateTo,
+                    customerId: e.target.value,
+                    productId,
+                    salesRepId,
+                  });
+                }}
+                className="min-w-[10rem]"
+                options={[
+                  { value: '', label: ta('allCustomers') },
+                  ...(dealersQuery.data ?? []).map((c) => ({
+                    value: c.id,
+                    label: localizedName(locale, c) || c.name || c.id,
+                  })),
+                ]}
+              />
+              <Select
+                label={ta('filterProduct')}
+                value={productId}
+                onChange={(e) => {
+                  setProductId(e.target.value);
+                  syncUrl({
+                    from: dateFrom,
+                    to: dateTo,
+                    customerId,
+                    productId: e.target.value,
+                    salesRepId,
+                  });
+                }}
+                className="min-w-[10rem]"
+                options={[
+                  { value: '', label: ta('allProducts') },
+                  ...(productsQuery.data ?? []).map((p) => ({
+                    value: p.id,
+                    label: localizedName(locale, p),
+                  })),
+                ]}
+              />
+              <Select
+                label={ta('filterSalesRep')}
+                value={salesRepId}
+                onChange={(e) => {
+                  setSalesRepId(e.target.value);
+                  syncUrl({
+                    from: dateFrom,
+                    to: dateTo,
+                    customerId,
+                    productId,
+                    salesRepId: e.target.value,
+                  });
+                }}
+                className="min-w-[10rem]"
+                options={[
+                  { value: '', label: ta('allSalesReps') },
+                  ...(usersQuery.data ?? []).map((u) => ({
+                    value: u.id,
+                    label: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email || u.id,
+                  })),
+                ]}
+              />
+              {showSales ? (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() =>
+                    void downloadCsv(`/api/v1/reports/export/sales.csv${filterQs}`, 'sales-report.csv')
+                  }
+                >
+                  {ta('exportSalesCsv')}
+                </Button>
+              ) : null}
+              {showOrderProfit ? (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() =>
+                    void downloadCsv(
+                      `/api/v1/reports/export/order-profit.csv${periodQs}`,
+                      'order-profit.csv',
+                    )
+                  }
+                >
+                  {ta('exportProfitCsv')}
+                </Button>
+              ) : null}
+              {showApLedger ? (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() =>
+                    void downloadCsv(`/api/v1/reports/export/ap-ledger.csv${periodQs}`, 'ap-ledger.csv')
+                  }
+                >
+                  {ta('exportApCsv')}
+                </Button>
+              ) : null}
+              {showPeriodPl ? (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() =>
+                    void downloadCsv(`/api/v1/reports/export/period-pl.csv${periodQs}`, 'period-pl.csv')
+                  }
+                >
+                  {ta('exportPeriodPlCsv')}
+                </Button>
+              ) : null}
+              {showCashFlow ? (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() =>
+                    void downloadCsv(`/api/v1/reports/export/cash-flow.csv${periodQs}`, 'cash-flow.csv')
+                  }
+                >
+                  {ta('exportCashFlowCsv')}
+                </Button>
+              ) : null}
+              {showFinancial ? (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() =>
+                    void downloadCsv('/api/v1/reports/export/financial.csv', 'financial-aging.csv')
+                  }
+                >
+                  {ta('exportFinancialCsv')}
+                </Button>
+              ) : null}
+            </div>
           </div>
         }
       />
+
+      <p className="text-sm text-text-secondary">{ta('csvExportHint')}</p>
 
       {dateFrom || dateTo || customerId || productId || salesRepId ? (
         <p className="text-sm text-text-secondary">{ta('dateRangeHint')}</p>
@@ -724,6 +882,14 @@ export default function ReportsPage() {
         </MotionSection>
       ) : isForbidden(sales.error) ? null : sales.isError ? (
         <ForbiddenOrError title={ta('reportSales')} message={tCommon('loadFailed')} />
+      ) : null}
+
+      {showOrderProfit || showPeriodPl || showCashFlow || showApLedger || showFinancial ? (
+        <div className="border-t border-border pt-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            {ta('reportCost')}
+          </p>
+        </div>
       ) : null}
 
       {showOrderProfit ? (
@@ -1104,6 +1270,27 @@ export default function ReportsPage() {
         <ForbiddenOrError title={ta('reportFinancial')} message={tCommon('loadFailed')} />
       ) : null}
 
+      {showProduction || showProductivity ? (
+        <div className="border-t border-border pt-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+            {ta('reportProduction')}
+          </p>
+        </div>
+      ) : null}
+
+      <MotionSection enter="rise" className="space-y-3">
+        <h2 className="text-lg font-semibold">{ta('reportQuality')}</h2>
+        <Card title={ta('reportQuality')}>
+          <p className="text-sm text-text-secondary">{ta('qualityReportHint')}</p>
+          <Link
+            href="/quality"
+            className="mt-3 inline-flex text-sm font-semibold text-brand hover:underline"
+          >
+            {ta('openQualityBoard')}
+          </Link>
+        </Card>
+      </MotionSection>
+
       {showProduction ? (
         <MotionSection enter="rise" className="space-y-4">
           <h2 className="text-lg font-semibold">{ta('reportProduction')}</h2>
@@ -1263,6 +1450,11 @@ export default function ReportsPage() {
 
       {showInventory ? (
         <MotionSection enter="rise" className="space-y-4">
+          <div className="border-t border-border pt-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              {ta('reportInventory')}
+            </p>
+          </div>
           <h2 className="text-lg font-semibold">{ta('reportInventory')}</h2>
           <Card title={ta('lowStock')}>
             {(inventory.data.lowStock ?? []).length === 0 ? (
@@ -1297,6 +1489,11 @@ export default function ReportsPage() {
 
       {showPurchasing ? (
         <MotionSection enter="rise" className="space-y-4">
+          <div className="border-t border-border pt-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">
+              {ta('reportPurchasing')}
+            </p>
+          </div>
           <h2 className="text-lg font-semibold">{ta('reportPurchasing')}</h2>
           <div className="maher-stagger grid gap-4 lg:grid-cols-2">
             <Card title={ta('purchaseOrdersByStatus')}>

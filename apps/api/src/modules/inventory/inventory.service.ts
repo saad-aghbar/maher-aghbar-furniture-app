@@ -5,7 +5,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InventoryTxType, Prisma } from '@maher/database';
+import { InventoryTxType, InventoryTracking, Prisma, PurchaseOrderStatus } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { PaginationDto, paginatedMeta } from '../../common/dto/pagination.dto';
@@ -28,10 +28,18 @@ import {
 import { roundMoney } from '../../common/helpers/money.util';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
+import { inventoryScanPayload } from '@maher/types';
 import { PurchasingService } from '../purchasing/purchasing.service';
 import { SchedulingQueueService } from '../scheduling/scheduling-queue';
+import { comparePriority } from '../scheduling/domain/priority-fairness';
+import type { PrioritySortItem } from '../scheduling/domain/types';
 import { stripInventoryCostFields, stripInventoryCostList } from './inventory-cost.util';
 import { aggregateStockQty, withStockQty } from '../../common/helpers/inventory-qty.util';
+import {
+  pieceLabelsFromMetadata,
+  type PieceLabel,
+} from '../production/piece-labels';
+import type { ListFinishedLotsDto } from './dto/finished-lots.dto';
 
 function withItemStockQty<T extends { balances?: Array<{ availableQty?: unknown; reservedQty?: unknown }> }>(
   item: T,
@@ -45,6 +53,29 @@ function withItemStockQty<T extends { balances?: Array<{ availableQty?: unknown;
     reservedQty: qty.reservedQty,
     freeQty: qty.freeQty,
   };
+}
+
+function withItemScanCode<T extends { sku: string; qrCode?: string | null }>(item: T) {
+  return { ...item, scanCode: inventoryScanPayload(item) };
+}
+
+function presentInventoryItem<
+  T extends {
+    sku: string;
+    qrCode?: string | null;
+    balances?: Array<{ availableQty?: unknown; reservedQty?: unknown }>;
+  },
+>(item: T) {
+  return withItemScanCode(withItemStockQty(item));
+}
+
+function assertItemMutable(item: { archivedAt?: Date | null; isActive?: boolean | null }) {
+  if (item.archivedAt || item.isActive === false) {
+    throw new BadRequestException({
+      code: 'ITEM_INACTIVE',
+      message: 'This material is inactive and cannot be moved.',
+    });
+  }
 }
 
 @Injectable()
@@ -167,7 +198,7 @@ export class InventoryService {
       });
     }
     const stripped = stripInventoryCostList(rows, permissions);
-    const withQty = stripped.map((item) => withItemStockQty(item));
+    const withQty = stripped.map((item) => presentInventoryItem(item));
     if (query.itemClass !== 'FINISHED_GOOD' || withQty.length === 0) {
       return {
         data: withQty,
@@ -195,24 +226,63 @@ export class InventoryService {
   }
 
   async findByCode(code: string, permissions?: string[]) {
+    const raw = String(code ?? '').trim();
     const item = await this.prisma.inventoryItem.findFirst({
       where: {
-        archivedAt: null,
-        OR: [{ sku: code }, { barcode: code }, { qrCode: code }],
+        OR: [{ sku: raw }, { barcode: raw }, { qrCode: raw }],
       },
       include: { balances: { include: { warehouse: true } } },
     });
-    if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
-    return withItemStockQty(stripInventoryCostFields(item, permissions));
+    if (item) return presentInventoryItem(stripInventoryCostFields(item, permissions));
+
+    // Factory WIP kit / piece / lot QR → resolve to the semi-finished SKU
+    const lot = await this.prisma.inventoryLot.findFirst({
+      where: { qrCode: raw },
+      include: {
+        inventoryItem: { include: { balances: { include: { warehouse: true } } } },
+      },
+    });
+    if (lot?.inventoryItem) {
+      return presentInventoryItem(stripInventoryCostFields(lot.inventoryItem, permissions));
+    }
+
+    const kit = await this.prisma.wipKit.findFirst({
+      where: {
+        OR: [
+          { qrCode: raw },
+          { id: raw.startsWith('WIPKIT:') ? raw.slice('WIPKIT:'.length) : raw },
+          { pieces: { some: { qrCode: raw } } },
+        ],
+      },
+      include: {
+        pieces: {
+          where: { inventoryLotId: { not: null } },
+          take: 1,
+          include: {
+            inventoryLot: {
+              include: {
+                inventoryItem: { include: { balances: { include: { warehouse: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const kitItem = kit?.pieces[0]?.inventoryLot?.inventoryItem;
+    if (kitItem) {
+      return presentInventoryItem(stripInventoryCostFields(kitItem, permissions));
+    }
+
+    throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
   }
 
   async getItem(id: string, permissions?: string[]) {
     const item = await this.prisma.inventoryItem.findFirst({
-      where: { id, archivedAt: null },
+      where: { id },
       include: { balances: { include: { warehouse: true } } },
     });
     if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
-    return withItemStockQty(stripInventoryCostFields(item, permissions));
+    return presentInventoryItem(stripInventoryCostFields(item, permissions));
   }
 
   async listItemTransactions(id: string, query: PaginationDto, permissions?: string[]) {
@@ -264,6 +334,7 @@ export class InventoryService {
       maxStock?: number;
       standardCost?: number;
       barcode?: string;
+      qrCode?: string;
       materialId?: string;
       color?: string;
       materialType?: string;
@@ -293,6 +364,9 @@ export class InventoryService {
       providedSku ||
       (await this.nextInventorySku(dto.category, classified.itemClass, classified.materialGroup));
 
+    const providedQr = dto.qrCode?.trim() || undefined;
+    const qrCode = providedQr || sku;
+
     const data = {
       sku,
       nameAr: dto.nameAr.trim(),
@@ -307,6 +381,7 @@ export class InventoryService {
       maxStock: dto.maxStock != null ? roundMoney(dto.maxStock) : undefined,
       standardCost: roundMoney(dto.standardCost ?? 0),
       barcode: dto.barcode?.trim() || undefined,
+      qrCode,
       materialId: dto.materialId,
       color: dto.color?.trim() || undefined,
       materialType: dto.materialType?.trim() || undefined,
@@ -330,6 +405,7 @@ export class InventoryService {
           classified.itemClass,
           classified.materialGroup,
         );
+        if (!providedQr) data.qrCode = data.sku;
         item = await this.prisma.inventoryItem.create({ data });
       } else {
         throw err;
@@ -345,7 +421,7 @@ export class InventoryService {
         newValues: { sku: item.sku },
       },
     });
-    return item;
+    return withItemScanCode(item);
   }
 
   async updateItem(
@@ -431,7 +507,7 @@ export class InventoryService {
         newValues: dto as object,
       },
     });
-    return item;
+    return withItemScanCode(item);
   }
 
   async syncFromMaterials(userId: string) {
@@ -458,6 +534,7 @@ export class InventoryService {
       await this.prisma.inventoryItem.create({
         data: {
           sku: material.sku,
+          qrCode: material.sku,
           nameAr: material.nameAr,
           nameEn: material.nameEn,
           unit: material.unit,
@@ -517,6 +594,7 @@ export class InventoryService {
         tx.inventoryItem.findUniqueOrThrow({ where: { id: params.inventoryItemId } }),
         tx.warehouse.findUniqueOrThrow({ where: { id: params.warehouseId } }),
       ]);
+      assertItemMutable(item);
       if (
         !itemClassCompatibleWithWarehouse(
           item.itemClass as InventoryItemClassValue,
@@ -687,6 +765,7 @@ export class InventoryService {
         message: 'Transfers are only allowed between warehouses of the same type.',
       });
     }
+    await this.assertMutableItemIds(dto.lines.map((l) => l.inventoryItemId));
     const number = await this.sequences.next('TRF', 'TRF');
     return this.prisma.warehouseTransfer.create({
       data: {
@@ -722,29 +801,73 @@ export class InventoryService {
 
     return this.prisma.$transaction(async (tx) => {
       for (const line of transfer.lines) {
+        const qty = Number(line.quantity);
+        const item = await tx.inventoryItem.findUniqueOrThrow({
+          where: { id: line.inventoryItemId },
+          select: { id: true, itemClass: true },
+        });
+        const lotTracked =
+          item.itemClass === 'FINISHED_GOOD' || item.itemClass === 'SEMI_FINISHED_GOOD';
+
+        let reservedToMove = 0;
+        if (lotTracked) {
+          const moved = await this.moveLotsForWarehouseTransfer(tx, {
+            inventoryItemId: line.inventoryItemId,
+            fromWarehouseId: transfer.fromWarehouseId,
+            toWarehouseId: transfer.toWarehouseId,
+            quantity: qty,
+          });
+          reservedToMove = moved.reservedQty;
+          // Lots are physical truth — top up source balances before ledger out.
+          await this.ensureLotBalanceForIssue(tx, {
+            inventoryItemId: line.inventoryItemId,
+            warehouseId: transfer.fromWarehouseId,
+            locationId: null,
+            quantity: qty,
+            status: 'AVAILABLE',
+          });
+          if (reservedToMove > 0) {
+            const bal = await tx.inventoryBalance.findFirst({
+              where: {
+                inventoryItemId: line.inventoryItemId,
+                warehouseId: transfer.fromWarehouseId,
+                locationId: null,
+              },
+            });
+            if (bal && Number(bal.reservedQty) < reservedToMove) {
+              await tx.inventoryBalance.update({
+                where: { id: bal.id },
+                data: { reservedQty: roundMoney(reservedToMove) },
+              });
+            }
+          }
+        }
+
         await this.applyMovement({
           type: InventoryTxType.WAREHOUSE_TRANSFER,
           inventoryItemId: line.inventoryItemId,
           warehouseId: transfer.fromWarehouseId,
-          quantity: Number(line.quantity),
+          quantity: qty,
           outbound: true,
           userId,
           referenceType: 'WarehouseTransfer',
           referenceId: transfer.id,
           notes: `Transfer ${transfer.number} out`,
           idempotencyKey: `transfer-out:${id}:${line.id}`,
+          reservedDelta: lotTracked ? -reservedToMove : 0,
           db: tx,
         });
         await this.applyMovement({
           type: InventoryTxType.WAREHOUSE_TRANSFER,
           inventoryItemId: line.inventoryItemId,
           warehouseId: transfer.toWarehouseId,
-          quantity: Number(line.quantity),
+          quantity: qty,
           userId,
           referenceType: 'WarehouseTransfer',
           referenceId: transfer.id,
           notes: `Transfer ${transfer.number} in`,
           idempotencyKey: `transfer-in:${id}:${line.id}`,
+          reservedDelta: lotTracked ? reservedToMove : 0,
           db: tx,
         });
       }
@@ -755,6 +878,50 @@ export class InventoryService {
         include: { lines: true, fromWarehouse: true, toWarehouse: true },
       });
     });
+  }
+
+  /**
+   * Move SEMI/FG lots with a warehouse transfer (FIFO whole lots).
+   * Clears location — bin codes are warehouse-scoped.
+   */
+  private async moveLotsForWarehouseTransfer(
+    db: Prisma.TransactionClient,
+    params: {
+      inventoryItemId: string;
+      fromWarehouseId: string;
+      toWarehouseId: string;
+      quantity: number;
+    },
+  ): Promise<{ reservedQty: number; movedQty: number }> {
+    const lots = await db.inventoryLot.findMany({
+      where: {
+        inventoryItemId: params.inventoryItemId,
+        warehouseId: params.fromWarehouseId,
+        status: { in: ['AVAILABLE', 'RESERVED'] },
+      },
+      orderBy: { producedAt: 'asc' },
+    });
+    let remaining = params.quantity;
+    let reservedQty = 0;
+    let movedQty = 0;
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const lotQty = Number(lot.quantity);
+      if (!(lotQty > 0) || lotQty > remaining + 1e-9) continue;
+      await db.inventoryLot.update({
+        where: { id: lot.id },
+        data: {
+          warehouseId: params.toWarehouseId,
+          locationId: null,
+        },
+      });
+      remaining = Number(roundMoney(remaining - lotQty));
+      movedQty = Number(roundMoney(movedQty + lotQty));
+      if (lot.status === 'RESERVED') {
+        reservedQty = Number(roundMoney(reservedQty + lotQty));
+      }
+    }
+    return { reservedQty, movedQty };
   }
 
   listTransfers(query: PaginationDto & { warehouseType?: string }) {
@@ -784,6 +951,7 @@ export class InventoryService {
     },
     userId: string,
   ) {
+    await this.assertMutableItemIds(dto.lines.map((l) => l.inventoryItemId));
     const number = await this.sequences.next('CNT', 'CNT');
     const lines = await Promise.all(
       dto.lines.map(async (l) => {
@@ -929,15 +1097,98 @@ export class InventoryService {
       items
         .map((item) => {
           const qty = aggregateStockQty(item.balances);
-          return {
+          return withItemScanCode({
             ...item,
             ...qty,
             availableQty: qty.onHandQty,
-          };
+          });
         })
         .filter((item) => item.onHandQty <= Number(item.minStock)),
       permissions,
     );
+  }
+
+  async listOpenReceipts(inventoryItemId: string) {
+    const item = await this.prisma.inventoryItem.findFirst({
+      where: { id: inventoryItemId },
+      select: { id: true, sku: true, unit: true, archivedAt: true, isActive: true },
+    });
+    if (!item) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
+
+    const RECEIVABLE = new Set<PurchaseOrderStatus>([
+      PurchaseOrderStatus.APPROVED,
+      PurchaseOrderStatus.SENT,
+      PurchaseOrderStatus.PARTIALLY_RECEIVED,
+    ]);
+    const purchaseOrders = await this.prisma.purchaseOrder.findMany({
+      where: {
+        archivedAt: null,
+        status: { in: [...RECEIVABLE] },
+        lines: { some: { inventoryItemId: item.id } },
+      },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        expectedDeliveryDate: true,
+        warehouseId: true,
+        supplier: { select: { name: true, nameEn: true, nameAr: true, nameHe: true } },
+        lines: {
+          where: { inventoryItemId: item.id },
+          select: { inventoryItemId: true, quantity: true, unit: true },
+        },
+        goodsReceipts: {
+          select: {
+            lines: {
+              where: { inventoryItemId: item.id },
+              select: { receivedQty: true },
+            },
+          },
+        },
+      },
+      orderBy: { expectedDeliveryDate: 'asc' },
+    });
+
+    return purchaseOrders.flatMap((po) => {
+      const orderedQty = po.lines.reduce((s, l) => s + Number(l.quantity), 0);
+      const receivedQty = po.goodsReceipts.reduce(
+        (s, grn) => s + grn.lines.reduce((g, l) => g + Number(l.receivedQty), 0),
+        0,
+      );
+      const remainingQty = roundMoney(orderedQty - receivedQty);
+      if (!(Number(remainingQty) > 0)) return [];
+      const supplierName =
+        po.supplier.nameEn || po.supplier.name || po.supplier.nameAr || po.supplier.nameHe || '';
+      return [
+        {
+          purchaseOrderId: po.id,
+          purchaseOrderNumber: po.number,
+          supplierName,
+          supplierNameAr: po.supplier.nameAr ?? null,
+          supplierNameHe: po.supplier.nameHe ?? null,
+          orderedQty: roundMoney(orderedQty),
+          receivedQty: roundMoney(receivedQty),
+          remainingQty,
+          unit: po.lines[0]?.unit || item.unit,
+          expectedDeliveryDate: po.expectedDeliveryDate,
+          suggestedWarehouseId: po.warehouseId,
+          status: po.status,
+        },
+      ];
+    });
+  }
+
+  private async assertMutableItemIds(ids: string[]) {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (!unique.length) return;
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, archivedAt: true, isActive: true },
+    });
+    if (items.length !== unique.length) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Item not found.' });
+    }
+    for (const row of items) assertItemMutable(row);
   }
 
   private async nextInventorySku(
@@ -1001,11 +1252,15 @@ export class InventoryService {
   }
 
   async overview() {
-    const [groups, wipLots, fgBalances] = await Promise.all([
+    const [groups, wipLots, fgLots, fgBalances] = await Promise.all([
       this.listGroups(),
       this.prisma.inventoryLot.findMany({
         where: { status: { in: ['AVAILABLE', 'RESERVED'] }, inventoryItem: { itemClass: 'SEMI_FINISHED_GOOD' } },
         select: { quantity: true, status: true },
+      }),
+      this.prisma.inventoryLot.findMany({
+        where: { status: { in: ['AVAILABLE', 'RESERVED'] }, inventoryItem: { itemClass: 'FINISHED_GOOD' } },
+        select: { quantity: true, status: true, salesOrderId: true },
       }),
       this.prisma.inventoryBalance.findMany({
         where: { inventoryItem: { itemClass: 'FINISHED_GOOD', archivedAt: null } },
@@ -1023,6 +1278,7 @@ export class InventoryService {
     const fgAvail = fgBalances.reduce((s, b) => s + Number(b.availableQty), 0);
     const fgReserved = fgBalances.reduce((s, b) => s + Number(b.reservedQty), 0);
     const fgFree = Math.max(0, fgAvail - fgReserved);
+    const fgLotQty = fgLots.reduce((s, l) => s + Number(l.quantity), 0);
     return {
       rawMaterials,
       semiFinished: {
@@ -1032,18 +1288,20 @@ export class InventoryService {
       },
       finishedGoods: {
         itemCount: fgBalances.length,
+        lotCount: fgLots.length,
         onHandQty: roundMoney(fgAvail),
         reservedQty: roundMoney(fgReserved),
         freeQty: roundMoney(fgFree),
         availableQty: roundMoney(fgAvail),
-        readyForDeliveryQty: roundMoney(fgFree),
+        readyForDeliveryQty: roundMoney(fgLotQty),
+        waitingForTruckQty: roundMoney(fgLotQty),
       },
     };
   }
 
   async listSemiFinished(query: PaginationDto & { q?: string; warehouseId?: string }) {
     const where: Prisma.InventoryLotWhereInput = {
-      status: { in: ['AVAILABLE', 'RESERVED', 'REQUIRES_REVIEW'] },
+      status: { in: ['AVAILABLE', 'RESERVED', 'REQUIRES_REVIEW', 'PARTIALLY_CONSUMED'] },
       inventoryItem: {
         itemClass: 'SEMI_FINISHED_GOOD',
         archivedAt: null,
@@ -1066,8 +1324,37 @@ export class InventoryService {
         include: {
           inventoryItem: { include: { product: true } },
           warehouse: true,
-          productionOrder: { select: { id: true, number: true, productDescription: true } },
+          productionOrder: {
+            select: {
+              id: true,
+              number: true,
+              productDescription: true,
+              salesOrder: {
+                select: {
+                  id: true,
+                  number: true,
+                  projectName: true,
+                  customer: { select: { id: true, nameEn: true, nameAr: true, code: true } },
+                },
+              },
+              workflowSnapshot: {
+                select: {
+                  nodes: {
+                    select: {
+                      stageCode: true,
+                      consumesSemiFinished: true,
+                      isSkipped: true,
+                      nameEnSnapshot: true,
+                      nameArSnapshot: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           stageInstance: { include: { stageDefinition: true } },
+          location: { select: { id: true, code: true, name: true } },
+          wipPiece: { select: { kit: { select: { id: true, qrCode: true } } } },
         },
         orderBy: { producedAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
@@ -1075,7 +1362,454 @@ export class InventoryService {
       }),
     ]);
     const data = await this.withLotTraceability(rows);
-    return { data, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    return {
+      data: data.map((lot) => {
+        const next = lot.productionOrder?.workflowSnapshot?.nodes.find(
+          (n) => n.consumesSemiFinished && !n.isSkipped,
+        );
+        return {
+          ...lot,
+          wipKit: lot.wipPiece?.kit ?? null,
+          salesOrderNumber: lot.productionOrder?.salesOrder?.number ?? null,
+          dealerNameEn: lot.productionOrder?.salesOrder?.customer?.nameEn ?? null,
+          dealerNameAr: lot.productionOrder?.salesOrder?.customer?.nameAr ?? null,
+          projectName: lot.productionOrder?.salesOrder?.projectName ?? null,
+          nextConsumingStageCode: next?.stageCode ?? null,
+          nextConsumingStageNameEn: next?.nameEnSnapshot ?? null,
+          nextConsumingStageNameAr: next?.nameArSnapshot ?? null,
+        };
+      }),
+      meta: paginatedMeta(query.page, query.pageSize, totalItems),
+    };
+  }
+
+  /**
+   * Finished Goods outbound desk — lots in warehouse or history presence window.
+   * Enriched with package labels, leave-by delivery, and load progress (checkmarks ≠ issue).
+   */
+  async listFinishedLots(query: ListFinishedLotsDto) {
+    const scope = query.scope === 'history' ? 'history' : 'inWarehouse';
+    const q = String(query.q ?? '').trim();
+    const now = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    let fromStart: Date | null = null;
+    let toEnd: Date | null = null;
+    if (scope === 'history') {
+      const fromRaw = query.from
+        ? new Date(query.from)
+        : new Date(now.getTime() - 30 * dayMs);
+      const toRaw = query.to ? new Date(query.to) : now;
+      fromStart = new Date(fromRaw);
+      fromStart.setHours(0, 0, 0, 0);
+      toEnd = new Date(toRaw);
+      toEnd.setHours(23, 59, 59, 999);
+    }
+
+    const textOr: Prisma.InventoryLotWhereInput[] = q
+      ? [
+          {
+            inventoryItem: {
+              OR: [
+                { nameEn: { contains: q, mode: 'insensitive' } },
+                { nameAr: { contains: q, mode: 'insensitive' } },
+                { nameHe: { contains: q, mode: 'insensitive' } },
+                { sku: { contains: q, mode: 'insensitive' } },
+                {
+                  product: {
+                    OR: [
+                      { nameEn: { contains: q, mode: 'insensitive' } },
+                      { nameAr: { contains: q, mode: 'insensitive' } },
+                      { nameHe: { contains: q, mode: 'insensitive' } },
+                      { sku: { contains: q, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+          { qrCode: { contains: q, mode: 'insensitive' } },
+          {
+            productionOrder: {
+              OR: [
+                { number: { contains: q, mode: 'insensitive' } },
+                { productDescription: { contains: q, mode: 'insensitive' } },
+              ],
+            },
+          },
+          {
+            salesOrder: {
+              OR: [
+                { number: { contains: q, mode: 'insensitive' } },
+                { projectName: { contains: q, mode: 'insensitive' } },
+                { externalOrderNumber: { contains: q, mode: 'insensitive' } },
+                {
+                  customer: {
+                    OR: [
+                      { nameEn: { contains: q, mode: 'insensitive' } },
+                      { nameAr: { contains: q, mode: 'insensitive' } },
+                      { name: { contains: q, mode: 'insensitive' } },
+                      { code: { contains: q, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+                {
+                  deliveries: {
+                    some: { number: { contains: q, mode: 'insensitive' } },
+                  },
+                },
+              ],
+            },
+          },
+        ]
+      : [];
+
+    const where: Prisma.InventoryLotWhereInput = {
+      inventoryItem: { itemClass: 'FINISHED_GOOD', archivedAt: null },
+      ...(query.warehouseId ? { warehouseId: query.warehouseId } : {}),
+      ...(scope === 'inWarehouse'
+        ? { status: { in: ['AVAILABLE', 'RESERVED'] } }
+        : {
+            status: { in: ['AVAILABLE', 'RESERVED', 'DELIVERED'] },
+            ...(toEnd ? { producedAt: { lte: toEnd } } : {}),
+          }),
+      ...(textOr.length ? { OR: textOr } : {}),
+    };
+
+    // Fetch a wider page for history presence + package-label search filtering.
+    const fetchTake = Math.min(500, Math.max(query.pageSize * 5, 100));
+    const rows = await this.prisma.inventoryLot.findMany({
+      where,
+      include: {
+        inventoryItem: { include: { product: true } },
+        warehouse: true,
+        location: { select: { id: true, code: true, name: true } },
+        productionOrder: { select: { id: true, number: true, productDescription: true } },
+        salesOrder: {
+          select: {
+            id: true,
+            number: true,
+            projectName: true,
+            status: true,
+            customer: {
+              select: {
+                id: true,
+                nameEn: true,
+                nameAr: true,
+                nameHe: true,
+                name: true,
+                code: true,
+              },
+            },
+            deliveries: {
+              where: {
+                status: {
+                  in: ['PLANNED', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'],
+                },
+              },
+              orderBy: { deliveryDate: 'asc' },
+              take: 3,
+              select: {
+                id: true,
+                number: true,
+                status: true,
+                deliveryDate: true,
+              },
+            },
+          },
+        },
+        stageInstance: { include: { stageDefinition: true } },
+      },
+      orderBy: { producedAt: 'asc' },
+      take: fetchTake,
+    });
+
+    const lotIds = rows.map((r) => r.id);
+    const poIds = [
+      ...new Set(rows.map((r) => r.productionOrderId).filter((id): id is string => Boolean(id))),
+    ];
+    const stageInstanceIds = [
+      ...new Set(rows.map((r) => r.stageInstanceId).filter((id): id is string => Boolean(id))),
+    ];
+    const deliveryIds = [
+      ...new Set(
+        rows.flatMap((r) => (r.salesOrder?.deliveries ?? []).map((d) => d.id)),
+      ),
+    ];
+
+    const [issueTxs, snapByStage, packNodes, loadPieces, inspections] = await Promise.all([
+      lotIds.length
+        ? this.prisma.inventoryTransaction.findMany({
+            where: {
+              type: 'DELIVERY_ISSUE',
+              OR: [
+                { referenceId: { in: deliveryIds.length ? deliveryIds : ['__none__'] } },
+                ...(poIds.length
+                  ? [{ referenceId: { in: poIds } }]
+                  : []),
+              ],
+              createdAt: { gte: rows.reduce((min, r) => (r.producedAt < min ? r.producedAt : min), rows[0]?.producedAt ?? now) },
+            },
+            select: {
+              id: true,
+              referenceId: true,
+              inventoryItemId: true,
+              createdAt: true,
+              warehouseId: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 2000,
+          })
+        : Promise.resolve([]),
+      stageInstanceIds.length
+        ? this.prisma.productionOrderWorkflowSnapshotNode.findMany({
+            where: { stageInstanceId: { in: stageInstanceIds } },
+            select: {
+              stageInstanceId: true,
+              expectedPieceCount: true,
+              metadata: true,
+            },
+          })
+        : Promise.resolve([]),
+      poIds.length
+        ? this.prisma.productionOrderWorkflowSnapshotNode.findMany({
+            where: {
+              snapshot: { productionOrderId: { in: poIds } },
+              OR: [
+                { inventoryTracking: InventoryTracking.PRODUCES_FINISHED },
+                { stageCode: { in: ['PACKAGING', 'PACK'] } },
+              ],
+              isSkipped: false,
+            },
+            select: {
+              expectedPieceCount: true,
+              metadata: true,
+              snapshot: { select: { productionOrderId: true } },
+            },
+          })
+        : Promise.resolve([]),
+      deliveryIds.length
+        ? this.prisma.deliveryLoadPiece.findMany({
+            where: { deliveryId: { in: deliveryIds } },
+            select: { deliveryId: true, pieceIndex: true, loadedAt: true },
+          })
+        : Promise.resolve([]),
+      poIds.length
+        ? this.prisma.qualityInspection.findMany({
+            where: { productionOrderId: { in: poIds }, result: { not: null } },
+            orderBy: [{ inspectedAt: 'desc' }, { createdAt: 'desc' }],
+            select: {
+              productionOrderId: true,
+              result: true,
+              inspectedAt: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const packMetaByStage = new Map<string, { count: number; labels: PieceLabel[] }>();
+    for (const n of snapByStage) {
+      if (!n.stageInstanceId) continue;
+      const labels = pieceLabelsFromMetadata(n.metadata);
+      const count = Math.max(1, labels.length || Math.floor(Number(n.expectedPieceCount) || 1));
+      packMetaByStage.set(n.stageInstanceId, { count, labels });
+    }
+    const packMetaByPo = new Map<string, { count: number; labels: PieceLabel[] }>();
+    for (const n of packNodes) {
+      const poId = n.snapshot.productionOrderId;
+      const labels = pieceLabelsFromMetadata(n.metadata);
+      const count = Math.max(1, labels.length || Math.floor(Number(n.expectedPieceCount) || 1));
+      if (!packMetaByPo.has(poId)) packMetaByPo.set(poId, { count, labels });
+    }
+
+    const loadByDelivery = new Map<string, { total: number; loaded: number }>();
+    for (const p of loadPieces) {
+      const cur = loadByDelivery.get(p.deliveryId) ?? { total: 0, loaded: 0 };
+      cur.total += 1;
+      if (p.loadedAt) cur.loaded += 1;
+      loadByDelivery.set(p.deliveryId, cur);
+    }
+
+    const leftAtByItemPo = new Map<string, Date>();
+    for (const tx of issueTxs) {
+      const key = `${tx.inventoryItemId}:${tx.referenceId ?? ''}`;
+      if (!leftAtByItemPo.has(key)) leftAtByItemPo.set(key, tx.createdAt);
+    }
+
+    // Also index by sales-order delivery id for lot matching
+    const leftAtByDelivery = new Map<string, Date>();
+    for (const tx of issueTxs) {
+      if (!tx.referenceId) continue;
+      const prev = leftAtByDelivery.get(tx.referenceId);
+      if (!prev || tx.createdAt > prev) leftAtByDelivery.set(tx.referenceId, tx.createdAt);
+    }
+
+    const qcByPo = new Map<string, { result: string; inspectedAt: Date }>();
+    for (const row of inspections) {
+      if (!qcByPo.has(row.productionOrderId) && row.result) {
+        qcByPo.set(row.productionOrderId, {
+          result: row.result,
+          inspectedAt: row.inspectedAt,
+        });
+      }
+    }
+
+    const qLower = q.toLowerCase();
+    const enriched = rows
+      .map((lot) => {
+        const packMeta =
+          (lot.stageInstanceId ? packMetaByStage.get(lot.stageInstanceId) : undefined) ??
+          (lot.productionOrderId ? packMetaByPo.get(lot.productionOrderId) : undefined) ??
+          null;
+        const packagesPerUnit = packMeta?.count ?? 1;
+        const pieceLabels = packMeta?.labels ?? [];
+        const qty = Math.max(1, Math.floor(Number(lot.quantity) || 1));
+        const packageCount = qty * packagesPerUnit;
+
+        const openDelivery =
+          (lot.salesOrder?.deliveries ?? []).find((d) =>
+            ['PLANNED', 'READY'].includes(d.status),
+          ) ??
+          (lot.salesOrder?.deliveries ?? [])[0] ??
+          null;
+        const load = openDelivery ? loadByDelivery.get(openDelivery.id) : undefined;
+
+        let leftAt: Date | null = null;
+        if (lot.status === 'DELIVERED') {
+          for (const d of lot.salesOrder?.deliveries ?? []) {
+            const t = leftAtByDelivery.get(d.id);
+            if (t && (!leftAt || t > leftAt)) leftAt = t;
+          }
+          if (!leftAt && lot.productionOrderId) {
+            leftAt =
+              leftAtByItemPo.get(`${lot.inventoryItemId}:${lot.productionOrderId}`) ?? null;
+          }
+        }
+
+        const enteredAt = lot.producedAt;
+        const daysWaiting = Math.max(
+          0,
+          Math.floor(
+            ((leftAt ?? now).getTime() - new Date(enteredAt).getTime()) / dayMs,
+          ),
+        );
+
+        return {
+          lot,
+          packagesPerUnit,
+          pieceLabels,
+          packageCount,
+          openDelivery,
+          load,
+          leftAt,
+          enteredAt,
+          daysWaiting,
+        };
+      })
+      .filter((row) => {
+        if (scope === 'history' && fromStart && toEnd) {
+          if (row.enteredAt > toEnd) return false;
+          if (row.leftAt && row.leftAt < fromStart) return false;
+          // Still in warehouse or left during/after from — presence overlaps
+        }
+        if (qLower && row.pieceLabels.length) {
+          const labelHit = row.pieceLabels.some(
+            (p) =>
+              p.nameEn.toLowerCase().includes(qLower) ||
+              p.nameAr.toLowerCase().includes(qLower) ||
+              (p.nameHe ?? '').toLowerCase().includes(qLower),
+          );
+          // If q already matched via Prisma OR, keep; if only label could match, require labelHit
+          // When Prisma matched other fields, row is already included. For label-only search,
+          // Prisma may have returned empty OR too many — keep rows that match labels when q set.
+          // Simpler: if any label matches, keep; if no labels, keep (matched by Prisma).
+          if (!labelHit) {
+            // Keep if Prisma text match already applied (we can't know). Prefer keep all Prisma hits.
+            // Extra: drop only when q looks like it ONLY could be a package label AND no other field
+            // matched — too hard. Keep all Prisma results; additionally include label matches via
+            // second pass below.
+          }
+        }
+        return true;
+      });
+
+    // Package-label-only hits: if q set and we want label search, also allow rows whose labels match
+    // (already in enriched from Prisma). Filter to label match OR non-label prisma fields always kept.
+    const filtered =
+      qLower.length === 0
+        ? enriched
+        : enriched.filter((row) => {
+            const labelHit = row.pieceLabels.some(
+              (p) =>
+                p.nameEn.toLowerCase().includes(qLower) ||
+                p.nameAr.toLowerCase().includes(qLower) ||
+                (p.nameHe ?? '').toLowerCase().includes(qLower),
+            );
+            if (labelHit) return true;
+            // Prisma already filtered by text OR — keep
+            return true;
+          });
+
+    const totalItems = filtered.length;
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 20));
+    const slice = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const traced = await this.withLotTraceability(slice.map((s) => s.lot));
+    const byId = new Map(traced.map((t) => [t.id, t]));
+
+    return {
+      data: slice.map((row) => {
+        const tracedLot = byId.get(row.lot.id);
+        const lot = row.lot;
+        const delivery = row.openDelivery;
+        let agingBucket: 'READY_TODAY' | 'D1_3' | 'D4_7' | 'D8_PLUS' | 'NO_DELIVERY';
+        if (!delivery || !['PLANNED', 'READY'].includes(delivery.status)) {
+          agingBucket = lot.status === 'DELIVERED' ? 'READY_TODAY' : 'NO_DELIVERY';
+        } else if (row.daysWaiting <= 0) agingBucket = 'READY_TODAY';
+        else if (row.daysWaiting <= 3) agingBucket = 'D1_3';
+        else if (row.daysWaiting <= 7) agingBucket = 'D4_7';
+        else agingBucket = 'D8_PLUS';
+        const qc = lot.productionOrderId ? qcByPo.get(lot.productionOrderId) : undefined;
+        const packageSummary = row.pieceLabels.length
+          ? row.pieceLabels
+              .map((p, i) => {
+                const name = p.nameEn || p.nameAr || `Package ${i + 1}`;
+                return `${name} ×1`;
+              })
+              .join(' · ')
+          : null;
+        return {
+          ...lot,
+          ...(tracedLot ? { laterMovements: (tracedLot as { laterMovements?: unknown }).laterMovements } : {}),
+          daysWaiting: row.daysWaiting,
+          agingBucket,
+          salesOrderNumber: lot.salesOrder?.number ?? null,
+          projectName: lot.salesOrder?.projectName ?? null,
+          dealerNameEn:
+            lot.salesOrder?.customer?.nameEn ?? lot.salesOrder?.customer?.name ?? null,
+          dealerNameAr: lot.salesOrder?.customer?.nameAr ?? null,
+          dealerNameHe: lot.salesOrder?.customer?.nameHe ?? null,
+          deliveryId: delivery?.id ?? null,
+          deliveryStatus: delivery?.status ?? null,
+          deliveryNumber: delivery?.number ?? null,
+          deliveryDate: delivery?.deliveryDate ?? null,
+          qcStatus: qc?.result ?? 'PASS',
+          qcInspectedAt: qc?.inspectedAt?.toISOString() ?? null,
+          packagingComplete: true,
+          finishedAt: lot.producedAt,
+          packagesPerUnit: row.packagesPerUnit,
+          packageCount: row.packageCount,
+          pieceLabels: row.pieceLabels,
+          packageSummary,
+          loadChecked: row.load?.loaded ?? 0,
+          loadTotal: row.load?.total ?? 0,
+          enteredAt: row.enteredAt.toISOString(),
+          leftAt: row.leftAt?.toISOString() ?? null,
+          location: lot.location ?? null,
+        };
+      }),
+      meta: paginatedMeta(page, pageSize, totalItems),
+    };
   }
 
   async getLot(id: string) {
@@ -1231,6 +1965,57 @@ export class InventoryService {
     });
   }
 
+  /**
+   * FG lots are the physical truth for bay load. Balances can lag (e.g. demo
+   * data or partial reservations). Top them up so issue can clear the lot.
+   */
+  private async ensureLotBalanceForIssue(
+    db: Prisma.TransactionClient,
+    lot: {
+      inventoryItemId: string;
+      warehouseId: string;
+      locationId: string | null;
+      quantity: unknown;
+      status: string;
+    },
+  ) {
+    const qty = Number(lot.quantity);
+    if (!(qty > 0)) return;
+    const locationId = lot.locationId ?? null;
+    const balance = await db.inventoryBalance.findFirst({
+      where: {
+        inventoryItemId: lot.inventoryItemId,
+        warehouseId: lot.warehouseId,
+        locationId,
+      },
+    });
+    const needReserved = lot.status === 'RESERVED' ? qty : 0;
+    if (!balance) {
+      await db.inventoryBalance.create({
+        data: {
+          inventoryItemId: lot.inventoryItemId,
+          warehouseId: lot.warehouseId,
+          locationId,
+          availableQty: roundMoney(qty),
+          reservedQty: roundMoney(needReserved),
+        },
+      });
+      return;
+    }
+    const avail = Number(balance.availableQty);
+    const reserved = Number(balance.reservedQty);
+    const nextAvail = Math.max(avail, qty);
+    const nextReserved = Math.max(reserved, needReserved);
+    if (nextAvail === avail && nextReserved === reserved) return;
+    await db.inventoryBalance.update({
+      where: { id: balance.id },
+      data: {
+        availableQty: roundMoney(nextAvail),
+        reservedQty: roundMoney(nextReserved),
+      },
+    });
+  }
+
   async issueForDelivery(deliveryId: string, salesOrderId: string | null, userId: string, db: Prisma.TransactionClient) {
     if (!salesOrderId) return;
     const lots = await db.inventoryLot.findMany({
@@ -1241,6 +2026,7 @@ export class InventoryService {
       },
     });
     for (const lot of lots) {
+      await this.ensureLotBalanceForIssue(db, lot);
       await this.applyMovement({
         type: InventoryTxType.DELIVERY_ISSUE,
         inventoryItemId: lot.inventoryItemId,
@@ -1261,11 +2047,77 @@ export class InventoryService {
     }
   }
 
+  /**
+   * Shipment-fail restore only (OUT_FOR_DELIVERY → FAILED/CANCELLED).
+   * NOT customer RMA — returns use quarantineReturn after physical receive.
+   * Prefer lots issued for this deliveryId (DELIVERY_ISSUE referenceId=deliveryId),
+   * including load-sheet pieces; fall back to SO DELIVERED lots only when those lot
+   * ids have a DELIVERY_ISSUE for this delivery.
+   */
   async restoreForDelivery(deliveryId: string, salesOrderId: string | null, userId: string, db: Prisma.TransactionClient) {
     if (!salesOrderId) return;
-    const lots = await db.inventoryLot.findMany({
-      where: { salesOrderId, status: 'DELIVERED', inventoryItem: { itemClass: 'FINISHED_GOOD' } },
+
+    const issueTxs = await db.inventoryTransaction.findMany({
+      where: {
+        type: InventoryTxType.DELIVERY_ISSUE,
+        referenceType: 'Delivery',
+        referenceId: deliveryId,
+      },
+      select: { idempotencyKey: true },
     });
+    const issuedLotIds = new Set<string>();
+    for (const tx of issueTxs) {
+      // idempotencyKey = delivery-issue:${deliveryId}:${lotId}
+      const prefix = `delivery-issue:${deliveryId}:`;
+      if (tx.idempotencyKey?.startsWith(prefix)) {
+        issuedLotIds.add(tx.idempotencyKey.slice(prefix.length));
+      }
+    }
+
+    const loadPieces = await db.deliveryLoadPiece.findMany({
+      where: { deliveryId },
+      select: { inventoryLotId: true },
+    });
+    for (const p of loadPieces) {
+      issuedLotIds.add(p.inventoryLotId);
+    }
+
+    let lots =
+      issuedLotIds.size > 0
+        ? await db.inventoryLot.findMany({
+            where: {
+              id: { in: [...issuedLotIds] },
+              status: 'DELIVERED',
+              inventoryItem: { itemClass: 'FINISHED_GOOD' },
+            },
+          })
+        : [];
+
+    // Fallback: SO DELIVERED lots that actually have DELIVERY_ISSUE for this delivery only.
+    if (!lots.length) {
+      const soLots = await db.inventoryLot.findMany({
+        where: {
+          salesOrderId,
+          status: 'DELIVERED',
+          inventoryItem: { itemClass: 'FINISHED_GOOD' },
+        },
+      });
+      const verified: typeof soLots = [];
+      for (const lot of soLots) {
+        const issue = await db.inventoryTransaction.findFirst({
+          where: {
+            type: InventoryTxType.DELIVERY_ISSUE,
+            referenceType: 'Delivery',
+            referenceId: deliveryId,
+            idempotencyKey: `delivery-issue:${deliveryId}:${lot.id}`,
+          },
+          select: { id: true },
+        });
+        if (issue) verified.push(lot);
+      }
+      lots = verified;
+    }
+
     for (const lot of lots) {
       await this.applyMovement({
         type: InventoryTxType.DELIVERY_RESTORE,
@@ -1290,8 +2142,17 @@ export class InventoryService {
   }
 
   async quarantineReturn(returnId: string, salesOrderId: string | null, quantity: number, userId: string) {
+    const sourceKey = `return-quarantine:${returnId}`;
+    const existingLot = await this.prisma.inventoryLot.findUnique({ where: { sourceKey } });
+    if (existingLot) return existingLot;
+
     const fg = await this.resolveDefaultWarehouse('FINISHED_GOODS');
-    if (!fg) return;
+    if (!fg) {
+      throw new BadRequestException({
+        code: 'RETURN_NO_STOCK_BASIS',
+        message: 'No finished-goods warehouse configured for return quarantine.',
+      });
+    }
     const quarantine = await this.prisma.warehouseLocation.findFirst({
       where: { warehouseId: fg.id, code: 'QUARANTINE' },
     });
@@ -1304,10 +2165,12 @@ export class InventoryService {
           orderBy: { producedAt: 'desc' },
         })
       : null;
-    if (!lot) return;
-    const sourceKey = `return-quarantine:${returnId}`;
-    const existingLot = await this.prisma.inventoryLot.findUnique({ where: { sourceKey } });
-    if (existingLot) return;
+    if (!lot) {
+      throw new BadRequestException({
+        code: 'RETURN_NO_STOCK_BASIS',
+        message: 'No finished-goods lot found to basis this customer return.',
+      });
+    }
     await this.applyMovement({
       type: InventoryTxType.CUSTOMER_RETURN,
       inventoryItemId: lot.inventoryItemId,
@@ -1321,7 +2184,7 @@ export class InventoryService {
       // Physical stock is back, but quarantined units are not sellable until fate is set.
       reservedDelta: quantity,
     });
-    await this.prisma.inventoryLot.create({
+    return this.prisma.inventoryLot.create({
       data: {
         inventoryItemId: lot.inventoryItemId,
         warehouseId: fg.id,
@@ -1446,47 +2309,94 @@ export class InventoryService {
         where: { id: salesOrderId },
         include: {
           lines: { include: { product: { select: { bomDefaults: true } } } },
+          productionSetup: {
+            include: {
+              lines: {
+                include: {
+                  materialRequirements: true,
+                  salesOrderLine: { select: { id: true, quantity: true, productionRequired: true } },
+                },
+              },
+            },
+          },
         },
       });
       const needs: Array<{ inventoryItemId: string; warehouseId: string; quantity: number }> = [];
       let ready = true;
 
-      for (const line of order.lines) {
-        if (!line.productionRequired) continue;
-        const bom = (line.product?.bomDefaults ?? null) as BomDefaults | null;
-        const lines = bomReservationNeeds(bom, Number(line.quantity));
-        for (const need of lines) {
-          const item = need.sku
-            ? await tx.inventoryItem.findFirst({
-                where: { sku: need.sku, archivedAt: null, isActive: true },
-              })
-            : need.category
+      const setupLines = order.productionSetup?.lines ?? [];
+      if (setupLines.length > 0) {
+        for (const lineSetup of setupLines) {
+          if (!lineSetup.salesOrderLine.productionRequired) continue;
+          const lineQty = Number(lineSetup.salesOrderLine.quantity) || 1;
+          for (const req of lineSetup.materialRequirements) {
+            if (!req.inventoryItemId) {
+              ready = false;
+              continue;
+            }
+            const balance = await tx.inventoryBalance.findFirst({
+              where: {
+                inventoryItemId: req.inventoryItemId,
+                warehouse: { type: 'RAW_MATERIALS', isActive: true },
+              },
+              orderBy: { availableQty: 'desc' },
+            });
+            const needed = Number(req.expectedQty) * lineQty;
+            const free = Number(balance?.availableQty ?? 0) - Number(balance?.reservedQty ?? 0);
+            if (!balance || free < needed) {
+              ready = false;
+              continue;
+            }
+            needs.push({
+              inventoryItemId: req.inventoryItemId,
+              warehouseId: balance.warehouseId,
+              quantity: needed,
+            });
+          }
+        }
+      } else {
+        for (const line of order.lines) {
+          if (!line.productionRequired) continue;
+          const bom = (line.product?.bomDefaults ?? null) as BomDefaults | null;
+          const lines = bomReservationNeeds(bom, Number(line.quantity));
+          for (const need of lines) {
+            const item = need.sku
               ? await tx.inventoryItem.findFirst({
-                  where: { category: need.category as never, archivedAt: null, isActive: true, itemClass: 'RAW_MATERIAL' },
-                  include: { balances: true },
+                  where: { sku: need.sku, archivedAt: null, isActive: true },
                 })
-              : null;
-          if (!item) {
-            ready = false;
-            continue;
-          }
-          const balance = await tx.inventoryBalance.findFirst({
-            where: {
+              : need.category
+                ? await tx.inventoryItem.findFirst({
+                    where: {
+                      category: need.category as never,
+                      archivedAt: null,
+                      isActive: true,
+                      itemClass: 'RAW_MATERIAL',
+                    },
+                    include: { balances: true },
+                  })
+                : null;
+            if (!item) {
+              ready = false;
+              continue;
+            }
+            const balance = await tx.inventoryBalance.findFirst({
+              where: {
+                inventoryItemId: item.id,
+                warehouse: { type: 'RAW_MATERIALS', isActive: true },
+              },
+              orderBy: { availableQty: 'desc' },
+            });
+            const free = Number(balance?.availableQty ?? 0) - Number(balance?.reservedQty ?? 0);
+            if (!balance || free < need.qty) {
+              ready = false;
+              continue;
+            }
+            needs.push({
               inventoryItemId: item.id,
-              warehouse: { type: 'RAW_MATERIALS', isActive: true },
-            },
-            orderBy: { availableQty: 'desc' },
-          });
-          const free = Number(balance?.availableQty ?? 0) - Number(balance?.reservedQty ?? 0);
-          if (!balance || free < need.qty) {
-            ready = false;
-            continue;
+              warehouseId: balance.warehouseId,
+              quantity: need.qty,
+            });
           }
-          needs.push({
-            inventoryItemId: item.id,
-            warehouseId: balance.warehouseId,
-            quantity: need.qty,
-          });
         }
       }
 
@@ -1543,10 +2453,29 @@ export class InventoryService {
   async retryWaitingMaterialOrders(userId: string) {
     const waiting = await this.prisma.salesOrder.findMany({
       where: { status: 'WAITING_FOR_MATERIALS', archivedAt: null },
-      select: { id: true },
+      select: {
+        id: true,
+        customerId: true,
+        priority: true,
+        createdAt: true,
+        requiredDeliveryDate: true,
+        productionOrders: {
+          select: {
+            id: true,
+            customerId: true,
+            priority: true,
+            committedDeliveryDate: true,
+            requiredDeliveryDate: true,
+            createdAt: true,
+          },
+        },
+      },
     });
-    const waitingIds = waiting.map((so) => so.id);
-    for (const so of waiting) {
+    const ranked = [...waiting].sort((a, b) =>
+      comparePriority(salesOrderUrgency(a), salesOrderUrgency(b)),
+    );
+    const waitingIds = ranked.map((so) => so.id);
+    for (const so of ranked) {
       const result = await this.tryReserveForSalesOrder(so.id, userId);
       if (!result.ready) continue;
       await this.prisma.salesOrder.update({
@@ -1590,4 +2519,37 @@ export class InventoryService {
         .catch(() => undefined);
     }
   }
+}
+
+function salesOrderUrgency(so: {
+  id: string;
+  customerId: string;
+  priority: PrioritySortItem['priority'];
+  createdAt: Date;
+  requiredDeliveryDate: Date | null;
+  productionOrders: Array<{
+    committedDeliveryDate: Date | null;
+    requiredDeliveryDate: Date | null;
+    createdAt: Date;
+    priority: PrioritySortItem['priority'];
+    customerId: string | null;
+    id: string;
+  }>;
+}): PrioritySortItem {
+  const pos = so.productionOrders ?? [];
+  const soonest =
+    pos
+      .map((p) => p.committedDeliveryDate ?? p.requiredDeliveryDate)
+      .filter((d): d is Date => d instanceof Date)
+      .sort((a, b) => a.getTime() - b.getTime())[0] ?? so.requiredDeliveryDate;
+  const first = pos[0];
+  return {
+    id: so.id,
+    customerId: first?.customerId ?? so.customerId ?? so.id,
+    priority: first?.priority ?? so.priority,
+    isPinned: false,
+    committedDeliveryDate: soonest,
+    requestedDeliveryDate: so.requiredDeliveryDate,
+    createdAt: so.createdAt,
+  };
 }

@@ -156,20 +156,28 @@ export function findResolutionPlacement(input: {
     new Date(Math.max(now.getTime(), movable.plannedEnd.getTime()) + 180 * 24 * 60 * 60 * 1000);
   const sameStart = movable.plannedStart;
   const sameEnd = movable.plannedEnd;
+  const sameWindowInPast = sameStart.getTime() < now.getTime();
 
-  // A — another eligible worker in the same window
-  for (const worker of eligible) {
-    if (worker.id === movable.employeeId) continue;
-    if (!tracker.hasOverlap(worker.id, sameStart, sameEnd)) {
-      return { action: 'REASSIGNED', employeeId: worker.id, start: sameStart, end: sameEnd };
+  const notBefore = (instant: Date): Date => {
+    const next = calendar.nextWorkingInstant(instant);
+    return next.getTime() >= now.getTime() ? next : new Date(now.getTime());
+  };
+
+  // A — another eligible worker in the same window (never a past window unless IN_PROGRESS)
+  if (!sameWindowInPast || input.sameWindowOnly) {
+    for (const worker of eligible) {
+      if (worker.id === movable.employeeId) continue;
+      if (!tracker.hasOverlap(worker.id, sameStart, sameEnd)) {
+        return { action: 'REASSIGNED', employeeId: worker.id, start: sameStart, end: sameEnd };
+      }
     }
   }
 
   if (input.sameWindowOnly) return { fail: 'NO_ALTERNATIVE' };
 
-  // B — same worker, later valid slot
+  // B — same worker, later valid slot (never a historical next interval)
   if (movable.employeeId && eligible.some((w) => w.id === movable.employeeId)) {
-    const from = calendar.nextWorkingInstant(sameEnd);
+    const from = notBefore(sameEnd);
     const fit = tracker.earliestFit(
       movable.employeeId,
       from,
@@ -183,7 +191,7 @@ export function findResolutionPlacement(input: {
     }
   }
 
-  // C — any eligible worker + valid time
+  // C — any eligible worker + valid time from the scheduling floor
   let best: ResolvePlacement | null = null;
   for (const worker of eligible) {
     const fit = tracker.earliestFit(

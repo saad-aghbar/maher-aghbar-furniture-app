@@ -17,7 +17,7 @@ export function SurfaceGate({ expected }: SurfaceGateProps) {
   const stackMotion = useStackMotionOptions();
 
   if (status === 'bootstrapping' || status === 'authenticating' || !user) {
-    return null;
+    return <Stack screenOptions={stackMotion} />;
   }
 
   if (resolveAppSurface(user) !== expected) {

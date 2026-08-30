@@ -11,6 +11,7 @@ import { REQUEST_STATUSES, statusOptions } from '@/lib/status-options';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
   Alert,
+  Badge,
   Button,
   EmptyState,
   ErrorState,
@@ -21,14 +22,8 @@ import {
   Select,
   Skeleton,
   StatusBadge,
-  Table,
-  TableBody,
-  TableCell,
-  TableNumericCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
   TextArea,
+  cn,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -55,10 +50,47 @@ interface RequestRow {
   customer?: Customer | null;
   contactName?: string | null;
   createdAt: string;
+  submittedAt?: string | null;
+  productCount?: number;
+  hasCustomLines?: boolean;
+  attachmentCount?: number;
+  presentationKey?: string;
+  informationRequestReason?: string | null;
 }
 
 const RFQ_SOURCES = ['PORTAL', 'SALES', 'WHATSAPP', 'EMAIL', 'PDF', 'PHONE'] as const;
 const RFQ_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;
+
+type StatusGroupFilter = '' | 'waiting_review' | 'needs_information' | 'drafts';
+
+const STATUS_GROUP_FILTERS: Array<{ value: StatusGroupFilter; labelKey: string }> = [
+  { value: '', labelKey: 'all' },
+  { value: 'waiting_review', labelKey: 'filterWaitingReview' },
+  { value: 'needs_information', labelKey: 'filterNeedsInformation' },
+  { value: 'drafts', labelKey: 'filterDrafts' },
+];
+
+function presentationLabel(
+  key: string | undefined,
+  status: string,
+  tc: ReturnType<typeof useTranslations>,
+  tStatus: ReturnType<typeof useTranslations>,
+): string {
+  switch (key) {
+    case 'waitingForReview':
+      return tc('waitingForReview');
+    case 'needsInformation':
+      return tc('needsInformation');
+    case 'draft':
+      return tStatus('DRAFT');
+    default:
+      try {
+        return tStatus(status as never);
+      } catch {
+        return status;
+      }
+  }
+}
 
 export default function AdminRfqsPage() {
   const locale = useLocale();
@@ -73,6 +105,7 @@ export default function AdminRfqsPage() {
 
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
+  const [statusGroup, setStatusGroup] = useState<StatusGroupFilter>('');
   const [customerFilter, setCustomerFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [page, setPage] = useState(1);
@@ -103,11 +136,15 @@ export default function AdminRfqsPage() {
   const listParams = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: '20' });
     if (q.trim()) params.set('q', q.trim());
-    if (status) params.set('status', status);
+    if (statusGroup) {
+      params.set('statusGroup', statusGroup);
+    } else if (status) {
+      params.set('status', status);
+    }
     if (customerFilter) params.set('customerId', customerFilter);
     if (sourceFilter) params.set('source', sourceFilter);
     return params.toString();
-  }, [q, status, customerFilter, sourceFilter, page]);
+  }, [q, status, statusGroup, customerFilter, sourceFilter, page]);
 
   const listQuery = useQuery({
     queryKey: ['admin-rfqs', listParams],
@@ -206,6 +243,7 @@ export default function AdminRfqsPage() {
     <div className="space-y-6">
       <PageHero
         title={t('rfqRequests')}
+        description={tc('factoryReview')}
         tone="soft"
         actions={
           <Button
@@ -221,106 +259,179 @@ export default function AdminRfqsPage() {
       />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
 
-      <MotionSection enter="rise" className="flex flex-wrap items-end gap-3">
-        <label className="relative min-w-[220px] flex-1">
-          <Input
-            withSearchIcon
-            value={q}
-            onChange={(e) => {
-              setPage(1);
-              setQ(e.target.value);
-            }}
-            placeholder={tc('searchCustomersOrRfqs')}
-          />
-        </label>
-        <Select
-          value={customerFilter}
-          onChange={(e) => {
-            setPage(1);
-            setCustomerFilter(e.target.value);
-            if (!e.target.value) setSourceFilter('');
-          }}
-          className="min-w-[200px]"
-          aria-label={tc('customer')}
-        >
-          <option value="">{tc('allCustomers')}</option>
-          {customers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.code} — {localizedName(locale, c)}
-            </option>
-          ))}
-        </Select>
-        {customerFilter ? (
+      <MotionSection enter="rise" className="space-y-3">
+        <div className="maher-stagger flex flex-wrap gap-2" role="tablist" aria-label={tc('factoryReview')}>
+          {STATUS_GROUP_FILTERS.map((item) => {
+            const selected = statusGroup === item.value;
+            const label =
+              item.value === '' ? tCommon('all') : tc(item.labelKey as never);
+            return (
+              <button
+                key={item.value || 'all'}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => {
+                  setPage(1);
+                  setStatusGroup(item.value);
+                  if (item.value) setStatus('');
+                }}
+                className={cn(
+                  'maher-filter-chip maher-press inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium',
+                  selected
+                    ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
+                    : 'border-border bg-surface text-text-secondary hover:border-brand/30 hover:text-text-primary',
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="relative min-w-[220px] flex-1">
+            <Input
+              withSearchIcon
+              value={q}
+              onChange={(e) => {
+                setPage(1);
+                setQ(e.target.value);
+              }}
+              placeholder={tc('searchCustomersOrRfqs')}
+            />
+          </label>
           <Select
-            value={sourceFilter}
+            value={customerFilter}
             onChange={(e) => {
               setPage(1);
-              setSourceFilter(e.target.value);
+              setCustomerFilter(e.target.value);
+              if (!e.target.value) setSourceFilter('');
             }}
-            className="w-48"
-            aria-label={tc('source')}
+            className="min-w-[200px]"
+            aria-label={tc('customer')}
           >
-            <option value="">{tc('allSources')}</option>
-            {RFQ_SOURCES.map((s) => (
-              <option key={s} value={s}>
-                {sourceLabel(s)}
+            <option value="">{tc('allCustomers')}</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code} — {localizedName(locale, c)}
               </option>
             ))}
           </Select>
-        ) : null}
-        <Select
-          value={status}
-          onChange={(e) => {
-            setPage(1);
-            setStatus(e.target.value);
-          }}
-          options={statusFilterOptions}
-          className="w-48"
-        />
+          {customerFilter ? (
+            <Select
+              value={sourceFilter}
+              onChange={(e) => {
+                setPage(1);
+                setSourceFilter(e.target.value);
+              }}
+              className="w-48"
+              aria-label={tc('source')}
+            >
+              <option value="">{tc('allSources')}</option>
+              {RFQ_SOURCES.map((s) => (
+                <option key={s} value={s}>
+                  {sourceLabel(s)}
+                </option>
+              ))}
+            </Select>
+          ) : null}
+          {!statusGroup ? (
+            <Select
+              value={status}
+              onChange={(e) => {
+                setPage(1);
+                setStatus(e.target.value);
+              }}
+              options={statusFilterOptions}
+              className="w-48"
+            />
+          ) : null}
+        </div>
       </MotionSection>
 
       {rows.length === 0 ? (
         <EmptyState title={tc('noRfqs')} />
       ) : (
         <>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>{tSales('systemOrderNumber')}</TableHeaderCell>
-                <TableHeaderCell>{tSales('dealerOrderNumber')}</TableHeaderCell>
-                <TableHeaderCell>{tc('customer')}</TableHeaderCell>
-                <TableHeaderCell>{tc('project')}</TableHeaderCell>
-                <TableHeaderCell>{tc('source')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-                <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableNumericCell>{row.number}</TableNumericCell>
-                  <TableNumericCell>{row.externalOrderNumber?.trim() || '—'}</TableNumericCell>
-                  <TableCell>
-                    {row.customer
-                      ? localizedName(locale, row.customer)
-                      : (row.contactName ?? '—')}
-                  </TableCell>
-                  <TableCell>{row.projectName ?? '—'}</TableCell>
-                  <TableCell>{row.source ? sourceLabel(row.source) : '—'}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={row.status} />
-                  </TableCell>
-                  <TableCell>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {rows.map((row) => {
+              const dealer = row.customer
+                ? localizedName(locale, row.customer)
+                : (row.contactName ?? '—');
+              const submitted =
+                (row.submittedAt ?? row.createdAt)?.slice(0, 10) ?? '—';
+              return (
+                <article
+                  key={row.id}
+                  className="maher-list-card flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 shadow-card"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="truncate text-sm font-semibold text-text-primary">{dealer}</p>
+                      <p className="text-xs text-text-tertiary" dir="ltr">
+                        {row.number}
+                        {row.externalOrderNumber?.trim()
+                          ? ` · ${row.externalOrderNumber.trim()}`
+                          : ''}
+                      </p>
+                    </div>
+                    <StatusBadge
+                      status={row.status}
+                      label={presentationLabel(row.presentationKey, row.status, tc, tStatus)}
+                    />
+                  </div>
+                  <dl className="grid grid-cols-2 gap-2 text-xs text-text-secondary">
+                    <div>
+                      <dt className="text-text-tertiary">{tc('submittedDate')}</dt>
+                      <dd className="font-medium text-text-primary" dir="ltr">
+                        {submitted}
+                      </dd>
+                    </div>
+                    {row.productCount != null ? (
+                      <div>
+                        <dt className="text-text-tertiary">{tc('productCount')}</dt>
+                        <dd className="font-medium text-text-primary" dir="ltr">
+                          {row.productCount}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {row.attachmentCount != null ? (
+                      <div>
+                        <dt className="text-text-tertiary">{tc('attachmentCount')}</dt>
+                        <dd className="font-medium text-text-primary" dir="ltr">
+                          {row.attachmentCount}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {row.hasCustomLines ? (
+                      <div>
+                        <dt className="text-text-tertiary">{tc('customLines')}</dt>
+                        <dd>
+                          <Badge variant="warning">{tc('customLines')}</Badge>
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                  {row.informationRequestReason ? (
+                    <p className="line-clamp-2 text-xs text-text-secondary">
+                      <span className="font-medium text-text-primary">
+                        {tc('informationRequestReason')}:{' '}
+                      </span>
+                      {row.informationRequestReason}
+                    </p>
+                  ) : null}
+                  <div className="mt-auto flex justify-end pt-1">
                     <Link href={`/requests/${row.id}`}>
                       <Button size="sm" variant="secondary">
                         {tc('viewDetails')}
                       </Button>
                     </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
           {meta && meta.totalPages > 1 ? (
             <div className="flex items-center justify-end gap-2">
               <Button

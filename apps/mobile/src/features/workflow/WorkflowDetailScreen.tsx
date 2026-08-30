@@ -5,6 +5,11 @@ import { useNavigation, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
+import {
+  detectParallelBandLinks,
+  type ParallelBandLink,
+  type ParallelBandLinkMode,
+} from '@maher/workflow-domain';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import type { WorkflowNode } from '@/api/modules/workflow';
@@ -12,7 +17,6 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
-import { EmptyState } from '@/components/feedback/EmptyState';
 import { stageNodeLabel } from './stageNodeLabel';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -28,10 +32,27 @@ import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
 import { AddStageSheet } from './components/AddStageSheet';
 import { EditStageSheet } from './components/EditStageSheet';
-import { WorkflowFloorBoard, WorkflowFloorRow } from './components/WorkflowFloorList';
+import { ParallelBandLinkControl } from './components/ParallelBandLinkControl';
+import {
+  WorkflowFloorBoard,
+  WorkflowFloorRow,
+  WorkflowStageRowActions,
+} from './components/WorkflowFloorList';
 import { WorkflowPageHeader, WorkflowStatusPill } from './components/WorkflowPageHeader';
-import { commitHealSingleSink, useApplyWorkflowVersionCache } from './commitWorkflowGraph';
+import {
+  commitCanonicalizeDraft,
+  commitParallelBandLink,
+  commitRemoveWorkflowStage,
+  useApplyWorkflowVersionCache,
+} from './commitWorkflowGraph';
 import { selectProductionFlowFromWorkflowVersion } from './selectProductionFlowFromWorkflowVersion';
+import {
+  isLockedAnchorNode,
+  partitionWorkflowAnchors,
+} from './workflowTerminal';
+import { buildWorkflowLayoutLevels } from './workflowLayout';
+import { canonicalEdgesForLayout, toDomainGraph } from './toDomainGraph';
+import { ensureOpeningChain, ensureTerminalChain } from '@/api/modules/workflow';
 import {
   useCreateDraftMutation,
   useDiscardWorkflowDraftMutation,
@@ -40,6 +61,45 @@ import {
   useWorkflowVersionQuery,
 } from './query';
 
+function linkLeavingLevel(
+  links: ParallelBandLink[],
+  levelIds: Set<string>,
+): ParallelBandLink | null {
+  let best: ParallelBandLink | null = null;
+  let bestScore = 0;
+  for (const link of links) {
+    const fromHits = link.fromBand.nodeIds.filter((id) => levelIds.has(id)).length;
+    if (fromHits < 2) continue;
+    // Prefer when the whole feeder band sits on this level
+    const complete = fromHits === link.fromBand.nodeIds.length;
+    const score = fromHits + (complete ? 10 : 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = link;
+    }
+  }
+  return best;
+}
+
+function linkForLevelGap(
+  links: ParallelBandLink[],
+  prevIds: Set<string>,
+  nextIds: Set<string>,
+): ParallelBandLink | null {
+  let best: ParallelBandLink | null = null;
+  let bestScore = 0;
+  for (const link of links) {
+    const fromHits = link.fromBand.nodeIds.filter((id) => prevIds.has(id)).length;
+    const toHits = link.toBand.nodeIds.filter((id) => nextIds.has(id)).length;
+    if (fromHits < 2 || toHits < 2) continue;
+    const score = fromHits + toHits;
+    if (score > bestScore) {
+      bestScore = score;
+      best = link;
+    }
+  }
+  return best;
+}
 type Props = {
   workflowId: string;
   backFallback: Href;
@@ -58,11 +118,15 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
 
   const [addOpen, setAddOpen] = useState(false);
   const [editNode, setEditNode] = useState<WorkflowNode | null>(null);
+  const [deleteNode, setDeleteNode] = useState<WorkflowNode | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [lockInfoNode, setLockInfoNode] = useState<WorkflowNode | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [ensuringDraft, setEnsuringDraft] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [publishedThisSession, setPublishedThisSession] = useState(false);
+  const [bandLinkSaving, setBandLinkSaving] = useState(false);
 
   const workflowQuery = useWorkflowQuery(workflowId);
   const draftVersionId = useMemo(() => {
@@ -183,6 +247,97 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
     () => (version ? selectProductionFlowFromWorkflowVersion(version, locale) : []),
     [locale, version],
   );
+  const allNodes = useMemo(
+    () => [...(version?.nodes ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+    [version?.nodes],
+  );
+  const { opening: openingNodes, middle: middleNodes, terminal: terminalNodes } = useMemo(
+    () => partitionWorkflowAnchors(allNodes),
+    [allNodes],
+  );
+  const canonical = useMemo(() => (version ? toDomainGraph(version) : null), [version]);
+  const healedEdges = useMemo(
+    () => (canonical ? canonicalEdgesForLayout(canonical) : []),
+    [canonical],
+  );
+  const layoutLevels = useMemo(
+    () => buildWorkflowLayoutLevels(allNodes, healedEdges),
+    [allNodes, healedEdges],
+  );
+  const bandLinks = useMemo(
+    () => (canonical ? detectParallelBandLinks(canonical) : []),
+    [canonical],
+  );
+  const isDraft = Boolean(draftVersionId && version?.id === draftVersionId);
+
+  const applyBandLink = useCallback(
+    async (link: ParallelBandLink, mode: ParallelBandLinkMode) => {
+      if (!version || !isDraft || bandLinkSaving) return;
+      if (link.mode === mode) return;
+      setBandLinkSaving(true);
+      try {
+        const next = await commitParallelBandLink({
+          workflowId,
+          version,
+          fromBandNodeIds: link.fromBand.nodeIds,
+          toBandNodeIds: link.toBand.nodeIds,
+          mode,
+        });
+        await applyVersionCache(next);
+        markDirty();
+        showToast({
+          variant: 'success',
+          message: t('mobile.production.workflow.bandLinkSaved'),
+        });
+      } catch (err) {
+        showToast({
+          variant: 'error',
+          message: isApiError(err)
+            ? toastMessageForError(err)
+            : t('mobile.production.workflow.loadError'),
+        });
+      } finally {
+        setBandLinkSaving(false);
+      }
+    },
+    [
+      applyVersionCache,
+      bandLinkSaving,
+      isDraft,
+      markDirty,
+      showToast,
+      t,
+      version,
+      workflowId,
+    ],
+  );
+  const ensuredVersionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isDraft || !version || ensuredVersionRef.current === version.id) return;
+    const hasOpening = allNodes.some((n) => n.stageDefinition?.code === 'MATERIAL_PREP');
+    if (terminalNodes.length >= 3 && hasOpening) {
+      ensuredVersionRef.current = version.id;
+      return;
+    }
+    ensuredVersionRef.current = version.id;
+    void (async () => {
+      try {
+        let revision = version.revision;
+        if (!hasOpening) {
+          const open = await ensureOpeningChain(workflowId, version.id, revision);
+          revision = open.revision;
+        }
+        if (terminalNodes.length < 3) {
+          await ensureTerminalChain(workflowId, version.id, revision);
+        }
+        await versionQuery.refetch();
+        await workflowQuery.refetch();
+      } catch {
+        /* publish will append */
+      }
+    })();
+  }, [allNodes, isDraft, terminalNodes.length, version, versionQuery, workflowId, workflowQuery]);
 
   if (workflowQuery.isLoading || ensuringDraft || createDraftMutation.isPending) {
     return (
@@ -214,8 +369,6 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
 
   const wf = workflowQuery.data;
   const title = localizedName(locale, wf, wf.code);
-  const nodes = [...(version?.nodes ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
-  const isDraft = Boolean(draftVersionId && version?.id === draftVersionId);
 
   return (
     <>
@@ -249,56 +402,166 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
 
         {versionQuery.isLoading ? (
           <AppText color="secondary">{t('mobile.production.loadingMore')}</AppText>
-        ) : nodes.length === 0 ? (
-          <EmptyState
-            title={t('mobile.production.workflow.emptyStages')}
-            description={t('mobile.production.workflow.emptyStagesHint')}
-          />
         ) : (
-          <WorkflowFloorBoard
-            title={t('mobile.production.workflow.stagesHeading')}
-            count={nodes.length}
-          >
-            {nodes.map((node, index) => {
-              const preds = (version?.edges ?? [])
-                .filter((e) => e.toNodeId === node.id)
-                .map((e) => nodes.find((n) => n.id === e.fromNodeId))
-                .filter(Boolean);
-              const afterMeta = preds.length
-                ? t('mobile.production.workflow.afterStages', {
-                    stages: preds
-                      .map((p) => stageNodeLabel(locale, p!.stageDefinition))
-                      .join(', '),
-                  })
-                : t('mobile.production.workflow.startStage');
-              const reqMeta = node.isRequiredByDefault
-                ? t('mobile.production.workflow.required')
-                : t('mobile.production.workflow.optional');
-              return (
-                <ListItemEnter key={node.id} index={index}>
-                  <WorkflowFloorRow
-                    label={stageNodeLabel(locale, node.stageDefinition)}
-                    meta={`${afterMeta} · ${reqMeta}`}
-                    badge={String(index + 1)}
-                    showChevron={!(isDraft && canManage)}
-                    onPress={
-                      isDraft && canManage
-                        ? () => {
-                            void haptics.selection();
-                            setEditNode(node);
-                          }
-                        : undefined
+          <>
+            <WorkflowFloorBoard
+              title={t('mobile.production.workflow.stagesHeading')}
+              count={openingNodes.length + middleNodes.length + terminalNodes.length}
+            >
+              {layoutLevels.map((level, levelIndex) => {
+                const levelIds = new Set(level.lanes.flatMap((l) => l.nodes.map((n) => n.id)));
+                const prevLevel = levelIndex > 0 ? layoutLevels[levelIndex - 1] : null;
+                const prevIds = new Set(
+                  prevLevel?.lanes.flatMap((l) => l.nodes.map((n) => n.id)) ?? [],
+                );
+                const nextLevel =
+                  levelIndex + 1 < layoutLevels.length ? layoutLevels[levelIndex + 1] : null;
+                const nextIds = new Set(
+                  nextLevel?.lanes.flatMap((l) => l.nodes.map((n) => n.id)) ?? [],
+                );
+                const gapLink =
+                  prevLevel && isDraft && canManage
+                    ? linkForLevelGap(bandLinks, prevIds, levelIds)
+                    : null;
+                const nextGap =
+                  nextLevel && isDraft && canManage
+                    ? linkForLevelGap(bandLinks, levelIds, nextIds)
+                    : null;
+                const leaveLinkFor = (
+                  fromIds: Set<string>,
+                  towardIds: Set<string>,
+                ): ParallelBandLink | null => {
+                  if (!isDraft || !canManage) return null;
+                  const leaving = linkLeavingLevel(bandLinks, fromIds);
+                  if (!leaving) return null;
+                  const toHits = leaving.toBand.nodeIds.filter((id) => towardIds.has(id)).length;
+                  return toHits >= 1 ? leaving : null;
+                };
+                // After a feeder band when the next level is too messy for a clean gap match
+                const leaveLink = !nextGap ? leaveLinkFor(levelIds, nextIds) : null;
+                const prevLeave =
+                  prevLevel && !gapLink ? leaveLinkFor(prevIds, levelIds) : null;
+
+                return (
+                <View key={`lv-${level.level}`} style={{ gap: theme.spacing.sm }}>
+                  {levelIndex > 0 && !gapLink && !prevLeave ? (
+                    <View style={{ alignItems: 'center' }}>
+                      <Ionicons name="arrow-down" size={14} color={colors.brand} />
+                    </View>
+                  ) : null}
+                  {gapLink ? (
+                    <ParallelBandLinkControl
+                      mode={gapLink.mode}
+                      disabled={!isDraft || !canManage}
+                      saving={bandLinkSaving}
+                      onChange={(mode) => void applyBandLink(gapLink, mode)}
+                    />
+                  ) : null}
+                  {level.lanes.map((lane) => {
+                    const rows = lane.nodes.map((node) => {
+                      const locked = isLockedAnchorNode(node);
+                      return (
+                        <ListItemEnter key={node.id} index={0}>
+                          <WorkflowFloorRow
+                            label={stageNodeLabel(locale, node.stageDefinition)}
+                            meta={
+                              locked
+                                ? t('mobile.production.workflow.openingLocked')
+                                : t('mobile.production.workflow.required')
+                            }
+                            icon={locked ? 'lock-closed' : 'git-network-outline'}
+                            active={lockInfoNode?.id === node.id || editNode?.id === node.id}
+                            showChevron={!(isDraft && canManage) && !locked}
+                            onPress={
+                              isDraft && canManage
+                                ? () => {
+                                    void haptics.selection();
+                                    if (locked) setLockInfoNode(node);
+                                    else setEditNode(node);
+                                  }
+                                : undefined
+                            }
+                            trailing={
+                              locked ? (
+                                <Ionicons name="lock-closed" size={16} color={colors.textSecondary} />
+                              ) : isDraft && canManage ? (
+                                <WorkflowStageRowActions
+                                  onDelete={() => setDeleteNode(node)}
+                                  disabled={deleting || bandLinkSaving}
+                                />
+                              ) : null
+                            }
+                          />
+                        </ListItemEnter>
+                      );
+                    });
+
+                    if (lane.kind === 'together') {
+                      return (
+                        <View
+                          key={`lane-${lane.nodes.map((n) => n.id).join('-')}`}
+                          style={{
+                            gap: theme.spacing.sm,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            borderRadius: theme.radius.lg,
+                            padding: theme.spacing.sm,
+                          }}
+                        >
+                          <AppText
+                            variant="caption"
+                            color="muted"
+                            weight="medium"
+                            style={{ textAlign: 'center' }}
+                          >
+                            {t('mobile.production.workflow.together')}
+                          </AppText>
+                          {rows}
+                        </View>
+                      );
                     }
-                    trailing={
-                      isDraft && canManage ? (
-                        <Ionicons name="create-outline" size={18} color={colors.brand} />
-                      ) : null
-                    }
-                  />
-                </ListItemEnter>
-              );
-            })}
-          </WorkflowFloorBoard>
+                    // parallel = inside-band siblings (no Together hub); solo = single
+                    return (
+                      <View key={`lane-${lane.nodes.map((n) => n.id).join('-')}`} style={{ gap: theme.spacing.sm }}>
+                        {rows}
+                      </View>
+                    );
+                  })}
+                  {leaveLink ? (
+                    <ParallelBandLinkControl
+                      mode={leaveLink.mode}
+                      disabled={!isDraft || !canManage}
+                      saving={bandLinkSaving}
+                      onChange={(mode) => void applyBandLink(leaveLink, mode)}
+                    />
+                  ) : null}
+                </View>
+                );
+              })}
+            </WorkflowFloorBoard>
+
+            {isDraft && canManage
+              ? bandLinks
+                  .filter((l) => l.mode === 'mixed')
+                  .map((link) => (
+                    <ParallelBandLinkControl
+                      key={`mixed-${link.fromBand.nodeIds.join('-')}-${link.toBand.nodeIds.join('-')}`}
+                      mode={link.mode}
+                      saving={bandLinkSaving}
+                      onChange={(mode) => void applyBandLink(link, mode)}
+                    />
+                  ))
+              : null}
+
+            {isDraft && canManage ? (
+              <PrimaryButton
+                label={t('mobile.production.workflow.addStage')}
+                onPress={() => setAddOpen(true)}
+                leading={<Ionicons name="add" size={18} color={colors.onBrand} />}
+                style={{ borderRadius: theme.radius.xl }}
+              />
+            ) : null}
+          </>
         )}
 
         {previewStages.length > 0 ? (
@@ -311,19 +574,21 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
                 {t('mobile.production.workflow.chartPreviewHint')}
               </AppText>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <ProductionFlowMap stages={previewStages} preview />
+                <ProductionFlowMap
+                  stages={previewStages}
+                  preview
+                  onStagePress={
+                    isDraft && canManage
+                      ? (stage) => {
+                          const node = version?.nodes.find((n) => n.id === stage.code);
+                          if (node) setEditNode(node);
+                        }
+                      : undefined
+                  }
+                />
               </ScrollView>
             </View>
           </SurfaceCard>
-        ) : null}
-
-        {isDraft && canManage ? (
-          <PrimaryButton
-            label={t('mobile.production.workflow.addStage')}
-            onPress={() => setAddOpen(true)}
-            leading={<Ionicons name="add" size={18} color={colors.onBrand} />}
-            style={{ borderRadius: theme.radius.xl }}
-          />
         ) : null}
 
         {isDraft && canPublish ? (
@@ -360,6 +625,77 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
       ) : null}
 
       <ConfirmationSheet
+        open={Boolean(deleteNode)}
+        onClose={() => {
+          if (deleting) return;
+          setDeleteNode(null);
+        }}
+        title={t('mobile.production.workflow.removeStage')}
+        message={
+          deleteNode
+            ? t('mobile.production.workflow.removeStageConfirm', {
+                name: stageNodeLabel(locale, deleteNode.stageDefinition),
+              })
+            : t('mobile.production.workflow.removeStage')
+        }
+        confirmLabel={t('mobile.production.workflow.removeStage')}
+        destructive
+        onConfirm={() => {
+          if (!version || !deleteNode || deleting) return;
+          void (async () => {
+            setDeleting(true);
+            try {
+              const healed = await commitRemoveWorkflowStage({
+                workflowId,
+                version,
+                nodeId: deleteNode.id,
+              });
+              await applyVersionCache(healed);
+              markDirty();
+              setDeleteNode(null);
+              showToast({
+                variant: 'success',
+                message: t('mobile.production.workflow.stageRemoved'),
+              });
+            } catch (err) {
+              showToast({
+                variant: 'error',
+                message: isApiError(err)
+                  ? toastMessageForError(err)
+                  : t('mobile.production.workflow.loadError'),
+              });
+            } finally {
+              setDeleting(false);
+            }
+          })();
+        }}
+      />
+
+      <ConfirmationSheet
+        open={Boolean(lockInfoNode)}
+        onClose={() => setLockInfoNode(null)}
+        title={
+          lockInfoNode
+            ? stageNodeLabel(locale, lockInfoNode.stageDefinition)
+            : t('mobile.production.workflow.openingLocked')
+        }
+        message={
+          lockInfoNode?.stageDefinition?.code === 'MATERIAL_PREP'
+            ? t('mobile.production.workflow.openingHint')
+            : lockInfoNode?.stageDefinition?.code === 'INSPECTION'
+              ? t('lifecycle.terminalInspectionDesc')
+              : lockInfoNode?.stageDefinition?.code === 'PACKAGING'
+                ? t('lifecycle.terminalPackagingDesc')
+                : lockInfoNode?.stageDefinition?.code === 'DELIVERY'
+                  ? t('lifecycle.terminalDeliveryDesc')
+                  : t('mobile.production.workflow.anchorLockedHint')
+        }
+        confirmLabel={t('common.close')}
+        cancelLabel={t('common.close')}
+        onConfirm={() => setLockInfoNode(null)}
+      />
+
+      <ConfirmationSheet
         open={publishOpen}
         onClose={() => setPublishOpen(false)}
         title={t('mobile.production.workflow.publishConfirm')}
@@ -369,9 +705,17 @@ export function WorkflowDetailScreen({ workflowId, backFallback }: Props) {
           if (!version || !draftVersionId) return;
           void (async () => {
             try {
-              const healed = await commitHealSingleSink({ workflowId, version });
+              const healed = await commitCanonicalizeDraft({ workflowId, version });
               await applyVersionCache(healed);
-              publishMutation.mutate(healed.revision, {
+              let revision = healed.revision;
+              const opened = await ensureOpeningChain(workflowId, draftVersionId, revision);
+              revision = opened.revision;
+              const appended = await ensureTerminalChain(
+                workflowId,
+                draftVersionId,
+                revision,
+              );
+              publishMutation.mutate(appended.revision, {
                 onSuccess: () => {
                   setPublishOpen(false);
                   setDirty(false);

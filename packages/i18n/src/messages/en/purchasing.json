@@ -1,0 +1,8 @@
+{
+  "phaseDraft": "Draft",
+  "phaseOrdered": "Ordered",
+  "phasePartial": "Partially received",
+  "phaseReceived": "Received",
+  "phaseClosed": "Closed",
+  "phaseCancelled": "Cancelled"
+}

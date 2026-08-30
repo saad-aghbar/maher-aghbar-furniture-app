@@ -549,6 +549,23 @@ describe('selectOrdersForDay', () => {
     expect(selectOrdersForDay(orders, '2026-08-13')).toHaveLength(1);
   });
 
+  it('does not place an order on an empty working day inside its min-max window', () => {
+    const orders = [
+      orderCard({
+        id: 'sc-gap',
+        productionOrderId: 'po-gap',
+        plannedStart: '2026-08-16T08:00:00.000Z',
+        plannedEnd: '2026-08-23T12:00:00.000Z',
+        occupiedDates: ['2026-08-16', '2026-08-23'],
+      }),
+    ];
+    expect(selectOrdersForDay(orders, '2026-08-16')).toHaveLength(1);
+    expect(selectOrdersForDay(orders, '2026-08-22')).toHaveLength(0);
+    expect(selectOrdersForDay(orders, '2026-08-23')).toHaveLength(1);
+    expect(selectOrdersInRange(orders, '2026-08-22', '2026-08-22')).toHaveLength(0);
+    expect(selectOrdersInRange(orders, '2026-08-16', '2026-08-22')).toHaveLength(1);
+  });
+
   it('de-duplicates by productionOrderId', () => {
     const orders = [
       orderCard({ id: 'a', productionOrderId: 'po-1', plannedStart: '2026-08-11' }),

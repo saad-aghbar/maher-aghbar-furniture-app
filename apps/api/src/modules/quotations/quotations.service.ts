@@ -8,14 +8,23 @@ import {
 import { DiscountType, Prisma } from '@maher/database';
 import type { EmailProvider, WhatsAppProvider } from '@maher/integrations';
 import type { AuthUser } from '@maher/types';
+import {
+  buildOrderLineSpecSnapshot,
+  classifyManufacturingComplexity,
+} from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { calcLineTotals, roundMoney } from '../../common/helpers/money.util';
-import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
+import { customerScopeFilter } from '../../common/helpers/customer-scope';
 import { CreateQuotationDto, ListQuotationsDto, UpdateQuotationDto } from './dto/quotation.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SalesOrdersService } from '../sales-orders/sales-orders.service';
+import {
+  DEALER_VISIBLE_QUOTATION_STATUSES,
+  SAME_RFQ_ACCEPTED_ERROR,
+  isDealerVisibleQuotationStatus,
+} from './quotation-visibility';
 import {
   EMAIL_PROVIDER,
   WHATSAPP_PROVIDER,
@@ -34,8 +43,87 @@ export class QuotationsService {
     @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
   ) {}
 
+  /**
+   * Unused setting `quotation_approval.financeThreshold` is future debt.
+   * One-step internal send gate only — do not treat this as dealer acceptance.
+   */
   private async getApprovalChain(_total: number): Promise<string[]> {
     return ['SYSTEM_ADMINISTRATOR'];
+  }
+
+  private assertDealerPrincipal(user?: AuthUser): asserts user is AuthUser & { customerId: string } {
+    if (!user?.id || !user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Only the owning dealer can perform this action.',
+      });
+    }
+  }
+
+  private dealerListStatusFilter(
+    user: AuthUser | undefined,
+    requested?: string,
+  ): Prisma.QuotationWhereInput {
+    if (!user?.customerId) {
+      return requested ? { status: requested as never } : {};
+    }
+    if (requested) {
+      if (!isDealerVisibleQuotationStatus(requested)) {
+        return { id: { in: [] } };
+      }
+      return { status: requested as never };
+    }
+    return { status: { in: [...DEALER_VISIBLE_QUOTATION_STATUSES] } };
+  }
+
+  private assertDealerMaySee(
+    user: AuthUser | undefined,
+    quotation: { customerId: string; status: string },
+  ) {
+    if (!user?.customerId) return;
+    if (quotation.customerId !== user.customerId || !isDealerVisibleQuotationStatus(quotation.status)) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Quotation not found.' });
+    }
+  }
+
+  private async writeAudit(
+    userId: string | undefined,
+    action: string,
+    entityId: string,
+    newValues?: Prisma.InputJsonValue,
+  ) {
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: userId ?? undefined,
+        action,
+        entityType: 'Quotation',
+        entityId,
+        newValues: newValues ?? undefined,
+      },
+    });
+  }
+
+  private async notifyCommercialStaff(opts: {
+    salesRepId?: string | null;
+    templateCode: string;
+    vars: Record<string, string>;
+    linkUrl: string;
+  }) {
+    if (opts.salesRepId) {
+      await this.notifications.sendFromTemplate({
+        templateCode: opts.templateCode,
+        channel: 'IN_APP',
+        to: { userId: opts.salesRepId },
+        vars: opts.vars,
+        linkUrl: opts.linkUrl,
+      });
+      return;
+    }
+    await this.notifications.notifyAdminUsers({
+      templateCode: opts.templateCode,
+      vars: opts.vars,
+      linkUrl: opts.linkUrl,
+    });
   }
 
   private completedApprovalSteps(
@@ -82,7 +170,8 @@ export class QuotationsService {
     const setting = await this.prisma.systemSetting.findUnique({
       where: { key: 'auto_confirm_so_on_accept' },
     });
-    if (setting == null) return true;
+    // Piece 1: default off — accepted SO stays in production-setup until confirm.
+    if (setting == null) return false;
     const v = setting.value as unknown;
     if (typeof v === 'boolean') return v;
     if (typeof v === 'string') return v === 'true' || v === '1';
@@ -149,8 +238,8 @@ export class QuotationsService {
     const where: Prisma.QuotationWhereInput = {
       archivedAt: null,
       ...customerScopeFilter(user),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.customerId ? { customerId: query.customerId } : {}),
+      ...this.dealerListStatusFilter(user, query.status),
+      ...(query.customerId && !user?.customerId ? { customerId: query.customerId } : {}),
       ...(query.q
         ? {
             OR: [
@@ -206,12 +295,13 @@ export class QuotationsService {
         salesOrders: {
           select: { id: true, number: true, status: true, externalOrderNumber: true },
         },
+        acceptedBy: {
+          select: { id: true, firstName: true, lastName: true, email: true, username: true },
+        },
       },
     });
     if (!quotation) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Quotation not found.' });
-    if (!assertCustomerOwns(user, quotation.customerId)) {
-      throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Not your quotation.' });
-    }
+    this.assertDealerMaySee(user, quotation);
 
     const approvalChain = await this.getApprovalChain(Number(quotation.total));
     const completedSteps = this.completedApprovalSteps(quotation.approvals);
@@ -339,14 +429,16 @@ export class QuotationsService {
     }
   }
 
-  async submitForApproval(id: string) {
-    const quotation = await this.getById(id);
+  async submitForApproval(id: string, user?: AuthUser) {
+    const quotation = await this.getById(id, user);
     this.assertStatus(quotation, ['DRAFT'], 'submit for approval');
-    return this.prisma.quotation.update({
+    const updated = await this.prisma.quotation.update({
       where: { id },
       data: { status: 'INTERNAL_REVIEW' },
       include: { lines: true },
     });
+    await this.writeAudit(user?.id, 'quotation.submit', id, { status: 'INTERNAL_REVIEW' });
+    return updated;
   }
 
   /** Edit draft quotation terms / lines (prices) before submit-for-approval. */
@@ -395,7 +487,7 @@ export class QuotationsService {
   }
 
   async approve(id: string, user: AuthUser, comment?: string) {
-    const quotation = await this.getById(id);
+    const quotation = await this.getById(id, user);
     this.assertStatus(quotation, ['INTERNAL_REVIEW'], 'approve');
 
     const chain = quotation.approvalChain ?? (await this.getApprovalChain(Number(quotation.total)));
@@ -422,7 +514,7 @@ export class QuotationsService {
     const stepComment = `[step:${nextRole}]${comment ? ` ${comment}` : ''}`;
     const willComplete = chain.every((role) => completed.includes(role) || role === nextRole);
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       await tx.quotationApproval.create({
         data: {
           quotationId: id,
@@ -437,10 +529,15 @@ export class QuotationsService {
         include: { lines: true, approvals: true },
       });
     });
+    await this.writeAudit(user.id, 'quotation.approve', id, {
+      status: updated.status,
+      step: nextRole,
+    });
+    return updated;
   }
 
-  async send(id: string) {
-    const quotation = await this.getById(id);
+  async send(id: string, user?: AuthUser) {
+    const quotation = await this.getById(id, user);
     this.assertStatus(quotation, ['APPROVED'], 'send');
     const updated = await this.prisma.quotation.update({
       where: { id },
@@ -451,7 +548,6 @@ export class QuotationsService {
     const vars = { number: updated.number, total: String(updated.total) };
     const linkUrl = `/quotations/${updated.id}`;
 
-    // In-app notifications for linked customer portal users
     const portalUsers = await this.prisma.user.findMany({
       where: { customerId: updated.customerId, isActive: true },
       select: { id: true },
@@ -491,16 +587,21 @@ export class QuotationsService {
       });
     }
 
+    await this.writeAudit(user?.id, 'quotation.send', id, { status: 'SENT' });
     return updated;
   }
 
-  async reject(id: string, userId: string, comment?: string) {
-    const quotation = await this.getById(id);
-    this.assertStatus(quotation, ['INTERNAL_REVIEW', 'SENT', 'APPROVED'], 'reject');
+  async reject(id: string, user: AuthUser, comment?: string) {
+    const quotation = await this.getById(id, user);
+    if (user.customerId) {
+      this.assertStatus(quotation, ['SENT'], 'reject');
+    } else {
+      this.assertStatus(quotation, ['INTERNAL_REVIEW', 'APPROVED'], 'reject');
+    }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       await tx.quotationApproval.create({
-        data: { quotationId: id, approverId: userId, decision: 'REJECTED', comment },
+        data: { quotationId: id, approverId: user.id, decision: 'REJECTED', comment },
       });
       return tx.quotation.update({
         where: { id },
@@ -508,13 +609,27 @@ export class QuotationsService {
         include: { lines: true },
       });
     });
+    await this.writeAudit(user.id, 'quotation.reject', id, {
+      status: 'REJECTED',
+      byDealer: Boolean(user.customerId),
+      comment: comment ?? null,
+    });
+    if (user.customerId) {
+      await this.notifyCommercialStaff({
+        salesRepId: quotation.salesRepId,
+        templateCode: 'QUOTE_REJECTED',
+        vars: { number: quotation.number, total: String(quotation.total) },
+        linkUrl: `/quotations/${id}`,
+      }).catch(() => undefined);
+    }
+    return updated;
   }
 
-  async accept(id: string, signatureData?: string, userId?: string) {
-    const quotation = await this.getById(id);
+  async accept(id: string, user: AuthUser, signatureData?: string) {
+    this.assertDealerPrincipal(user);
+    const quotation = await this.getById(id, user);
     this.assertStatus(quotation, ['SENT'], 'accept');
 
-    const soNumber = await this.sequences.next('SO', 'SO');
     const requiredDeliveryDate =
       this.parseDeliveryDate(quotation.deliveryTerms) ??
       (quotation.request as { requiredDeliveryDate?: Date | null } | null)?.requiredDeliveryDate ??
@@ -526,56 +641,220 @@ export class QuotationsService {
       projectName?: string | null;
     } | null;
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      await tx.salesOrder.create({
-        data: {
-          number: soNumber,
-          customerId: quotation.customerId,
-          quotationId: quotation.id,
-          currency: quotation.currency,
-          paymentTerms: quotation.paymentTerms ?? undefined,
-          deliveryAddress: requestRow?.deliveryAddress ?? undefined,
-          requiredDeliveryDate: requiredDeliveryDate ?? undefined,
-          externalOrderNumber: requestRow?.externalOrderNumber ?? undefined,
-          projectName: requestRow?.projectName ?? undefined,
-          notes: quotation.deliveryTerms ?? undefined,
-          status: 'DRAFT',
-          subtotal: quotation.subtotal,
-          taxTotal: quotation.taxTotal,
-          total: quotation.total,
-          lines: {
-            create: quotation.lines.map((line, index) => ({
-              productId: line.productId,
-              description: line.description,
-              specifications: this.lineSpecifications(line),
-              quantity: line.quantity,
-              unitPrice: line.unitPrice,
-              discountValue: line.discountValue,
-              taxRate: line.taxRate,
-              lineTotal: line.lineTotal,
-              sortOrder: index,
-            })),
-          },
-        },
-      });
+    let result: { id: string; salesOrders?: Array<{ id: string; number: string; status: string }> };
+    try {
+      result = await this.prisma.$transaction(
+        async (tx) => {
+          if (quotation.requestId) {
+            // Prisma String @id is PostgreSQL text, not uuid. Casting ::uuid raises 42883.
+            await tx.$queryRaw`
+              SELECT id FROM requests_for_quotation WHERE id = ${quotation.requestId} FOR UPDATE
+            `;
+            const sibling = await tx.quotation.findFirst({
+              where: {
+                requestId: quotation.requestId,
+                status: 'ACCEPTED',
+                archivedAt: null,
+                NOT: { id },
+              },
+              select: { id: true },
+            });
+            const existingSo = await tx.salesOrder.findFirst({
+              where: {
+                archivedAt: null,
+                quotation: { requestId: quotation.requestId, archivedAt: null },
+              },
+              select: { id: true },
+            });
+            if (sibling || existingSo) {
+              throw new BadRequestException({
+                code: 'QUOTE_ALREADY_ACCEPTED',
+                message: SAME_RFQ_ACCEPTED_ERROR,
+              });
+            }
+          }
 
-      if (quotation.requestId) {
-        await tx.requestForQuotation.update({
-          where: { id: quotation.requestId },
-          data: { status: 'CLOSED' },
+          await tx.$queryRaw`SELECT id FROM quotations WHERE id = ${id} FOR UPDATE`;
+
+          const claimed = await tx.quotation.updateMany({
+            where: { id, status: 'SENT', archivedAt: null },
+            data: {
+              status: 'ACCEPTED',
+              acceptedAt: new Date(),
+              acceptedById: user.id,
+              acceptanceSignature: signatureData || null,
+            },
+          });
+          if (claimed.count !== 1) {
+            throw new BadRequestException({
+              code: 'BAD_REQUEST',
+              message: 'Cannot accept quotation: it is no longer awaiting dealer acceptance.',
+            });
+          }
+
+          const soNumber = await this.sequences.next('SO', 'SO');
+          const productIds = [
+            ...new Set(
+              quotation.lines
+                .map((l) => l.productId)
+                .filter((id): id is string => Boolean(id)),
+            ),
+          ];
+          const products = productIds.length
+            ? await tx.product.findMany({
+                where: { id: { in: productIds } },
+                select: {
+                  id: true,
+                  width: true,
+                  height: true,
+                  depth: true,
+                  seatHeight: true,
+                  imageUrl: true,
+                  nameEn: true,
+                },
+              })
+            : [];
+          const productMap = new Map(products.map((p) => [p.id, p]));
+          const requestDocs =
+            quotation.requestId
+              ? await tx.document.findMany({
+                  where: { requestId: quotation.requestId, archivedAt: null },
+                  select: { id: true },
+                  take: 50,
+                })
+              : [];
+          const attachmentIds = requestDocs.map((d) => d.id);
+
+          await tx.salesOrder.create({
+            data: {
+              number: soNumber,
+              customerId: quotation.customerId,
+              quotationId: quotation.id,
+              currency: quotation.currency,
+              paymentTerms: quotation.paymentTerms ?? undefined,
+              deliveryAddress: requestRow?.deliveryAddress ?? undefined,
+              requiredDeliveryDate: requiredDeliveryDate ?? undefined,
+              externalOrderNumber: requestRow?.externalOrderNumber ?? undefined,
+              projectName: requestRow?.projectName ?? undefined,
+              notes: quotation.deliveryTerms ?? undefined,
+              status: 'DRAFT',
+              subtotal: quotation.subtotal,
+              taxTotal: quotation.taxTotal,
+              total: quotation.total,
+              lines: {
+                create: quotation.lines.map((line, index) => {
+                  const catalog = line.productId
+                    ? productMap.get(line.productId)
+                    : null;
+                  const complexity = classifyManufacturingComplexity({
+                    productId: line.productId,
+                    width: line.width != null ? Number(line.width) : null,
+                    height: line.height != null ? Number(line.height) : null,
+                    depth: line.depth != null ? Number(line.depth) : null,
+                    material: line.material,
+                    fabric: line.fabric,
+                    color: line.color,
+                    catalog: catalog
+                      ? {
+                          width: catalog.width != null ? Number(catalog.width) : null,
+                          height: catalog.height != null ? Number(catalog.height) : null,
+                          depth: catalog.depth != null ? Number(catalog.depth) : null,
+                          seatHeight:
+                            catalog.seatHeight != null ? Number(catalog.seatHeight) : null,
+                        }
+                      : null,
+                  });
+                  const orderSpec = buildOrderLineSpecSnapshot({
+                    productId: line.productId,
+                    productName: line.description,
+                    productImageRef: catalog?.imageUrl ?? null,
+                    quantity: Number(line.quantity),
+                    catalog: catalog
+                      ? {
+                          width: catalog.width != null ? Number(catalog.width) : null,
+                          height: catalog.height != null ? Number(catalog.height) : null,
+                          depth: catalog.depth != null ? Number(catalog.depth) : null,
+                          seatHeight:
+                            catalog.seatHeight != null ? Number(catalog.seatHeight) : null,
+                        }
+                      : null,
+                    width: line.width != null ? Number(line.width) : null,
+                    height: line.height != null ? Number(line.height) : null,
+                    depth: line.depth != null ? Number(line.depth) : null,
+                    fabric: line.fabric,
+                    color: line.color,
+                    material: line.material,
+                    manufacturingComplexity: complexity,
+                    attachmentIds,
+                    dealerReference: requestRow?.externalOrderNumber ?? null,
+                    requiredDeliveryDate: requiredDeliveryDate ?? null,
+                  });
+                  return {
+                    productId: line.productId,
+                    description: line.description,
+                    specifications: this.lineSpecifications(line),
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    discountValue: line.discountValue,
+                    taxRate: line.taxRate,
+                    lineTotal: line.lineTotal,
+                    manufacturingComplexity: complexity,
+                    commercialPriceStatus:
+                      complexity === 'MODIFIED' || complexity === 'CUSTOM'
+                        ? 'REQUIRED'
+                        : Number(line.unitPrice) > 0
+                          ? 'CATALOG'
+                          : 'REQUIRED',
+                    commercialPriceSource:
+                      complexity === 'MODIFIED' || complexity === 'CUSTOM'
+                        ? 'PENDING_CONFIRM'
+                        : 'DEALER_PRICE_OR_BASE',
+                    orderSpec: orderSpec as unknown as Prisma.InputJsonValue,
+                    sortOrder: index,
+                  };
+                }),
+              },
+            },
+          });
+
+          if (quotation.requestId) {
+            await tx.requestForQuotation.update({
+              where: { id: quotation.requestId },
+              data: { status: 'CLOSED' },
+            });
+          }
+
+          return tx.quotation.findFirstOrThrow({
+            where: { id },
+            include: { lines: true, salesOrders: true },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      );
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new BadRequestException({
+          code: 'QUOTE_ALREADY_ACCEPTED',
+          message: SAME_RFQ_ACCEPTED_ERROR,
         });
       }
+      throw err;
+    }
 
-      return tx.quotation.update({
-        where: { id },
-        data: {
-          status: 'ACCEPTED',
-          acceptedAt: new Date(),
-          acceptanceSignature: signatureData || undefined,
-        },
-        include: { lines: true, salesOrders: true },
-      });
+    await this.writeAudit(user.id, 'quotation.accept', id, {
+      status: 'ACCEPTED',
+      acceptedById: user.id,
+      number: quotation.number,
+      version: quotation.version,
+      total: String(quotation.total),
+      currency: quotation.currency,
     });
+    await this.notifyCommercialStaff({
+      salesRepId: quotation.salesRepId,
+      templateCode: 'QUOTE_ACCEPTED',
+      vars: { number: quotation.number, total: String(quotation.total) },
+      linkUrl: `/quotations/${id}`,
+    }).catch(() => undefined);
 
     const so = result.salesOrders?.[0];
     if (so) {
@@ -583,23 +862,30 @@ export class QuotationsService {
     }
 
     const autoConfirm = await this.isAutoConfirmEnabled();
-    if (autoConfirm && so) {
-      try {
-        await this.salesOrders.confirm(so.id, userId ?? 'system');
-        return this.getById(id);
-      } catch {
-        // SO + contract remain; confirm can be done manually
+    // Piece 2: auto_confirm never creates POs / schedules. It may only pre-create the
+    // production-setup workspace; staff must still review and release.
+    if (so) {
+      if (autoConfirm) {
+        await this.salesOrders.ensureProductionSetup(so.id, user).catch(() => undefined);
       }
+      await this.notifications
+        .notifyCustomerUsers(quotation.customerId, {
+          templateCode: 'ORDER_PRODUCTION_SETUP',
+          vars: { number: so.number },
+          linkUrl: `/sales-orders/${so.id}`,
+        })
+        .catch(() => undefined);
     }
 
     return result;
   }
 
   async requestRevision(id: string, user: AuthUser, comment?: string) {
+    this.assertDealerPrincipal(user);
     const quotation = await this.getById(id, user);
-    this.assertStatus(quotation, ['SENT', 'VIEWED', 'APPROVED'], 'request revision');
+    this.assertStatus(quotation, ['SENT', 'VIEWED'], 'request revision');
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       await tx.quotationApproval.create({
         data: {
           quotationId: id,
@@ -619,10 +905,21 @@ export class QuotationsService {
         include: { lines: true, approvals: true },
       });
     });
+    await this.writeAudit(user.id, 'quotation.request-revision', id, {
+      status: 'REVISION_REQUESTED',
+      comment: comment ?? null,
+    });
+    await this.notifyCommercialStaff({
+      salesRepId: quotation.salesRepId,
+      templateCode: 'QUOTE_REVISION_REQUESTED',
+      vars: { number: quotation.number, total: String(quotation.total) },
+      linkUrl: `/quotations/${id}`,
+    }).catch(() => undefined);
+    return updated;
   }
 
-  async revise(id: string, userId: string) {
-    const quotation = await this.getById(id);
+  async revise(id: string, user: AuthUser) {
+    const quotation = await this.getById(id, user);
     this.assertStatus(
       quotation,
       ['APPROVED', 'SENT', 'REJECTED', 'REVISION_REQUESTED', 'VIEWED'],
@@ -651,7 +948,7 @@ export class QuotationsService {
       sortOrder: index,
     }));
 
-    return this.prisma.$transaction(async (tx) => {
+    const revised = await this.prisma.$transaction(async (tx) => {
       await tx.quotation.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -669,8 +966,8 @@ export class QuotationsService {
           warrantyTerms: quotation.warrantyTerms ?? undefined,
           customerNotes: quotation.customerNotes ?? undefined,
           internalNotes: quotation.internalNotes ?? undefined,
-          salesRepId: quotation.salesRepId ?? userId,
-          createdById: userId,
+          salesRepId: quotation.salesRepId ?? user.id,
+          createdById: user.id,
           parentQuotationId: quotation.id,
           status: 'DRAFT',
           currency: quotation.currency,
@@ -683,10 +980,16 @@ export class QuotationsService {
         include: { lines: true, customer: true, parentQuotation: true },
       });
     });
+    await this.writeAudit(user.id, 'quotation.revise', revised.id, {
+      fromId: id,
+      fromVersion: quotation.version,
+      toVersion: revised.version,
+    });
+    return revised;
   }
 
-  async compareVersions(id: string) {
-    const quotation = await this.getById(id);
+  async compareVersions(id: string, user?: AuthUser) {
+    const quotation = await this.getById(id, user);
     const rootId = quotation.parentQuotationId ?? quotation.id;
     const versions = await this.prisma.quotation.findMany({
       where: {

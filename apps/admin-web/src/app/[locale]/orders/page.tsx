@@ -260,12 +260,12 @@ function OrderCard({
             {row.kind === 'rfq' &&
             RFQ_APPROVE_STATUSES.includes(row.status as (typeof RFQ_APPROVE_STATUSES)[number]) ? (
               <Button size="sm" className="maher-sheen" loading={approveLoading} onClick={onApprove}>
-                {tCatalog('approve')}
+                {tCatalog('markReadyForQuote')}
               </Button>
             ) : row.kind === 'sales_order' && row.status === 'DRAFT' ? (
-              <Link href={`/sales-orders/${row.id}`}>
+              <Link href={`/sales-orders/${row.id}/production-setup`}>
                 <Button size="sm" variant="secondary" className="maher-sheen">
-                  {tSales('confirm')}
+                  {tSales('prepareProduction')}
                 </Button>
               </Link>
             ) : (
@@ -312,7 +312,7 @@ export default function OrdersHubPage() {
       apiFetch(`/api/v1/requests/${id}/ready-for-quotation`, { method: 'POST' }),
     onSuccess: async () => {
       setError(null);
-      setBanner(tCatalog('rfqApproved'));
+      setBanner(tCatalog('rfqReadyForQuotation'));
       await queryClient.invalidateQueries({ queryKey: ['orders-hub-requests'] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),

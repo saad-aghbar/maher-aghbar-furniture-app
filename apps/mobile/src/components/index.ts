@@ -11,6 +11,7 @@ export {
 export { TextField } from './forms/TextField';
 export { PasswordField } from './forms/PasswordField';
 export { CodeField } from './forms/CodeField';
+export { InfoRow } from './forms/InfoRow';
 
 export { CodeScannerProvider, useCodeScanner } from './scan/CodeScannerProvider';
 export { CodeScannerScreen } from './scan/CodeScannerScreen';
@@ -23,6 +24,8 @@ export { LargeTitleHeader } from './layout/LargeTitleHeader';
 export { ScreenBackLead } from './layout/ScreenBackLead';
 export { SectionHeader } from './layout/SectionHeader';
 export { Divider } from './layout/Divider';
+export { FloatingActionDock } from './layout/FloatingActionDock';
+export { stickyCtaBottomInset } from './layout/stickyCtaInset';
 
 export { PrimaryButton } from './buttons/PrimaryButton';
 export { SecondaryButton } from './buttons/SecondaryButton';

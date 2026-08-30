@@ -6,6 +6,11 @@ import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 
 export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'CHEQUE' | 'CARD' | 'OTHER';
 
+export type PaymentAllocation = {
+  invoiceId: string;
+  amount: number;
+};
+
 export type Payment = {
   id: string;
   number: string;
@@ -17,6 +22,16 @@ export type Payment = {
   notes?: string | null;
   customerId?: string;
   invoiceId?: string | null;
+  allocatedAmount?: number | string | null;
+  unallocatedAmount?: number | string | null;
+  customer?: {
+    id: string;
+    name?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    code?: string | null;
+  } | null;
 };
 
 export type StatementEntry = {
@@ -34,26 +49,55 @@ export type StatementEntry = {
 export type AccountStatement = {
   customer: { id: string; code: string; name: string };
   asOf: string;
-  openingBalance: string;
-  closingBalance: string;
-  outstandingBalance: string;
-  totalInvoiced: string;
-  totalPaid: string;
+  openingBalance: string | number;
+  closingBalance: string | number;
+  /** @deprecated prefer amountDue / availableCredit */
+  outstandingBalance: string | number;
+  amountDue?: number | string;
+  availableCredit?: number | string;
+  openInvoiceCount?: number;
+  overdueAmount?: number | string;
+  totalInvoiced: string | number;
+  totalPaid: string | number;
   currency: string;
   entries: StatementEntry[];
   payments: Payment[];
 };
 
+export type DealerFinanceSummary = {
+  amountDue: number;
+  availableCredit: number;
+  netPosition?: number;
+  openInvoiceCount?: number;
+  overdueAmount?: number;
+  currency: string;
+};
+
 export async function listPayments(
-  params: PageParams & { customerId?: string; method?: string } = {},
+  params: PageParams & {
+    customerId?: string;
+    method?: string;
+    q?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  } = {},
 ) {
   const qs = toSearchParams({
     page: params.page,
     pageSize: params.pageSize,
     customerId: params.customerId,
     method: params.method,
+    q: params.q,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
   });
   return apiGet<PaginatedResponse<Payment>>(`/payments${qs}`);
+}
+
+export async function getDealerFinanceSummary(customerId: string) {
+  return apiGet<DealerFinanceSummary>(
+    `/payments/dealer/${encodeURIComponent(customerId)}/summary`,
+  );
 }
 
 export async function recordPayment(body: {
@@ -65,6 +109,7 @@ export async function recordPayment(body: {
   bank?: string;
   notes?: string;
   idempotencyKey?: string;
+  allocations?: PaymentAllocation[];
 }) {
   return apiPost<Payment>('/payments', body);
 }
@@ -99,4 +144,3 @@ export async function openPaymentPdf(
     'Payment receipt PDF',
   );
 }
-

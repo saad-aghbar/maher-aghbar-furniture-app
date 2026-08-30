@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { isApiError } from '@/api/errors';
@@ -23,6 +23,7 @@ import {
   grandTotal,
   lineTotal,
   localizedNamed,
+  mergeDraftLinesByItem,
   type DraftMaterialLine,
 } from '../selectPurchase';
 import { CreateSupplierSheet } from './CreateSupplierSheet';
@@ -33,9 +34,16 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onCreated: (id: string) => void;
+  /** Prefill / merge material lines when the sheet opens. */
+  initialLines?: DraftMaterialLine[];
 };
 
-export function CreatePurchaseOrderSheet({ open, onClose, onCreated }: Props) {
+export function CreatePurchaseOrderSheet({
+  open,
+  onClose,
+  onCreated,
+  initialLines,
+}: Props) {
   const { t, formatCurrency, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
@@ -43,6 +51,7 @@ export function CreatePurchaseOrderSheet({ open, onClose, onCreated }: Props) {
   const sheetHeight = Math.min(Math.round(height * 0.9), 760);
   const warehouseListHeight = Math.round(height * 0.22);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const wasOpen = useRef(false);
 
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState<string | null>(null);
@@ -61,13 +70,20 @@ export function CreatePurchaseOrderSheet({ open, onClose, onCreated }: Props) {
   const createMutation = useCreatePurchaseMutation();
 
   useEffect(() => {
-    if (!open) {
+    if (open && !wasOpen.current) {
+      setSupplierId(null);
+      setSupplierName(null);
+      setWarehouseId('');
+      setLines(initialLines?.length ? mergeDraftLinesByItem([], initialLines) : []);
+    }
+    if (!open && wasOpen.current) {
       setSupplierId(null);
       setSupplierName(null);
       setWarehouseId('');
       setLines([]);
     }
-  }, [open]);
+    wasOpen.current = open;
+  }, [open, initialLines]);
 
   const warehouses: Warehouse[] = warehousesQuery.data ?? [];
   useEffect(() => {
@@ -97,17 +113,18 @@ export function CreatePurchaseOrderSheet({ open, onClose, onCreated }: Props) {
     const item = picked.item;
     const name =
       locale === 'ar' ? item.nameAr || item.nameEn : item.nameEn || item.nameAr;
-    setLines((prev) => [
-      ...prev,
-      {
-        key: `${item.id}-${Date.now()}`,
-        inventoryItemId: item.id,
-        description: name,
-        unit: item.unit || 'pcs',
-        quantity: String(picked.qty || 1),
-        unitCost: item.standardCost != null ? String(item.standardCost) : '0',
-      },
-    ]);
+    setLines((prev) =>
+      mergeDraftLinesByItem(prev, [
+        {
+          key: `${item.id}-${Date.now()}`,
+          inventoryItemId: item.id,
+          description: name,
+          unit: item.unit || 'pcs',
+          quantity: String(picked.qty || 1),
+          unitCost: item.standardCost != null ? String(item.standardCost) : '0',
+        },
+      ]),
+    );
     setMaterialOpen(false);
   };
 

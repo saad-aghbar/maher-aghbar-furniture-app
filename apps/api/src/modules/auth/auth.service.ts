@@ -27,6 +27,7 @@ import {
   canManageOwnMfa,
 } from '../../common/helpers/account-self-serve.util';
 import { provisionLinkedDealerCustomer } from '../../common/helpers/provision-dealer-customer.util';
+import { resolveJwtAccessSecret } from '../../common/helpers/jwt-secret';
 
 @Injectable()
 export class AuthService {
@@ -48,6 +49,10 @@ export class AuthService {
           include: {
             role: { include: { permissions: { include: { permission: true } } } },
           },
+        },
+        workerSkills: {
+          where: { isActive: true },
+          include: { stageDefinition: { select: { code: true } } },
         },
       },
     });
@@ -76,6 +81,9 @@ export class AuthService {
       nameAr: r.role.nameAr ?? r.role.code,
       nameHe: r.role.nameHe ?? undefined,
     }));
+    const stageSkillCodes = (user.workerSkills ?? [])
+      .map((s) => s.stageDefinition.code)
+      .filter(Boolean);
     return {
       id: user.id,
       username: user.username ?? '',
@@ -87,6 +95,7 @@ export class AuthService {
       roles,
       rolesDetailed,
       permissions,
+      stageSkillCodes,
       preferredLanguage: user.preferredLanguage,
       customerId,
     };
@@ -246,7 +255,7 @@ export class AuthService {
   }
 
   private async issueTokens(userId: string, meta: { ip?: string; userAgent?: string }) {
-    const accessSecret = process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me-min-32-chars!!';
+    const accessSecret = resolveJwtAccessSecret();
     const accessToken = await this.jwt.signAsync(
       { sub: userId, typ: 'access' },
       { secret: accessSecret, expiresIn: '15m' },

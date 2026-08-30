@@ -39,6 +39,7 @@ import {
 } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
 
 const CATEGORIES: InventoryCategoryGroup[] = ['fabric', 'foam', 'wood', 'accessories'];
 
@@ -72,8 +73,11 @@ type PickerRow = {
   nameEn: string;
   nameAr: string;
   category?: string | null;
+  unit: string;
   unitCost: number;
+  availableQty: number | null;
   materialId?: string | null;
+  imageUrl?: string | null;
 };
 
 type Props = {
@@ -188,8 +192,16 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
           nameEn: row.nameEn,
           nameAr: row.nameAr,
           category: row.category,
+          unit: row.unit || 'pcs',
           unitCost: inventoryItemUnitCost(row),
+          availableQty:
+            row.freeQty != null
+              ? Number(row.freeQty)
+              : row.onHandQty != null
+                ? Number(row.onHandQty)
+                : null,
           materialId: row.materialId ?? null,
+          imageUrl: row.imageUrl ?? null,
         }));
       }
       const mats = await listMaterials({
@@ -204,7 +216,9 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
         nameEn: m.nameEn,
         nameAr: m.nameAr,
         category: m.category,
+        unit: 'pcs',
         unitCost: 0,
+        availableQty: null,
         materialId: m.id,
       }));
     },
@@ -250,6 +264,7 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
       nameEn: selected.nameEn,
       nameAr: selected.nameAr,
       materialId: selected.materialId ?? selected.id,
+      imageUrl: selected.imageUrl ?? null,
     });
     onClose();
   }
@@ -500,24 +515,12 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
                               : { paddingLeft: theme.spacing.md + 4 }),
                           }}
                         >
-                          <View
-                            style={{
-                              width: 40,
-                              height: 40,
-                              borderRadius: 20,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: colors.brandSoft,
-                              borderWidth: 1,
-                              borderColor: colors.border,
-                            }}
-                          >
-                            <Ionicons
-                              name={GROUP_ICON[category]}
-                              size={18}
-                              color={colors.brand}
-                            />
-                          </View>
+                          <InventorySkuThumb
+                            uri={m.imageUrl}
+                            size={40}
+                            rounded="full"
+                            fallback={GROUP_ICON[category]}
+                          />
                           <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
                             <AppText
                               variant="label"
@@ -531,15 +534,21 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
                               variant="caption"
                               color="muted"
                               dir="ltr"
-                              numberOfLines={1}
+                              numberOfLines={2}
                               style={{ textAlign: isRTL ? 'right' : 'left' }}
                             >
                               {m.sku}
+                              {m.unit ? ` · ${m.unit}` : ''}
                               {already
                                 ? ` · ${t('catalog.materialAlreadyOnBom')}`
-                                : m.unitCost > 0
-                                  ? ` · ${formatCurrency(m.unitCost)}`
-                                  : ''}
+                                : m.availableQty != null && Number.isFinite(m.availableQty)
+                                  ? ` · ${t('mobile.productionSetup.availableQty', {
+                                      qty: m.availableQty,
+                                      unit: m.unit || 'pcs',
+                                    })}`
+                                  : m.unitCost > 0
+                                    ? ` · ${formatCurrency(m.unitCost)}`
+                                    : ''}
                             </AppText>
                           </View>
                           {!already ? (
@@ -613,11 +622,19 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
               borderTopColor: colors.border,
             }}
           >
-            <AppText variant="caption" color="secondary" numberOfLines={1}>
+            <AppText variant="caption" color="secondary" numberOfLines={2}>
               {locale === 'ar'
                 ? selected.nameAr || selected.nameEn
                 : selected.nameEn || selected.nameAr}
-              {selected.unitCost > 0 ? ` · ${formatCurrency(selected.unitCost)}` : ''}
+              {selected.unit ? ` · ${selected.unit}` : ''}
+              {selected.availableQty != null && Number.isFinite(selected.availableQty)
+                ? ` · ${t('mobile.productionSetup.availableQty', {
+                    qty: selected.availableQty,
+                    unit: selected.unit || 'pcs',
+                  })}`
+                : selected.unitCost > 0
+                  ? ` · ${formatCurrency(selected.unitCost)}`
+                  : ''}
             </AppText>
             <View
               style={{

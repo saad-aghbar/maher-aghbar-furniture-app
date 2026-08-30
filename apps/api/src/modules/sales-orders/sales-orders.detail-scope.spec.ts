@@ -9,6 +9,7 @@ const DEALER_LEAK_KEYS = [
   'costBreakdown',
   'productionPrice',
   'profit',
+  'manufacturingCosting',
   'assignedEmployeeId',
   'assignedEmployee',
   'bomDefaults',
@@ -284,6 +285,10 @@ describe('SalesOrdersService.getById ownership', () => {
       { createSnapshotForProductionOrder: jest.fn() } as any,
       { tryReserveForSalesOrder: jest.fn(), releaseForSalesOrder: jest.fn() } as any,
       { onProductionOrdersCancelled: jest.fn() } as any,
+      { ensureSetup: jest.fn(), isReleased: jest.fn().mockResolvedValue(false) } as any,
+      {
+        summaryForSalesOrder: jest.fn().mockResolvedValue(null),
+      } as any,
     );
     jest.spyOn(service, 'hydrateLineProducts').mockImplementation(async (lines) => lines as never);
     jest.spyOn(service, 'loadDealerPrices').mockResolvedValue(new Map());

@@ -1,8 +1,9 @@
-import { Image, View } from 'react-native';
+import { View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient as SvgGradient, Rect, Stop } from 'react-native-svg';
 import { AppText } from '@/components/AppText';
+import { ProductThumb } from '@/components/desk/ProductThumb';
 import { Divider } from '@/components/layout/Divider';
 import type { PriorityLevel } from '@/components/badges/badgeStyles';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
@@ -237,44 +238,15 @@ export function IndustrialFloorTaskCard({
             style={{
               aspectRatio: MEDIA_ASPECT,
               borderRadius: theme.radius.lg,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surfaceSecondary,
               overflow: 'hidden',
             }}
           >
-          {mediaUri ? (
-            <Image
-              source={{ uri: mediaUri }}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="cover"
-              accessibilityIgnoresInvertColors
-            />
-          ) : (
-            <View
-              style={{
-                flex: 1,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.brandSoft,
-              }}
-            >
-              <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                }}
-              >
-                <Ionicons name="cube-outline" size={20} color={colors.brand} />
-              </View>
-            </View>
-          )}
+          <ProductThumb
+            uri={mediaUri}
+            aspectRatio={MEDIA_ASPECT}
+            width="100%"
+            radius={theme.radius.lg}
+          />
 
           {/* Soft bottom fade — no hard pill cut */}
           <View

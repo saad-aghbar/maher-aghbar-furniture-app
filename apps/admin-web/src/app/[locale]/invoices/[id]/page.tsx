@@ -70,7 +70,23 @@ interface InvoiceDetail {
     method: string;
     referenceNumber?: string | null;
   }>;
+  dealerFinance?: {
+    amountDue: number;
+    availableCredit: number;
+    openInvoiceCount?: number;
+    overdueAmount?: number;
+  } | null;
 }
+
+type ApplyCreditPreview = {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceOutstanding: number;
+  availableCredit: number;
+  applyAmount: number;
+  invoiceRemainingAfter: number;
+  creditRemainingAfter: number;
+};
 
 function money(value: string | number | undefined | null) {
   return Number(value ?? 0).toFixed(2);
@@ -96,11 +112,16 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<string>('BANK_TRANSFER');
   const [reference, setReference] = useState('');
+  const [creditAmount, setCreditAmount] = useState('');
+  const [creditPreview, setCreditPreview] = useState<ApplyCreditPreview | null>(null);
+  const [creditBusy, setCreditBusy] = useState(false);
 
   const detailQuery = useQuery({
     queryKey: ['invoice', params.id],
     queryFn: () => apiFetch<InvoiceDetail>(`/api/v1/invoices/${params.id}`),
   });
+
+  const payN = Number(amount) || 0;
 
   const payMutation = useMutation({
     mutationFn: async () => {
@@ -111,6 +132,8 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
       if (!customerId || !(payAmount > 0)) {
         throw new ApiClientError(tc('amountCustomerRequired'), 400);
       }
+      const open = Math.max(0, Number(invoice.outstandingAmount ?? 0));
+      const allocated = Math.min(payAmount, open);
       return apiFetch('/api/v1/payments', {
         method: 'POST',
         body: JSON.stringify({
@@ -119,6 +142,8 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           amount: payAmount,
           method,
           ...(reference.trim() ? { referenceNumber: reference.trim() } : {}),
+          idempotencyKey: `pay-${invoice.id}-${Date.now()}`,
+          allocations: allocated > 0 ? [{ invoiceId: invoice.id, amount: allocated }] : [],
         }),
       });
     },
@@ -129,9 +154,55 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
       setReference('');
       await queryClient.invalidateQueries({ queryKey: ['invoice', params.id] });
       await queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      await queryClient.invalidateQueries({ queryKey: ['payments'] });
     },
     onError: (err) => setFormError(mutationErrorMessage(err)),
   });
+
+  const previewCredit = async () => {
+    setFormError(null);
+    setCreditBusy(true);
+    try {
+      const qs =
+        creditAmount.trim() !== ''
+          ? `?amount=${encodeURIComponent(creditAmount)}`
+          : '';
+      const preview = await apiFetch<ApplyCreditPreview>(
+        `/api/v1/invoices/${params.id}/apply-credit/preview${qs}`,
+      );
+      setCreditPreview(preview);
+    } catch (err) {
+      setFormError(mutationErrorMessage(err));
+      setCreditPreview(null);
+    } finally {
+      setCreditBusy(false);
+    }
+  };
+
+  const confirmCredit = async () => {
+    if (!creditPreview || !(creditPreview.applyAmount > 0)) return;
+    setFormError(null);
+    setCreditBusy(true);
+    try {
+      await apiFetch(`/api/v1/invoices/${params.id}/apply-credit`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: creditPreview.applyAmount,
+          idempotencyKey: `credit-${params.id}-${Date.now()}`,
+        }),
+      });
+      setBanner(ta('creditApplied'));
+      setCreditPreview(null);
+      setCreditAmount('');
+      await queryClient.invalidateQueries({ queryKey: ['invoice', params.id] });
+      await queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      await queryClient.invalidateQueries({ queryKey: ['payments'] });
+    } catch (err) {
+      setFormError(mutationErrorMessage(err));
+    } finally {
+      setCreditBusy(false);
+    }
+  };
 
   if (detailQuery.isLoading) {
     return (
@@ -156,10 +227,12 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   const lines = invoice.lines ?? [];
   const payments = invoice.payments ?? [];
   const outstanding = Number(invoice.outstandingAmount ?? 0);
+  const availableCredit = Number(invoice.dealerFinance?.availableCredit ?? 0);
   const methodOptions = PAYMENT_METHODS.map((m) => ({
     value: m,
     label: ta(`method${m}` as 'methodCASH'),
   }));
+  const showApplyCredit = outstanding > 0 && availableCredit > 0;
 
   return (
     <div className="space-y-6">
@@ -422,9 +495,95 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
               value={reference}
               onChange={(e) => setReference(e.target.value)}
             />
+            {payN > 0 ? (
+              <div className="rounded-xl border border-border bg-surface-secondary px-4 py-3 text-sm space-y-1">
+                <p className="flex justify-between gap-3">
+                  <span className="text-text-secondary">{ta('paymentAmount')}</span>
+                  <span className="tabular-nums font-medium" dir="ltr">
+                    {money(payN)}
+                  </span>
+                </p>
+                <p className="flex justify-between gap-3">
+                  <span className="text-text-secondary">{ta('allocatedToInvoices')}</span>
+                  <span className="tabular-nums font-medium" dir="ltr">
+                    {money(Math.min(payN, outstanding))}
+                  </span>
+                </p>
+                <p className="flex justify-between gap-3">
+                  <span className="text-text-secondary">{ta('addedToAccountCredit')}</span>
+                  <span className="tabular-nums font-medium" dir="ltr">
+                    {money(Math.max(0, payN - outstanding))}
+                  </span>
+                </p>
+                {payN > outstanding ? (
+                  <p className="text-xs text-text-tertiary pt-1">{ta('overpayCreditHint')}</p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="maher-detail-sticky-actions">
               <Button loading={payMutation.isPending} onClick={() => payMutation.mutate()}>
                 {ta('recordPayment')}
+              </Button>
+            </div>
+          </div>
+        </Card>
+        </MotionSection>
+      ) : null}
+
+      {showApplyCredit ? (
+        <MotionSection className="maher-form-section" as="div">
+        <Card title={ta('applyCredit')}>
+          <div className="grid max-w-xl gap-3">
+            <p className="text-sm text-text-secondary">{ta('applyCreditHint')}</p>
+            <p className="text-sm flex justify-between gap-3">
+              <span className="text-text-secondary">{ta('accountCredit')}</span>
+              <span className="tabular-nums font-semibold" dir="ltr">
+                {money(availableCredit)}
+              </span>
+            </p>
+            <Input
+              label={ta('applyCreditAmount')}
+              type="number"
+              value={creditAmount}
+              onChange={(e) => {
+                setCreditAmount(e.target.value);
+                setCreditPreview(null);
+              }}
+              placeholder={String(Math.min(outstanding, availableCredit))}
+            />
+            {creditPreview ? (
+              <div className="rounded-xl border border-border bg-surface-secondary px-4 py-3 text-sm space-y-1">
+                <p className="text-xs font-semibold text-brand">{ta('applyCreditPreview')}</p>
+                <p className="flex justify-between gap-3">
+                  <span className="text-text-secondary">{ta('applyCreditWillApply')}</span>
+                  <span className="tabular-nums font-medium" dir="ltr">
+                    {money(creditPreview.applyAmount)}
+                  </span>
+                </p>
+                <p className="flex justify-between gap-3">
+                  <span className="text-text-secondary">{ta('invoiceRemainingAfter')}</span>
+                  <span className="tabular-nums font-medium" dir="ltr">
+                    {money(creditPreview.invoiceRemainingAfter)}
+                  </span>
+                </p>
+                <p className="flex justify-between gap-3">
+                  <span className="text-text-secondary">{ta('creditRemainingAfter')}</span>
+                  <span className="tabular-nums font-medium" dir="ltr">
+                    {money(creditPreview.creditRemainingAfter)}
+                  </span>
+                </p>
+              </div>
+            ) : null}
+            <div className="maher-detail-sticky-actions flex flex-wrap gap-2">
+              <Button variant="secondary" loading={creditBusy} onClick={() => void previewCredit()}>
+                {ta('applyCreditPreview')}
+              </Button>
+              <Button
+                loading={creditBusy}
+                disabled={!creditPreview || !(creditPreview.applyAmount > 0)}
+                onClick={() => void confirmCredit()}
+              >
+                {ta('confirmApplyCredit')}
               </Button>
             </div>
           </div>

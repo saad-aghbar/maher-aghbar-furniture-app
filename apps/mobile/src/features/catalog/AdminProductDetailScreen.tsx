@@ -962,6 +962,7 @@ export function AdminProductDetailScreen({ productId }: Props) {
                         locale === 'ar' ? line.nameAr || line.nameEn : line.nameEn || line.nameAr
                       }
                       sku={line.sku}
+                      imageUrl={line.imageUrl}
                       unitCostLabel={formatCurrency(line.unitCost)}
                       lineTotalLabel={formatCurrency(lineTotal)}
                       qty={String(line.qty)}

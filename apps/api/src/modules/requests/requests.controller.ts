@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@maher/types';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
@@ -45,6 +45,12 @@ export class RequestsController {
   }
 
   @RequirePermissions('request.update')
+  @Delete(':id')
+  discard(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.requests.discardDraft(id, user);
+  }
+
+  @RequirePermissions('request.update')
   @Post(':id/submit')
   submit(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.requests.submit(id, user);
@@ -52,28 +58,29 @@ export class RequestsController {
 
   @RequirePermissions('request.update')
   @Post(':id/under-review')
-  underReview(@Param('id') id: string) {
-    return this.requests.markUnderReview(id);
+  underReview(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.requests.markUnderReview(id, user);
   }
 
   @RequirePermissions('request.update')
   @Post(':id/ready-for-quotation')
-  readyForQuotation(@Param('id') id: string) {
-    return this.requests.markReadyForQuotation(id);
+  readyForQuotation(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.requests.markReadyForQuotation(id, user);
   }
 
   @RequirePermissions('request.update')
   @Post(':id/needs-information')
   needsInformation(
     @Param('id') id: string,
-    @Body() body: { notes?: string },
+    @Body() body: { notes?: string; reason?: string },
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.requests.markNeedsInformation(id, body.notes);
+    return this.requests.markNeedsInformation(id, body.reason ?? body.notes, user);
   }
 
   @RequirePermissions('request.update')
   @Post(':id/close')
-  close(@Param('id') id: string) {
-    return this.requests.close(id);
+  close(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.requests.close(id, user);
   }
 }

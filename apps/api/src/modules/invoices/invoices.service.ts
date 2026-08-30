@@ -12,9 +12,16 @@ import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
+import { roundMoney } from '../../common/helpers/money.util';
 import { JOFOTARA_PROVIDER } from '../../integrations/integrations.module';
 import type { ListInvoicesDto } from './dto/invoice.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import {
+  classifyInvoice,
+  commercialLinesReady,
+  money,
+  summarizeDealerFinance,
+} from '../payments/dealer-finance';
 
 @Injectable()
 export class InvoicesService {
@@ -25,12 +32,65 @@ export class InvoicesService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  async list(query: ListInvoicesDto) {
+  private async dealerFinance(customerId: string) {
+    const [invoices, payments] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: { customerId, archivedAt: null },
+        select: { status: true, outstandingAmount: true, dueDate: true, currency: true },
+      }),
+      this.prisma.payment.findMany({
+        where: { customerId },
+        select: { amount: true, allocations: { select: { amount: true } } },
+      }),
+    ]);
+    return summarizeDealerFinance({
+      invoices,
+      payments,
+      currency: invoices[0]?.currency ?? 'ILS',
+    });
+  }
+
+  async list(
+    query: ListInvoicesDto & { dateFrom?: string; dateTo?: string; overdue?: string },
+  ) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
+    const invoiceDate: Prisma.DateTimeFilter = {};
+    if (query.dateFrom) {
+      const from = new Date(query.dateFrom);
+      if (!Number.isNaN(from.getTime())) invoiceDate.gte = from;
+    }
+    if (query.dateTo) {
+      const to = new Date(query.dateTo);
+      if (!Number.isNaN(to.getTime())) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(String(query.dateTo).trim())) to.setHours(23, 59, 59, 999);
+        invoiceDate.lte = to;
+      }
+    }
+
+    const overdueOnly = query.overdue === '1' || query.overdue === 'true';
+    const now = new Date();
+    // Overdue in DB so count === filtered dataset (not post-page filter).
+    const overdueWhere: Prisma.InvoiceWhereInput | undefined = overdueOnly
+      ? {
+          AND: [
+            { outstandingAmount: { gt: 0 } },
+            { status: { notIn: [InvoiceStatus.PAID, InvoiceStatus.CANCELLED, InvoiceStatus.VOID, InvoiceStatus.DRAFT] } },
+            {
+              OR: [
+                { status: InvoiceStatus.OVERDUE },
+                { dueDate: { lt: now } },
+              ],
+            },
+          ],
+        }
+      : undefined;
+
     const where: Prisma.InvoiceWhereInput = {
       archivedAt: null,
-      ...(query.status ? { status: query.status } : {}),
+      ...(query.status && !overdueOnly ? { status: query.status } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
+      ...(Object.keys(invoiceDate).length ? { invoiceDate } : {}),
+      ...(overdueWhere ?? {}),
       ...(query.q
         ? {
             OR: [
@@ -45,10 +105,12 @@ export class InvoicesService {
               { customer: { nameAr: { contains: query.q, mode: 'insensitive' } } },
               { customer: { nameEn: { contains: query.q, mode: 'insensitive' } } },
               { customer: { nameHe: { contains: query.q, mode: 'insensitive' } } },
+              { customer: { code: { contains: query.q, mode: 'insensitive' } } },
             ],
           }
         : {}),
     };
+
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.invoice.count({ where }),
       this.prisma.invoice.findMany({
@@ -65,7 +127,19 @@ export class InvoicesService {
         take,
       }),
     ]);
-    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+
+    const rows = data.map((inv) => ({
+      ...inv,
+      presentation: classifyInvoice({
+        status: inv.status,
+        total: money(inv.total),
+        paidAmount: money(inv.paidAmount),
+        outstandingAmount: money(inv.outstandingAmount),
+        dueDate: inv.dueDate,
+      }),
+    }));
+
+    return { data: rows, meta: paginatedMeta(page, pageSize, totalItems) };
   }
 
   async get(id: string, user?: AuthUser) {
@@ -74,7 +148,8 @@ export class InvoicesService {
       include: {
         customer: true,
         lines: true,
-        payments: true,
+        payments: { include: { allocations: true } },
+        allocations: { include: { payment: true } },
         salesOrder: {
           select: { id: true, number: true, status: true, externalOrderNumber: true },
         },
@@ -84,15 +159,51 @@ export class InvoicesService {
     if (!assertCustomerOwns(user, invoice.customerId)) {
       throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Not your invoice.' });
     }
-    return invoice;
+    const finance = await this.dealerFinance(invoice.customerId);
+    return {
+      ...invoice,
+      presentation: classifyInvoice({
+        status: invoice.status,
+        total: money(invoice.total),
+        paidAmount: money(invoice.paidAmount),
+        outstandingAmount: money(invoice.outstandingAmount),
+        dueDate: invoice.dueDate,
+      }),
+      dealerFinance: {
+        amountDue: finance.amountDue,
+        availableCredit: finance.availableCredit,
+        openInvoiceCount: finance.openInvoiceCount,
+        overdueAmount: finance.overdueAmount,
+      },
+    };
   }
 
-  async createFromSalesOrder(salesOrderId: string, userId: string) {
+  async createFromSalesOrder(salesOrderId: string, userId: string, idempotencyKey?: string) {
+    if (idempotencyKey) {
+      const prior = await this.prisma.auditEvent.findFirst({
+        where: {
+          action: 'invoice.create',
+          entityType: 'SalesOrder',
+          entityId: salesOrderId,
+          newValues: { path: ['idempotencyKey'], equals: idempotencyKey },
+        },
+      });
+      if (prior?.newValues && typeof prior.newValues === 'object' && 'invoiceId' in (prior.newValues as object)) {
+        const invoiceId = (prior.newValues as { invoiceId?: string }).invoiceId;
+        if (invoiceId) return this.get(invoiceId);
+      }
+    }
+
     const so = await this.prisma.salesOrder.findFirst({
       where: { id: salesOrderId, archivedAt: null },
       include: { lines: true, customer: true },
     });
     if (!so) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Sales order not found.' });
+
+    const gate = commercialLinesReady(so.lines);
+    if (!gate.ok) {
+      throw new BadRequestException({ code: gate.code, message: gate.message });
+    }
 
     const existing = await this.prisma.invoice.findFirst({
       where: { salesOrderId, status: { not: InvoiceStatus.CANCELLED }, archivedAt: null },
@@ -106,7 +217,7 @@ export class InvoicesService {
 
     const number = await this.sequences.next('INV', 'INV');
     const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 30);
+    dueDate.setDate(dueDate.getDate() + (so.customer.paymentTermsDays || 30));
 
     const invoiceDate = new Date();
     const lines = so.lines.map((l, i) => ({
@@ -161,6 +272,7 @@ export class InvoicesService {
         status: InvoiceStatus.ISSUED,
         subtotal: so.subtotal,
         taxTotal: so.taxTotal,
+        discountTotal: roundMoney(0),
         total: so.total,
         paidAmount: 0,
         outstandingAmount: so.total,
@@ -172,6 +284,16 @@ export class InvoicesService {
         lines: { create: lines },
       },
       include: { lines: true, customer: true },
+    });
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId,
+        action: 'invoice.create',
+        entityType: 'SalesOrder',
+        entityId: salesOrderId,
+        newValues: { invoiceId: invoice.id, idempotencyKey: idempotencyKey ?? null },
+      },
     });
 
     await this.notifications
@@ -186,13 +308,13 @@ export class InvoicesService {
   }
 
   /** Idempotent — skips when a non-cancelled invoice already exists for the SO. */
-  async ensureFromSalesOrder(salesOrderId: string, userId: string) {
+  async ensureFromSalesOrder(salesOrderId: string, userId: string, idempotencyKey?: string) {
     const existing = await this.prisma.invoice.findFirst({
       where: { salesOrderId, status: { not: InvoiceStatus.CANCELLED }, archivedAt: null },
     });
     if (existing) return existing;
     try {
-      return await this.createFromSalesOrder(salesOrderId, userId);
+      return await this.createFromSalesOrder(salesOrderId, userId, idempotencyKey);
     } catch (err) {
       if (err instanceof BadRequestException) {
         const body = err.getResponse();
@@ -201,8 +323,76 @@ export class InvoicesService {
             where: { salesOrderId, status: { not: InvoiceStatus.CANCELLED }, archivedAt: null },
           });
         }
+        // Auto-ensure on delivery must not fail hard on price gate — rethrow for manual create.
+        throw err;
       }
       throw err;
     }
+  }
+
+  async commercialSummary(salesOrderId: string, user?: AuthUser) {
+    const so = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, archivedAt: null },
+      include: {
+        lines: true,
+        customer: true,
+        invoices: {
+          where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } },
+        },
+      },
+    });
+    if (!so) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Sales order not found.' });
+    if (!assertCustomerOwns(user, so.customerId)) {
+      throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Not your order.' });
+    }
+
+    const invoiced = so.invoices.reduce((s, i) => s + money(i.total), 0);
+    const paid = so.invoices.reduce((s, i) => s + money(i.paidAmount), 0);
+    const remaining = so.invoices.reduce((s, i) => s + money(i.outstandingAmount), 0);
+    const gate = commercialLinesReady(so.lines);
+    const finance = await this.dealerFinance(so.customerId);
+
+    return {
+      salesOrderId: so.id,
+      number: so.number,
+      dealer: {
+        id: so.customer.id,
+        code: so.customer.code,
+        name: so.customer.nameEn || so.customer.name,
+      },
+      orderTotal: money(so.total),
+      invoiced: Number(roundMoney(invoiced)),
+      paid: Number(roundMoney(paid)),
+      remaining: Number(roundMoney(remaining)),
+      commercialComplete: gate.ok,
+      commercialBlock: gate.ok ? null : gate,
+      lines: so.lines.map((l) => ({
+        id: l.id,
+        description: l.description,
+        quantity: money(l.quantity),
+        unitPrice: money(l.unitPrice),
+        lineTotal: money(l.lineTotal),
+        manufacturingComplexity: l.manufacturingComplexity,
+        commercialPriceStatus: l.commercialPriceStatus,
+        commercialPriceSource: l.commercialPriceSource,
+        commercialPriceNote: l.commercialPriceNote,
+      })),
+      dealerFinance: finance,
+      invoices: so.invoices.map((i) => ({
+        id: i.id,
+        number: i.number,
+        status: i.status,
+        total: money(i.total),
+        paidAmount: money(i.paidAmount),
+        outstandingAmount: money(i.outstandingAmount),
+        presentation: classifyInvoice({
+          status: i.status,
+          total: money(i.total),
+          paidAmount: money(i.paidAmount),
+          outstandingAmount: money(i.outstandingAmount),
+          dueDate: i.dueDate,
+        }),
+      })),
+    };
   }
 }

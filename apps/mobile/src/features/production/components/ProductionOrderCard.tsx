@@ -1,8 +1,8 @@
-import { Image, StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { ProductThumb } from '@/components/desk/ProductThumb';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -91,30 +91,7 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
         }}
       >
         <View style={{ width: MEDIA, gap: theme.spacing.xs }}>
-          <View
-            style={{
-              width: MEDIA,
-              height: MEDIA,
-              borderRadius: theme.radius.lg,
-              backgroundColor: colors.surfaceSecondary,
-              overflow: 'hidden',
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.border,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {order.imageUrl ? (
-              <Image
-                source={{ uri: order.imageUrl }}
-                style={{ width: MEDIA, height: MEDIA }}
-                resizeMode="cover"
-                accessibilityIgnoresInvertColors
-              />
-            ) : (
-              <Ionicons name="cube-outline" size={28} color={colors.brand} />
-            )}
-          </View>
+          <ProductThumb uri={order.imageUrl} size={MEDIA} radius={theme.radius.lg} />
 
           {urgent || order.isLate ? (
             <View
@@ -227,6 +204,35 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
             <AppText variant="caption" color="muted" style={{ width: '100%' }}>
               {`${t('mobile.production.deliveryDate')}: ${order.deliveryLabel}`}
             </AppText>
+          ) : null}
+
+          {order.boardBucket === 'blocked' && order.readinessReason ? (
+            <View
+              style={{
+                marginTop: 4,
+                paddingHorizontal: theme.spacing.sm,
+                paddingVertical: 6,
+                borderRadius: theme.radius.md,
+                backgroundColor: colors.errorSoft,
+                width: '100%',
+              }}
+            >
+              <AppText
+                variant="caption"
+                weight="semibold"
+                style={{ color: colors.error, marginBottom: 2 }}
+              >
+                {t('mobile.production.blocked')}
+              </AppText>
+              <AppText
+                variant="caption"
+                color="error"
+                numberOfLines={2}
+                style={{ width: '100%' }}
+              >
+                {order.readinessReason}
+              </AppText>
+            </View>
           ) : null}
         </View>
       </View>

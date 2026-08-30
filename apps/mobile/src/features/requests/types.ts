@@ -38,6 +38,8 @@ export type RequestItem = {
   fabric?: string | null;
   color?: string | null;
   description?: string | null;
+  /** STANDARD | MODIFIED | CUSTOM — order-line vs catalog (Piece 1). */
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
   customMeasurements?: RequestCustomMeasurement[] | null;
 };
 
@@ -75,6 +77,13 @@ export type RequestDetail = {
   contactName?: string | null;
   notes?: string | null;
   internalNotes?: string | null;
+  informationRequestReason?: string | null;
+  reviewHistory?: Array<{
+    at: string;
+    by?: string | null;
+    action: string;
+    message?: string | null;
+  }> | null;
   deliveryAddress?: string | null;
   endCustomerName?: string | null;
   endCustomerPhone?: string | null;

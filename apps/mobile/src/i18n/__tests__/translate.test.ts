@@ -54,6 +54,11 @@ describe('translate', () => {
     expect(translate('en', 'mobile.purchasing.actionNewOrder')).toBe('New order');
     expect(translate('en', 'mobile.purchasing.filterApply')).toBe('Apply');
     expect(translate('ar', 'mobile.purchasing.searchOrders')).toMatch(/أوامر الشراء/);
+    expect(translate('en', 'purchasing.phaseOrdered')).toBe('Ordered');
+    expect(translate('en', 'mobile.purchasing.stillNeeded')).toBe('Still needed');
+    expect(translate('ar', 'purchasing.phasePartial')).toMatch(/استلام/);
+    expect(translate('he', 'mobile.purchasing.needsToBuy')).toBeTruthy();
+    expect(translate('he', 'mobile.purchasing.needsToBuy')).not.toBe('mobile.purchasing.needsToBuy');
   });
 
   it('resolves returns and SO detail keys used by overhaul', () => {

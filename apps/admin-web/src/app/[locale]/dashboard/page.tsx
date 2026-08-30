@@ -1,7 +1,12 @@
 'use client';
 
+import {
+  ManagementDashboard,
+  ManagementDashboardSkeleton,
+} from '@/components/admin/management-dashboard';
 import { Link } from '@/i18n/navigation';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
+import type { ManagementSummary } from '@/lib/management-summary';
 import type { AuthUser } from '@maher/types';
 import { can, canAny, resolveComposedHomeKind, type Permission } from '@maher/permissions';
 import {
@@ -332,14 +337,38 @@ export default function DashboardPage() {
   const user = me.data;
   const canSales = can(user, 'report.sales.read');
   const canInvRead = can(user, 'inventory.read');
+  const canQualityRead = can(user, 'quality-inspection.read');
   const homeKind = resolveComposedHomeKind(user ?? null);
 
-  const { data, isLoading, isError, refetch, isSuccess } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: () => apiFetch<DashboardMetrics>('/api/v1/reports/dashboard'),
+  type DashboardPayload =
+    | { kind: 'management'; data: ManagementSummary }
+    | { kind: 'legacy'; data: DashboardMetrics };
+
+  const dashboardQuery = useQuery({
+    queryKey: ['dashboard', 'management-or-legacy'],
+    queryFn: async (): Promise<DashboardPayload> => {
+      try {
+        const data = await apiFetch<ManagementSummary>('/api/v1/reports/management-summary');
+        return { kind: 'management', data };
+      } catch (err) {
+        // Transition: keep classic dashboard until management-summary ships.
+        if (err instanceof ApiClientError && err.status === 404) {
+          const data = await apiFetch<DashboardMetrics>('/api/v1/reports/dashboard');
+          return { kind: 'legacy', data };
+        }
+        throw err;
+      }
+    },
     enabled: canSales,
     refetchInterval: canSales ? 60_000 : false,
   });
+
+  const data = dashboardQuery.data?.kind === 'legacy' ? dashboardQuery.data.data : undefined;
+  const management = dashboardQuery.data?.kind === 'management' ? dashboardQuery.data.data : undefined;
+  const isLoading = dashboardQuery.isLoading;
+  const isError = dashboardQuery.isError;
+  const isSuccess = dashboardQuery.isSuccess;
+  const refetch = dashboardQuery.refetch;
 
   const inventoryOverview = useQuery({
     queryKey: ['inventory-overview'],
@@ -353,6 +382,16 @@ export default function DashboardPage() {
     staleTime: 30_000,
   });
 
+  const qualityAttention = useQuery({
+    queryKey: ['quality-inspections', 'attention', 'dashboard'],
+    queryFn: () =>
+      apiFetch<Array<{ reworkId?: string }>>('/api/v1/quality-inspections/attention'),
+    enabled: canQualityRead && !management,
+    staleTime: 30_000,
+  });
+
+  const qualityAttentionCount = qualityAttention.data?.length ?? 0;
+
   const firstName = useMemo(() => {
     const name = me.data?.name?.trim();
     if (!name) return null;
@@ -360,9 +399,9 @@ export default function DashboardPage() {
   }, [me.data?.name]);
 
   const attentionTotal = useMemo(() => {
-    if (!data) return 0;
-    return data.delayedOrders + data.pendingReturns + data.lowStockItems;
-  }, [data]);
+    if (!data) return qualityAttentionCount;
+    return data.delayedOrders + data.pendingReturns + data.lowStockItems + qualityAttentionCount;
+  }, [data, qualityAttentionCount]);
 
   const pipelineShares = useMemo(() => {
     if (!data) {
@@ -397,16 +436,7 @@ export default function DashboardPage() {
   }, [data]);
 
   if (me.isLoading && !user) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-48 w-full rounded-[var(--maher-radius-xl)]" />
-        <div className="grid gap-3 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-[var(--maher-radius-xl)]" />
-          ))}
-        </div>
-      </div>
-    );
+    return <ManagementDashboardSkeleton />;
   }
 
   if (!canSales) {
@@ -424,30 +454,26 @@ export default function DashboardPage() {
   }
 
   if (isLoading) {
+    return <ManagementDashboardSkeleton />;
+  }
+
+  if (isError || (!management && !data)) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-48 w-full rounded-[var(--maher-radius-xl)]" />
-        <div className="grid gap-3 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-[var(--maher-radius-xl)]" />
-          ))}
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton
-              key={i}
-              className={cn(
-                'h-[148px] rounded-[var(--maher-radius-xl)]',
-                i === 0 && 'sm:col-span-2 sm:h-[200px]',
-              )}
-            />
-          ))}
-        </div>
-      </div>
+      <ErrorState
+        title={t('dashboard')}
+        description={tCommon('noResults')}
+        onRetry={() => refetch()}
+        retryLabel={tCommon('retry')}
+      />
     );
   }
 
-  if (isError || !data) {
+  if (management) {
+    return <ManagementDashboard data={management} firstName={firstName} />;
+  }
+
+  // Legacy dashboard (404 fallback during API transition) — data is defined here.
+  if (!data) {
     return (
       <ErrorState
         title={t('dashboard')}
@@ -574,6 +600,16 @@ export default function DashboardPage() {
                   icon={<Boxes className="h-4 w-4" />}
                   LinkComponent={Link}
                 />
+                {qualityAttentionCount > 0 ? (
+                  <AttentionChip
+                    href="/quality"
+                    label={tCommon('metricQualityAttention')}
+                    value={qualityAttentionCount}
+                    tone="warning"
+                    icon={<ClipboardList className="h-4 w-4" />}
+                    LinkComponent={Link}
+                  />
+                ) : null}
               </>
             )}
           </div>

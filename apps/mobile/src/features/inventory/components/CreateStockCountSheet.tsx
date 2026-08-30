@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -16,8 +16,15 @@ import { InventoryItemPickPanel } from './InventoryItemPickPanel';
 import { InventorySheetFooter } from './InventorySheetFooter';
 import { InventorySheetSectionLabel } from './InventorySheetBody';
 import { WarehousePickList } from './WarehousePickList';
+import { KnownItemLabelConfirm } from './KnownItemLabelConfirm';
+import {
+  ScanInventoryItemAction,
+  type ScanInventoryItemActionHandle,
+} from './ScanInventoryItemAction';
 import { warehouseTypeForLifecycle } from '../preferWarehouseForReceive';
-import { inventoryPickCopyKey, selectInventoryPickRow } from '../selectInventoryPick';
+import { selectInventoryItemCard } from '../selectInventory';
+import { useLabelVerifyScan } from '../useLabelVerifyScan';
+import { inventoryPickCopyKey } from '../selectInventoryPick';
 
 type Props = {
   open: boolean;
@@ -25,15 +32,23 @@ type Props = {
   lifecycle: InventoryLifecycle;
   warehouses: Warehouse[];
   loading?: boolean;
+  initialItem?: InventoryItem | null;
+  initialWarehouseId?: string | null;
   onSubmit: (body: CreateInventoryStockCountInput) => void;
 };
 
+/**
+ * Count sheet owns form + SELECT state.
+ * Pick panel overlays the form; ScanInventoryItemAction stays mounted underneath.
+ */
 export function CreateStockCountSheet({
   open,
   onClose,
   lifecycle,
   warehouses,
   loading,
+  initialItem = null,
+  initialWarehouseId = null,
   onSubmit,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
@@ -45,6 +60,7 @@ export function CreateStockCountSheet({
   const canAddWarehouse = can(user, 'warehouse.manage');
   const copy = inventoryPickCopyKey(lifecycle);
   const defaultWarehouseType = warehouseTypeForLifecycle(lifecycle);
+  const scanRef = useRef<ScanInventoryItemActionHandle>(null);
 
   const [warehouseId, setWarehouseId] = useState('');
   const [kind, setKind] = useState<'PERIODIC' | 'SURPRISE'>('PERIODIC');
@@ -54,6 +70,14 @@ export function CreateStockCountSheet({
   const [pickOpen, setPickOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
+  const {
+    verifyKind,
+    verifyScanned,
+    verifyBusy,
+    clearLabelVerify,
+    resetLabelVerify,
+    runLabelVerify,
+  } = useLabelVerifyScan(item?.id);
 
   useEffect(() => {
     if (!open) {
@@ -62,19 +86,32 @@ export function CreateStockCountSheet({
     }
     setWarehouseId('');
     setKind('PERIODIC');
-    setItem(null);
+    setItem(initialItem ?? null);
     setQty('');
     setNotes('');
     setError(null);
     setPickOpen(false);
-  }, [open, lifecycle]);
+    resetLabelVerify();
+  }, [open, lifecycle, initialItem?.id, initialWarehouseId]);
 
   useEffect(() => {
     if (!open) return;
-    setWarehouseId((id) =>
-      id && warehouses.some((wh) => wh.id === id) ? id : warehouses[0]?.id || '',
-    );
-  }, [open, warehouses]);
+    const preferred =
+      initialWarehouseId && warehouses.some((wh) => wh.id === initialWarehouseId)
+        ? initialWarehouseId
+        : '';
+    setWarehouseId((id) => {
+      if (preferred) return preferred;
+      return id && warehouses.some((wh) => wh.id === id) ? id : warehouses[0]?.id || '';
+    });
+  }, [open, warehouses, initialWarehouseId]);
+
+  function requestScanFromPick() {
+    setPickOpen(false);
+    requestAnimationFrame(() => {
+      scanRef.current?.startScan();
+    });
+  }
 
   function submit() {
     const countedQty = Number(qty);
@@ -91,158 +128,229 @@ export function CreateStockCountSheet({
     });
   }
 
-  const selected = item ? selectInventoryPickRow(item, warehouseId, locale) : null;
-
   return (
     <>
-    <BottomSheet
-      open={open}
-      onClose={() => {
-        if (pickOpen) {
-          setPickOpen(false);
-          return;
-        }
-        onClose();
-      }}
-      title={pickOpen ? undefined : t('mobile.inventory.newCount')}
-      sheetHeight={sheetHeight}
-    >
-      {pickOpen ? (
-        <InventoryItemPickPanel
-          key={`${lifecycle}:${warehouseId}`}
-          lifecycle={lifecycle}
-          warehouseId={warehouseId}
-          mode="count"
-          onPick={(picked) => {
-            setItem(picked);
+      <BottomSheet
+        open={open}
+        onClose={() => {
+          if (pickOpen) {
             setPickOpen(false);
-            setError(null);
-          }}
-          onCancel={() => setPickOpen(false)}
-        />
-      ) : (
-        <View style={{ flex: 1, gap: theme.spacing.md }}>
-          {error ? (
-            <AppText variant="caption" style={{ color: colors.error }}>
-              {error}
-            </AppText>
-          ) : null}
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
-            contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.md }}
+            return;
+          }
+          onClose();
+        }}
+        title={pickOpen ? undefined : t('mobile.inventory.newCount')}
+        sheetHeight={sheetHeight}
+      >
+        <View style={{ flex: 1 }}>
+          <View
+            style={[StyleSheet.absoluteFillObject, { opacity: pickOpen ? 0 : 1 }]}
+            pointerEvents={pickOpen ? 'none' : 'auto'}
+            collapsable={false}
           >
-            <InventorySheetSectionLabel label={t('mobile.inventory.countKindLabel')} />
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                gap: theme.spacing.sm,
-              }}
-            >
-              {(['PERIODIC', 'SURPRISE'] as const).map((k) => {
-                const selectedKind = kind === k;
-                return (
+            <View style={{ flex: 1, gap: theme.spacing.md }}>
+              {error ? (
+                <AppText variant="caption" style={{ color: colors.error }}>
+                  {error}
+                </AppText>
+              ) : null}
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                style={{ flex: 1 }}
+                contentContainerStyle={{
+                  gap: theme.spacing.md,
+                  paddingBottom: theme.spacing.md,
+                }}
+              >
+                <InventorySheetSectionLabel label={t('mobile.inventory.countKindLabel')} />
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    gap: theme.spacing.sm,
+                  }}
+                >
+                  {(['PERIODIC', 'SURPRISE'] as const).map((k) => {
+                    const selectedKind = kind === k;
+                    return (
+                      <Pressable
+                        key={k}
+                        onPress={() => {
+                          void haptics.selection();
+                          setKind(k);
+                        }}
+                        style={{
+                          flex: 1,
+                          minHeight: theme.sizes.touch.min,
+                          borderWidth: 1,
+                          borderColor: selectedKind ? colors.brand : colors.borderStrong,
+                          borderRadius: theme.radius.xl,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: selectedKind
+                            ? colors.brandSoft
+                            : colors.surface,
+                          ...theme.elevation.card,
+                        }}
+                      >
+                        <AppText
+                          variant="label"
+                          weight="semibold"
+                          color={selectedKind ? 'brand' : 'primary'}
+                        >
+                          {t(`mobile.inventory.countKind.${k}`)}
+                        </AppText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <WarehousePickList
+                  warehouses={warehouses}
+                  selectedId={warehouseId}
+                  onSelect={(id) => {
+                    if (id !== warehouseId) setItem(null);
+                    setWarehouseId(id);
+                  }}
+                  label={t('mobile.inventory.warehouse')}
+                  listHeight={warehouseListHeight}
+                  resetToken={open ? `count-${lifecycle}` : 'count-closed'}
+                  onAddWarehouse={
+                    canAddWarehouse ? () => setCreateWarehouseOpen(true) : undefined
+                  }
+                />
+
+                <InventorySheetSectionLabel label={t(copy.item)} />
+                {item ? (
+                  <>
+                    <KnownItemLabelConfirm
+                      current={{
+                        id: item.id,
+                        sku: item.sku,
+                        name: selectInventoryItemCard(item, locale).name,
+                        unit: item.unit,
+                        imageUrl: item.imageUrl,
+                        materialType: item.materialType,
+                      }}
+                      disabled={!warehouseId || loading || verifyBusy}
+                      scanning={verifyBusy}
+                      allowChangeItem
+                      resultKind={verifyKind}
+                      resultScanned={verifyScanned}
+                      onScanPress={() => void runLabelVerify()}
+                      onClearResult={clearLabelVerify}
+                      onScanAgain={() => void runLabelVerify()}
+                      onUseScanned={(picked) => {
+                        setItem(picked);
+                        clearLabelVerify();
+                        setError(null);
+                      }}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setPickOpen(true)}
+                      style={{
+                        alignSelf: isRTL ? 'flex-end' : 'flex-start',
+                        paddingVertical: 4,
+                      }}
+                    >
+                      <AppText variant="caption" color="brand" weight="semibold">
+                        {t(copy.pickItem)}
+                      </AppText>
+                    </Pressable>
+                  </>
+                ) : (
                   <Pressable
-                    key={k}
-                    onPress={() => {
-                      void haptics.selection();
-                      setKind(k);
-                    }}
+                    accessibilityRole="button"
+                    onPress={() => setPickOpen(true)}
                     style={{
-                      flex: 1,
                       minHeight: theme.sizes.touch.min,
                       borderWidth: 1,
-                      borderColor: selectedKind ? colors.brand : colors.borderStrong,
+                      borderColor: colors.brand,
                       borderRadius: theme.radius.xl,
-                      alignItems: 'center',
+                      paddingHorizontal: theme.spacing.md,
                       justifyContent: 'center',
-                      backgroundColor: selectedKind ? colors.brandSoft : colors.surface,
+                      backgroundColor: colors.brandSoft,
                       ...theme.elevation.card,
                     }}
                   >
-                    <AppText variant="label" weight="semibold" color={selectedKind ? 'brand' : 'primary'}>
-                      {t(`mobile.inventory.countKind.${k}`)}
+                    <AppText
+                      variant="body"
+                      weight="semibold"
+                      color="brand"
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {t(copy.pickItem)}
                     </AppText>
                   </Pressable>
-                );
-              })}
+                )}
+
+                <ScanInventoryItemAction
+                  ref={scanRef}
+                  showTrigger={!item}
+                  disabled={!warehouseId || loading}
+                  onBeforeScan={() => setPickOpen(false)}
+                  onItemSelected={(picked) => {
+                    setItem(picked);
+                    setPickOpen(false);
+                    setError(null);
+                  }}
+                />
+
+                <QtyStepperField
+                  label={t('mobile.inventory.countedQty')}
+                  value={qty}
+                  onChangeText={setQty}
+                  min={0}
+                  placeholder="0"
+                />
+                <TextField
+                  label={t('mobile.inventory.notes')}
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder={t('mobile.inventory.notesPlaceholder')}
+                  multiline
+                />
+              </ScrollView>
+              <InventorySheetFooter
+                primaryLabel={t('mobile.inventory.confirmCount')}
+                onPrimary={submit}
+                onSecondary={onClose}
+                loading={loading}
+              />
             </View>
+          </View>
 
-            <WarehousePickList
-              warehouses={warehouses}
-              selectedId={warehouseId}
-              onSelect={(id) => {
-                if (id !== warehouseId) setItem(null);
-                setWarehouseId(id);
-              }}
-              label={t('mobile.inventory.warehouse')}
-              listHeight={warehouseListHeight}
-              resetToken={open ? `count-${lifecycle}` : 'count-closed'}
-              onAddWarehouse={
-                canAddWarehouse ? () => setCreateWarehouseOpen(true) : undefined
-              }
-            />
-
-            <InventorySheetSectionLabel label={t(copy.item)} />
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setPickOpen(true)}
-              style={{
-                minHeight: theme.sizes.touch.min,
-                borderWidth: 1,
-                borderColor: item ? colors.borderStrong : colors.brand,
-                borderRadius: theme.radius.xl,
-                paddingHorizontal: theme.spacing.md,
-                justifyContent: 'center',
-                backgroundColor: item ? colors.surface : colors.brandSoft,
-                ...theme.elevation.card,
-              }}
-            >
-              <AppText
-                variant="body"
-                weight={item ? 'medium' : 'semibold'}
-                color={item ? 'primary' : 'brand'}
-                style={{ textAlign: isRTL ? 'right' : 'left' }}
-              >
-                {selected ? `${selected.sku} — ${selected.name}` : t(copy.pickItem)}
-              </AppText>
-            </Pressable>
-
-            <QtyStepperField
-              label={t('mobile.inventory.countedQty')}
-              value={qty}
-              onChangeText={setQty}
-              min={0}
-              placeholder="0"
-            />
-            <TextField
-              label={t('mobile.inventory.notes')}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder={t('mobile.inventory.notesPlaceholder')}
-              multiline
-            />
-          </ScrollView>
-          <InventorySheetFooter
-            primaryLabel={t('mobile.inventory.confirmCount')}
-            onPrimary={submit}
-            onSecondary={onClose}
-            loading={loading}
-          />
+          {pickOpen ? (
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.surface }]}>
+              <InventoryItemPickPanel
+                key={`${lifecycle}:${warehouseId}`}
+                lifecycle={lifecycle}
+                warehouseId={warehouseId}
+                mode="count"
+                onPick={(picked) => {
+                  setItem(picked);
+                  setPickOpen(false);
+                  setError(null);
+                }}
+                onCancel={() => setPickOpen(false)}
+                onRequestScan={requestScanFromPick}
+              />
+            </View>
+          ) : null}
         </View>
-      )}
-    </BottomSheet>
-    <CreateWarehouseSheet
-      overlay
-      open={createWarehouseOpen}
-      onClose={() => setCreateWarehouseOpen(false)}
-      defaultType={defaultWarehouseType}
-      onCreated={(warehouse) => {
-        setWarehouseId(warehouse.id);
-        setItem(null);
-        setError(null);
-      }}
-    />
+      </BottomSheet>
+      <CreateWarehouseSheet
+        overlay
+        open={createWarehouseOpen}
+        onClose={() => setCreateWarehouseOpen(false)}
+        defaultType={defaultWarehouseType}
+        onCreated={(warehouse) => {
+          setWarehouseId(warehouse.id);
+          setItem(null);
+          setError(null);
+        }}
+      />
     </>
   );
 }

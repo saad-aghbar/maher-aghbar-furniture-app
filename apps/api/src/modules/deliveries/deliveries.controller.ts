@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
-import { DeliveryStatus, SalesOrderStatus } from '@maher/database';
+import { DeliveryStatus, Prisma, SalesOrderStatus } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
@@ -21,12 +21,20 @@ import type { AuthUser } from '@maher/types';
 import { InvoicesService } from '../invoices/invoices.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { StagePipelineService } from '../production/stage-pipeline.service';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
+import { DeliveryLoadService } from './delivery-load.service';
 
 const DELIVERY_TRANSITIONS: Record<string, DeliveryStatus[]> = {
   PLANNED: [DeliveryStatus.READY, DeliveryStatus.CANCELLED, DeliveryStatus.FAILED],
-  READY: [DeliveryStatus.OUT_FOR_DELIVERY, DeliveryStatus.CANCELLED, DeliveryStatus.FAILED, DeliveryStatus.RESCHEDULED],
-  OUT_FOR_DELIVERY: [DeliveryStatus.DELIVERED, DeliveryStatus.FAILED, DeliveryStatus.RESCHEDULED],
+  READY: [
+    DeliveryStatus.OUT_FOR_DELIVERY,
+    DeliveryStatus.CANCELLED,
+    DeliveryStatus.FAILED,
+    DeliveryStatus.RESCHEDULED,
+  ],
+  // Staff may ship / fail / reschedule. Commercial DELIVERED is dealer confirm-receipt only.
+  OUT_FOR_DELIVERY: [DeliveryStatus.FAILED, DeliveryStatus.RESCHEDULED],
   DELIVERED: [],
   FAILED: [DeliveryStatus.PLANNED, DeliveryStatus.READY],
   RESCHEDULED: [DeliveryStatus.PLANNED, DeliveryStatus.READY, DeliveryStatus.CANCELLED],
@@ -103,6 +111,54 @@ class UpdateDeliveryStatusDto {
   driverId?: string;
 }
 
+function parseBool(value: unknown): boolean {
+  if (value === true || value === 'true' || value === '1') return true;
+  return false;
+}
+
+type AttentionReason = 'OVERDUE_PLANNED' | 'INCOMPLETE_LOAD';
+
+function startOfUtcDay(d = new Date()): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function attentionReasonsFor(row: {
+  status: DeliveryStatus | string;
+  deliveryDate?: Date | null;
+  loadPieces?: Array<{ loadedAt: Date | null }>;
+}): AttentionReason[] {
+  const reasons: AttentionReason[] = [];
+  const open = row.status === DeliveryStatus.PLANNED || row.status === DeliveryStatus.READY;
+  if (!open) return reasons;
+  if (row.deliveryDate && row.deliveryDate < startOfUtcDay()) {
+    reasons.push('OVERDUE_PLANNED');
+  }
+  const pieces = row.loadPieces ?? [];
+  if (pieces.length > 0 && pieces.some((p) => !p.loadedAt)) {
+    reasons.push('INCOMPLETE_LOAD');
+  }
+  return reasons;
+}
+
+function mapDeliveryListRow<
+  T extends {
+    status: DeliveryStatus | string;
+    deliveryDate?: Date | null;
+    loadPieces?: Array<{ loadedAt: Date | null }>;
+  },
+>(row: T) {
+  const { loadPieces, ...rest } = row;
+  const pieces = loadPieces ?? [];
+  const loaded = pieces.filter((p) => p.loadedAt).length;
+  return {
+    ...rest,
+    load: pieces.length
+      ? { total: pieces.length, loaded, incomplete: loaded < pieces.length }
+      : null,
+    attentionReasons: attentionReasonsFor(row),
+  };
+}
+
 @ApiTags('deliveries')
 @Controller('deliveries')
 export class DeliveriesController {
@@ -112,36 +168,118 @@ export class DeliveriesController {
     private readonly invoices: InvoicesService,
     private readonly notifications: NotificationsService,
     private readonly inventory: InventoryService,
+    private readonly pipeline: StagePipelineService,
+    private readonly loadSheet: DeliveryLoadService,
   ) {}
 
   @Get()
   @RequirePermissions('delivery.read')
   async list(
-    @Query() query: PaginationDto & { status?: string; q?: string },
+    @Query()
+    query: PaginationDto & {
+      status?: string;
+      q?: string;
+      mine?: string | boolean;
+      attention?: string | boolean;
+      scope?: 'open' | 'completed' | 'all';
+    },
     @CurrentUser() user: AuthUser,
   ) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
-    const where = {
+    const wantMine = parseBool(query.mine) || this.loadSheet.isDriverScoped(user);
+    const wantAttention = parseBool(query.attention);
+
+    if (wantMine && !user.customerId) {
+      return this.loadSheet.listMine(user, {
+        page,
+        pageSize,
+        skip,
+        take,
+        scope: query.scope,
+        status: query.status,
+        q: query.q,
+      });
+    }
+
+    const today = startOfUtcDay();
+    const attentionClause = wantAttention
+      ? {
+          OR: [
+            {
+              status: { in: [DeliveryStatus.PLANNED, DeliveryStatus.READY] },
+              deliveryDate: { lt: today },
+            },
+            {
+              status: { in: [DeliveryStatus.PLANNED, DeliveryStatus.READY] },
+              loadPieces: { some: { loadedAt: null } },
+            },
+          ],
+        }
+      : null;
+
+    const qClause = query.q
+      ? {
+          OR: [
+            { number: { contains: query.q, mode: 'insensitive' as const } },
+            { customer: { name: { contains: query.q, mode: 'insensitive' as const } } },
+            { customer: { nameEn: { contains: query.q, mode: 'insensitive' as const } } },
+            { customer: { nameAr: { contains: query.q, mode: 'insensitive' as const } } },
+            { customer: { nameHe: { contains: query.q, mode: 'insensitive' as const } } },
+            {
+              salesOrder: {
+                number: { contains: query.q, mode: 'insensitive' as const },
+              },
+            },
+            {
+              salesOrder: {
+                externalOrderNumber: { contains: query.q, mode: 'insensitive' as const },
+              },
+            },
+            {
+              salesOrder: {
+                projectName: { contains: query.q, mode: 'insensitive' as const },
+              },
+            },
+            {
+              salesOrder: {
+                productionOrders: {
+                  some: { number: { contains: query.q, mode: 'insensitive' as const } },
+                },
+              },
+            },
+            {
+              salesOrder: {
+                lines: {
+                  some: {
+                    OR: [
+                      { description: { contains: query.q, mode: 'insensitive' as const } },
+                      {
+                        product: {
+                          OR: [
+                            { nameEn: { contains: query.q, mode: 'insensitive' as const } },
+                            { nameAr: { contains: query.q, mode: 'insensitive' as const } },
+                            { nameHe: { contains: query.q, mode: 'insensitive' as const } },
+                            { sku: { contains: query.q, mode: 'insensitive' as const } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+        }
+      : null;
+
+    const andClauses: Prisma.DeliveryWhereInput[] = [];
+    if (attentionClause) andClauses.push(attentionClause);
+    if (qClause) andClauses.push(qClause);
+
+    const where: Prisma.DeliveryWhereInput = {
       ...(user.customerId ? { customerId: user.customerId } : {}),
-      ...(query.status ? { status: query.status as DeliveryStatus } : {}),
-      ...(query.q
-        ? {
-            OR: [
-              { number: { contains: query.q, mode: 'insensitive' as const } },
-              { customer: { name: { contains: query.q, mode: 'insensitive' as const } } },
-              {
-                salesOrder: {
-                  number: { contains: query.q, mode: 'insensitive' as const },
-                },
-              },
-              {
-                salesOrder: {
-                  externalOrderNumber: { contains: query.q, mode: 'insensitive' as const },
-                },
-              },
-            ],
-          }
-        : {}),
+      ...(query.status && !wantAttention ? { status: query.status as DeliveryStatus } : {}),
+      ...(andClauses.length ? { AND: andClauses } : {}),
     };
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.delivery.count({ where }),
@@ -155,13 +293,17 @@ export class DeliveriesController {
           salesOrder: {
             select: { id: true, number: true, status: true, externalOrderNumber: true },
           },
+          loadPieces: { select: { loadedAt: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip,
         take,
       }),
     ]);
-    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+    return {
+      data: data.map((row) => mapDeliveryListRow(row)),
+      meta: paginatedMeta(page, pageSize, totalItems),
+    };
   }
 
   @Post()
@@ -230,6 +372,38 @@ export class DeliveriesController {
     });
   }
 
+  @Get(':id/load-sheet')
+  @RequirePermissions('delivery.read')
+  getLoadSheet(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.loadSheet.getLoadSheet(id, user);
+  }
+
+  @Post(':id/load-pieces/:pieceId/check')
+  @RequirePermissions('delivery.update')
+  checkPiece(
+    @Param('id') id: string,
+    @Param('pieceId') pieceId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.loadSheet.setPieceLoaded(id, pieceId, user, true);
+  }
+
+  @Post(':id/load-pieces/:pieceId/uncheck')
+  @RequirePermissions('delivery.update')
+  uncheckPiece(
+    @Param('id') id: string,
+    @Param('pieceId') pieceId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.loadSheet.setPieceLoaded(id, pieceId, user, false);
+  }
+
+  @Post(':id/depart')
+  @RequirePermissions('delivery.update')
+  depart(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.loadSheet.depart(id, user);
+  }
+
   @Get(':id')
   @RequirePermissions('delivery.read')
   async get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
@@ -272,6 +446,9 @@ export class DeliveriesController {
       const { driver: _driver, ...rest } = delivery;
       return rest;
     }
+    if (this.loadSheet.isDriverScoped(user) && delivery.driverId !== user.id) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Delivery not found.' });
+    }
     return delivery;
   }
 
@@ -296,6 +473,13 @@ export class DeliveriesController {
     @CurrentUser() user: AuthUser,
   ) {
     const existing = await this.prisma.delivery.findUniqueOrThrow({ where: { id } });
+    if (dto.status === DeliveryStatus.DELIVERED) {
+      throw new BadRequestException({
+        code: 'DELIVERY_DEALER_CONFIRM_REQUIRED',
+        message:
+          'Staff cannot mark delivered. Owning dealer must confirm receipt via confirm-receipt.',
+      });
+    }
     const allowed = DELIVERY_TRANSITIONS[existing.status] ?? [];
     if (!allowed.includes(dto.status)) {
       throw new BadRequestException({
@@ -303,17 +487,15 @@ export class DeliveriesController {
         message: `Cannot transition delivery from ${existing.status} to ${dto.status}.`,
       });
     }
-    if (dto.status === DeliveryStatus.DELIVERED && !dto.signatureData && !dto.recipientName) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'POD requires signature or recipient name.',
-      });
+
+    // Piece 10: truck departure always goes through depart() so incomplete
+    // package checklists cannot casually bypass DELIVERY_ISSUE timing.
+    if (dto.status === DeliveryStatus.OUT_FOR_DELIVERY) {
+      return this.loadSheet.depart(id, user);
     }
 
     const podNote = dto.photoDocumentId ? `POD photo document: ${dto.photoDocumentId}` : null;
-    const driverId =
-      dto.driverId ??
-      (dto.status === DeliveryStatus.OUT_FOR_DELIVERY ? user.id : undefined);
+    const driverId = dto.driverId;
 
     const delivery = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.delivery.update({
@@ -336,17 +518,9 @@ export class DeliveriesController {
         },
       });
 
-      if (dto.status === DeliveryStatus.DELIVERED && existing.salesOrderId) {
-        await tx.salesOrder.update({
-          where: { id: existing.salesOrderId },
-          data: { status: SalesOrderStatus.DELIVERED },
-        });
-        await this.inventory.issueForDelivery(id, existing.salesOrderId, user.id, tx);
-      }
-
       if (
         (dto.status === DeliveryStatus.FAILED || dto.status === DeliveryStatus.CANCELLED) &&
-        existing.status === DeliveryStatus.DELIVERED
+        existing.status === DeliveryStatus.OUT_FOR_DELIVERY
       ) {
         await this.inventory.restoreForDelivery(id, existing.salesOrderId, user.id, tx);
       }
@@ -369,49 +543,114 @@ export class DeliveriesController {
       return updated;
     });
 
-    if (dto.status === DeliveryStatus.DELIVERED && existing.salesOrderId) {
-      await this.invoices.ensureFromSalesOrder(existing.salesOrderId, user.id).catch(() => {
-        /* JoFotara/network failures must not block delivery confirmation */
+    // Depart (OUT_FOR_DELIVERY) returns early above — rollup/notify live in DeliveryLoadService.
+
+    return delivery;
+  }
+
+  /**
+   * Dealer receipt confirmation — sole commercial close for customer deliveries.
+   * No inventory movement (FIN already issued on OUT_FOR_DELIVERY).
+   */
+  @Post(':id/confirm-receipt')
+  @RequirePermissions('delivery.confirm-own-receipt')
+  async confirmReceipt(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.delivery.findUnique({ where: { id } });
+    // Staff must never impersonate dealer receipt — ownership is required.
+    if (!existing || !user.customerId || existing.customerId !== user.customerId) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Delivery not found.' });
+    }
+
+    if (existing.status === DeliveryStatus.DELIVERED) {
+      // Idempotent for same owner
+      if (existing.customerConfirmedById === user.id || existing.customerConfirmedAt) {
+        return existing;
+      }
+      throw new BadRequestException({
+        code: 'DELIVERY_ALREADY_DELIVERED',
+        message: 'Delivery is already marked delivered.',
       });
     }
 
-    if (
-      dto.status === DeliveryStatus.READY ||
-      dto.status === DeliveryStatus.OUT_FOR_DELIVERY
-    ) {
-      await this.notifications
-        .notifyCustomerUsers(existing.customerId, {
-          templateCode: 'DELIVERY_APPROACHING',
-          vars: { number: delivery.number },
-          linkUrl: `/sales-orders/${existing.salesOrderId ?? ''}`,
-        })
-        .catch(() => undefined);
+    if (existing.status !== DeliveryStatus.OUT_FOR_DELIVERY) {
+      throw new BadRequestException({
+        code: 'DELIVERY_NOT_OUT_FOR_DELIVERY',
+        message: 'Only out-for-delivery shipments can be confirmed received.',
+      });
     }
 
-    if (dto.status === DeliveryStatus.DELIVERED) {
-      const so = existing.salesOrderId
-        ? await this.prisma.salesOrder.findUnique({
-            where: { id: existing.salesOrderId },
-            select: { number: true },
-          })
-        : null;
-      const date = delivery.updatedAt.toISOString().slice(0, 10);
-      const completed = await this.prisma.notificationTemplate.findUnique({
-        where: { code: 'DELIVERY_COMPLETED' },
-        select: { code: true },
-      }).catch(() => null);
-      await this.notifications
-        .notifyCustomerUsers(existing.customerId, {
-          templateCode: completed?.code ?? 'DELIVERY_DATE_UPDATED',
-          vars: {
-            orderNumber: so?.number ?? delivery.number,
-            number: so?.number ?? delivery.number,
-            date,
+    const now = new Date();
+    const delivery = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.delivery.update({
+        where: { id },
+        data: {
+          status: DeliveryStatus.DELIVERED,
+          customerConfirmedAt: now,
+          customerConfirmedById: user.id,
+          actualDeliveredAt: now,
+        },
+      });
+
+      if (existing.salesOrderId) {
+        await tx.salesOrder.update({
+          where: { id: existing.salesOrderId },
+          data: { status: SalesOrderStatus.DELIVERED },
+        });
+      }
+
+      await tx.auditEvent.create({
+        data: {
+          userId: user.id,
+          action: 'delivery.confirm-receipt',
+          entityType: 'Delivery',
+          entityId: id,
+          newValues: {
+            status: DeliveryStatus.DELIVERED,
+            customerConfirmedAt: now.toISOString(),
+            actualDeliveredAt: now.toISOString(),
           },
-          linkUrl: `/sales-orders/${existing.salesOrderId ?? ''}`,
-        })
-        .catch(() => undefined);
+        },
+      });
+
+      return updated;
+    });
+
+    if (existing.salesOrderId) {
+      const productionOrders = await this.prisma.productionOrder.findMany({
+        where: { salesOrderId: existing.salesOrderId, archivedAt: null },
+        select: { id: true },
+      });
+      for (const po of productionOrders) {
+        await this.pipeline.rollupProgress(po.id).catch(() => undefined);
+      }
+      await this.invoices.ensureFromSalesOrder(existing.salesOrderId, user.id).catch(() => {
+        /* JoFotara/network failures must not block dealer confirmation */
+      });
     }
+
+    await this.notifications
+      .notifyCustomerUsers(existing.customerId, {
+        templateCode: 'DELIVERY_COMPLETED',
+        vars: {
+          orderNumber: delivery.number,
+          number: delivery.number,
+          date: now.toISOString().slice(0, 10),
+        },
+        linkUrl: `/sales-orders/${existing.salesOrderId ?? ''}`,
+      })
+      .catch(() => undefined);
+
+    await this.notifications
+      .notifyAdminUsers({
+        templateCode: 'DELIVERY_COMPLETED',
+        vars: {
+          orderNumber: delivery.number,
+          number: delivery.number,
+          date: now.toISOString().slice(0, 10),
+        },
+        linkUrl: `/deliveries/${id}`,
+      })
+      .catch(() => undefined);
 
     return delivery;
   }

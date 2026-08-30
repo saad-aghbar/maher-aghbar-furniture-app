@@ -27,7 +27,6 @@ export type TabDef = {
   require?: { permissions: Permission[]; mode: 'any' | 'all' };
 };
 
-const ADMIN_ORDERS: Permission[] = ['sales-order.read', 'quotation.read', 'request.read'];
 const ADMIN_INVENTORY: Permission[] = [
   'inventory.read',
   'inventory.count',
@@ -41,8 +40,8 @@ export const adminTabs: TabDef[] = [
   {
     name: 'orders',
     labelKey: 'orders',
-    visible: (u) => canAny(u, ADMIN_ORDERS),
-    require: { permissions: ADMIN_ORDERS, mode: 'any' },
+    visible: (u) => can(u, 'sales-order.read'),
+    require: { permissions: ['sales-order.read'], mode: 'all' },
   },
   {
     name: 'inventory',
@@ -97,14 +96,14 @@ export const employeeTabs: TabDef[] = [
   {
     name: 'tasks',
     labelKey: 'myTasks',
-    visible: (u) => can(u, 'production-task.read'),
-    require: { permissions: ['production-task.read'], mode: 'all' },
+    visible: (u) => can(u, 'production-task.read') || can(u, 'delivery.read'),
+    require: { permissions: ['production-task.read', 'delivery.read'], mode: 'any' },
   },
   {
     name: 'completed',
     labelKey: 'completed',
-    visible: (u) => can(u, 'production-task.read'),
-    require: { permissions: ['production-task.read'], mode: 'all' },
+    visible: (u) => can(u, 'production-task.read') || can(u, 'delivery.read'),
+    require: { permissions: ['production-task.read', 'delivery.read'], mode: 'any' },
   },
   {
     name: 'notifications',

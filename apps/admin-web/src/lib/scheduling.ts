@@ -18,6 +18,8 @@ export interface ScheduleOrderCard {
   priority?: string | null;
   plannedStart?: string | null;
   plannedEnd?: string | null;
+  /** Factory-local YMDs with working-minute overlap. Gaps inside min–max are omitted. */
+  occupiedDates?: string[] | null;
   /** ScheduleStatus (DRAFT | PROPOSED | APPROVED | SUPERSEDED | CANCELLED | NEEDS_REVIEW | PROVISIONAL) */
   status?: string | null;
   /** SchedulePromiseState */
@@ -188,6 +190,8 @@ export interface FactoryCalendarSettings {
   shiftStart: string;
   shiftEnd: string;
   deliveryBufferWorkingDays?: number;
+  maxProductionEarlyWorkingDays?: number;
+  targetFactoryUtilizationPercent?: number;
   exceptions?: FactoryCalendarException[];
   replanned?: number;
 }

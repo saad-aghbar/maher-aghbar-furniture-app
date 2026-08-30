@@ -271,6 +271,36 @@ describe('findResolutionPlacement', () => {
     expect(stuck).toEqual({ fail: 'NO_ALTERNATIVE' });
   });
 
+  it('does not reassign incomplete work into a past window', () => {
+    const floor = amman(2026, 8, 20, 14);
+    const keeper = alloc({
+      id: 'keep',
+      employeeId: 'w-1',
+      plannedStart: amman(2026, 8, 19, 10),
+      plannedEnd: amman(2026, 8, 19, 13),
+    });
+    const movable = alloc({
+      id: 'move',
+      employeeId: 'w-1',
+      plannedStart: amman(2026, 8, 19, 11),
+      plannedEnd: amman(2026, 8, 19, 14),
+      estimatedMinutes: 180,
+    });
+    const result = findResolutionPlacement({
+      movable,
+      keeper,
+      workers: [worker('w-1', [STG.upholstery]), worker('w-2', [STG.upholstery])],
+      occupancy: [
+        { employeeId: 'w-1', start: keeper.plannedStart, end: keeper.plannedEnd, allocationId: keeper.id },
+      ],
+      calendar,
+      now: floor,
+    });
+    expect('fail' in result).toBe(false);
+    if ('fail' in result) return;
+    expect(result.start.getTime()).toBeGreaterThanOrEqual(floor.getTime());
+  });
+
   it('does not silently accept a move past committed delivery', () => {
     const end = amman(2026, 8, 23, 16);
     const committed = amman(2026, 8, 20, 8);

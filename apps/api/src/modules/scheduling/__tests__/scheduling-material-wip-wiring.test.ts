@@ -214,11 +214,16 @@ describe('material generate wiring', () => {
         sku: 'UAT-WOOD',
         category: 'WOOD',
         materialGroup: 'WOOD',
+        itemClass: 'RAW_MATERIAL',
+        archivedAt: null,
+        isActive: true,
         balances: [{ availableQty: 0, reservedQty: 0 }],
       },
     ]);
     prisma.purchaseOrder.findMany.mockResolvedValue([
       {
+        status: 'APPROVED',
+        archivedAt: null,
         expectedDeliveryDate: READY_AT,
         lines: [{ inventoryItemId: 'wood-1', quantity: 10 }],
         goodsReceipts: [],
@@ -404,7 +409,8 @@ describe('material generate wiring', () => {
       'utf8',
     ) as string;
     expect(src).toContain('bomReservationNeeds');
-    expect(src).toContain('applyMaterialNotBefore');
+    expect(src).toContain('applyStageOrOrderMaterialFloors');
+    expect(src).toContain('frozenInputsFromSnapshotNodes');
     expect(src).toContain('applyConsumeWipDependencies');
     expect(src).toContain("enqueue('REPLAN'");
     expect(src).toContain("soStatus !== 'WAITING_FOR_MATERIALS'");

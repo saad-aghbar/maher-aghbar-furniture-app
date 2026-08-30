@@ -24,12 +24,18 @@ export function isAccessoryCategory(category: string): boolean {
   return ACCESSORY_CATEGORIES.has(category);
 }
 
+/** SKU photos belong to RAW_MATERIAL identity. WIP/FG use product photos. */
+export function showsRawMaterialPhoto(itemClass?: string | null): boolean {
+  return !itemClass || itemClass === 'RAW_MATERIAL';
+}
+
 export type InventoryItemCardModel = {
   id: string;
   name: string;
   nameEn: string;
   nameAr: string;
   sku: string;
+  scanCode: string | null;
   category: string;
   itemClass?: string | null;
   materialType: string | null;
@@ -39,6 +45,8 @@ export type InventoryItemCardModel = {
   customMeasurements: InventoryItem['customMeasurements'];
   imageUrl: string | null;
   isAccessory: boolean;
+  isActive: boolean;
+  archivedAt: string | null;
   minStock: number;
   standardCost: number | null;
   quantityLabel: string;
@@ -156,6 +164,7 @@ export function selectInventoryItemCard(
     nameEn: item.nameEn,
     nameAr: item.nameAr,
     sku: item.sku,
+    scanCode: item.scanCode?.trim() || null,
     category: item.category,
     itemClass: item.itemClass ?? null,
     materialType: item.materialType ?? null,
@@ -165,6 +174,8 @@ export function selectInventoryItemCard(
     customMeasurements: item.customMeasurements ?? null,
     imageUrl: item.imageUrl?.trim() || null,
     isAccessory: isAccessoryCategory(item.category),
+    isActive: item.isActive !== false && !item.archivedAt,
+    archivedAt: item.archivedAt ?? null,
     minStock,
     standardCost: hasCost ? toNumber(item.standardCost) : null,
     onHand,

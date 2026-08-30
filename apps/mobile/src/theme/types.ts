@@ -14,10 +14,14 @@ export type ThemeColors = {
   background: string;
   surface: string;
   surfaceSecondary: string;
+  /** Lifted ivory/cream for nested boards (level-2 section bands). */
+  surfaceElevated: string;
   textPrimary: string;
   textSecondary: string;
   textMuted: string;
   border: string;
+  /** Softer divider — section separators without heavy chrome. */
+  borderMuted: string;
   borderStrong: string;
   brand: string;
   brandHover: string;

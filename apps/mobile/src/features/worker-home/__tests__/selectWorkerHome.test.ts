@@ -3,12 +3,16 @@ import {
   formatEstimatedDuration,
   hasOpenTasks,
   isWorkerHomeEmpty,
+  mapTaskListItemToWorkerHomeTask,
   selectCurrentTask,
+  selectCurrentTaskFromOpen,
   selectTodayProgress,
   selectUpcomingTasks,
+  selectUpcomingTasksFromOpen,
 } from '../selectWorkerHome';
 import { workerHomeEmptyFixture, workerHomeSuccessFixture } from '../fixtures';
 import type { WorkerHomePayload } from '../api';
+import type { TaskListItem } from '@/features/tasks/api';
 
 describe('selectWorkerHome', () => {
   it('detects empty home', () => {
@@ -54,6 +58,55 @@ describe('selectWorkerHome', () => {
       todaysTasks: [inProgress, ...workerHomeSuccessFixture.todaysTasks.slice(1)],
     };
     expect(selectCurrentTask(payload)?.id).toBe('in-progress-1');
+  });
+
+  it('selectCurrentTaskFromOpen prefers in-progress then high priority', () => {
+    const open = [
+      { ...workerHomeSuccessFixture.todaysTasks[0]!, id: 'a', status: 'READY', priority: 'NORMAL' },
+      { ...workerHomeSuccessFixture.todaysTasks[0]!, id: 'b', status: 'IN_PROGRESS', priority: 'LOW' },
+      { ...workerHomeSuccessFixture.todaysTasks[0]!, id: 'c', status: 'READY', priority: 'HIGH' },
+    ];
+    expect(selectCurrentTaskFromOpen(open)?.id).toBe('b');
+    const withoutActive = open.filter((t) => t.id !== 'b');
+    expect(selectCurrentTaskFromOpen(withoutActive)?.id).toBe('c');
+    expect(selectUpcomingTasksFromOpen(open).map((t) => t.id)).toEqual(['a', 'c']);
+  });
+
+  it('maps TaskListItem into WorkerHomeTask for home cards', () => {
+    const item = {
+      id: 'task-1',
+      number: 'PT-1',
+      name: 'Packaging',
+      status: 'READY',
+      priority: 'HIGH',
+      plannedCompletion: '2026-08-27T12:00:00.000Z',
+      estimatedMinutes: 30,
+      salesOrderNumber: 'SO-2026-00021',
+      productImageUrl: 'https://example.com/p.png',
+      productionOrder: {
+        id: 'po-1',
+        number: 'PO-1',
+        productDescription: 'Armchair',
+        product: {
+          nameEn: 'Armchair Club',
+          nameAr: null,
+          nameHe: null,
+          imageUrl: 'https://example.com/p.png',
+        },
+      },
+      stageDefinition: {
+        code: 'PACKAGING',
+        nameEn: 'Packaging',
+        nameAr: null,
+        nameHe: null,
+      },
+    } as TaskListItem;
+    const mapped = mapTaskListItemToWorkerHomeTask(item);
+    expect(mapped.id).toBe('task-1');
+    expect(mapped.orderNumber).toBe('SO-2026-00021');
+    expect(mapped.productTitle).toBe('Armchair Club');
+    expect(mapped.status).toBe('READY');
+    expect(mapped.estimatedMinutes).toBe(30);
   });
 
   it('computes today progress breakdown without progressPercent', () => {

@@ -13,6 +13,9 @@ import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
 import { ProductionInventoryService } from '../production/production-inventory.service';
+import { MaterialUsageService } from '../production/material-usage.service';
+import { WipKitService } from '../production/wip-kit.service';
+import { pieceLabelsFromMetadata } from '../production/piece-labels';
 import { InvoicesService } from '../invoices/invoices.service';
 import {
   AssignTaskDto,
@@ -26,6 +29,11 @@ import {
   buildTaskTimingSummary,
   closedSecondsFromTimeEntries,
 } from '../../common/helpers/task-timing.util';
+import { intervalsOverlap } from '../production/worker-recommend';
+import {
+  isPrereqLockedForWorker,
+  workerFloorOpenClauses,
+} from '../production/worker-task-visibility';
 
 function startOfUtcDay(d = new Date()) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
@@ -48,6 +56,8 @@ export class TasksService {
     private readonly prisma: PrismaService,
     private readonly pipeline: StagePipelineService,
     private readonly productionInventory: ProductionInventoryService,
+    private readonly materialUsage: MaterialUsageService,
+    private readonly wipKits: WipKitService,
     private readonly invoices: InvoicesService,
     private readonly storage: LocalStorageService,
     private readonly idempotency: IdempotencyService,
@@ -70,9 +80,15 @@ export class TasksService {
     } else if (query.scope === 'completed') {
       statusWhere = { status: TaskStatus.COMPLETED };
     } else if (query.scope === 'open' || (forceMine && query.scope !== 'all')) {
-      statusWhere = {
+      const openBase: Prisma.ProductionTaskWhereInput = {
         status: { notIn: [TaskStatus.COMPLETED, TaskStatus.CANCELLED] },
       };
+      if (forceMine) {
+        // Hide locked/waiting + non-floor stages — match worker home / Tasks tab.
+        statusWhere = { AND: workerFloorOpenClauses() };
+      } else {
+        statusWhere = openBase;
+      }
     }
 
     const completedFrom = parseYmd(query.completedFrom);
@@ -379,6 +395,12 @@ export class TasksService {
           message: 'You can only view tasks assigned to you.',
         });
       }
+      if (!canSeeAll && isPrereqLockedForWorker(task)) {
+        throw new ForbiddenException({
+          code: 'STAGE_LOCKED',
+          message: 'This task is not available until previous stages are completed.',
+        });
+      }
     }
 
     const photoDocs = await this.prisma.document.findMany({
@@ -455,6 +477,28 @@ export class TasksService {
       ...((product?.galleryUrls as string[] | undefined) ?? []).map((u) => u?.trim() || null),
     ].filter((u, i, arr): u is string => Boolean(u) && arr.indexOf(u) === i);
 
+    const snapNode = task.stageInstanceId
+      ? await this.prisma.productionOrderWorkflowSnapshotNode.findFirst({
+          where: { stageInstanceId: task.stageInstanceId },
+          select: {
+            inventoryTracking: true,
+            requiresPhotos: true,
+            expectedPieceCount: true,
+          },
+        })
+      : null;
+    const producesSemiFinished = snapNode
+      ? WipKitService.producesWipKit(snapNode)
+      : false;
+    const expectedPieceCount =
+      producesSemiFinished && snapNode && Number(snapNode.expectedPieceCount) > 0
+        ? Math.floor(Number(snapNode.expectedPieceCount))
+        : producesSemiFinished
+          ? 1
+          : null;
+    const requiresPhotos =
+      snapNode?.requiresPhotos ?? task.stageDefinition?.requiresPhotos ?? false;
+
     const payload = {
       ...task,
       timing,
@@ -464,6 +508,9 @@ export class TasksService {
       productImageUrls,
       factoryOrderNumber: task.productionOrder.number,
       salesOrderNumber: task.productionOrder.salesOrder?.number ?? null,
+      producesSemiFinished,
+      expectedPieceCount,
+      requiresPhotos,
     };
 
     if (canSeeAll) return payload;
@@ -548,7 +595,7 @@ export class TasksService {
     }
   }
 
-  async assign(id: string, dto: AssignTaskDto) {
+  async assign(id: string, dto: AssignTaskDto, permissions: string[] = []) {
     const task = await this.getTask(id);
     const orderStatus = task.productionOrder?.status;
     if (orderStatus === 'COMPLETED' || orderStatus === 'CANCELLED') {
@@ -583,20 +630,217 @@ export class TasksService {
       });
     }
 
+    // Reassign allowed only pre-start (PO not yet on the floor).
+    if (
+      task.assignedEmployeeId &&
+      task.assignedEmployeeId !== dto.employeeId &&
+      (orderStatus === 'IN_PROGRESS' || orderStatus === 'QUALITY_CHECK' || orderStatus === 'READY_FOR_PACKAGING')
+    ) {
+      throw new BadRequestException({
+        code: 'REASSIGN_LOCKED',
+        message:
+          'Cannot reassign after the production order is on the floor. Pause or complete the stage first.',
+      });
+    }
+
     const employee = await this.prisma.user.findFirst({
       where: { id: dto.employeeId, isActive: true, archivedAt: null },
+      include: {
+        roles: { include: { role: { select: { kind: true } } } },
+        workerSkills: {
+          where: { isActive: true },
+          select: { stageDefinitionId: true },
+        },
+      },
     });
     if (!employee) {
       throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Employee not found.' });
     }
+    const isProductionWorker = employee.roles.some((r) => r.role.kind === 'PRODUCTION_WORKER');
+    if (!isProductionWorker) {
+      throw new BadRequestException({
+        code: 'WORKER_NOT_ELIGIBLE',
+        message: 'Only active production workers can be assigned to floor stages.',
+      });
+    }
+    const stageDefinitionId = task.stageDefinitionId ?? task.stageDefinition?.id ?? null;
+    if (stageDefinitionId) {
+      const skillCount = await this.prisma.workerSkill.count({
+        where: { stageDefinitionId, isActive: true },
+      });
+      if (skillCount > 0) {
+        const hasSkill = employee.workerSkills.some((s) => s.stageDefinitionId === stageDefinitionId);
+        if (!hasSkill) {
+          throw new BadRequestException({
+            code: 'WORKER_SKILL_REQUIRED',
+            message: 'Worker does not have the required skill for this stage.',
+          });
+        }
+      }
+    }
 
+    let plannedStart: Date | null = null;
+    let plannedCompletion: Date | null = null;
+    if (dto.plannedStart) {
+      plannedStart = new Date(dto.plannedStart);
+      if (Number.isNaN(plannedStart.getTime())) {
+        throw new BadRequestException({
+          code: 'BAD_REQUEST',
+          message: 'plannedStart must be a valid ISO datetime.',
+        });
+      }
+    }
     if (dto.plannedCompletion) {
-      const due = new Date(dto.plannedCompletion);
-      if (Number.isNaN(due.getTime())) {
+      plannedCompletion = new Date(dto.plannedCompletion);
+      if (Number.isNaN(plannedCompletion.getTime())) {
         throw new BadRequestException({
           code: 'BAD_REQUEST',
           message: 'plannedCompletion must be a valid ISO datetime.',
         });
+      }
+    }
+    if (plannedStart && !plannedCompletion) {
+      throw new BadRequestException({
+        code: 'DATE_INCOMPLETE',
+        message: 'When plannedStart is set, plannedCompletion is required.',
+      });
+    }
+    if (plannedStart && plannedCompletion && plannedStart.getTime() >= plannedCompletion.getTime()) {
+      throw new BadRequestException({
+        code: 'DATE_INVALID',
+        message: 'plannedStart must be before plannedCompletion.',
+      });
+    }
+
+    // Dependency date check: this stage must not start before predecessors finish.
+    if (plannedStart && task.stageDefinition?.dependsOnCodes?.length) {
+      const depCodes = task.stageDefinition.dependsOnCodes;
+      const siblings = await this.prisma.productionTask.findMany({
+        where: {
+          productionOrderId: task.productionOrderId,
+          id: { not: task.id },
+          status: { not: 'CANCELLED' },
+          isRework: false,
+          stageDefinition: { code: { in: depCodes } },
+        },
+        select: {
+          id: true,
+          plannedCompletion: true,
+          plannedStart: true,
+          stageDefinition: { select: { code: true, nameEn: true } },
+        },
+      });
+      for (const pred of siblings) {
+        const predEnd = pred.plannedCompletion ?? pred.plannedStart;
+        if (!predEnd) continue;
+        if (plannedStart.getTime() < predEnd.getTime()) {
+          const predName = pred.stageDefinition?.nameEn ?? pred.stageDefinition?.code ?? 'predecessor';
+          throw new BadRequestException({
+            code: 'DEPENDENCY_DATE_VIOLATION',
+            message: `Cannot start before ${predName} finishes (${predEnd.toISOString()}).`,
+            predecessorTaskId: pred.id,
+            predecessorCode: pred.stageDefinition?.code,
+            predecessorEnd: predEnd.toISOString(),
+            plannedStart: plannedStart.toISOString(),
+          });
+        }
+      }
+    }
+
+    // Worker overlap conflict vs other open tasks + schedule allocations.
+    const windowStart = plannedStart;
+    const windowEnd = plannedCompletion;
+    if (windowStart && windowEnd) {
+      const openStatuses = [
+        'NOT_STARTED',
+        'READY',
+        'IN_PROGRESS',
+        'PAUSED',
+        'BLOCKED',
+        'READY_FOR_INSPECTION',
+      ] as const;
+      const otherTasks = await this.prisma.productionTask.findMany({
+        where: {
+          assignedEmployeeId: dto.employeeId,
+          id: { not: task.id },
+          status: { in: [...openStatuses] },
+          productionOrder: { archivedAt: null, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+          OR: [
+            {
+              plannedStart: { not: null },
+              plannedCompletion: { not: null },
+            },
+            { plannedCompletion: { not: null }, plannedStart: null },
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          plannedStart: true,
+          plannedCompletion: true,
+          productionOrder: { select: { number: true } },
+        },
+      });
+      const conflicts: Array<{
+        kind: 'TASK' | 'ALLOCATION';
+        id: string;
+        label: string;
+        start: string;
+        end: string;
+      }> = [];
+      for (const other of otherTasks) {
+        const oEnd = other.plannedCompletion;
+        if (!oEnd) continue;
+        const oStart = other.plannedStart ?? new Date(oEnd.getTime() - 60 * 60 * 1000);
+        if (intervalsOverlap(windowStart, windowEnd, oStart, oEnd)) {
+          conflicts.push({
+            kind: 'TASK',
+            id: other.id,
+            label: `${other.productionOrder?.number ?? ''} ${other.name}`.trim(),
+            start: oStart.toISOString(),
+            end: oEnd.toISOString(),
+          });
+        }
+      }
+      const allocations = await this.prisma.scheduleAllocation.findMany({
+        where: {
+          employeeId: dto.employeeId,
+          productionTaskId: { not: task.id },
+          schedule: { status: { in: ['APPROVED', 'PROPOSED'] } },
+          plannedStart: { lt: windowEnd },
+          plannedEnd: { gt: windowStart },
+        },
+        select: {
+          id: true,
+          plannedStart: true,
+          plannedEnd: true,
+          productionTask: { select: { name: true, number: true } },
+        },
+        take: 20,
+      });
+      for (const a of allocations) {
+        if (intervalsOverlap(windowStart, windowEnd, a.plannedStart, a.plannedEnd)) {
+          conflicts.push({
+            kind: 'ALLOCATION',
+            id: a.id,
+            label: a.productionTask?.name ?? a.productionTask?.number ?? 'Scheduled work',
+            start: a.plannedStart.toISOString(),
+            end: a.plannedEnd.toISOString(),
+          });
+        }
+      }
+
+      if (conflicts.length > 0) {
+        const canOverride =
+          dto.overrideConflict === true && permissions.includes('schedule.override');
+        if (!canOverride) {
+          throw new ConflictException({
+            code: 'WORKER_SCHEDULE_CONFLICT',
+            message: 'Worker has overlapping work in this time window.',
+            conflicts,
+            overrideRequires: 'schedule.override',
+          });
+        }
       }
     }
 
@@ -605,9 +849,8 @@ export class TasksService {
       data: {
         assignedEmployeeId: dto.employeeId,
         ...(dto.priority ? { priority: dto.priority } : {}),
-        ...(dto.plannedCompletion
-          ? { plannedCompletion: new Date(dto.plannedCompletion) }
-          : {}),
+        ...(plannedStart ? { plannedStart } : {}),
+        ...(plannedCompletion ? { plannedCompletion } : {}),
         ...(dto.estimatedMinutes != null ? { estimatedMinutes: dto.estimatedMinutes } : {}),
       },
       include: {
@@ -681,6 +924,21 @@ export class TasksService {
       productionOrderId: task.productionOrderId,
       stageInstanceId: task.stageInstanceId,
     });
+
+    const claim = await this.wipKits.claimRequirementsForTask(id);
+    if (claim.required && !claim.allReceived && !claim.allClaimed) {
+      throw new BadRequestException({
+        code: 'WIP_CLAIM_REQUIRED',
+        message:
+          'Receive the semi-finished work from the previous stage before starting this task.',
+        unclaimedKitIds: claim.unclaimed.map((k) => k.id),
+        lines: claim.lines?.map((l) => ({
+          fromStageCode: l.fromStageCode,
+          statusKey: l.statusKey,
+          outstanding: l.outstanding,
+        })),
+      });
+    }
 
     return this.prisma.$transaction(async (tx) => {
       await tx.taskTimeEntry.create({
@@ -901,11 +1159,64 @@ export class TasksService {
     return result;
   }
 
+  async listMaterialUsage(id: string, userId: string, permissions: string[]) {
+    const task = await this.getTask(id);
+    this.assertCanModify(task, userId, permissions);
+    return this.materialUsage.ensureExpectedLines(id);
+  }
+
+  async identifyMaterialUsage(
+    id: string,
+    userId: string,
+    permissions: string[],
+    code: string,
+  ) {
+    const task = await this.getTask(id);
+    this.assertCanModify(task, userId, permissions);
+    return this.materialUsage.identifyScan(id, code);
+  }
+
+  async saveMaterialUsage(
+    id: string,
+    userId: string,
+    permissions: string[],
+    lines: Array<{
+      inventoryItemId: string;
+      actualQty: number;
+      returnedQty?: number;
+      scrapQty?: number;
+      scrapReason?: string | null;
+      reasonNotes?: string | null;
+      isExtra?: boolean;
+      sku?: string;
+      issueWarehouseId?: string | null;
+      returnWarehouseId?: string | null;
+    }>,
+  ) {
+    const task = await this.getTask(id);
+    this.assertCanModify(task, userId, permissions);
+    if (!permissions.includes('production.material-usage.record') && !permissions.includes('production-task.update-any')) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Missing production.material-usage.record permission.',
+      });
+    }
+    return this.materialUsage.recordLines(id, userId, lines);
+  }
+
   async complete(
     id: string,
     userId: string,
     permissions: string[],
-    dto?: { notes?: string; photoDocumentIds?: string[]; idempotencyKey?: string },
+    dto?: {
+      notes?: string;
+      photoDocumentIds?: string[];
+      idempotencyKey?: string;
+      qtyDelta?: number;
+      /** Piece 9 — packaging expected labels the worker confirmed (manual N of N). */
+      confirmedPackageLabels?: string[];
+      packagingProblem?: boolean;
+    },
   ) {
     const scope = `task.complete:${id}`;
 
@@ -916,6 +1227,58 @@ export class TasksService {
 
     const task = await this.getTask(id);
     this.assertCanModify(task, userId, permissions);
+
+    // Piece 9: Inspection is QUALITY — floor complete must not bypass QC submit.
+    const executionKind = String(task.stageDefinition?.executionKind ?? '').toUpperCase();
+    const stageCode = String(task.stageDefinition?.code ?? '').toUpperCase();
+    if (executionKind === 'QUALITY' || stageCode === 'INSPECTION') {
+      throw new BadRequestException({
+        code: 'USE_QUALITY_SUBMIT',
+        message:
+          'Inspection is a quality gate. Pass or report a problem from the inspection screen — do not use floor Complete.',
+      });
+    }
+
+    if (dto?.packagingProblem && (stageCode === 'PACKAGING' || stageCode === 'PACK')) {
+      throw new BadRequestException({
+        code: 'PACKAGING_PROBLEM_OPEN',
+        message: 'Resolve the packaging problem before completing. Finished goods were not posted.',
+      });
+    }
+
+    // Piece 9: packaging must confirm expected packages before FIN.
+    if (stageCode === 'PACKAGING' || stageCode === 'PACK') {
+      const snapNode = task.stageInstanceId
+        ? await this.prisma.productionOrderWorkflowSnapshotNode.findFirst({
+            where: { stageInstanceId: task.stageInstanceId },
+          })
+        : null;
+      const labels = pieceLabelsFromMetadata(snapNode?.metadata);
+      const expected =
+        labels.length > 0
+          ? labels.map((l) => l.nameEn)
+          : Number(snapNode?.expectedPieceCount) > 0
+            ? Array.from(
+                { length: Math.floor(Number(snapNode?.expectedPieceCount)) },
+                (_, i) => `Package ${i + 1}`,
+              )
+            : [];
+      if (expected.length) {
+        const confirmed = (dto?.confirmedPackageLabels ?? []).map((s) => String(s).trim());
+        const missing = expected.filter(
+          (e) => !confirmed.some((c) => c.toLowerCase() === e.toLowerCase()),
+        );
+        if (missing.length) {
+          throw new BadRequestException({
+            code: 'PACKAGES_INCOMPLETE',
+            message: `Confirm all packages before completing packaging (${confirmed.length} of ${expected.length}).`,
+            expected,
+            confirmed,
+            missing,
+          });
+        }
+      }
+    }
 
     // Idempotent: already completed → return current detail (no silent re-run).
     if (task.status === 'COMPLETED') {
@@ -956,6 +1319,23 @@ export class TasksService {
     }
 
     {
+      const claim = await this.wipKits.claimRequirementsForTask(id);
+      if (claim.required && !claim.allReceived && !claim.allClaimed) {
+        throw new BadRequestException({
+          code: 'WIP_RECEIVE_REQUIRED',
+          message: 'Some required pieces have not been received.',
+          lines: claim.lines?.map((l) => ({
+            fromStageCode: l.fromStageCode,
+            fromStageNameEn: l.fromStageNameEn,
+            received: l.received,
+            expected: l.expected,
+            statusKey: l.statusKey,
+          })),
+        });
+      }
+    }
+
+    {
       const snapNode = task.stageInstanceId
         ? await this.prisma.productionOrderWorkflowSnapshotNode.findFirst({
             where: { stageInstanceId: task.stageInstanceId },
@@ -964,6 +1344,10 @@ export class TasksService {
       const photosRequired =
         snapNode?.requiresPhotos ?? task.stageDefinition?.requiresPhotos ?? false;
       if (photosRequired) {
+        const expectedPieces =
+          snapNode && Number(snapNode.expectedPieceCount) > 0
+            ? Math.floor(Number(snapNode.expectedPieceCount))
+            : 1;
         const linked = dto?.photoDocumentIds?.length
           ? dto.photoDocumentIds.length
           : await this.prisma.document.count({
@@ -973,10 +1357,34 @@ export class TasksService {
                 archivedAt: null,
               },
             });
-        if (!linked) {
+
+        // Produce-semi: soft target — ≥1 kit piece with photo (or legacy TASK_PHOTO).
+        if (snapNode && WipKitService.producesWipKit(snapNode)) {
+          const kit = task.stageInstanceId
+            ? await this.prisma.wipKit.findUnique({
+                where: { stageInstanceId: task.stageInstanceId },
+                include: {
+                  pieces: { select: { id: true, photoDocumentId: true } },
+                },
+              })
+            : null;
+          const piecePhotos =
+            kit?.pieces.filter((p) => Boolean(p.photoDocumentId)).length ?? 0;
+          if (piecePhotos < 1 && linked < 1) {
+            throw new BadRequestException({
+              code: 'WIP_PIECES_REQUIRED',
+              message:
+                'Add at least one semi-finished piece with a photo before completion.',
+              expectedPieceCount: expectedPieces,
+              photoCount: Math.max(piecePhotos, linked),
+            });
+          }
+        } else if (linked < expectedPieces) {
           throw new BadRequestException({
             code: 'PHOTOS_REQUIRED',
-            message: 'This stage requires at least one photo before completion.',
+            message: `This stage requires at least ${expectedPieces} photo(s) before completion.`,
+            expectedPieceCount: expectedPieces,
+            photoCount: linked,
           });
         }
       }
@@ -1005,30 +1413,144 @@ export class TasksService {
         });
       }
 
+      const poQty = Number(task.productionOrder?.quantity) || 1;
+      const targetQty = Number(task.targetQty) > 0 ? Number(task.targetQty) : poQty;
+      const priorCompleted = Number(task.completedQty) || 0;
+      const remainingQty = Math.max(0, targetQty - priorCompleted);
+      if (remainingQty <= 0) {
+        throw new ConflictException({
+          code: 'TASK_QTY_COMPLETE',
+          message: 'This task already has its full quantity posted.',
+        });
+      }
+      const requested =
+        dto?.qtyDelta != null && Number.isFinite(Number(dto.qtyDelta))
+          ? Number(dto.qtyDelta)
+          : remainingQty;
+      if (!(requested > 0)) {
+        throw new BadRequestException({
+          code: 'INVALID_QTY_DELTA',
+          message: 'qtyDelta must be a positive number.',
+        });
+      }
+      const qtyDelta = Math.min(requested, remainingQty);
+      const completedQtyAfter = priorCompleted + qtyDelta;
+      const fullyDone = completedQtyAfter + 1e-9 >= targetQty;
+      const progressPercent = Math.min(
+        100,
+        Math.max(1, Math.round((completedQtyAfter / Math.max(targetQty, 1e-9)) * 100)),
+      );
+
+      let skipRawConsume = false;
+      if (await this.materialUsage.hasUsageRows(id, tx)) {
+        const scale = targetQty > 0 ? qtyDelta / targetQty : 1;
+        await this.materialUsage.finalizeForTask({
+          taskId: id,
+          userId,
+          tx,
+          idempotencyKey: `usage-finalize:${id}:${completedQtyAfter}`,
+          qtyScale: scale,
+          markFinal: fullyDone,
+        });
+        // Usage rows own inventory posting — never also run blind BOM/stage consume.
+        skipRawConsume = true;
+      }
+
+      await this.productionInventory.onStageQtyProgress({
+        productionOrderId: task.productionOrderId,
+        stageInstanceId: task.stageInstanceId,
+        userId,
+        tx,
+        qtyDelta,
+        taskId: id,
+        completedQtyAfter,
+        skipRawConsume,
+      });
+
+      if (fullyDone && task.stageInstanceId) {
+        const snapNode = await tx.productionOrderWorkflowSnapshotNode.findFirst({
+          where: { stageInstanceId: task.stageInstanceId },
+        });
+        if (snapNode && WipKitService.producesWipKit(snapNode)) {
+          const nextEdges = await tx.productionOrderWorkflowSnapshotEdge.findMany({
+            where: { fromSnapshotNodeId: snapNode.id },
+            select: { toSnapshotNodeId: true },
+          });
+          const usages = await tx.productionTaskMaterialUsage.findMany({
+            where: { taskId: id },
+            select: { sku: true, expectedQty: true, actualQty: true, varianceQty: true, isExtra: true },
+          });
+          const overage = usages
+            .filter(
+              (u) =>
+                u.isExtra ||
+                (u.actualQty != null &&
+                  u.expectedQty != null &&
+                  Number(u.actualQty) > Number(u.expectedQty) + 1e-9),
+            )
+            .map((u) => {
+              const actual = Number(u.actualQty ?? 0);
+              const expected = Number(u.expectedQty ?? 0);
+              return `${u.sku}: expected ${expected}, actual ${actual}`;
+            });
+          await this.wipKits.registerFromTaskComplete({
+            tx,
+            productionOrderId: task.productionOrderId,
+            stageInstanceId: task.stageInstanceId,
+            taskId: id,
+            userId,
+            snapshotNode: {
+              id: snapNode.id,
+              inventoryTracking: snapNode.inventoryTracking,
+              requiresPhotos: snapNode.requiresPhotos,
+              expectedPieceCount: snapNode.expectedPieceCount,
+              outputQtyPerUnit: snapNode.outputQtyPerUnit,
+              metadata: snapNode.metadata,
+            },
+            photoDocumentIds: dto?.photoDocumentIds ?? [],
+            nextSnapshotNodeIds: nextEdges.map((e) => e.toSnapshotNodeId),
+            warehouseId: snapNode.defaultWarehouseId,
+            materialOverageNotes: overage.length ? overage.join('; ') : null,
+          });
+        }
+
+        if (snapNode?.consumesSemiFinished) {
+          await this.wipKits.markConsumedForStage({
+            tx,
+            productionOrderId: task.productionOrderId,
+            consumingStageInstanceId: task.stageInstanceId,
+          });
+        }
+      }
+
       const row = await tx.productionTask.update({
         where: { id },
         data: {
-          status: 'COMPLETED',
-          progressPercent: 100,
-          actualCompletion: new Date(),
+          targetQty,
+          completedQty: completedQtyAfter,
+          progressPercent: fullyDone ? 100 : progressPercent,
+          status: fullyDone ? 'COMPLETED' : 'IN_PROGRESS',
+          actualCompletion: fullyDone ? new Date() : undefined,
           ...(dto?.notes ? { notes: dto.notes } : {}),
         },
         include: {
           stageDefinition: true,
           productionOrder: {
-            select: { id: true, number: true, progressPercent: true, status: true },
+            select: { id: true, number: true, progressPercent: true, status: true, quantity: true },
           },
         },
       });
 
-      // Completes stage when all tasks done, unlocks next READY stages, rolls up PO %.
-      await this.pipeline.onTaskComplete(task.productionOrderId, task.stageInstanceId, tx);
-      await this.productionInventory.onStageTaskComplete({
-        productionOrderId: task.productionOrderId,
-        stageInstanceId: task.stageInstanceId,
-        userId,
-        tx,
-      });
+      if (fullyDone) {
+        // Completes stage when all tasks done, unlocks next READY stages, rolls up PO %.
+        await this.pipeline.onTaskComplete(task.productionOrderId, task.stageInstanceId, tx);
+        await this.productionInventory.onStageTaskComplete({
+          productionOrderId: task.productionOrderId,
+          stageInstanceId: task.stageInstanceId,
+          userId,
+          tx,
+        });
+      }
 
       const po = await tx.productionOrder.findUnique({
         where: { id: task.productionOrderId },
@@ -1039,6 +1561,10 @@ export class TasksService {
         ...row,
         productionOrder: po ?? row.productionOrder,
         orderProgressPercent: po?.progressPercent ?? row.productionOrder.progressPercent,
+        qtyDelta,
+        completedQty: completedQtyAfter,
+        targetQty,
+        remainingQty: Math.max(0, targetQty - completedQtyAfter),
         replayed: false as const,
       };
     });

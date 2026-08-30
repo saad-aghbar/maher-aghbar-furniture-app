@@ -90,11 +90,23 @@ export function BottomSheet({
   const heightSV = useSharedValue(360);
   const reduceSV = useSharedValue(0);
 
+  /**
+   * Host Modal must yield while the camera (or other full-screen) Modal is up.
+   * iOS will not reliably present a second Modal on top of an overFullScreen sheet —
+   * symptom: dim backdrop + freeze, camera never usable.
+   *
+   * VERIFY/SELECT state lives on the sheet *component* (outside Modal children),
+   * e.g. useLabelVerifyScan on AddStockSheet — so await openScanner() still commits
+   * after the host Modal goes visible=false.
+   */
   const hostBlocked =
-    isScanning || isAccessoryCamera || isLocationMap || (!overlay && isOverlayYield);
+    isScanning ||
+    isAccessoryCamera ||
+    isLocationMap ||
+    (!overlay && isOverlayYield);
 
   const sheetModalVisible = overlay
-    ? overlayModalVisible && !isScanning && !isAccessoryCamera && !isLocationMap
+    ? overlayModalVisible && !isAccessoryCamera && !isLocationMap && !isScanning
     : !hostBlocked;
 
   const heightCap = useMemo(() => {

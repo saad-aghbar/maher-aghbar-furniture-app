@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -114,6 +115,12 @@ export class AssignTaskDto {
   @IsEnum(Priority)
   priority?: Priority;
 
+  /** Planned stage start (ISO). When set, plannedCompletion should also be provided. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  plannedStart?: string;
+
   /** Task due datetime (ISO). Hours + minutes are required at the product UI layer. */
   @ApiPropertyOptional()
   @IsOptional()
@@ -127,6 +134,13 @@ export class AssignTaskDto {
   @IsInt()
   @Min(0)
   estimatedMinutes?: number;
+
+  /** Explicitly override a detected worker schedule conflict (requires schedule.override). */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  overrideConflict?: boolean;
 }
 
 export class CompleteTaskDto {
@@ -141,6 +155,16 @@ export class CompleteTaskDto {
   photoDocumentIds?: string[];
 
   @ApiPropertyOptional({
+    description:
+      'Qty completed in this submit (delta). Omitting completes remaining target (full finish).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  qtyDelta?: number;
+
+  @ApiPropertyOptional({
     description: 'Client-generated key; duplicate submits return the first successful result.',
   })
   @IsOptional()
@@ -148,6 +172,22 @@ export class CompleteTaskDto {
   @MinLength(8)
   @MaxLength(128)
   idempotencyKey?: string;
+
+  @ApiPropertyOptional({
+    description: 'Piece 9 — packaging package labels the worker confirmed (manual N of N).',
+    type: [String],
+  })
+  @IsOptional()
+  @IsString({ each: true })
+  confirmedPackageLabels?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Piece 9 — packaging problem open; blocks FIN.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  packagingProblem?: boolean;
 }
 
 export class UpdateTaskNotesDto {

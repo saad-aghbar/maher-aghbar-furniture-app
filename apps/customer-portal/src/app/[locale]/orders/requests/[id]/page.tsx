@@ -3,7 +3,7 @@
 import { BackButton } from '@/components/back-button';
 import { DealerOrderDetails } from '@/components/dealer-order-details';
 import { apiFetch, API_URL } from '@/lib/api-client';
-import { Card, ErrorState, Ltr, MotionSection, Skeleton, StatusBadge } from '@maher/ui';
+import { Alert, Card, ErrorState, Ltr, MotionSection, Skeleton, StatusBadge } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Armchair } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -45,6 +45,7 @@ interface RequestDetail {
   notes?: string | null;
   title?: string | null;
   imageUrl?: string | null;
+  informationRequestReason?: string | null;
   items?: RequestItem[];
   documents?: RequestDoc[];
 }
@@ -180,6 +181,15 @@ export default function CustomerRequestDetailPage() {
           </p>
         </div>
       </MotionSection>
+
+      {req.informationRequestReason ? (
+        <MotionSection delayMs={40}>
+          <Alert variant="warning">
+            <p className="font-medium">{tc('informationRequestReason')}</p>
+            <p className="mt-1 text-sm">{req.informationRequestReason}</p>
+          </Alert>
+        </MotionSection>
+      ) : null}
 
       <MotionSection delayMs={60}>
         <DealerOrderDetails

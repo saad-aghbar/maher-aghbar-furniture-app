@@ -25,16 +25,16 @@ export function nextUniqueCode(base: string, existing: Iterable<string>): string
   return `${base}_${n}`;
 }
 
-/** Omit code → unique slug from English name. Explicit code is normalized, not suffixed. */
+/** Prefer unique slug from English name. Explicit code is normalized, then uniquified on collision. */
 export function resolveGeneratedCode(
   explicitCode: string | undefined | null,
   nameEn: string,
   existing: Iterable<string>,
 ): string {
-  if (explicitCode?.trim()) {
-    return normalizeExplicitCode(explicitCode);
-  }
-  return nextUniqueCode(slugFromEnglishName(nameEn), existing);
+  const base = explicitCode?.trim()
+    ? normalizeExplicitCode(explicitCode)
+    : slugFromEnglishName(nameEn);
+  return nextUniqueCode(base, existing);
 }
 
 /** Omit nodeKey → stage.code, unique within the version. Explicit key is normalized as-is. */
@@ -87,10 +87,31 @@ const STAGE_PATCH_FIELDS = [
   'resourceSlots',
 ] as const;
 
+const STAGE_NAME_PATCH_FIELDS = ['nameAr', 'nameEn', 'nameHe'] as const;
+
+export function lockedAnchorNameChanged(
+  existing: { nameEn: string; nameAr: string; nameHe?: string | null },
+  dto: Record<string, unknown>,
+): boolean {
+  for (const key of STAGE_NAME_PATCH_FIELDS) {
+    if (dto[key] === undefined) continue;
+    const next = dto[key] == null ? '' : String(dto[key]).trim();
+    const prev = existing[key] == null ? '' : String(existing[key]).trim();
+    if (next !== prev) return true;
+  }
+  return false;
+}
+
 /** Strip `code` and any unknown fields so rename never mutates the stored identifier. */
-export function pickStagePatch(dto: Record<string, unknown>): Record<string, unknown> {
+export function pickStagePatch(
+  dto: Record<string, unknown>,
+  options?: { omitNames?: boolean },
+): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   for (const key of STAGE_PATCH_FIELDS) {
+    if (options?.omitNames && (STAGE_NAME_PATCH_FIELDS as readonly string[]).includes(key)) {
+      continue;
+    }
     if (dto[key] !== undefined) data[key] = dto[key];
   }
   return data;

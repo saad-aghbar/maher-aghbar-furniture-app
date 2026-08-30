@@ -145,6 +145,28 @@ export function DealerInvoicesList({
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
                   alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: theme.spacing.sm,
+                }}
+              >
+                <AppText variant="caption" color="muted" style={{ fontSize: 11 }} dir="ltr">
+                  {t('accounting.paidAmount')}:{' '}
+                  {formatCurrency(Number(inv.paidAmount ?? 0))}
+                </AppText>
+                <AppText variant="caption" color="secondary" style={{ fontSize: 11 }} dir="ltr">
+                  {t('accounting.remaining')}:{' '}
+                  {formatCurrency(
+                    Number(
+                      inv.outstandingAmount ??
+                        Math.max(0, Number(inv.total) - Number(inv.paidAmount ?? 0)),
+                    ),
+                  )}
+                </AppText>
+              </View>
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  alignItems: 'center',
                   gap: theme.spacing.sm,
                   flexWrap: 'wrap',
                 }}

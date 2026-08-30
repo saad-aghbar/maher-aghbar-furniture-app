@@ -1,13 +1,3 @@
-export type {
-  CompletedDealerOption,
-  TaskDetail,
-  TaskFile,
-  TaskListFilters,
-  TaskListItem,
-  TaskBlockerCategory,
-  TaskPriority,
-  TaskStatus,
-} from '@/api/modules/tasks';
 export {
   listTasks,
   listCompletedDealers,
@@ -18,4 +8,26 @@ export {
   completeTask,
   blockTask,
   updateTaskNotes,
+  listTaskMaterialUsage,
+  identifyTaskMaterial,
+  saveTaskMaterialUsage,
+  getTaskWipOutput,
+  addTaskWipPiece,
+  updateTaskWipPiece,
+  deleteTaskWipPiece,
+} from '@/api/modules/tasks';
+export type {
+  CompletedDealerOption,
+  TaskDetail,
+  TaskFile,
+  TaskListFilters,
+  TaskListItem,
+  TaskBlockerCategory,
+  TaskMaterialIdentifyResult,
+  TaskMaterialUsageLine,
+  TaskMaterialUsageWarehouse,
+  TaskPriority,
+  TaskStatus,
+  TaskWipOutput,
+  TaskWipOutputPiece,
 } from '@/api/modules/tasks';

@@ -3,6 +3,7 @@ import { formatDate, formatNumber } from '@/i18n/format';
 import type {
   NamedRef,
   PurchaseOrder,
+  PurchaseOrderPresentation,
   PurchaseRequest,
   SupplierInvoice,
 } from './api';
@@ -16,6 +17,10 @@ export type PurchaseCardModel = {
   expectedLabel: string | null;
   lineCount: number;
   warehouseLabel: string | null;
+  phaseLabelKey: string | null;
+  progress: number;
+  attentionReason: string | null;
+  primaryAction: string | null;
 };
 
 export type PurchaseRequestCardModel = {
@@ -56,6 +61,32 @@ function moneyLabel(locale: string, value: number): string {
   return formatNumber(asLocale(locale), value, { maximumFractionDigits: 2 });
 }
 
+const PHASE_FALLBACKS: Record<string, string> = {
+  DRAFT: 'purchasing.phaseDraft',
+  ORDERED: 'purchasing.phaseOrdered',
+  PARTIALLY_RECEIVED: 'purchasing.phasePartial',
+  RECEIVED: 'purchasing.phaseReceived',
+  CLOSED: 'purchasing.phaseClosed',
+  CANCELLED: 'purchasing.phaseCancelled',
+};
+
+export function resolvePhaseLabel(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  presentation?: PurchaseOrderPresentation | null,
+): string | null {
+  if (!presentation) return null;
+  const key = presentation.labelKey || PHASE_FALLBACKS[presentation.phase];
+  if (!key) return presentation.phase || null;
+  const translated = t(key);
+  if (translated !== key) return translated;
+  const fallbackKey = PHASE_FALLBACKS[presentation.phase];
+  if (fallbackKey) {
+    const fb = t(fallbackKey);
+    if (fb !== fallbackKey) return fb;
+  }
+  return presentation.phase;
+}
+
 export function localizedNamed(
   locale: string,
   row: NamedRef | null | undefined,
@@ -90,6 +121,7 @@ export function selectPurchaseCard(
 ): PurchaseCardModel {
   const typed = asLocale(locale);
   const total = toNum(po.total);
+  const presentation = po.presentation;
   return {
     id: po.id,
     number: po.number,
@@ -101,6 +133,10 @@ export function selectPurchaseCard(
       : null,
     lineCount: po.lines?.length ?? 0,
     warehouseLabel: warehouseName?.trim() || null,
+    phaseLabelKey: presentation?.labelKey ?? null,
+    progress: Number(presentation?.progress) || 0,
+    attentionReason: presentation?.attentionReason ?? null,
+    primaryAction: presentation?.primaryAction ?? null,
   };
 }
 
@@ -153,6 +189,27 @@ export type DraftMaterialLine = {
   quantity: string;
   unitCost: string;
 };
+
+/** Merge draft lines by inventoryItemId, summing quantities. Keeps first line's cost/meta. */
+export function mergeDraftLinesByItem(
+  existing: DraftMaterialLine[],
+  incoming: DraftMaterialLine[],
+): DraftMaterialLine[] {
+  const byId = new Map<string, DraftMaterialLine>();
+  for (const line of [...existing, ...incoming]) {
+    const prev = byId.get(line.inventoryItemId);
+    if (!prev) {
+      byId.set(line.inventoryItemId, { ...line });
+      continue;
+    }
+    const qty = Number(prev.quantity) + Number(line.quantity);
+    byId.set(line.inventoryItemId, {
+      ...prev,
+      quantity: String(Number.isFinite(qty) ? qty : prev.quantity),
+    });
+  }
+  return [...byId.values()];
+}
 
 export function lineTotal(qty: string, unitCost: string): number {
   const q = Number(qty);

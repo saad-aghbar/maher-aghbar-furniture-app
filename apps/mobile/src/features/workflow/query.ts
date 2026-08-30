@@ -22,7 +22,6 @@ import {
   validateWorkflowVersion,
   assignProductionOrderWorkflow,
   getProductProductionSetup,
-  getProductProductionSetupPreview,
   putProductProductionSetup,
 } from '@/api/modules/workflow';
 
@@ -239,14 +238,6 @@ export function useProductProductionSetupQuery(productId: string, enabled = true
   });
 }
 
-export function useProductProductionSetupPreviewQuery(productId: string, enabled = true) {
-  return useQuery({
-    queryKey: queryKeys.workflow.productionSetupPreview(productId),
-    queryFn: () => getProductProductionSetupPreview(productId),
-    enabled: enabled && Boolean(productId),
-  });
-}
-
 export function usePutProductProductionSetupMutation(productId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -254,9 +245,6 @@ export function usePutProductProductionSetupMutation(productId: string) {
       putProductProductionSetup(productId, body),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: queryKeys.workflow.productionSetup(productId) });
-      await qc.invalidateQueries({
-        queryKey: queryKeys.workflow.productionSetupPreview(productId),
-      });
     },
   });
 }

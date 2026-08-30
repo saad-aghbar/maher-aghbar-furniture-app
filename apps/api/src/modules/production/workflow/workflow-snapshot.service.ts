@@ -63,6 +63,18 @@ export class WorkflowSnapshotService {
       createdById?: string;
       /** Force a specific published workflow (admin assign). */
       workflowId?: string;
+      /**
+       * Piece 2: when provided, replace product stage material inputs on snapshot nodes
+       * (expected materials from order production setup). Attached to first raw-consuming node.
+       */
+      materialOverrides?: Array<{
+        inventoryItemId: string;
+        sku: string;
+        qtyPerUnit: number;
+        unit?: string;
+        required?: boolean;
+        quantityMode?: 'LINEAR' | 'FIXED' | 'SETUP_PLUS_LINEAR' | 'BATCH' | 'PARALLEL_CAPACITY';
+      }>;
     },
     tx: Tx,
   ) {
@@ -103,6 +115,7 @@ export class WorkflowSnapshotService {
         quantity: input.quantity,
         specifications: input.specifications,
         createdById: input.createdById,
+        materialOverrides: input.materialOverrides,
       },
       compiled,
       tx,
@@ -180,6 +193,14 @@ export class WorkflowSnapshotService {
       specifications?: string | null;
       createdById?: string;
       isLegacyBackfill?: boolean;
+      materialOverrides?: Array<{
+        inventoryItemId: string;
+        sku: string;
+        qtyPerUnit: number;
+        unit?: string;
+        required?: boolean;
+        quantityMode?: 'LINEAR' | 'FIXED' | 'SETUP_PLUS_LINEAR' | 'BATCH' | 'PARALLEL_CAPACITY';
+      }>;
     },
     compiled: CompiledProductionWorkflow,
     tx: Tx,
@@ -196,7 +217,10 @@ export class WorkflowSnapshotService {
 
     const po = await tx.productionOrder.findUnique({
       where: { id: meta.productionOrderId },
-      select: { productId: true },
+      select: {
+        productId: true,
+        product: { select: { nameEn: true, nameAr: true, nameHe: true } },
+      },
     });
     const productOutputs = po?.productId
       ? await tx.productStageInventoryOutput.findMany({ where: { productId: po.productId } })
@@ -205,6 +229,12 @@ export class WorkflowSnapshotService {
       ? await tx.productStageInventoryInput.findMany({
           where: { productId: po.productId },
           include: { output: true },
+        })
+      : [];
+    const productMaterialInputs = po?.productId
+      ? await tx.productStageMaterialInput.findMany({
+          where: { productId: po.productId },
+          include: { inventoryItem: { select: { sku: true, unit: true } } },
         })
       : [];
 
@@ -219,6 +249,7 @@ export class WorkflowSnapshotService {
           consumesRawMaterials: n.consumesRawMaterials ?? false,
           consumesSemiFinished: n.consumesSemiFinished ?? false,
           outputQtyPerUnit: n.outputQtyPerUnit,
+          expectedPieceCount: n.expectedPieceCount,
           outputNameAr: n.outputNameAr,
           outputNameEn: n.outputNameEn,
           outputNameHe: n.outputNameHe,
@@ -241,6 +272,17 @@ export class WorkflowSnapshotService {
       const consumeInventoryItemIds = consumeRows
         .map((row) => row.output.inventoryItemId)
         .filter((id): id is string => Boolean(id));
+
+      const baseMeta =
+        n.metadata && typeof n.metadata === 'object' && !Array.isArray(n.metadata)
+          ? { ...(n.metadata as Record<string, unknown>) }
+          : {};
+      if (resolved.pieceLabels.length > 0) {
+        baseMeta.pieceLabels = resolved.pieceLabels;
+      }
+      if (resolved.tracking === 'PRODUCES_FINISHED') {
+        baseMeta.packPieceCount = resolved.expectedPieceCount;
+      }
 
       const snapNode = await tx.productionOrderWorkflowSnapshotNode.create({
         data: {
@@ -266,10 +308,21 @@ export class WorkflowSnapshotService {
           consumesSemiFinished: resolved.consumesSemiFinished,
           schedulingResourceMode: n.schedulingResourceMode,
           resourceSlots: n.resourceSlots,
+          executionKind: n.executionKind,
           outputQtyPerUnit: resolved.qtyPerUnit ?? undefined,
-          outputNameAr: resolved.nameAr ?? undefined,
-          outputNameEn: resolved.nameEn ?? undefined,
-          outputNameHe: resolved.nameHe ?? undefined,
+          expectedPieceCount: resolved.expectedPieceCount,
+          outputNameAr:
+            resolved.tracking === 'PRODUCES_FINISHED' && po?.product
+              ? po.product.nameAr
+              : resolved.nameAr ?? undefined,
+          outputNameEn:
+            resolved.tracking === 'PRODUCES_FINISHED' && po?.product
+              ? po.product.nameEn
+              : resolved.nameEn ?? undefined,
+          outputNameHe:
+            resolved.tracking === 'PRODUCES_FINISHED' && po?.product
+              ? po.product.nameHe
+              : resolved.nameHe ?? undefined,
           outputUnit: resolved.unit ?? undefined,
           outputDefinitionId: resolved.outputDefinitionId ?? undefined,
           outputInventoryItemId: resolved.inventoryItemId ?? undefined,
@@ -281,30 +334,87 @@ export class WorkflowSnapshotService {
           sortOrder: n.sortOrder,
           displayX: n.displayX,
           displayY: n.displayY,
-          metadata: n.metadata as Prisma.InputJsonValue | undefined,
+          metadata:
+            Object.keys(baseMeta).length > 0
+              ? (baseMeta as Prisma.InputJsonValue)
+              : (n.metadata as Prisma.InputJsonValue | undefined),
         },
       });
       nodeIdByKey.set(n.nodeKey, snapNode.id);
 
-      const taskNumber = await this.sequences.next('TASK', 'TSK');
-      await tx.productionTask.create({
-        data: {
-          number: taskNumber,
-          productionOrderId: meta.productionOrderId,
-          stageDefinitionId: n.stageDefinitionId,
-          stageInstanceId: stageInstance.id,
-          name: n.nameEn,
-          description: buildStageTaskInstructions({
-            stageCode: n.stageCode,
-            stageNameEn: n.nameEn,
-            productDescription: meta.productDescription,
-            quantity: meta.quantity,
-            specifications: meta.specifications,
-          }),
-          status: 'NOT_STARTED',
-          estimatedMinutes: n.estimatedMinutes ?? undefined,
-        },
-      });
+      const materialRows = productMaterialInputs.filter(
+        (row) => row.workflowNodeId === n.sourceWorkflowNodeId,
+      );
+      const useOverrides = Array.isArray(meta.materialOverrides) && meta.materialOverrides.length > 0;
+      if (useOverrides) {
+        // Attach all order expected materials to the first raw-consuming production node only.
+        const isFirstRawConsumer =
+          (n.consumesRawMaterials ?? false) &&
+          !compiled.included.some(
+            (other) =>
+              other.sortOrder < n.sortOrder && (other.consumesRawMaterials ?? false),
+          );
+        if (isFirstRawConsumer || (!compiled.included.some((o) => o.consumesRawMaterials) && n.sortOrder === compiled.included[0]?.sortOrder)) {
+          for (const row of meta.materialOverrides!) {
+            const sku = row.sku?.trim();
+            if (!sku) continue;
+            await tx.productionOrderWorkflowSnapshotMaterialInput.create({
+              data: {
+                snapshotNodeId: snapNode.id,
+                stageCode: n.stageCode,
+                inventoryItemId: row.inventoryItemId,
+                sku,
+                qtyPerUnit: row.qtyPerUnit,
+                quantityMode: row.quantityMode ?? 'LINEAR',
+                unit: row.unit || 'pcs',
+                required: row.required ?? true,
+              },
+            });
+          }
+        }
+      } else {
+        for (const row of materialRows) {
+          const sku = row.inventoryItem.sku?.trim();
+          if (!sku) continue;
+          await tx.productionOrderWorkflowSnapshotMaterialInput.create({
+            data: {
+              snapshotNodeId: snapNode.id,
+              stageCode: n.stageCode,
+              inventoryItemId: row.inventoryItemId,
+              sku,
+              qtyPerUnit: row.qtyPerUnit,
+              quantityMode: row.quantityMode,
+              unit: row.unit || row.inventoryItem.unit || 'pcs',
+              required: row.required,
+            },
+          });
+        }
+      }
+
+      // LOGISTICS (DELIVERY) is tracked via the Delivery entity — no floor task / capacity.
+      if (n.executionKind !== 'LOGISTICS') {
+        const taskNumber = await this.sequences.next('TASK', 'TSK');
+        await tx.productionTask.create({
+          data: {
+            number: taskNumber,
+            productionOrderId: meta.productionOrderId,
+            stageDefinitionId: n.stageDefinitionId,
+            stageInstanceId: stageInstance.id,
+            name: n.nameEn,
+            description: buildStageTaskInstructions({
+              stageCode: n.stageCode,
+              stageNameEn: n.nameEn,
+              productDescription: meta.productDescription,
+              quantity: meta.quantity,
+              specifications: meta.specifications,
+            }),
+            status: 'NOT_STARTED',
+            estimatedMinutes: n.estimatedMinutes ?? undefined,
+            targetQty: meta.quantity,
+            completedQty: 0,
+          },
+        });
+      }
     }
 
     for (const e of compiled.edges) {

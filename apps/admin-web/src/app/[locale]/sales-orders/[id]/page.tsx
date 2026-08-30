@@ -2,15 +2,21 @@
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
 import { PageHeader } from '@/components/admin/page-header';
+import { CancelImpactSheet } from '@/components/sales-orders/cancel-impact-sheet';
 import { OrderWorkflowSection } from '@/components/workflow/order-workflow-section';
 import { Link } from '@/i18n/navigation';
-import { apiFetch } from '@/lib/api-client';
+import {
+  apiFetch,
+  fetchOrderProductionSetup,
+  type OrderProductionSetup,
+} from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
   Alert,
   Button,
   Card,
   ErrorState,
+  Input,
   Skeleton,
   StatusBadge,
   Table,
@@ -24,8 +30,9 @@ import {
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronDown } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface CustomerRequestItem {
   id: string;
@@ -83,12 +90,23 @@ interface SalesOrderDetail {
   productionPrice?: string | number | null;
   profit?: string | number | null;
   costBreakdown?: Record<string, number> | null;
+  manufacturingCosting?: {
+    status?: string | null;
+    incomplete?: boolean;
+    estimatedTotal?: number | null;
+    actualTotal?: number | null;
+    varianceCost?: number | null;
+    variancePct?: number | null;
+    scrapCost?: number | null;
+    finalizedAt?: string | null;
+  } | null;
   projectName?: string | null;
   requiredDeliveryDate?: string | null;
   requestedDeliveryDate?: string | null;
   deliveryAddress?: string | null;
   externalOrderNumber?: string | null;
   notes?: string | null;
+  productionSetupRequired?: boolean;
   customer?: {
     id: string;
     name: string;
@@ -130,6 +148,31 @@ interface SalesOrderDetail {
     productDesc: string;
     quantity?: string | number;
   }>;
+  commercialSummary?: {
+    salesOrderId: string;
+    number: string;
+    orderTotal: number;
+    commercialComplete: boolean;
+    commercialBlock?: { ok: false; code: string; message: string } | null;
+    lines: Array<{
+      id: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      lineTotal: number;
+      manufacturingComplexity?: string | null;
+      commercialPriceStatus: string;
+      commercialPriceSource?: string | null;
+      commercialPriceNote?: string | null;
+    }>;
+  } | null;
+  commercialGrossDifference?: {
+    available: boolean;
+    reason?: string | null;
+    saleTotal: number;
+    manufacturingCost: number | null;
+    grossDifference: number | null;
+  } | null;
 }
 
 const HOLDABLE = [
@@ -139,14 +182,10 @@ const HOLDABLE = [
   'WAITING_FOR_MATERIALS',
   'WAITING_FOR_PAYMENT',
 ];
-const CANCELLABLE = [
-  'DRAFT',
-  'CONFIRMED',
-  'READY_FOR_PRODUCTION',
-  'ON_HOLD',
-  'WAITING_FOR_PAYMENT',
-  'WAITING_FOR_MATERIALS',
-];
+/** Cancel impact sheet opens for any non-cancelled order (Phase 5 shows use-Returns). */
+function canOpenCancel(status: string) {
+  return status !== 'CANCELLED';
+}
 
 function dim(item: CustomerRequestItem) {
   const parts = [item.width, item.height, item.depth]
@@ -161,30 +200,43 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
   const tCommon = useTranslations('common');
   const tNav = useTranslations('navigation');
   const tCustomers = useTranslations('customers');
+  const ta = useTranslations('accounting');
   const queryClient = useQueryClient();
   const [banner, setBanner] = useState<string | null>(null);
+  const [financeAttention, setFinanceAttention] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    const onDoc = (e: MouseEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [moreOpen]);
 
   const detailQuery = useQuery({
     queryKey: ['sales-order', params.id],
     queryFn: () => apiFetch<SalesOrderDetail>(`/api/v1/sales-orders/${params.id}`),
   });
 
-  const confirmMutation = useMutation({
-    mutationFn: () =>
-      apiFetch(`/api/v1/sales-orders/${params.id}/confirm`, { method: 'POST' }),
-    onSuccess: async () => {
-      setError(null);
-      setConfirmOpen(false);
-      setBanner(tSales('confirmedBanner'));
-      await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
-      await queryClient.invalidateQueries({ queryKey: ['production-orders'] });
-    },
-    onError: (err) => setError(mutationErrorMessage(err)),
+  const productionSetupQuery = useQuery({
+    queryKey: ['order-production-setup', params.id],
+    queryFn: () => fetchOrderProductionSetup(params.id),
+    enabled:
+      Boolean(detailQuery.data) &&
+      (detailQuery.data!.productionSetupRequired === true ||
+        detailQuery.data!.status === 'DRAFT' ||
+        (detailQuery.data!.productionOrders?.length ?? 0) > 0 ||
+        ['READY_FOR_PRODUCTION', 'WAITING_FOR_MATERIALS', 'IN_PRODUCTION', 'CONFIRMED'].includes(
+          detailQuery.data!.status,
+        )),
+    retry: false,
   });
 
   const holdMutation = useMutation({
@@ -203,18 +255,17 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: (reason?: string) =>
-      apiFetch(`/api/v1/sales-orders/${params.id}/cancel`, {
+  const confirmPricesMutation = useMutation({
+    mutationFn: (lines: Array<{ lineId: string; unitPrice: number; note?: string }>) =>
+      apiFetch(`/api/v1/sales-orders/${params.id}/confirm-commercial-prices`, {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ lines }),
       }),
     onSuccess: async () => {
       setError(null);
-      setCancelOpen(false);
-      setBanner(tSales('cancelledBanner'));
+      setBanner(ta('commercialPricesConfirmed'));
+      setPriceDrafts({});
       await queryClient.invalidateQueries({ queryKey: ['sales-order', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
     },
     onError: (err) => setError(mutationErrorMessage(err)),
   });
@@ -255,6 +306,16 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
     '—';
   const dealerOrderNo =
     order.externalOrderNumber?.trim() || req?.externalOrderNumber?.trim() || '—';
+  const needsProductionSetup =
+    order.productionSetupRequired === true ||
+    (order.status === 'DRAFT' && (order.productionOrders?.length ?? 0) === 0);
+  const setupData = productionSetupQuery.data as OrderProductionSetup | undefined;
+  const setupReleased = setupData?.status === 'RELEASED';
+  const showWorkerAssignment = setupReleased;
+  const commercial = order.commercialSummary;
+  const requiredPriceLines = (commercial?.lines ?? []).filter(
+    (l) => String(l.commercialPriceStatus).toUpperCase() === 'REQUIRED',
+  );
 
   return (
     <div className="space-y-6">
@@ -265,25 +326,99 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         actions={
           <div className="maher-detail-sticky-actions flex flex-wrap items-center gap-2">
             <StatusBadge status={order.status} />
-            {order.status === 'DRAFT' ? (
-              <Button onClick={() => setConfirmOpen(true)}>{tSales('confirm')}</Button>
+            {needsProductionSetup ? (
+              <Link href={`/sales-orders/${params.id}/production-setup`}>
+                <Button>{tSales('prepareProduction')}</Button>
+              </Link>
+            ) : null}
+            {setupReleased ? (
+              <Link href={`/sales-orders/${params.id}/production-setup`}>
+                <Button variant="secondary" size="sm">
+                  {tSales('orderSetup.viewSetup')}
+                </Button>
+              </Link>
             ) : null}
             {HOLDABLE.includes(order.status) ? (
               <Button variant="secondary" onClick={() => setHoldOpen(true)}>
                 {tSales('hold')}
               </Button>
             ) : null}
-            {CANCELLABLE.includes(order.status) ? (
-              <Button variant="ghost" onClick={() => setCancelOpen(true)}>
-                {tSales('cancelOrder')}
-              </Button>
+            {canOpenCancel(order.status) ? (
+              <div className="relative" ref={moreRef}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMoreOpen((v) => !v)}
+                  aria-expanded={moreOpen}
+                  aria-haspopup="menu"
+                  trailingIcon={<ChevronDown className="h-3.5 w-3.5 opacity-70" />}
+                >
+                  {tSales('moreActions')}
+                </Button>
+                {moreOpen ? (
+                  <div
+                    role="menu"
+                    className="absolute end-0 z-20 mt-1 min-w-[12rem] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-2 text-start text-sm text-[var(--maher-danger)] hover:bg-[var(--maher-surface-muted)]"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setCancelOpen(true);
+                      }}
+                    >
+                      {tSales('cancelOrder')}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
         }
       />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
+      {financeAttention ? (
+        <Alert variant="warning">
+          <p className="font-medium">{tSales('cancelImpact.financialAttentionBannerTitle')}</p>
+          <p className="mt-1 text-sm">{tSales('cancelImpact.financialAttentionBannerBody')}</p>
+        </Alert>
+      ) : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
+
+      {needsProductionSetup ? (
+        <Alert variant="info">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="font-medium">{tSales('orderAcceptedSetup')}</p>
+            <Link href={`/sales-orders/${params.id}/production-setup`}>
+              <Button size="sm">{tSales('prepareProduction')}</Button>
+            </Link>
+          </div>
+        </Alert>
+      ) : null}
+
+      {showWorkerAssignment ? (
+        <Alert variant="info">
+          <p className="font-medium">{tSales('orderSetup.workerAssignmentRequired')}</p>
+          <p className="mt-1 text-sm text-text-secondary">
+            {tSales('orderSetup.workerAssignmentHint')}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href={`/sales-orders/${params.id}/production-setup`}>
+              <Button size="sm" variant="secondary">
+                {tSales('orderSetup.viewSetup')}
+              </Button>
+            </Link>
+            <Link href="/production">
+              <Button size="sm" variant="ghost">
+                {tSales('orderSetup.openProduction')}
+              </Button>
+            </Link>
+          </div>
+        </Alert>
+      ) : null}
 
       <div className="maher-stagger space-y-6">
       <div className="maher-stagger grid gap-3 sm:grid-cols-2">
@@ -471,7 +606,51 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
       </Card>
       </MotionSection>
 
-      <MotionSection className="maher-form-section" as="div">
+      <MotionSection className="maher-form-section space-y-3" as="div">
+      {order.manufacturingCosting ? (
+        <Card className="space-y-3 p-4">
+          <div>
+            <h2 className="text-base font-semibold">{tSales('mfgCostTitle')}</h2>
+            <p className="text-xs text-text-tertiary">{tSales('mfgCostSubtitle')}</p>
+          </div>
+          <p className="text-xs font-medium text-text-secondary">
+            {(() => {
+              const st = String(order.manufacturingCosting.status ?? '').toUpperCase();
+              if (st === 'FINAL') return tSales('mfgCostStatusFinal');
+              if (st === 'IN_PROGRESS') return tSales('mfgCostStatusInProgress');
+              if (st === 'INCOMPLETE') return tSales('mfgCostStatusIncomplete');
+              return tSales('mfgCostStatusEstimatedOnly');
+            })()}
+            {order.manufacturingCosting.incomplete ? ` · ${tSales('mfgCostIncomplete')}` : ''}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-text-secondary">{tSales('mfgCostEstimated')}</p>
+              <p className="text-lg font-semibold tabular-nums" dir="ltr">
+                {order.manufacturingCosting.estimatedTotal != null
+                  ? Number(order.manufacturingCosting.estimatedTotal).toFixed(2)
+                  : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-text-secondary">{tSales('mfgCostActual')}</p>
+              <p className="text-lg font-semibold tabular-nums" dir="ltr">
+                {order.manufacturingCosting.actualTotal != null
+                  ? Number(order.manufacturingCosting.actualTotal).toFixed(2)
+                  : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-text-secondary">{tSales('mfgCostVariance')}</p>
+              <p className="text-lg font-semibold tabular-nums" dir="ltr">
+                {order.manufacturingCosting.varianceCost != null
+                  ? Number(order.manufacturingCosting.varianceCost).toFixed(2)
+                  : '—'}
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
       <Card className="space-y-3 p-4">
         <div>
           <h2 className="text-base font-semibold">{tSales('manufacturingCost')}</h2>
@@ -511,6 +690,61 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         </MotionSection>
       ))}
 
+      {setupData && setupReleased ? (
+        <MotionSection className="maher-form-section" as="div">
+          <Card className="space-y-4 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-base font-semibold">{tSales('orderSetup.releasedSpec')}</h2>
+                <p className="text-sm text-text-secondary">{tSales('orderSetup.releasedSpecHint')}</p>
+              </div>
+              <Link href={`/sales-orders/${params.id}/production-setup`}>
+                <Button size="sm" variant="ghost">
+                  {tSales('orderSetup.viewSetup')}
+                </Button>
+              </Link>
+            </div>
+            <ul className="space-y-3">
+              {setupData.lines.map((line) => (
+                <li
+                  key={line.id}
+                  className="rounded-xl border border-border bg-[var(--maher-surface-muted)]/40 p-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="font-semibold text-text-primary">
+                      {line.manufacturingName ?? line.description ?? '—'}
+                    </p>
+                    <p className="text-sm tabular-nums text-text-secondary" dir="ltr">
+                      × {line.quantity}
+                    </p>
+                  </div>
+                  {line.workflow ? (
+                    <p className="mt-1 text-sm text-text-secondary">
+                      {localizedName(locale, line.workflow, line.workflow.code)}
+                    </p>
+                  ) : null}
+                  <p className="mt-1 text-xs text-text-tertiary" dir="ltr">
+                    {[
+                      line.orderDimensions?.width,
+                      line.orderDimensions?.height,
+                      line.orderDimensions?.depth,
+                    ]
+                      .map((v) => (v != null ? String(v) : null))
+                      .filter(Boolean)
+                      .join(' × ') || '—'}
+                  </p>
+                  <p className="mt-2 text-xs text-text-tertiary">
+                    {tSales('orderSetup.materialCount', {
+                      count: String(line.materials?.length ?? 0),
+                    })}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </MotionSection>
+      ) : null}
+
       <LinkedSection
         title={tSales('linkedProduction')}
         empty={tSales('noProductionYet')}
@@ -522,6 +756,86 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
           meta: po.progressPercent != null ? `${Number(po.progressPercent)}%` : undefined,
         }))}
       />
+
+      {commercial ? (
+        <MotionSection className="maher-form-section" as="div">
+          <Card title={ta('commercialSummary')}>
+            <div className="space-y-4">
+              <p className="text-sm text-text-secondary">
+                {commercial.commercialComplete
+                  ? ta('commercialComplete')
+                  : ta('commercialIncomplete')}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-text-tertiary">{ta('orderTotal')}</p>
+                  <p className="mt-1 font-semibold tabular-nums" dir="ltr">
+                    {Number(commercial.orderTotal).toFixed(2)}
+                  </p>
+                </div>
+                {order.commercialGrossDifference?.available &&
+                order.commercialGrossDifference.grossDifference != null ? (
+                  <div>
+                    <p className="text-xs text-text-tertiary">{ta('grossDifference')}</p>
+                    <p className="mt-1 font-semibold tabular-nums text-brand" dir="ltr">
+                      {Number(order.commercialGrossDifference.grossDifference).toFixed(2)}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              {requiredPriceLines.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-text-secondary">
+                    {ta('requiredPriceLines', { count: requiredPriceLines.length })}
+                  </p>
+                  {requiredPriceLines.map((line) => (
+                    <div
+                      key={line.id}
+                      className="rounded-xl border border-border bg-surface-secondary px-4 py-3 space-y-2"
+                    >
+                      <p className="text-sm font-medium">{line.description}</p>
+                      <Input
+                        label={ta('unitPrice')}
+                        type="number"
+                        value={
+                          priceDrafts[line.id] ??
+                          (line.unitPrice > 0 ? String(line.unitPrice) : '')
+                        }
+                        onChange={(e) =>
+                          setPriceDrafts((prev) => ({
+                            ...prev,
+                            [line.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  ))}
+                  <Button
+                    loading={confirmPricesMutation.isPending}
+                    onClick={() => {
+                      const lines = requiredPriceLines.map((line) => ({
+                        lineId: line.id,
+                        unitPrice: Number(
+                          priceDrafts[line.id] ??
+                            (line.unitPrice > 0 ? line.unitPrice : 0),
+                        ),
+                      }));
+                      if (lines.some((l) => !(l.unitPrice > 0))) {
+                        setError(ta('commercialPriceInvalid'));
+                        return;
+                      }
+                      confirmPricesMutation.mutate(lines);
+                    }}
+                  >
+                    {ta('confirmCommercialPrices')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </Card>
+        </MotionSection>
+      ) : null}
 
       <LinkedSection
         title={tSales('linkedInvoices')}
@@ -561,16 +875,6 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
       </div>
 
       <ConfirmDialog
-        open={confirmOpen}
-        title={tSales('confirm')}
-        description={tSales('confirmDescription')}
-        confirmLabel={tSales('confirm')}
-        loading={confirmMutation.isPending}
-        error={error}
-        onConfirm={() => confirmMutation.mutate()}
-        onClose={() => setConfirmOpen(false)}
-      />
-      <ConfirmDialog
         open={holdOpen}
         title={tSales('hold')}
         description={tSales('holdDescription')}
@@ -582,18 +886,14 @@ export default function SalesOrderDetailPage({ params }: { params: { id: string 
         onConfirm={(reason) => holdMutation.mutate(reason)}
         onClose={() => setHoldOpen(false)}
       />
-      <ConfirmDialog
+      <CancelImpactSheet
         open={cancelOpen}
-        title={tSales('cancelOrder')}
-        description={tSales('cancelDescription')}
-        confirmLabel={tSales('cancelOrder')}
-        danger
-        withReason
-        reasonLabel={tCommon('reason')}
-        loading={cancelMutation.isPending}
-        error={error}
-        onConfirm={(reason) => cancelMutation.mutate(reason)}
+        salesOrderId={params.id}
         onClose={() => setCancelOpen(false)}
+        onCancelled={({ financialAttention }) => {
+          setBanner(tSales('cancelledBanner'));
+          setFinanceAttention(financialAttention);
+        }}
       />
     </div>
   );

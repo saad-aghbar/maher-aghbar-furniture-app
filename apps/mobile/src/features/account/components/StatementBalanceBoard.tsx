@@ -13,7 +13,7 @@ type Props = {
 };
 
 /**
- * Outstanding-first SOA board — paid bar, invoiced/paid pills, PDF action.
+ * Amount due + Account credit heroes — never “Balance due −₪X”.
  */
 export function StatementBalanceBoard({
   summary,
@@ -102,40 +102,45 @@ export function StatementBalanceBoard({
             : { paddingLeft: theme.spacing.lg + 4 }),
         }}
       >
-        <View style={{ gap: 6 }}>
-          <AppText
-            variant="caption"
-            color="muted"
-            style={{
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              letterSpacing: locale === 'ar' ? 0 : 0.55,
-              fontSize: 11,
-              textAlign: isRTL ? 'right' : 'left',
-            }}
-          >
-            {t('mobile.account.outstanding')}
-          </AppText>
-          <AppText
-            weight={titleWeight}
-            dir="ltr"
-            style={{
-              fontSize: 34,
-              lineHeight: locale === 'ar' ? 52 : 42,
-              textAlign: isRTL ? 'right' : 'left',
-              color: colors.textPrimary,
-              fontVariant: ['tabular-nums'],
-            }}
-          >
-            {summary.outstandingLabel}
-          </AppText>
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            gap: theme.spacing.md,
+          }}
+        >
+          <HeroMoney
+            label={t('mobile.account.amountDue')}
+            value={summary.amountDueLabel}
+            titleWeight={titleWeight}
+            tone={summary.amountDue > 0 ? 'due' : 'neutral'}
+          />
+          <HeroMoney
+            label={t('mobile.account.accountCredit')}
+            value={summary.availableCreditLabel}
+            titleWeight={titleWeight}
+            tone={summary.availableCredit > 0 ? 'credit' : 'muted'}
+          />
+        </View>
+
+        {summary.hasOpening ? (
           <AppText
             variant="caption"
             color="muted"
             style={{ textAlign: isRTL ? 'right' : 'left' }}
           >
-            {t('mobile.account.asOf', { date: formatDate(summary.asOf) })}
+            {t('mobile.account.openingBalance', {
+              amount: summary.openingLabel,
+            })}
           </AppText>
-        </View>
+        ) : null}
+
+        <AppText
+          variant="caption"
+          color="muted"
+          style={{ textAlign: isRTL ? 'right' : 'left' }}
+        >
+          {t('mobile.account.asOf', { date: formatDate(summary.asOf) })}
+        </AppText>
 
         <View
           style={{
@@ -179,6 +184,72 @@ export function StatementBalanceBoard({
           />
         </View>
       </View>
+    </View>
+  );
+}
+
+function HeroMoney({
+  label,
+  value,
+  titleWeight,
+  tone = 'neutral',
+}: {
+  label: string;
+  value: string;
+  titleWeight: 'medium' | 'semibold';
+  tone?: 'due' | 'credit' | 'muted' | 'neutral';
+}) {
+  const { isRTL, locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const valueColor =
+    tone === 'credit'
+      ? colors.success
+      : tone === 'muted'
+        ? colors.textSecondary
+        : colors.textPrimary;
+  const borderColor = tone === 'credit' ? `${colors.success}55` : colors.border;
+  const bg =
+    tone === 'credit' ? colors.successSoft : colors.surfaceSecondary;
+
+  return (
+    <View
+      style={{
+        flex: 1,
+        minWidth: 0,
+        gap: 6,
+        padding: theme.spacing.md,
+        borderRadius: theme.radius.lg,
+        backgroundColor: bg,
+        borderWidth: 1,
+        borderColor,
+      }}
+    >
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'ar' ? 0 : 0.55,
+          fontSize: 11,
+          textAlign: isRTL ? 'right' : 'left',
+        }}
+      >
+        {label}
+      </AppText>
+      <AppText
+        weight={titleWeight}
+        dir="ltr"
+        numberOfLines={1}
+        style={{
+          fontSize: 22,
+          lineHeight: locale === 'ar' ? 34 : 28,
+          textAlign: isRTL ? 'right' : 'left',
+          color: valueColor,
+          fontVariant: ['tabular-nums'],
+        }}
+      >
+        {value}
+      </AppText>
     </View>
   );
 }

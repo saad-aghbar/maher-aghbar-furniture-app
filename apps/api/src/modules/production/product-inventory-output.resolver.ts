@@ -1,4 +1,5 @@
 import { InventoryItemClass, InventoryTracking } from '@maher/database';
+import { normalizePieceLabels } from './piece-labels';
 
 export type ProductStageOutputRow = {
   id: string;
@@ -13,6 +14,8 @@ export type ProductStageOutputRow = {
   outputNameEn: string;
   outputNameHe: string | null;
   outputQtyPerUnit: { toString(): string } | number | string;
+  expectedPieceCount?: number | null;
+  pieceLabels?: unknown;
   unit: string;
   defaultWarehouseId: string | null;
   inventoryItemId: string | null;
@@ -25,6 +28,7 @@ export type CompiledInventoryNode = {
   consumesRawMaterials: boolean;
   consumesSemiFinished: boolean;
   outputQtyPerUnit?: { toString(): string } | number | string | null;
+  expectedPieceCount?: number | null;
   outputNameAr?: string | null;
   outputNameEn?: string | null;
   outputNameHe?: string | null;
@@ -40,6 +44,8 @@ export type ResolvedStageOutput = {
   inventoryItemId: string | null;
   itemClass: InventoryItemClass | null;
   qtyPerUnit: number | null;
+  expectedPieceCount: number;
+  pieceLabels: Array<{ nameEn: string; nameAr: string; nameHe: string | null }>;
   unit: string | null;
   nameAr: string | null;
   nameEn: string | null;
@@ -104,6 +110,23 @@ export function resolveProductStageOutput(
   const productQty = num(product?.outputQtyPerUnit);
   const qtyPerUnit = nodeQty ?? productQty ?? (produces ? 1 : null);
 
+  const pieceFromNode =
+    node.expectedPieceCount != null && Number(node.expectedPieceCount) > 0
+      ? Math.floor(Number(node.expectedPieceCount))
+      : null;
+  const pieceFromProduct =
+    product?.expectedPieceCount != null && Number(product.expectedPieceCount) > 0
+      ? Math.floor(Number(product.expectedPieceCount))
+      : null;
+  const pieceLabels =
+    tracking === 'PRODUCES_SEMI_FINISHED' || tracking === 'PRODUCES_FINISHED'
+      ? normalizePieceLabels(product?.pieceLabels)
+      : [];
+  const expectedPieceCount =
+    pieceLabels.length > 0
+      ? pieceLabels.length
+      : (pieceFromNode ?? pieceFromProduct ?? 1);
+
   const nameEn = node.outputNameEn || product?.outputNameEn || null;
   const nameAr = node.outputNameAr || product?.outputNameAr || nameEn;
   const nameHe = node.outputNameHe || product?.outputNameHe || null;
@@ -118,6 +141,8 @@ export function resolveProductStageOutput(
     inventoryItemId: product?.inventoryItemId ?? null,
     itemClass,
     qtyPerUnit,
+    expectedPieceCount,
+    pieceLabels,
     unit: product?.unit || (produces ? 'pcs' : null),
     nameAr,
     nameEn,

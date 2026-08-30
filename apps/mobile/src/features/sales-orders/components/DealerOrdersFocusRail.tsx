@@ -22,10 +22,10 @@ type Props = {
   counts: DealerFocusCounts;
 };
 
-/** Four stages in a fixed 2×2 — drafts sit under All as a full-width tile. */
-const STAGE_ROWS: Exclude<StatusChipKey, 'all' | 'drafts'>[][] = [
-  ['pending', 'production'],
-  ['ready', 'delivered'],
+/** Dealer lifecycle focus board — All + drafts + 2×2 stage tiles including Shipped. */
+const STAGE_ROWS: Exclude<StatusChipKey, 'all' | 'drafts' | 'pending'>[][] = [
+  ['production', 'ready'],
+  ['shipped', 'delivered'],
 ];
 
 const TILE_SPRING = { damping: 18, stiffness: 220, mass: 0.85 } as const;
@@ -43,6 +43,7 @@ function accentFor(
   if (key === 'pending') return colors.warning;
   if (key === 'production') return colors.info;
   if (key === 'ready') return colors.brand;
+  if (key === 'shipped') return colors.warning;
   if (key === 'delivered') return colors.success;
   return colors.brand;
 }
@@ -62,6 +63,7 @@ function softWash(
     if (key === 'pending') return 'rgba(196,137,122,0.18)';
     if (key === 'production') return 'rgba(122,148,170,0.18)';
     if (key === 'ready') return 'rgba(168,144,108,0.22)';
+    if (key === 'shipped') return 'rgba(196,150,110,0.20)';
     if (key === 'delivered') return 'rgba(122,170,148,0.18)';
     return 'rgba(168,144,108,0.20)';
   }
@@ -69,6 +71,7 @@ function softWash(
   if (key === 'pending') return colors.warningSoft;
   if (key === 'production') return colors.infoSoft;
   if (key === 'ready') return colors.brandSoft;
+  if (key === 'shipped') return colors.warningSoft;
   if (key === 'delivered') return colors.successSoft;
   return colors.brandSoft;
 }
@@ -328,7 +331,17 @@ export function DealerOrdersFocusRail({ value, onChange, counts }: Props) {
               <FocusTile
                 key={key}
                 segment={key}
-                label={t(`mobile.orders.chips.${key}`)}
+                label={
+                  key === 'shipped'
+                    ? t('lifecycle.shipped')
+                    : key === 'production'
+                      ? t('lifecycle.tabs.inProduction')
+                      : key === 'ready'
+                        ? t('lifecycle.tabs.ready')
+                        : key === 'delivered'
+                          ? t('lifecycle.tabs.delivered')
+                          : t(`mobile.orders.chips.${key}`)
+                }
                 count={countFor(key, counts)}
                 focused={value === key}
                 onPress={() => select(key)}

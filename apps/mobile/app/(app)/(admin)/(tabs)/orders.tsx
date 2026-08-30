@@ -5,7 +5,7 @@ import { PermissionGate } from '@/navigation/PermissionGate';
 export default function AdminOrders() {
   const { user } = useAuth();
   return (
-    <PermissionGate user={user} require="sales-order.read">
+    <PermissionGate user={user} require="sales-order.read" mode="all">
       <OrdersListScreen variant="admin" />
     </PermissionGate>
   );

@@ -96,6 +96,7 @@ export function OrdersCompositionChrome({
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
+          blurOnSubmit={false}
         />
       )}
       {children}

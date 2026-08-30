@@ -3,13 +3,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
-import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
+import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
-import type { ProductionMaterialLine } from '../api';
+import type {
+  ProductionMaterialLine,
+  ProductionMaterialTransaction,
+} from '../api';
+import {
+  productionBoardShadow,
+  productionSectionLabelStyle,
+} from '../productionFloorStyle';
 
 type Props = {
   materials: ProductionMaterialLine[];
+  transactions?: ProductionMaterialTransaction[];
   returningItemId?: string | null;
   onReturn: (row: ProductionMaterialLine) => void;
 };
@@ -126,24 +134,7 @@ function MaterialRow({
             gap: theme.spacing.sm,
           }}
         >
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <Ionicons
-              name="cube-outline"
-              size={18}
-              color={canReturn ? colors.warning : colors.success}
-            />
-          </View>
+          <InventorySkuThumb uri={row.inventoryItem.imageUrl} size={36} rounded="full" />
           <View style={{ flex: 1, gap: 2 }}>
             <AppText variant="body" weight={titleWeight} numberOfLines={2}>
               {name}
@@ -197,69 +188,176 @@ function MaterialRow({
   );
 }
 
+function txTypeLabel(type: string, t: (key: string) => string): string {
+  if (type === 'PRODUCTION_ISSUE') return t('mobile.production.txIssue');
+  if (type === 'PRODUCTION_RETURN') return t('mobile.production.txReturn');
+  return type.replace(/_/g, ' ');
+}
+
 export function ProductionMaterialsCard({
   materials,
+  transactions = [],
   returningItemId,
   onReturn,
 }: Props) {
-  const { t, locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { t, locale, isRTL, formatDateTime } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const ledger = transactions
+    .filter((tx) => tx.type === 'PRODUCTION_ISSUE' || tx.type === 'PRODUCTION_RETURN')
+    .slice()
+    .reverse()
+    .slice(0, 12);
 
   return (
-    <SurfaceCard style={{ gap: theme.spacing.md }}>
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          gap: theme.spacing.sm,
-        }}
-      >
+    <View
+      style={{
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: colors.borderStrong,
+        backgroundColor: colors.surface,
+        overflow: 'hidden',
+        ...productionBoardShadow(colorScheme),
+      }}
+    >
+      <View style={{ height: 3, backgroundColor: colors.brand, opacity: 0.45 }} />
+      <View style={{ padding: theme.spacing.md, gap: theme.spacing.md }}>
         <View
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 18,
+            flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.brandSoft,
+            gap: theme.spacing.sm,
           }}
         >
-          <Ionicons name="layers-outline" size={18} color={colors.brand} />
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.brandSoft,
+            }}
+          >
+            <Ionicons name="layers-outline" size={18} color={colors.brand} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <AppText
+              variant="caption"
+              weight="semibold"
+              style={productionSectionLabelStyle(locale, colors.brand)}
+            >
+              {t('mobile.production.hubMaterialsEyebrow')}
+            </AppText>
+            <AppText variant="heading" weight={titleWeight}>
+              {t('mobile.production.materials')}
+            </AppText>
+          </View>
+          <View
+            style={{
+              minWidth: 28,
+              paddingHorizontal: theme.spacing.sm,
+              paddingVertical: theme.spacing.xs,
+              borderRadius: theme.radius.full,
+              backgroundColor: colors.surfaceSecondary,
+              borderWidth: 1,
+              borderColor: colors.border,
+              alignItems: 'center',
+            }}
+          >
+            <AppText variant="caption" weight="semibold" dir="ltr">
+              {materials.length}
+            </AppText>
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <AppText variant="heading" weight={titleWeight}>
-            {t('mobile.production.materials')}
-          </AppText>
-        </View>
-        <View
-          style={{
-            minWidth: 28,
-            paddingHorizontal: theme.spacing.sm,
-            paddingVertical: theme.spacing.xs,
-            borderRadius: theme.radius.full,
-            backgroundColor: colors.surfaceSecondary,
-            borderWidth: 1,
-            borderColor: colors.border,
-            alignItems: 'center',
-          }}
-        >
-          <AppText variant="caption" weight="semibold" dir="ltr">
-            {materials.length}
-          </AppText>
-        </View>
-      </View>
 
-      <View style={{ gap: theme.spacing.sm }}>
-        {materials.map((row) => (
-          <MaterialRow
-            key={row.inventoryItem.id}
-            row={row}
-            returning={returningItemId === row.inventoryItem.id}
-            onReturn={() => onReturn(row)}
-          />
-        ))}
+        {materials.length === 0 ? (
+          <View
+            style={{
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceSecondary,
+              padding: theme.spacing.md,
+              gap: theme.spacing.xs,
+            }}
+          >
+            <AppText variant="body" weight="medium">
+              {t('mobile.production.materialsEmptyTitle')}
+            </AppText>
+            <AppText variant="caption" color="muted">
+              {t('mobile.production.materialsEmptyBody')}
+            </AppText>
+          </View>
+        ) : (
+          <View style={{ gap: theme.spacing.sm }}>
+            {materials.map((row) => (
+              <MaterialRow
+                key={row.inventoryItem.id}
+                row={row}
+                returning={returningItemId === row.inventoryItem.id}
+                onReturn={() => onReturn(row)}
+              />
+            ))}
+          </View>
+        )}
+
+        <View style={{ gap: theme.spacing.sm }}>
+          <AppText
+            variant="caption"
+            weight="semibold"
+            style={productionSectionLabelStyle(locale, colors.textMuted)}
+          >
+            {t('mobile.production.materialsLedger')}
+          </AppText>
+          {ledger.length === 0 ? (
+            <AppText variant="caption" color="muted">
+              {t('mobile.production.materialsLedgerEmpty')}
+            </AppText>
+          ) : (
+            <View style={{ gap: theme.spacing.xs }}>
+              {ledger.map((tx) => {
+                const name = localizedName(locale, tx.inventoryItem);
+                const qty = Math.abs(Number(tx.quantity));
+                const issue = tx.type === 'PRODUCTION_ISSUE';
+                return (
+                  <View
+                    key={tx.id}
+                    style={{
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      alignItems: 'flex-start',
+                      gap: theme.spacing.sm,
+                      paddingVertical: theme.spacing.sm,
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                    }}
+                  >
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <AppText variant="caption" weight="semibold" numberOfLines={1}>
+                        {txTypeLabel(tx.type, t)}
+                        {' · '}
+                        {name}
+                      </AppText>
+                      <AppText variant="caption" color="muted" numberOfLines={1}>
+                        {tx.number}
+                        {tx.createdAt ? ` · ${formatDateTime(tx.createdAt)}` : ''}
+                      </AppText>
+                    </View>
+                    <AppText
+                      variant="caption"
+                      weight="semibold"
+                      dir="ltr"
+                      style={{ color: issue ? colors.warning : colors.success }}
+                    >
+                      {issue ? `−${qty}` : `+${qty}`}
+                    </AppText>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
       </View>
-    </SurfaceCard>
+    </View>
   );
 }

@@ -161,9 +161,38 @@ pnpm dev:mobile            # alias of mobile:start
   `EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:4000`
   then restart Metro (`pnpm mobile:start`).
 - Isolated guest Wi‑Fi / client isolation: phone cannot see the Mac. Use the same LAN, or `npx expo start --tunnel` from `apps/mobile` (slower).
-- A **network error** on login almost always means the API is not running, or the phone cannot reach port 4000 (wrong Wi‑Fi, stale IP, or macOS firewall).
 
 Reload JS without restarting Metro: press `r` in the Metro terminal.
+
+### “Network error. Check API URL and connection.”
+
+You need **two** processes: Metro (mobile) **and** the API. Expo alone is not enough.
+
+1. **Check the API is up**
+   ```bash
+   curl -sS http://localhost:4000/api/v1/health
+   ```
+   Expect `{"status":"ok",...}`. If it fails, start the API (Postgres + Redis must already be running):
+   ```bash
+   pnpm dev:api
+   ```
+
+2. **Keep Expo running** (separate terminal)
+   ```bash
+   pnpm mobile:start
+   ```
+
+3. **Phone / Expo Go** — phone and Mac on the same Wi‑Fi. `localhost` in `apps/mobile/.env` is fine for the simulator; on a real phone the app overrides it to the Expo LAN host (e.g. `http://192.168.1.24:4000`).
+
+4. **If auto-detect fails** — pin your Mac IP in `apps/mobile/.env`, then restart Expo:
+   ```bash
+   EXPO_PUBLIC_API_BASE_URL=http://YOUR_MAC_IP:4000
+   ```
+   Find the IP: `ipconfig getifaddr en0`
+
+5. **Wi‑Fi changed / new IP** — restart Expo (`pnpm mobile:start`) so it picks up the new host.
+
+Also check: macOS firewall blocking port 4000, guest/isolated Wi‑Fi, or a stale Metro session after the Mac IP changed.
 
 ---
 

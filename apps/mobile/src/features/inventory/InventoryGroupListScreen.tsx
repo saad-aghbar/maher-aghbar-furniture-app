@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
@@ -16,15 +16,18 @@ import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import { openInventoryLabelPdf, type InventoryCategoryGroup } from './api';
+import { openInventoryLabelPdf, openInventoryQrLabelPdf, type InventoryCategoryGroup } from './api';
 import { AddStockSheet, type StockMoveMode } from './components/AddStockSheet';
 import { EditInventoryItemSheet } from './components/EditInventoryItemSheet';
 import { InventoryMaterialCard } from './components/InventoryMaterialCard';
+import { InventoryQrSheet, qrItemFromCard, type InventoryQrItem } from './components/InventoryQrSheet';
 import { InventoryListSkeleton } from './components/InventorySkeleton';
+import { toGoodsReceiptArgs } from './stockMoveSubmit';
 import {
   flattenInventoryItemPages,
   useInventoryItemsInfiniteQuery,
   useIssueStockMutation,
+  useReceiveAgainstPoMutation,
   useReceiveStockMutation,
   useUpdateInventoryItemMutation,
   useWarehousesQuery,
@@ -64,6 +67,8 @@ export function InventoryGroupListScreen({
   const [q, setQ] = useState('');
   const [move, setMove] = useState<MoveTarget | null>(null);
   const [editItem, setEditItem] = useState<InventoryItemCardModel | null>(null);
+  const [qrItem, setQrItem] = useState<InventoryQrItem | null>(null);
+  const pendingPrintRef = useRef<{ id: string; sku: string } | null>(null);
 
   useEffect(() => {
     const id = setTimeout(() => setQ(searchInput.trim()), 300);
@@ -75,6 +80,7 @@ export function InventoryGroupListScreen({
     allowed,
   );
   const receiveMutation = useReceiveStockMutation();
+  const receivePoMutation = useReceiveAgainstPoMutation();
   const issueMutation = useIssueStockMutation();
   const updateItemMutation = useUpdateInventoryItemMutation();
   const warehousesQuery = useWarehousesQuery(Boolean(move) && (canReceive || canIssue));
@@ -86,10 +92,11 @@ export function InventoryGroupListScreen({
 
   const title = t(`mobile.inventory.groups.${categoryGroup}`);
   const movePending =
-    (move?.mode === 'receive' && receiveMutation.isPending) ||
+    (move?.mode === 'receive' &&
+      (receiveMutation.isPending || receivePoMutation.isPending)) ||
     (move?.mode === 'issue' && issueMutation.isPending);
 
-  function openLabelPdf(item: InventoryItemCardModel) {
+  function openLabelPdf(item: { id: string; sku: string }) {
     void (async () => {
       const opts = await pickPdfOptions();
       if (!opts) return;
@@ -106,6 +113,37 @@ export function InventoryGroupListScreen({
         });
       }
     })();
+  }
+
+  function openQrLabelPdf(item: { id: string; sku: string }) {
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openInventoryQrLabelPdf(item.id, item.sku, opts);
+      } catch {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: toastCopy(
+            t('mobile.inventory.labelPdfFailedTitle'),
+            t('mobile.inventory.labelPdfFailedBody'),
+          ),
+        });
+      }
+    })();
+  }
+
+  /** Close QR Modal first — iOS will no-op a second Modal while QR is open. */
+  function printLabelAfterQrCloses(item: { id: string; sku: string }) {
+    pendingPrintRef.current = { id: item.id, sku: item.sku };
+    setQrItem(null);
+  }
+
+  function flushPendingPrint() {
+    const next = pendingPrintRef.current;
+    pendingPrintRef.current = null;
+    if (next) openQrLabelPdf(next);
   }
 
   if (!allowed) {
@@ -224,6 +262,7 @@ export function InventoryGroupListScreen({
             onIssue={() => setMove({ mode: 'issue', item })}
             onEdit={() => setEditItem(item)}
             onLabelPdf={() => openLabelPdf(item)}
+            onQrCode={() => setQrItem(qrItemFromCard(item))}
           />
         )}
       />
@@ -242,6 +281,11 @@ export function InventoryGroupListScreen({
                 category: move.item.category,
                 itemClass: move.item.itemClass,
                 unit: move.item.unit,
+                imageUrl: move.item.imageUrl,
+                materialType: move.item.materialType,
+                onHand: move.item.onHand,
+                reservedQty: move.item.reservedQty,
+                availableQty: move.item.freeQty,
                 balances: move.item.balances,
               }
             : null
@@ -249,6 +293,32 @@ export function InventoryGroupListScreen({
         loading={movePending}
         onSubmit={(input) => {
           if (!move) return;
+          const po = move.mode === 'receive' ? toGoodsReceiptArgs(input) : null;
+          const onSuccess = () => {
+            void haptics.confirmMedium();
+            setMove(null);
+            showToast({
+              variant: 'success',
+              message:
+                move.mode === 'issue'
+                  ? t('mobile.inventory.issueStockSuccess')
+                  : t('mobile.inventory.receiveStockSuccess'),
+            });
+          };
+          const onError = () => {
+            void haptics.error();
+            showToast({
+              variant: 'error',
+              message:
+                move.mode === 'issue'
+                  ? t('mobile.inventory.issueStockFailed')
+                  : t('mobile.inventory.receiveStockFailed'),
+            });
+          };
+          if (po) {
+            receivePoMutation.mutate(po, { onSuccess, onError });
+            return;
+          }
           const body = {
             inventoryItemId: input.inventoryItemId,
             warehouseId: input.warehouseId,
@@ -257,29 +327,7 @@ export function InventoryGroupListScreen({
             idempotencyKey: `mobile-${move.mode}-${input.inventoryItemId}-${Date.now()}`,
           };
           const mutation = move.mode === 'issue' ? issueMutation : receiveMutation;
-          mutation.mutate(body, {
-            onSuccess: () => {
-              void haptics.confirmMedium();
-              setMove(null);
-              showToast({
-                variant: 'success',
-                message:
-                  move.mode === 'issue'
-                    ? t('mobile.inventory.issueStockSuccess')
-                    : t('mobile.inventory.receiveStockSuccess'),
-              });
-            },
-            onError: () => {
-              void haptics.error();
-              showToast({
-                variant: 'error',
-                message:
-                  move.mode === 'issue'
-                    ? t('mobile.inventory.issueStockFailed')
-                    : t('mobile.inventory.receiveStockFailed'),
-              });
-            },
-          });
+          mutation.mutate(body, { onSuccess, onError });
         }}
       />
 
@@ -312,6 +360,13 @@ export function InventoryGroupListScreen({
             },
           );
         }}
+      />
+      <InventoryQrSheet
+        open={Boolean(qrItem)}
+        item={qrItem}
+        onClose={() => setQrItem(null)}
+        onClosed={flushPendingPrint}
+        onPrint={qrItem ? () => printLabelAfterQrCloses(qrItem) : undefined}
       />
       {pdfDownloadSheet}
     </AppScreen>

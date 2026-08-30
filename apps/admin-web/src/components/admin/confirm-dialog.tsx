@@ -12,8 +12,10 @@ interface ConfirmDialogProps {
   danger?: boolean;
   loading?: boolean;
   error?: string | null;
-  /** When set, shows an optional reason field passed to onConfirm. */
+  /** When set, shows a reason field passed to onConfirm. */
   withReason?: boolean;
+  /** When set with withReason, confirm stays disabled until reason is non-empty. */
+  reasonRequired?: boolean;
   reasonLabel?: string;
   reasonPlaceholder?: string;
   onConfirm: (reason?: string) => void;
@@ -29,6 +31,7 @@ export function ConfirmDialog({
   loading,
   error,
   withReason,
+  reasonRequired,
   reasonLabel,
   reasonPlaceholder,
   onConfirm,
@@ -36,6 +39,8 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const t = useTranslations('common');
   const [reason, setReason] = useState('');
+  const trimmedReason = reason.trim();
+  const reasonMissing = Boolean(withReason && reasonRequired && !trimmedReason);
 
   useEffect(() => {
     if (!open) setReason('');
@@ -55,7 +60,8 @@ export function ConfirmDialog({
           <Button
             variant={danger ? 'danger' : 'primary'}
             loading={loading}
-            onClick={() => onConfirm(withReason ? reason.trim() || undefined : undefined)}
+            disabled={reasonMissing}
+            onClick={() => onConfirm(withReason ? trimmedReason || undefined : undefined)}
           >
             {confirmLabel ?? t('confirm')}
           </Button>

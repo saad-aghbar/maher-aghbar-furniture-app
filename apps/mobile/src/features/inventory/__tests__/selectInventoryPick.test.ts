@@ -6,6 +6,7 @@ import {
   isTransferableFromWarehouse,
   selectInventoryPickRow,
   showsRawCategoryRail,
+  transferableQty,
   warehouseScopedQty,
 } from '../selectInventoryPick';
 
@@ -123,6 +124,45 @@ describe('warehouse-scoped transfer eligibility', () => {
     expect(warehouseScopedQty(chair, 'semi-b').freeQty).toBe(12);
   });
 
+  it('allows transferring reserved finished goods by on-hand, not free qty', () => {
+    const reservedFg = item({
+      id: 'fg-1',
+      sku: 'FG-1',
+      itemClass: 'FINISHED_GOOD',
+      balances: [
+        {
+          id: 'b1',
+          warehouseId: 'fin-a',
+          availableQty: 3,
+          reservedQty: 3,
+          freeQty: 0,
+          onHandQty: 3,
+        },
+      ],
+    });
+    expect(transferableQty(reservedFg, 'fin-a')).toBe(3);
+    expect(isTransferableFromWarehouse(reservedFg, 'fin-a')).toBe(true);
+    expect(transferableQty(reservedFg, 'fin-b')).toBe(0);
+  });
+
+  it('keeps raw materials limited to free qty', () => {
+    const reservedRaw = item({
+      id: 'raw-1',
+      sku: 'RAW-1',
+      itemClass: 'RAW_MATERIAL',
+      balances: [
+        {
+          id: 'b1',
+          warehouseId: 'raw-a',
+          availableQty: 10,
+          reservedQty: 8,
+          freeQty: 2,
+        },
+      ],
+    });
+    expect(transferableQty(reservedRaw, 'raw-a')).toBe(2);
+  });
+
   it('hides zero-availability items from transfer in warehouse A', () => {
     const transferable = filterPickableItems([milano, chair, lumber], {
       warehouseId: 'semi-a',
@@ -156,7 +196,7 @@ describe('selectInventoryPickRow', () => {
         nameAr: 'كنبة ميلانو',
         itemClass: 'FINISHED_GOOD',
         unit: 'pcs',
-        product: { id: 'prod-id', sku: 'UAT-SOFA-A', nameEn: 'Milano Sofa A', nameAr: 'كنبة ميلانو أ' },
+        product: { id: 'prod-id', sku: 'UAT-SOFA-A', nameEn: 'Milano Sofa A', nameAr: 'كنبة ميلانو أ', imageUrl: 'https://cdn.example/sofa.jpg' },
         balances: [
           { id: 'bal-id', warehouseId: 'fin-a', availableQty: 4, reservedQty: 1, freeQty: 3 },
         ],
@@ -168,6 +208,8 @@ describe('selectInventoryPickRow', () => {
     expect(row.sku).toBe('UAT-SOFA-A-FG');
     expect(row.unit).toBe('pcs');
     expect(row.freeQty).toBe(3);
+    expect(row.displayQty).toBe(4);
+    expect(row.imageUrl).toBe('https://cdn.example/sofa.jpg');
     expect(row.productName).toBe('Milano Sofa A');
     expect(row.productName).not.toContain('prod-id');
     expect(row.sku).not.toMatch(/^[0-9a-f-]{36}$/i);

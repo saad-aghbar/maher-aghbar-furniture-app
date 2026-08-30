@@ -103,20 +103,6 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
     },
   });
 
-  const acceptMutation = useMutation({
-    mutationFn: () =>
-      apiFetch(`/api/v1/quotations/${params.id}/accept`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      }),
-    onSuccess: () => {
-      setMessage(t('accepted'));
-      queryClient.invalidateQueries({ queryKey: ['quotation', params.id] });
-      queryClient.invalidateQueries({ queryKey: ['quotations'] });
-      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
-    },
-  });
-
   const rejectMutation = useMutation({
     mutationFn: () =>
       apiFetch(`/api/v1/quotations/${params.id}/reject`, {
@@ -137,8 +123,7 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
     );
   }
 
-  const canAccept = data.status === 'SENT';
-  const canReject = ['INTERNAL_REVIEW', 'SENT', 'APPROVED'].includes(data.status);
+  const canReject = ['INTERNAL_REVIEW', 'APPROVED'].includes(data.status);
   const customerLabel = data.customer
     ? localizedName(locale, data.customer, data.customer.name)
     : '—';
@@ -154,7 +139,7 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
       {message ? <Alert variant="success">{message}</Alert> : null}
       {data.pendingApproverRole ? (
         <Alert variant="info">
-          {tc('pendingApproval')}: {data.pendingApproverRole}
+          {tc('pendingApproval')}
         </Alert>
       ) : null}
       <div className="maher-stagger space-y-6">
@@ -211,21 +196,6 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
               </dd>
             </div>
           ) : null}
-          {data.approvalChain?.length ? (
-            <div className="sm:col-span-2">
-              <dt className="text-sm text-[var(--maher-text-secondary)]">{tc('approvalChain')}</dt>
-              <dd className="font-medium">
-                {data.approvalChain.map((role) => {
-                  const done = data.completedApprovalSteps?.includes(role);
-                  return (
-                    <span key={role} className="me-2 inline-block">
-                      {done ? '✓' : '○'} {role}
-                    </span>
-                  );
-                })}
-              </dd>
-            </div>
-          ) : null}
         </dl>
         <div className="maher-detail-sticky-actions mt-6 flex flex-wrap gap-2">
           <Button
@@ -247,18 +217,12 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
           ) : null}
           {data.status === 'INTERNAL_REVIEW' ? (
             <Button onClick={() => approveMutation.mutate()} loading={approveMutation.isPending}>
-              {t('approve')}
-              {data.pendingApproverRole ? ` (${data.pendingApproverRole})` : ''}
+              {t('approveQuotation')}
             </Button>
           ) : null}
           {data.status === 'APPROVED' ? (
             <Button onClick={() => sendMutation.mutate()} loading={sendMutation.isPending}>
               {t('send')}
-            </Button>
-          ) : null}
-          {canAccept ? (
-            <Button onClick={() => acceptMutation.mutate()} loading={acceptMutation.isPending}>
-              {t('accept')}
             </Button>
           ) : null}
           {canReject ? (

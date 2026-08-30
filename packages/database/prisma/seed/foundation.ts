@@ -171,6 +171,7 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
     requiresInspection?: boolean;
     dependsOnCodes: string[];
     responsibleDepartment: string;
+    executionKind?: 'PRODUCTION' | 'QUALITY' | 'LOGISTICS';
   }> = [
     {
       code: 'MATERIAL_PREP',
@@ -220,6 +221,7 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
       requiresInspection: true,
       dependsOnCodes: ['ASSEMBLY'],
       responsibleDepartment: 'QC',
+      executionKind: 'QUALITY',
     },
     {
       code: 'PACKAGING',
@@ -228,6 +230,7 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
       sortOrder: 7,
       dependsOnCodes: ['INSPECTION'],
       responsibleDepartment: 'PACK',
+      executionKind: 'PRODUCTION',
     },
     {
       code: 'DELIVERY',
@@ -236,6 +239,7 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
       sortOrder: 8,
       dependsOnCodes: ['PACKAGING'],
       responsibleDepartment: 'DEL',
+      executionKind: 'LOGISTICS',
     },
   ];
   for (const s of stages) {
@@ -250,6 +254,7 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
         dependsOnCodes: s.dependsOnCodes,
         requiresInspection: s.requiresInspection ?? false,
         responsibleDepartment: s.responsibleDepartment,
+        executionKind: s.executionKind ?? 'PRODUCTION',
       },
       create: {
         code: s.code,
@@ -260,6 +265,7 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
         dependsOnCodes: s.dependsOnCodes,
         requiresInspection: s.requiresInspection ?? false,
         responsibleDepartment: s.responsibleDepartment,
+        executionKind: s.executionKind ?? 'PRODUCTION',
         requiresPhotos: true,
       },
     });
@@ -310,8 +316,8 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
   });
   await prisma.systemSetting.upsert({
     where: { key: 'auto_confirm_so_on_accept' },
-    update: { value: true },
-    create: { key: 'auto_confirm_so_on_accept', value: true },
+    update: { value: false },
+    create: { key: 'auto_confirm_so_on_accept', value: false },
   });
   await prisma.systemSetting.upsert({
     where: { key: 'quotation_approval' },
@@ -321,23 +327,57 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
 
   await prisma.qualityChecklistTemplate.upsert({
     where: { code: 'FINAL_QC' },
-    update: {},
+    update: {
+      nameAr: 'فحص نهائي',
+      nameEn: 'Final inspection',
+      stageCode: 'INSPECTION',
+      isActive: true,
+    },
     create: {
       code: 'FINAL_QC',
       nameAr: 'فحص نهائي',
       nameEn: 'Final inspection',
       stageCode: 'INSPECTION',
-      items: {
-        create: [
-          { code: 'DIM', labelAr: 'المقاسات مطابقة', labelEn: 'Dimensions match', sortOrder: 1 },
-          { code: 'FRAME', labelAr: 'ثبات الهيكل', labelEn: 'Frame stability', sortOrder: 2 },
-          { code: 'FABRIC', labelAr: 'لون ونوع القماش', labelEn: 'Fabric type/color', sortOrder: 3 },
-          { code: 'FINISH', labelAr: 'جودة التشطيب', labelEn: 'Finish quality', sortOrder: 4 },
-          { code: 'CLEAN', labelAr: 'نظافة القطعة', labelEn: 'Cleanliness', sortOrder: 5 },
-        ],
-      },
     },
   });
+  const finalQc = await prisma.qualityChecklistTemplate.findUniqueOrThrow({
+    where: { code: 'FINAL_QC' },
+  });
+  const furnitureChecks = [
+    { code: 'DIM', labelAr: 'المقاسات مطابقة', labelEn: 'Dimensions match', sortOrder: 1 },
+    { code: 'FRAME', labelAr: 'ثبات الهيكل', labelEn: 'Structure / stability', sortOrder: 2 },
+    { code: 'WOOD', labelAr: 'تشطيب الخشب', labelEn: 'Wood / carpentry finish', sortOrder: 3 },
+    { code: 'PAINT', labelAr: 'الطلاء والتشطيب', labelEn: 'Paint / finish', sortOrder: 4 },
+    { code: 'FABRIC', labelAr: 'القماش والتنجيد', labelEn: 'Fabric / upholstery', sortOrder: 5 },
+    { code: 'STITCH', labelAr: 'الخياطة', labelEn: 'Stitching', sortOrder: 6 },
+    { code: 'FOAM', labelAr: 'الإسفنج والراحة', labelEn: 'Foam / comfort', sortOrder: 7 },
+    { code: 'ASSEMBLY', labelAr: 'التجميع', labelEn: 'Assembly', sortOrder: 8 },
+    { code: 'HARDWARE', labelAr: 'الملحقات', labelEn: 'Hardware', sortOrder: 9 },
+    { code: 'COLOR', labelAr: 'مطابقة اللون والموديل', labelEn: 'Color / model match', sortOrder: 10 },
+    { code: 'QTY', labelAr: 'الكمية والمكونات', labelEn: 'Quantity / components', sortOrder: 11 },
+    { code: 'DAMAGE', labelAr: 'أضرار ظاهرة', labelEn: 'Visible damage', sortOrder: 12 },
+    { code: 'CLEAN', labelAr: 'نظافة القطعة', labelEn: 'Cleanliness', sortOrder: 13 },
+    { code: 'SPEC', labelAr: 'مطابقة المواصفات', labelEn: 'Order / custom specification match', sortOrder: 14 },
+  ];
+  for (const item of furnitureChecks) {
+    const existing = await prisma.qualityChecklistItem.findFirst({
+      where: { templateId: finalQc.id, code: item.code },
+    });
+    if (existing) {
+      await prisma.qualityChecklistItem.update({
+        where: { id: existing.id },
+        data: {
+          labelAr: item.labelAr,
+          labelEn: item.labelEn,
+          sortOrder: item.sortOrder,
+        },
+      });
+    } else {
+      await prisma.qualityChecklistItem.create({
+        data: { templateId: finalQc.id, ...item },
+      });
+    }
+  }
 
   const templates = [
     {
@@ -349,6 +389,36 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
       bodyAr: 'تم إرسال عرض السعر {{number}} بمبلغ {{total}} شيكل.',
       bodyEn: 'Quotation {{number}} for {{total}} ILS has been sent.',
       bodyHe: 'הצעת מחיר {{number}} בסך {{total}} נשלחה.',
+    },
+    {
+      code: 'QUOTE_ACCEPTED',
+      channel: 'IN_APP',
+      subjectAr: 'قبل التاجر عرض السعر',
+      subjectEn: 'Dealer accepted quotation',
+      subjectHe: 'הסוחר קיבל את הצעת המחיר',
+      bodyAr: 'قبل التاجر عرض السعر {{number}} بمبلغ {{total}}.',
+      bodyEn: 'The dealer accepted quotation {{number}} for {{total}}.',
+      bodyHe: 'הסוחר קיבל את הצעת המחיר {{number}} בסך {{total}}.',
+    },
+    {
+      code: 'QUOTE_REJECTED',
+      channel: 'IN_APP',
+      subjectAr: 'رفض التاجر عرض السعر',
+      subjectEn: 'Dealer rejected quotation',
+      subjectHe: 'הסוחר דחה את הצעת המחיר',
+      bodyAr: 'رفض التاجر عرض السعر {{number}}.',
+      bodyEn: 'The dealer rejected quotation {{number}}.',
+      bodyHe: 'הסוחר דחה את הצעת המחיר {{number}}.',
+    },
+    {
+      code: 'QUOTE_REVISION_REQUESTED',
+      channel: 'IN_APP',
+      subjectAr: 'طلب التاجر تعديل العرض',
+      subjectEn: 'Dealer requested quotation revision',
+      subjectHe: 'הסוחר ביקש תיקון להצעת המחיר',
+      bodyAr: 'طلب التاجر تعديل عرض السعر {{number}}.',
+      bodyEn: 'The dealer requested a revision of quotation {{number}}.',
+      bodyHe: 'הסוחר ביקש לתקן את הצעת המחיר {{number}}.',
     },
     {
       code: 'ORDER_CONFIRMED',
@@ -417,6 +487,26 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
       bodyHe: 'בקשת הזמנה {{number}} הוגשה על ידי {{customerName}}.',
     },
     {
+      code: 'ORDER_NEEDS_INFORMATION',
+      channel: 'IN_APP',
+      subjectAr: 'الطلب يحتاج معلومات',
+      subjectEn: 'Order needs information',
+      subjectHe: 'ההזמנה דורשת מידע',
+      bodyAr: 'طلبك {{number}} يحتاج معلومات إضافية: {{reason}}',
+      bodyEn: 'Your order {{number}} needs more information: {{reason}}',
+      bodyHe: 'ההזמנה {{number}} דורשת מידע נוסף: {{reason}}',
+    },
+    {
+      code: 'ORDER_PRODUCTION_SETUP',
+      channel: 'IN_APP',
+      subjectAr: 'الطلب مقبول — إعداد الإنتاج',
+      subjectEn: 'Order accepted — production setup',
+      subjectHe: 'ההזמנה התקבלה — הכנת ייצור',
+      bodyAr: 'تم قبول الطلبية {{number}}. المصنع يعد الإنتاج.',
+      bodyEn: 'Sales order {{number}} was accepted. The factory will prepare production.',
+      bodyHe: 'הזמנת מכירה {{number}} התקבלה. המפעל יכין את הייצור.',
+    },
+    {
       code: 'AI_DRAFT_READY',
       channel: 'IN_APP',
       subjectAr: 'مسودة ذكاء اصطناعي جاهزة',
@@ -449,12 +539,12 @@ export async function seedFoundation(prisma: PrismaClient): Promise<void> {
     {
       code: 'DELIVERY_APPROACHING',
       channel: 'IN_APP',
-      subjectAr: 'التسليم قريب',
-      subjectEn: 'Delivery approaching',
-      subjectHe: 'משלוח מתקרב',
-      bodyAr: 'التسليم {{number}} أصبح جاهزاً / في الطريق.',
-      bodyEn: 'Delivery {{number}} is ready / out for delivery.',
-      bodyHe: 'משלוח {{number}} מוכן / בדרך.',
+      subjectAr: 'الطلب غادر المصنع',
+      subjectEn: 'Order left the factory',
+      subjectHe: 'ההזמנה יצאה מהמפעל',
+      bodyAr: 'الطلب {{number}} غادر المصنع وهو في الطريق إليك.',
+      bodyEn: 'Order {{number}} has left the factory and is on its way to you.',
+      bodyHe: 'הזמנה {{number}} יצאה מהמפעל ובדרך אליך.',
     },
     {
       code: 'RETURN_APPROVED',

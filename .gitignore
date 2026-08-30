@@ -43,3 +43,8 @@ playwright-report
 # Local database dumps (demo reset / developer backups)
 backups/
 
+# Local walkthrough screenshots and UAT dump artifacts
+.walk-shots/
+tmp/
+tmp-*
+

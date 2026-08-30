@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
@@ -8,8 +8,10 @@ import { localizedName } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { listWarehouses } from '@/api/modules/inventory';
+import type { MaterialDemandRow } from '@/api/modules/purchasing';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -18,6 +20,7 @@ import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import { useMaterialDemandQuery } from '@/features/inventory/query';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
@@ -29,6 +32,7 @@ import { CreateSupplierSheet } from './components/CreateSupplierSheet';
 import { PurchaseOrderBoardCard } from './components/PurchaseOrderBoardCard';
 import { PurchaseRequestBoardCard } from './components/PurchaseRequestBoardCard';
 import { PurchasingFilterTriggers, PURCHASING_CHROME_CONTROL_H, PURCHASING_CHROME_GAP } from './components/PurchasingFilterTriggers';
+import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { PurchasingHeroActions } from './components/PurchasingHeroActions';
 import { PurchasingStatusFilterSheet } from './components/PurchasingStatusFilterSheet';
 import { PurchasingSupplierSheet } from './components/PurchasingSupplierSheet';
@@ -54,7 +58,17 @@ import {
   selectPurchaseCard,
   selectPurchaseRequestCard,
   selectSupplierInvoiceCard,
+  type DraftMaterialLine,
 } from './selectPurchase';
+
+type NeedsCartEntry = {
+  inventoryItemId: string;
+  sku: string;
+  description: string;
+  unit: string;
+  stillNeeded: number;
+  standardCost: number;
+};
 
 function PurchasingTitle({
   backFallback,
@@ -110,7 +124,22 @@ export function PurchasingHubScreen() {
   const canCreatePr = can(user, 'purchase-request.create');
   const canManageSupplier = can(user, 'supplier.manage');
 
-  const initialTab: PurchasingHubTab = canPo ? 'orders' : canPr ? 'requests' : 'invoices';
+  const routeParams = useLocalSearchParams<{
+    tab?: string;
+    focus?: string;
+    needs?: string;
+    arriving?: string;
+    late?: string;
+  }>();
+
+  const initialTab: PurchasingHubTab = (() => {
+    const raw = String(routeParams.tab ?? '').trim();
+    if (raw === 'orders' || raw === 'requests' || raw === 'invoices') return raw;
+    if (routeParams.needs || routeParams.arriving || routeParams.late === 'true' || routeParams.focus === 'needs') {
+      return canPo ? 'orders' : canPr ? 'requests' : 'invoices';
+    }
+    return canPo ? 'orders' : canPr ? 'requests' : 'invoices';
+  })();
   const [tab, setTab] = useState<PurchasingHubTab>(initialTab);
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
@@ -121,8 +150,12 @@ export function PurchasingHubScreen() {
   const [supplierSheetOpen, setSupplierSheetOpen] = useState(false);
   const [statusSheetOpen, setStatusSheetOpen] = useState(false);
   const [createPoOpen, setCreatePoOpen] = useState(false);
+  const [createPoInitialLines, setCreatePoInitialLines] = useState<DraftMaterialLine[] | undefined>();
   const [createPrOpen, setCreatePrOpen] = useState(false);
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [needsCart, setNeedsCart] = useState<Record<string, NeedsCartEntry>>({});
 
   useEffect(() => {
     const id = setTimeout(() => setQ(search.trim()), 300);
@@ -137,6 +170,55 @@ export function PurchasingHubScreen() {
     q: q || undefined,
     status: status === 'ALL' ? undefined : status,
     supplierId: supplierId || undefined,
+    dateFrom: dateFrom.trim() || undefined,
+    dateTo: dateTo.trim() || undefined,
+  };
+
+  const needsCartCount = Object.keys(needsCart).length;
+  const needsCartLines = useMemo((): DraftMaterialLine[] => {
+    return Object.values(needsCart).map((entry) => ({
+      key: `need-${entry.inventoryItemId}`,
+      inventoryItemId: entry.inventoryItemId,
+      description: entry.description,
+      unit: entry.unit,
+      quantity: String(entry.stillNeeded),
+      unitCost: String(entry.standardCost || 0),
+    }));
+  }, [needsCart]);
+
+  const addNeedToCart = (row: MaterialDemandRow) => {
+    const stillNeeded = Number(row.stillNeeded);
+    if (!(stillNeeded > 0)) return;
+    const description =
+      locale === 'ar'
+        ? row.nameAr || row.nameEn || row.sku
+        : locale === 'he'
+          ? row.nameHe || row.nameEn || row.nameAr || row.sku
+          : row.nameEn || row.nameAr || row.sku;
+    const cost = Number(row.standardCost);
+    void haptics.selection();
+    setNeedsCart((prev) => {
+      const existing = prev[row.inventoryItemId];
+      const nextQty = (existing?.stillNeeded ?? 0) + stillNeeded;
+      return {
+        ...prev,
+        [row.inventoryItemId]: {
+          inventoryItemId: row.inventoryItemId,
+          sku: row.sku,
+          description,
+          unit: row.unit || 'pcs',
+          stillNeeded: nextQty,
+          standardCost: Number.isFinite(cost) ? cost : existing?.standardCost ?? 0,
+        },
+      };
+    });
+  };
+
+  const openCreateFromNeeds = () => {
+    if (needsCartLines.length === 0) return;
+    void haptics.confirmLight();
+    setCreatePoInitialLines(needsCartLines);
+    setCreatePoOpen(true);
   };
 
   const poQuery = usePurchaseOrdersInfiniteQuery(filters, canPo);
@@ -149,6 +231,30 @@ export function PurchasingHubScreen() {
     enabled: canPo,
   });
   const fromLowStock = useFromLowStockMutation();
+  const demandQuery = useMaterialDemandQuery(canPo);
+
+  const shortageNeeds = useMemo(() => {
+    const rows = demandQuery.data ?? [];
+    return rows
+      .filter((r) => Number(r.stillNeeded) > 0)
+      .slice(0, 5);
+  }, [demandQuery.data]);
+
+  const supplierOpenOrders = useMemo(() => {
+    const map = new Map<string, Array<{ id: string; number: string; status: string }>>();
+    for (const po of flattenPurchaseOrders(poQuery.data)) {
+      if (!po.supplierId) continue;
+      const open =
+        po.status !== 'CLOSED' &&
+        po.status !== 'CANCELLED' &&
+        po.status !== 'RECEIVED';
+      if (!open) continue;
+      const list = map.get(po.supplierId) ?? [];
+      list.push({ id: po.id, number: po.number, status: po.status });
+      map.set(po.supplierId, list);
+    }
+    return map;
+  }, [poQuery.data]);
 
   const warehouseNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -220,6 +326,7 @@ export function PurchasingHubScreen() {
         return translated === key ? status : translated;
       })()
     : t('mobile.purchasing.filter');
+  const filterActive = isStatusFilterActive(status) || Boolean(dateFrom || dateTo);
 
   const searchPlaceholder =
     tab === 'orders'
@@ -334,7 +441,10 @@ export function PurchasingHubScreen() {
                 });
               }}
               onNewRequest={() => setCreatePrOpen(true)}
-              onNewOrder={() => setCreatePoOpen(true)}
+              onNewOrder={() => {
+                setCreatePoInitialLines(undefined);
+                setCreatePoOpen(true);
+              }}
             />
 
             <PurchasingTabBar
@@ -430,23 +540,114 @@ export function PurchasingHubScreen() {
                   setSupplierId(null);
                   setSupplierLabel(null);
                 }}
-                statusActive={isStatusFilterActive(status)}
+                statusActive={filterActive}
                 statusLabel={statusLabel}
                 onOpenStatus={() => setStatusSheetOpen(true)}
               />
             </View>
+
+            {canPo && shortageNeeds.length > 0 ? (
+              <PurchasingFloorBoard title={t('mobile.purchasing.needsToBuy')}>
+                {shortageNeeds.map((row) => {
+                  const name =
+                    locale === 'ar'
+                      ? row.nameAr || row.nameEn || row.sku
+                      : locale === 'he'
+                        ? row.nameHe || row.nameEn || row.nameAr || row.sku
+                        : row.nameEn || row.nameAr || row.sku;
+                  const inCart = Boolean(needsCart[row.inventoryItemId]);
+                  return (
+                    <AnimatedPressable
+                      key={row.inventoryItemId}
+                      variant="button"
+                      accessibilityRole="button"
+                      accessibilityLabel={t('mobile.purchasing.addToPurchase')}
+                      disabled={!canCreatePo}
+                      onPress={() => {
+                        if (!canCreatePo) return;
+                        addNeedToCart(row);
+                      }}
+                      style={{
+                        flexDirection: isRTL ? 'row-reverse' : 'row',
+                        justifyContent: 'space-between',
+                        gap: theme.spacing.sm,
+                        alignItems: 'center',
+                        paddingVertical: theme.spacing.xs,
+                        borderRadius: theme.radius.lg,
+                        borderWidth: inCart ? 1 : 0,
+                        borderColor: inCart ? colors.brand : 'transparent',
+                        paddingHorizontal: inCart ? theme.spacing.sm : 0,
+                        backgroundColor: inCart ? colors.brandSoft : 'transparent',
+                      }}
+                    >
+                      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                        <AppText
+                          weight="semibold"
+                          numberOfLines={1}
+                          style={{ textAlign: isRTL ? 'right' : 'left' }}
+                        >
+                          {name}
+                        </AppText>
+                        <AppText
+                          variant="caption"
+                          color="muted"
+                          dir="ltr"
+                          style={{ textAlign: isRTL ? 'right' : 'left' }}
+                        >
+                          {row.sku}
+                        </AppText>
+                        {canCreatePo ? (
+                          <AppText
+                            variant="caption"
+                            weight="semibold"
+                            style={{
+                              color: colors.brand,
+                              textAlign: isRTL ? 'right' : 'left',
+                              fontSize: 11,
+                            }}
+                          >
+                            {t('mobile.purchasing.addToPurchase')}
+                          </AppText>
+                        ) : null}
+                      </View>
+                      <View style={{ alignItems: isRTL ? 'flex-start' : 'flex-end', gap: 2 }}>
+                        <AppText weight="semibold" dir="ltr" style={{ color: colors.error }}>
+                          {`${Number(row.stillNeeded)} ${row.unit || ''}`.trim()}
+                        </AppText>
+                        <AppText variant="caption" color="muted" dir="ltr">
+                          {`${t('mobile.purchasing.incoming')}: ${Number(row.incomingQty ?? 0)}`}
+                        </AppText>
+                      </View>
+                    </AnimatedPressable>
+                  );
+                })}
+                {canCreatePo && needsCartCount > 0 ? (
+                  <PrimaryButton
+                    label={`${t('mobile.purchasing.createFromNeeds')} (${needsCartCount})`}
+                    onPress={openCreateFromNeeds}
+                    style={{ borderRadius: theme.radius.xl, marginTop: theme.spacing.xs }}
+                  />
+                ) : null}
+              </PurchasingFloorBoard>
+            ) : null}
           </View>
         }
         ListEmptyComponent={
           <EmptyState
             title={
-              tab === 'orders'
-                ? t('catalog.noPurchaseOrders')
-                : tab === 'requests'
-                  ? t('catalog.noPurchaseRequests')
-                  : t('catalog.noSupplierInvoices')
+              q
+                ? t('mobile.purchasing.emptySearchTitle')
+                : tab === 'orders'
+                  ? t('catalog.noPurchaseOrders')
+                  : tab === 'requests'
+                    ? t('catalog.noPurchaseRequests')
+                    : t('catalog.noSupplierInvoices')
             }
-            description={t('mobile.purchasing.emptyBody')}
+            description={
+              q
+                ? t('mobile.purchasing.emptySearchBody')
+                : t('mobile.purchasing.emptyBody')
+            }
           />
         }
         renderItem={({ item, index }) => (
@@ -484,6 +685,7 @@ export function PurchasingHubScreen() {
         onClose={() => setSupplierSheetOpen(false)}
         suppliers={supplierOptions}
         selectedId={supplierId}
+        openOrdersBySupplier={supplierOpenOrders}
         onConfirm={(s) => {
           setSupplierId(s?.id ?? null);
           setSupplierLabel(s?.name ?? null);
@@ -494,13 +696,27 @@ export function PurchasingHubScreen() {
         onClose={() => setStatusSheetOpen(false)}
         statuses={statusFiltersForTab(tab)}
         status={status}
-        onApply={setStatus}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onApply={({ status: nextStatus, dateFrom: nextFrom, dateTo: nextTo }) => {
+          setStatus(nextStatus);
+          setDateFrom(nextFrom ?? '');
+          setDateTo(nextTo ?? '');
+        }}
       />
       {canCreatePo ? (
         <CreatePurchaseOrderSheet
           open={createPoOpen}
-          onClose={() => setCreatePoOpen(false)}
-          onCreated={(id) => router.push(`/(app)/(admin)/purchasing/${id}` as Href)}
+          onClose={() => {
+            setCreatePoOpen(false);
+            setCreatePoInitialLines(undefined);
+          }}
+          initialLines={createPoInitialLines}
+          onCreated={(id) => {
+            setNeedsCart({});
+            setCreatePoInitialLines(undefined);
+            router.push(`/(app)/(admin)/purchasing/${id}` as Href);
+          }}
         />
       ) : null}
       {canCreatePr ? (

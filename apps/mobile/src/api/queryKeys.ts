@@ -45,8 +45,18 @@ export const queryKeys = {
   reports: {
     all: ['reports'] as const,
     adminHome: () => [...queryKeys.reports.all, 'admin-home'] as const,
+    managementSummary: () => [...queryKeys.reports.all, 'management-summary'] as const,
     dealerHome: () => [...queryKeys.reports.all, 'dealer-home'] as const,
     workerHome: () => [...queryKeys.reports.all, 'worker-home'] as const,
+    dashboard: () => [...queryKeys.reports.all, 'dashboard'] as const,
+    sales: (q: string) => [...queryKeys.reports.all, 'sales', q] as const,
+    production: (q: string) => [...queryKeys.reports.all, 'production', q] as const,
+    orderProfit: (q: string) => [...queryKeys.reports.all, 'order-profit', q] as const,
+    financial: () => [...queryKeys.reports.all, 'financial'] as const,
+    cashFlow: (q: string) => [...queryKeys.reports.all, 'cash-flow', q] as const,
+    periodPl: (q: string) => [...queryKeys.reports.all, 'period-pl', q] as const,
+    inventory: () => [...queryKeys.reports.all, 'inventory'] as const,
+    purchasing: () => [...queryKeys.reports.all, 'purchasing'] as const,
   },
   salesOrders: {
     all: ['sales-orders'] as const,
@@ -54,6 +64,12 @@ export const queryKeys = {
     list: (filters: unknown = {}) => [...queryKeys.salesOrders.lists(), filters] as const,
     details: () => [...queryKeys.salesOrders.all, 'detail'] as const,
     detail: (id: string) => [...queryKeys.salesOrders.details(), id] as const,
+    manufacturingCost: (id: string) =>
+      [...queryKeys.salesOrders.detail(id), 'manufacturing-cost'] as const,
+    productionSetup: (id: string) =>
+      [...queryKeys.salesOrders.detail(id), 'production-setup'] as const,
+    productionSetupReleasePreview: (id: string) =>
+      [...queryKeys.salesOrders.productionSetup(id), 'release-preview'] as const,
   },
   requests: {
     all: ['requests'] as const,
@@ -64,6 +80,8 @@ export const queryKeys = {
   },
   quotations: {
     all: ['quotations'] as const,
+    lists: () => [...queryKeys.quotations.all, 'list'] as const,
+    list: (filters: unknown = {}) => [...queryKeys.quotations.lists(), filters] as const,
     details: () => [...queryKeys.quotations.all, 'detail'] as const,
     detail: (id: string) => [...queryKeys.quotations.details(), id] as const,
   },
@@ -90,11 +108,42 @@ export const queryKeys = {
     counts: () => [...queryKeys.inventory.all, 'counts'] as const,
     countsList: (filters: unknown = {}) =>
       [...queryKeys.inventory.counts(), filters] as const,
+    openReceipts: (itemId: string) =>
+      [...queryKeys.inventory.all, 'open-receipts', itemId] as const,
     overview: () => [...queryKeys.inventory.all, 'overview'] as const,
     semiFinished: (filters: unknown = {}) =>
       [...queryKeys.inventory.all, 'semi-finished', filters] as const,
+    wipKitBoard: (
+      filters: {
+        custody?: string;
+        productionOrderId?: string;
+        status?: string;
+        scope?: string;
+        from?: string;
+        to?: string;
+        warehouseId?: string;
+        q?: string;
+      } = {},
+    ) =>
+      [
+        ...queryKeys.inventory.all,
+        'wip-kit-board',
+        filters.custody ?? 'all',
+        filters.productionOrderId ?? 'all',
+        filters.status ?? 'default',
+        filters.scope ?? 'active',
+        filters.from ?? '',
+        filters.to ?? '',
+        filters.warehouseId ?? 'all',
+        filters.q ?? '',
+      ] as const,
+    wipKitDetail: (id: string) => [...queryKeys.inventory.all, 'wip-kit', id] as const,
+    wipKitTimeline: (id: string) =>
+      [...queryKeys.inventory.all, 'wip-kit-timeline', id] as const,
     finishedGoods: (filters: unknown = {}) =>
       [...queryKeys.inventory.all, 'finished-goods', filters] as const,
+    finishedLots: (filters: unknown = {}) =>
+      [...queryKeys.inventory.all, 'finished-lots', filters] as const,
   },
   production: {
     all: ['production'] as const,
@@ -103,8 +152,20 @@ export const queryKeys = {
     list: (filters: unknown = {}) => [...queryKeys.production.lists(), filters] as const,
     details: () => [...queryKeys.production.all, 'detail'] as const,
     detail: (id: string) => [...queryKeys.production.details(), id] as const,
-    workers: (q?: string, stageDefinitionId?: string) =>
-      [...queryKeys.production.all, 'workers', q ?? '', stageDefinitionId ?? ''] as const,
+    workers: (
+      q?: string,
+      stageDefinitionId?: string,
+      opts?: { taskId?: string; plannedStart?: string; plannedCompletion?: string },
+    ) =>
+      [
+        ...queryKeys.production.all,
+        'workers',
+        q ?? '',
+        stageDefinitionId ?? '',
+        opts?.taskId ?? '',
+        opts?.plannedStart ?? '',
+        opts?.plannedCompletion ?? '',
+      ] as const,
   },
   purchasing: {
     all: ['purchasing'] as const,
@@ -124,11 +185,14 @@ export const queryKeys = {
     invoiceDetail: (id: string) => [...queryKeys.purchasing.invoiceDetails(), id] as const,
     suppliers: (filters: unknown = {}) =>
       [...queryKeys.purchasing.all, 'suppliers', filters] as const,
+    materialDemand: () => [...queryKeys.purchasing.all, 'material-demand'] as const,
   },
   payments: {
     all: ['payments'] as const,
     lists: () => [...queryKeys.payments.all, 'list'] as const,
     list: (filters: unknown = {}) => [...queryKeys.payments.lists(), filters] as const,
+    dealerSummary: (customerId: string) =>
+      [...queryKeys.payments.all, 'dealer-summary', customerId] as const,
   },
   statements: {
     all: ['statements'] as const,
@@ -204,8 +268,6 @@ export const queryKeys = {
       [...queryKeys.workflow.all, 'product-config', productId] as const,
     productionSetup: (productId: string) =>
       [...queryKeys.workflow.all, 'production-setup', productId] as const,
-    productionSetupPreview: (productId: string) =>
-      [...queryKeys.workflow.all, 'production-setup-preview', productId] as const,
   },
 } as const;
 
@@ -233,6 +295,7 @@ export const invalidateKeys = {
       queryKeys.production.lists(),
       queryKeys.reports.dealerHome(),
       queryKeys.reports.adminHome(),
+      queryKeys.reports.managementSummary(),
     ] as const;
     if (productionOrderId) {
       return [...base, queryKeys.scheduling.orderSchedule(productionOrderId)];

@@ -21,6 +21,12 @@ export const PRODUCTION_LIST_BUCKETS = [
   'in_production',
   'late',
   'completed',
+  /** Factory board (v2) */
+  'needs_setup',
+  'ready_to_start',
+  'on_floor',
+  'blocked',
+  'inspection_packaging',
 ] as const;
 export type ProductionListBucket = (typeof PRODUCTION_LIST_BUCKETS)[number];
 
@@ -32,7 +38,7 @@ export class ListProductionOrdersDto extends PaginationDto {
 
   @ApiPropertyOptional({ enum: PRODUCTION_LIST_BUCKETS })
   @IsOptional()
-  @IsIn(PRODUCTION_LIST_BUCKETS)
+  @IsIn([...PRODUCTION_LIST_BUCKETS])
   bucket?: ProductionListBucket;
 
   @ApiPropertyOptional({ enum: Priority })
@@ -44,6 +50,11 @@ export class ListProductionOrdersDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter POs that have a task assigned to this worker' })
+  @IsOptional()
+  @IsUUID()
+  assignedEmployeeId?: string;
 }
 
 export class UpdateProductionOrderDto {

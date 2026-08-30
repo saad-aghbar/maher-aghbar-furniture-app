@@ -62,6 +62,8 @@ describe('TasksService assign permissions & visibility', () => {
       id: WORKER_B,
       isActive: true,
       archivedAt: null,
+      roles: [{ role: { kind: 'PRODUCTION_WORKER' } }],
+      workerSkills: [],
     });
 
     const prisma: {
@@ -75,6 +77,8 @@ describe('TasksService assign permissions & visibility', () => {
       };
       user: { findFirst: jest.Mock };
       document: { findMany: jest.Mock };
+      workerSkill: { count: jest.Mock };
+      scheduleAllocation: { findMany: jest.Mock };
     } = {
       $transaction: jest.fn(async (ops: unknown) => {
         if (Array.isArray(ops)) return Promise.all(ops);
@@ -89,12 +93,20 @@ describe('TasksService assign permissions & visibility', () => {
       },
       user: { findFirst: userFindFirst },
       document: { findMany: jest.fn().mockResolvedValue([]) },
+      workerSkill: { count: jest.fn().mockResolvedValue(0) },
+      scheduleAllocation: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const service = new TasksService(
       prisma as unknown as PrismaService,
       {} as StagePipelineService,
-      { onStageTaskComplete: jest.fn(), assertStageInventoryReady: jest.fn() } as any,
+      { onStageTaskComplete: jest.fn(), assertStageInventoryReady: jest.fn(), onStageQtyProgress: jest.fn() } as any,
+      { hasUsageRows: jest.fn().mockResolvedValue(false), finalizeForTask: jest.fn(), ensureExpectedLines: jest.fn(), recordLines: jest.fn() } as any,
+      {
+        registerFromTaskComplete: jest.fn(),
+        markConsumedForStage: jest.fn(),
+        claimRequirementsForTask: jest.fn().mockResolvedValue({ required: false, kits: [], unclaimed: [], allClaimed: true }),
+      } as any,
       {} as InvoicesService,
       { createAccessToken: jest.fn(() => 'tok') } as unknown as LocalStorageService,
       mockIdempotency(),
@@ -121,6 +133,7 @@ describe('TasksService assign permissions & visibility', () => {
     const { service, productionTaskUpdate } = makeService({
       assignedEmployeeId: WORKER_A,
       status: 'READY',
+      productionOrder: { id: 'po-1', number: 'PO-1', status: 'PLANNED' },
     });
     await service.assign('task-1', { employeeId: WORKER_B, priority: 'HIGH' });
     expect(productionTaskUpdate).toHaveBeenCalledWith(

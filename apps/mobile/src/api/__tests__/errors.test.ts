@@ -41,6 +41,18 @@ describe('api errors', () => {
     expect(err.status).toBe(403);
   });
 
+  it('keeps conflict runId so the UI can poll an in-flight factory run', () => {
+    const err = apiErrorFromResponse(409, {
+      error: {
+        code: 'SYNC_ALREADY_IN_PROGRESS',
+        message: 'A factory schedule update is already in progress.',
+        runId: 'run-cal',
+      },
+    });
+    expect(err.code).toBe('SYNC_ALREADY_IN_PROGRESS');
+    expect(err.runId).toBe('run-cal');
+  });
+
   it('maps offline / timeout / abort helpers', () => {
     expect(offlineError().code).toBe('OFFLINE');
     expect(offlineError().isOffline).toBe(true);

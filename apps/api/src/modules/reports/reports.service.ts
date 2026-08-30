@@ -4,6 +4,7 @@ import {
   Priority,
   Prisma,
   ProductionOrderStatus,
+  PurchaseOrderStatus,
   SalesOrderStatus,
   TaskStatus,
 } from '@maher/database';
@@ -23,6 +24,24 @@ import {
   toCalendarYmd,
 } from '../scheduling/domain/dealer-delivery';
 import { ymdInTimezone } from '../scheduling/domain/factory-replan';
+import { paymentUnallocated, money as dealerMoney } from '../payments/dealer-finance';
+import {
+  buildFactoryFlow,
+  capAttentionCards,
+  computeGrossMfgDifference,
+  endOfLocalDay,
+  MGMT_HREF,
+  mgmtAttention,
+  mgmtTile,
+  startOfLocalDay,
+  startOfMonth,
+  type MgmtAttentionCard,
+  type MgmtBlockedItem,
+  type MgmtEvent,
+  type MgmtFinance,
+  type MgmtManufacturing,
+  type MgmtWorkers,
+} from './management-summary';
 
 const OPEN_TASK_STATUSES: TaskStatus[] = [
   TaskStatus.NOT_STARTED,
@@ -197,7 +216,16 @@ export class ReportsService {
         where: { archivedAt: null, status: 'ACTIVE' },
       }),
       this.prisma.returnRequest.count({
-        where: { approvalStatus: 'PENDING' },
+        where: {
+          OR: [
+            { approvalStatus: { in: ['PENDING', 'NEED_INFO'] } },
+            { physicalStatus: 'WAITING_RETURN' },
+            {
+              physicalStatus: { in: ['RETURNED', 'INSPECTING'] },
+              inventoryFate: 'PENDING',
+            },
+          ],
+        },
       }),
       this.prisma.inventoryItem.findMany({
         where: { archivedAt: null },
@@ -1215,7 +1243,7 @@ export class ReportsService {
       ...(filters.customerId ? { salesOrder: { customerId: filters.customerId } } : {}),
     };
 
-    const [byStatus, delayed, open, stageThroughput] = await Promise.all([
+    const [byStatus, delayed, open, stageThroughput, stagePerformance] = await Promise.all([
       this.prisma.productionOrder.groupBy({
         by: ['status'],
         where: baseWhere,
@@ -1276,6 +1304,9 @@ export class ReportsService {
           : undefined,
         _count: true,
       }),
+      // Stage performance (light): completed tasks in period grouped by stage code.
+      // LIMITED — no worker ranking; counts only where stageDefinition.code exists.
+      this.stagePerformanceLight(filters, requiredDeliveryDate),
     ]);
 
     const [plannedVsActual, onTimeRate] = await Promise.all([
@@ -1311,9 +1342,54 @@ export class ReportsService {
       openCount: open.length,
       delayedCount: delayed.length,
       tasksByStatus: stageThroughput,
+      /** LIMITED stage throughput by stage code — completed tasks in period only. */
+      stagePerformance,
       plannedVsActual,
       onTimeRate,
     };
+  }
+
+  /**
+   * Light stage performance: groupBy stage completed tasks in period.
+   * LIMITED — no unfair worker ranking; missing stage codes omitted.
+   */
+  private async stagePerformanceLight(
+    filters: ReportPeriodFilters,
+    completedRange?: Prisma.DateTimeFilter,
+  ) {
+    const rows = await this.prisma.productionTask.groupBy({
+      by: ['stageDefinitionId'],
+      where: {
+        status: TaskStatus.COMPLETED,
+        stageDefinitionId: { not: null },
+        ...(completedRange ? { actualCompletion: completedRange } : {}),
+        ...(filters.customerId
+          ? { productionOrder: { salesOrder: { customerId: filters.customerId } } }
+          : {}),
+      },
+      _count: true,
+    });
+    const ids = rows
+      .map((r) => r.stageDefinitionId)
+      .filter((id): id is string => Boolean(id));
+    if (ids.length === 0) return [];
+    const stages = await this.prisma.productionStageDefinition.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, code: true, nameEn: true },
+    });
+    const byId = new Map(stages.map((s) => [s.id, s]));
+    return rows
+      .map((r) => {
+        const stage = r.stageDefinitionId ? byId.get(r.stageDefinitionId) : null;
+        if (!stage) return null;
+        return {
+          stageCode: stage.code,
+          stageName: stage.nameEn,
+          completedCount: r._count,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r != null)
+      .sort((a, b) => b.completedCount - a.completedCount);
   }
 
   /**
@@ -1667,6 +1743,11 @@ export class ReportsService {
       inProduction,
       lateOrders,
       inProductionProgress,
+      needsSetup,
+      readyToStart,
+      onFloor,
+      blocked,
+      inspectionPackaging,
     ] = await Promise.all([
       this.prisma.productionOrder.count({
         where: { ...completedFilter, actualCompletionDate: { gte: startOfDay } },
@@ -1700,6 +1781,145 @@ export class ReportsService {
         },
         _avg: { progressPercent: true },
       }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [
+              ProductionOrderStatus.DRAFT,
+              ProductionOrderStatus.PLANNED,
+              ProductionOrderStatus.READY,
+            ],
+          },
+          OR: [
+            {
+              tasks: {
+                none: {
+                  status: { not: 'CANCELLED' },
+                  isRework: false,
+                  stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
+                },
+              },
+            },
+            {
+              tasks: {
+                some: {
+                  assignedEmployeeId: null,
+                  status: { not: 'CANCELLED' },
+                  isRework: false,
+                  stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
+                },
+              },
+            },
+            {
+              tasks: {
+                some: {
+                  status: { not: 'CANCELLED' },
+                  isRework: false,
+                  stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
+                  OR: [
+                    { plannedStart: null, plannedCompletion: null },
+                    { plannedStart: { not: null }, plannedCompletion: null },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [
+              ProductionOrderStatus.DRAFT,
+              ProductionOrderStatus.PLANNED,
+              ProductionOrderStatus.READY,
+            ],
+          },
+          tasks: {
+            some: {
+              status: { not: 'CANCELLED' },
+              isRework: false,
+              stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
+            },
+          },
+          NOT: {
+            OR: [
+              {
+                tasks: {
+                  some: {
+                    assignedEmployeeId: null,
+                    status: { not: 'CANCELLED' },
+                    isRework: false,
+                    stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
+                  },
+                },
+              },
+              {
+                tasks: {
+                  some: {
+                    status: { not: 'CANCELLED' },
+                    isRework: false,
+                    stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
+                    OR: [
+                      { plannedStart: null, plannedCompletion: null },
+                      { plannedStart: { not: null }, plannedCompletion: null },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: ProductionOrderStatus.IN_PROGRESS,
+          OR: [
+            { currentStageCode: null },
+            { currentStageCode: { notIn: ['INSPECTION', 'PACKAGING', 'DELIVERY'] } },
+          ],
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          OR: [
+            {
+              status: {
+                in: [ProductionOrderStatus.ON_HOLD, ProductionOrderStatus.WAITING_FOR_MATERIALS],
+              },
+            },
+            {
+              status: {
+                notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
+              },
+              tasks: { some: { blockers: { some: { resolvedAt: null } } } },
+            },
+          ],
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          OR: [
+            {
+              status: {
+                in: [
+                  ProductionOrderStatus.QUALITY_CHECK,
+                  ProductionOrderStatus.READY_FOR_PACKAGING,
+                ],
+              },
+            },
+            {
+              status: ProductionOrderStatus.IN_PROGRESS,
+              currentStageCode: { in: ['INSPECTION', 'PACKAGING'] },
+            },
+          ],
+        },
+      }),
     ]);
 
     const overallProgress = Math.round(Number(inProductionProgress._avg.progressPercent ?? 0));
@@ -1718,6 +1938,11 @@ export class ReportsService {
       inProduction,
       lateOrders,
       overallProgress,
+      needsSetup,
+      readyToStart,
+      onFloor,
+      blocked,
+      inspectionPackaging,
     };
   }
 
@@ -2113,6 +2338,1331 @@ export class ReportsService {
       }),
     ]);
     return { purchaseOrdersByStatus: pos, purchaseRequestsByStatus: prs, recentReceipts: receipts };
+  }
+
+  /**
+   * Piece 12 — management Home desk aggregate.
+   * Path: GET /api/v1/reports/management-summary
+   * Read-only aggregations over P1–11 lifecycles (frozen). COUNT via prisma.count/aggregate.
+   */
+  async managementSummary(user: AuthUser) {
+    const perms = user.permissions ?? [];
+    const can = (p: Permission) => hasPermission(perms, p);
+    const canFinancial = can('report.financial.read');
+    const canInventory = can('inventory.read') || can('report.inventory.read');
+    const canWorkers = can('production-task.read');
+
+    const now = new Date();
+    const dayStart = startOfLocalDay(now);
+    const dayEnd = endOfLocalDay(now);
+    const monthStart = startOfMonth(now);
+
+    const openTaskStatuses: TaskStatus[] = [
+      TaskStatus.NOT_STARTED,
+      TaskStatus.READY,
+      TaskStatus.IN_PROGRESS,
+      TaskStatus.PAUSED,
+      TaskStatus.BLOCKED,
+      TaskStatus.READY_FOR_INSPECTION,
+    ];
+
+    const openPoStatuses: ProductionOrderStatus[] = [
+      ProductionOrderStatus.DRAFT,
+      ProductionOrderStatus.PLANNED,
+      ProductionOrderStatus.WAITING_FOR_MATERIALS,
+      ProductionOrderStatus.READY,
+      ProductionOrderStatus.IN_PROGRESS,
+      ProductionOrderStatus.ON_HOLD,
+      ProductionOrderStatus.QUALITY_CHECK,
+      ProductionOrderStatus.READY_FOR_PACKAGING,
+      ProductionOrderStatus.READY_FOR_DELIVERY,
+    ];
+
+    // ── Group 1: Today + factory flow + production KPIs ─────────────────────
+    const [
+      productionStarting,
+      productionDue,
+      qualityWaiting,
+      finishedToday,
+      leavingToday,
+      receivingToday,
+      flowPrepare,
+      flowReady,
+      flowInProd,
+      flowQuality,
+      flowPackaging,
+      flowFinished,
+      activeOrders,
+      tasksCompletedToday,
+      blockedCount,
+      dueTodayPo,
+      overdueMayBeLate,
+    ] = await Promise.all([
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [
+              ProductionOrderStatus.DRAFT,
+              ProductionOrderStatus.PLANNED,
+              ProductionOrderStatus.READY,
+            ],
+          },
+          OR: [
+            { plannedStartDate: { gte: dayStart, lte: dayEnd } },
+            { plannedStartDate: null, status: ProductionOrderStatus.READY },
+          ],
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: { notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED] },
+          OR: [
+            { requiredDeliveryDate: { gte: dayStart, lte: dayEnd } },
+            { committedDeliveryDate: { gte: dayStart, lte: dayEnd } },
+          ],
+        },
+      }),
+      this.prisma.productionTask.count({
+        where: { status: TaskStatus.READY_FOR_INSPECTION },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: ProductionOrderStatus.COMPLETED,
+          actualCompletionDate: { gte: dayStart, lte: dayEnd },
+        },
+      }),
+      this.prisma.delivery.count({
+        where: {
+          status: { in: ['PLANNED', 'READY'] },
+          deliveryDate: { gte: dayStart, lte: dayEnd },
+        },
+      }),
+      this.prisma.purchaseOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [
+              PurchaseOrderStatus.SENT,
+              PurchaseOrderStatus.APPROVED,
+              PurchaseOrderStatus.PARTIALLY_RECEIVED,
+            ],
+          },
+          expectedDeliveryDate: { gte: dayStart, lte: dayEnd },
+        },
+      }),
+      this.prisma.salesOrder.count({
+        where: {
+          archivedAt: null,
+          status: SalesOrderStatus.DRAFT,
+          productionSetup: {
+            status: { in: ['SETUP_REQUIRED', 'SETUP_IN_PROGRESS'] },
+          },
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [
+              ProductionOrderStatus.DRAFT,
+              ProductionOrderStatus.PLANNED,
+              ProductionOrderStatus.READY,
+            ],
+          },
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: ProductionOrderStatus.IN_PROGRESS,
+          OR: [
+            { currentStageCode: null },
+            { currentStageCode: { notIn: ['INSPECTION', 'PACKAGING', 'DELIVERY'] } },
+          ],
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          OR: [
+            { status: ProductionOrderStatus.QUALITY_CHECK },
+            {
+              status: ProductionOrderStatus.IN_PROGRESS,
+              currentStageCode: 'INSPECTION',
+            },
+            {
+              status: { notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED] },
+              reworkRequests: {
+                some: { status: { in: ['AWAITING_STAGE', 'IN_PROGRESS', 'OPEN'] } },
+              },
+            },
+          ],
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          OR: [
+            { status: ProductionOrderStatus.READY_FOR_PACKAGING },
+            {
+              status: ProductionOrderStatus.IN_PROGRESS,
+              currentStageCode: 'PACKAGING',
+            },
+          ],
+        },
+      }),
+      this.prisma.inventoryLot.count({
+        where: {
+          status: { in: ['AVAILABLE', 'RESERVED'] },
+          inventoryItem: { itemClass: 'FINISHED_GOOD', archivedAt: null },
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: { archivedAt: null, status: { in: openPoStatuses } },
+      }),
+      this.prisma.productionTask.count({
+        where: {
+          status: TaskStatus.COMPLETED,
+          actualCompletion: { gte: dayStart, lte: dayEnd },
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          OR: [
+            {
+              status: {
+                in: [ProductionOrderStatus.ON_HOLD, ProductionOrderStatus.WAITING_FOR_MATERIALS],
+              },
+            },
+            {
+              status: {
+                notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
+              },
+              tasks: { some: { blockers: { some: { resolvedAt: null } } } },
+            },
+          ],
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: { notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED] },
+          requiredDeliveryDate: { gte: dayStart, lte: dayEnd },
+        },
+      }),
+      this.listCanonicalMayBeLate(now),
+    ]);
+
+    const overdueCount = overdueMayBeLate.filter(
+      (r) => r.classification.primaryStatus === 'LATE',
+    ).length;
+
+    // ── Group 2: Outbound + materials + quality + exceptions ────────────────
+    const [
+      finishedWaiting,
+      overduePickup,
+      shippedAwaitingDealer,
+      needsPurchasing,
+      blockingProduction,
+      arrivingToday,
+      lateSupplierPos,
+      waitingInspection,
+      failRework,
+      readyReinspection,
+      passedToday,
+      returnsOpen,
+      waitingReturn,
+      returnsWaitingInspect,
+      cancelDisposition,
+      inventoryCorrections,
+    ] = await Promise.all([
+      this.prisma.inventoryLot.count({
+        where: {
+          status: { in: ['AVAILABLE', 'RESERVED'] },
+          inventoryItem: { itemClass: 'FINISHED_GOOD', archivedAt: null },
+        },
+      }),
+      this.prisma.delivery.count({
+        where: {
+          status: { in: ['PLANNED', 'READY'] },
+          deliveryDate: { lt: dayStart },
+        },
+      }),
+      this.prisma.delivery.count({
+        where: {
+          status: 'OUT_FOR_DELIVERY',
+          customerConfirmedAt: null,
+        },
+      }),
+      this.prisma.purchaseRequest.count({
+        where: { status: { in: ['DRAFT', 'SUBMITTED', 'APPROVED'] } },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          archivedAt: null,
+          status: ProductionOrderStatus.WAITING_FOR_MATERIALS,
+        },
+      }),
+      this.prisma.purchaseOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [
+              PurchaseOrderStatus.SENT,
+              PurchaseOrderStatus.APPROVED,
+              PurchaseOrderStatus.PARTIALLY_RECEIVED,
+            ],
+          },
+          expectedDeliveryDate: { gte: dayStart, lte: dayEnd },
+        },
+      }),
+      this.prisma.purchaseOrder.count({
+        where: {
+          archivedAt: null,
+          status: {
+            in: [
+              PurchaseOrderStatus.SENT,
+              PurchaseOrderStatus.APPROVED,
+              PurchaseOrderStatus.PARTIALLY_RECEIVED,
+            ],
+          },
+          expectedDeliveryDate: { lt: dayStart },
+        },
+      }),
+      this.prisma.qualityInspection.count({
+        where: { result: null },
+      }),
+      this.prisma.qualityInspection.count({
+        where: {
+          result: { in: ['FAILED_REWORK_REQUIRED', 'BLOCKED'] },
+          OR: [
+            { rework: { some: { status: { in: ['AWAITING_STAGE', 'IN_PROGRESS', 'OPEN'] } } } },
+            { rework: { none: {} } },
+          ],
+        },
+      }),
+      this.prisma.productionTask.count({
+        where: {
+          isRework: true,
+          status: TaskStatus.READY_FOR_INSPECTION,
+        },
+      }),
+      this.prisma.qualityInspection.count({
+        where: {
+          result: { in: ['PASSED', 'PASSED_WITH_NOTES'] },
+          inspectedAt: { gte: dayStart, lte: dayEnd },
+        },
+      }),
+      this.prisma.returnRequest.count({
+        where: { approvalStatus: { in: ['PENDING', 'NEED_INFO'] } },
+      }),
+      this.prisma.returnRequest.count({
+        where: { physicalStatus: 'WAITING_RETURN' },
+      }),
+      this.prisma.returnRequest.count({
+        where: {
+          physicalStatus: { in: ['RETURNED', 'INSPECTING'] },
+          inventoryFate: 'PENDING',
+        },
+      }),
+      this.prisma.inventoryLot.count({
+        where: {
+          status: 'REQUIRES_REVIEW',
+          inventoryItem: { itemClass: 'SEMI_FINISHED_GOOD', archivedAt: null },
+        },
+      }),
+      this.prisma.inventoryTransaction.count({
+        where: {
+          type: 'INVENTORY_ADJUSTMENT',
+          createdAt: { gte: monthStart },
+        },
+      }),
+    ]);
+
+    // ── Group 3: Inventory (gated) + workers (gated) ─────────────────────────
+    let rawShortages = 0;
+    let semiHandoff = 0;
+    let inventoryFinishedWaiting = finishedWaiting;
+    let correctionsAttention = inventoryCorrections;
+
+    if (canInventory) {
+      const [lowStockItems, semiHandoffCount] = await Promise.all([
+        this.prisma.inventoryItem.findMany({
+          where: { archivedAt: null, itemClass: 'RAW_MATERIAL' },
+          select: {
+            minStock: true,
+            balances: { select: { availableQty: true } },
+          },
+        }),
+        this.prisma.wipKit.count({
+          where: {
+            status: { in: ['READY', 'OPEN'] },
+          },
+        }),
+      ]);
+      // Full RAW scan (no take:N) — available ≤ minStock. LIMITED vs true SQL aggregate.
+      rawShortages = lowStockItems.filter((item) => {
+        const available = item.balances.reduce((s, b) => s + Number(b.availableQty), 0);
+        return available <= Number(item.minStock);
+      }).length;
+      semiHandoff = semiHandoffCount;
+    } else {
+      inventoryFinishedWaiting = 0;
+      correctionsAttention = 0;
+    }
+
+    let workers: MgmtWorkers | null = null;
+    if (canWorkers) {
+      const [workingToday, assigned, unassigned, conflicts] = await Promise.all([
+        this.prisma.productionTask
+          .findMany({
+            where: {
+              status: { in: [TaskStatus.IN_PROGRESS, TaskStatus.PAUSED] },
+              assignedEmployeeId: { not: null },
+            },
+            select: { assignedEmployeeId: true },
+            distinct: ['assignedEmployeeId'],
+          })
+          .then((rows) => rows.length),
+        this.prisma.productionTask.count({
+          where: {
+            status: { in: openTaskStatuses },
+            assignedEmployeeId: { not: null },
+          },
+        }),
+        this.prisma.productionTask.count({
+          where: {
+            status: { in: openTaskStatuses },
+            assignedEmployeeId: null,
+            isRework: false,
+            stageDefinition: {
+              executionKind: { not: 'LOGISTICS' },
+              code: { not: 'DELIVERY' },
+            },
+          },
+        }),
+        this.prisma.taskBlocker.count({
+          where: { resolvedAt: null, category: 'STAFFING' },
+        }),
+      ]);
+      // workingToday uses distinct assignee count (not take:N total).
+      workers = { workingToday, assigned, unassigned, conflicts };
+    }
+
+    // ── Group 4: Finance + manufacturing (gated) + attention seeds + activity ─
+    let finance: MgmtFinance | null = null;
+    let manufacturing: MgmtManufacturing | null = null;
+
+    if (canFinancial) {
+      const [
+        receivableAgg,
+        overdueAgg,
+        payments,
+        paymentsThisMonthAgg,
+        openInvoiceCount,
+        topOverdueInvoices,
+        finalCostOrderCount,
+        finalCostRows,
+        incompleteUsages,
+      ] = await Promise.all([
+        this.prisma.invoice.aggregate({
+          where: {
+            archivedAt: null,
+            status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID, InvoiceStatus.DRAFT] },
+            outstandingAmount: { gt: 0 },
+          },
+          _sum: { outstandingAmount: true },
+        }),
+        this.prisma.invoice.aggregate({
+          where: {
+            archivedAt: null,
+            outstandingAmount: { gt: 0 },
+            OR: [
+              { status: InvoiceStatus.OVERDUE },
+              {
+                status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
+                dueDate: { lt: dayStart },
+              },
+            ],
+          },
+          _sum: { outstandingAmount: true },
+        }),
+        this.prisma.payment.findMany({
+          select: {
+            amount: true,
+            allocations: { select: { amount: true } },
+          },
+          take: 5000,
+        }),
+        this.prisma.payment.aggregate({
+          where: {
+            paymentDate: { gte: monthStart },
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.invoice.count({
+          where: {
+            archivedAt: null,
+            status: {
+              in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE],
+            },
+            outstandingAmount: { gt: 0 },
+          },
+        }),
+        this.prisma.invoice.findMany({
+          where: {
+            archivedAt: null,
+            outstandingAmount: { gt: 0 },
+            OR: [
+              { status: InvoiceStatus.OVERDUE },
+              {
+                status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
+                dueDate: { lt: dayStart },
+              },
+            ],
+          },
+          orderBy: { outstandingAmount: 'desc' },
+          take: 5,
+          select: {
+            outstandingAmount: true,
+            customerId: true,
+            customer: {
+              select: { id: true, name: true, nameEn: true, nameAr: true },
+            },
+          },
+        }),
+        this.prisma.salesOrder.count({
+          where: {
+            archivedAt: null,
+            manufacturingCost: { not: null },
+            productionOrders: {
+              some: {
+                status: {
+                  in: [
+                    ProductionOrderStatus.COMPLETED,
+                    ProductionOrderStatus.READY_FOR_DELIVERY,
+                  ],
+                },
+              },
+              every: {
+                status: {
+                  in: [
+                    ProductionOrderStatus.COMPLETED,
+                    ProductionOrderStatus.READY_FOR_DELIVERY,
+                    ProductionOrderStatus.CANCELLED,
+                  ],
+                },
+              },
+            },
+            NOT: {
+              productionOrders: {
+                some: {
+                  materialUsages: {
+                    some: { finalizedAt: { not: null }, unitCost: null },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        this.prisma.salesOrder.findMany({
+          where: {
+            archivedAt: null,
+            manufacturingCost: { not: null },
+            productionOrders: {
+              some: {
+                status: {
+                  in: [
+                    ProductionOrderStatus.COMPLETED,
+                    ProductionOrderStatus.READY_FOR_DELIVERY,
+                  ],
+                },
+              },
+              every: {
+                status: {
+                  in: [
+                    ProductionOrderStatus.COMPLETED,
+                    ProductionOrderStatus.READY_FOR_DELIVERY,
+                    ProductionOrderStatus.CANCELLED,
+                  ],
+                },
+              },
+            },
+            NOT: {
+              productionOrders: {
+                some: {
+                  materialUsages: {
+                    some: { finalizedAt: { not: null }, unitCost: null },
+                  },
+                },
+              },
+            },
+          },
+          select: {
+            total: true,
+            manufacturingCost: true,
+          },
+        }),
+        this.prisma.salesOrder.count({
+          where: {
+            archivedAt: null,
+            OR: [
+              {
+                productionOrders: {
+                  some: {
+                    status: {
+                      in: [
+                        ProductionOrderStatus.COMPLETED,
+                        ProductionOrderStatus.READY_FOR_DELIVERY,
+                      ],
+                    },
+                    materialUsages: {
+                      some: { finalizedAt: { not: null }, unitCost: null },
+                    },
+                  },
+                },
+              },
+              {
+                manufacturingCost: null,
+                productionOrders: {
+                  some: {
+                    status: {
+                      in: [
+                        ProductionOrderStatus.COMPLETED,
+                        ProductionOrderStatus.READY_FOR_DELIVERY,
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        }),
+      ]);
+
+      let accountCredit = 0;
+      for (const pay of payments) {
+        accountCredit += paymentUnallocated(
+          dealerMoney(pay.amount),
+          pay.allocations.map((a) => dealerMoney(a.amount)),
+        );
+      }
+      accountCredit = Number(roundMoney(accountCredit));
+
+      const receivable = Number(
+        roundMoney(Number(receivableAgg._sum.outstandingAmount ?? 0)),
+      );
+      const overdue = Number(roundMoney(Number(overdueAgg._sum.outstandingAmount ?? 0)));
+
+      // Group top overdue by customer
+      const byCustomer = new Map<string, { name: string; amount: number }>();
+      for (const inv of topOverdueInvoices) {
+        const id = inv.customerId;
+        const name =
+          inv.customer.nameEn || inv.customer.nameAr || inv.customer.name || id;
+        const prev = byCustomer.get(id);
+        const amt = Number(inv.outstandingAmount);
+        if (prev) prev.amount += amt;
+        else byCustomer.set(id, { name, amount: amt });
+      }
+      const topOverdue = [...byCustomer.entries()]
+        .map(([customerId, v]) => ({
+          customerId,
+          name: v.name,
+          amount: Number(roundMoney(v.amount)),
+          href: `/customers/${customerId}`,
+        }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 5);
+
+      finance = {
+        receivable,
+        overdue,
+        accountCredit,
+        paymentsThisMonth: Number(
+          roundMoney(Number(paymentsThisMonthAgg._sum.amount ?? 0)),
+        ),
+        openInvoices: mgmtTile(
+          'openInvoices',
+          openInvoiceCount,
+          MGMT_HREF.openInvoices.href,
+          MGMT_HREF.openInvoices.filter,
+        ),
+        topOverdue,
+      };
+
+      // Sums from full FINAL set (no take:N); order count from prisma.count above.
+      const finalOrders = finalCostRows.map((o) => ({
+        sale: Number(o.total),
+        mfg: Number(o.manufacturingCost ?? 0),
+      }));
+      const finalCostTotal = Number(
+        roundMoney(finalOrders.reduce((s, o) => s + o.mfg, 0)),
+      );
+      manufacturing = {
+        finalCostOrders: finalCostOrderCount,
+        finalCostTotal,
+        incompleteCosting: incompleteUsages,
+        grossMfgDifference: computeGrossMfgDifference({
+          finalOrders,
+          incompleteCosting: incompleteUsages,
+        }),
+      };
+    }
+
+    // Attention seeds (bounded findMany for cards only — counts use prisma.count above)
+    const [
+      lateSoRows,
+      failQcRows,
+      returnAttentionRows,
+      setupRequiredRows,
+      materialBlockRows,
+      overdueDealerRows,
+      prodEvents,
+      qcEvents,
+      deliveryEvents,
+      receiptEvents,
+      paymentEvents,
+      returnEvents,
+      finEvents,
+      blockedRows,
+    ] = await Promise.all([
+      this.prisma.salesOrder.findMany({
+        where: {
+          archivedAt: null,
+          id: {
+            in: overdueMayBeLate
+              .filter((r) => r.classification.primaryStatus === 'LATE')
+              .map((r) => r.schedule.productionOrder.salesOrderId)
+              .filter((id): id is string => Boolean(id))
+              .slice(0, 5),
+          },
+        },
+        select: { id: true, number: true },
+        take: 5,
+      }),
+      this.prisma.qualityInspection.findMany({
+        where: { result: { in: ['FAILED_REWORK_REQUIRED', 'BLOCKED'] } },
+        orderBy: { createdAt: 'desc' },
+        take: 4,
+        select: {
+          id: true,
+          number: true,
+          productionOrder: { select: { number: true, salesOrderId: true } },
+        },
+      }),
+      this.prisma.returnRequest.findMany({
+        where: {
+          OR: [
+            { physicalStatus: 'WAITING_RETURN' },
+            {
+              physicalStatus: { in: ['RETURNED', 'INSPECTING'] },
+              inventoryFate: 'PENDING',
+            },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 4,
+        select: {
+          id: true,
+          number: true,
+          physicalStatus: true,
+          salesOrder: { select: { number: true } },
+        },
+      }),
+      this.prisma.salesOrder.findMany({
+        where: {
+          archivedAt: null,
+          status: { notIn: [SalesOrderStatus.CANCELLED, SalesOrderStatus.COMPLETED] },
+          productionSetup: { status: 'SETUP_REQUIRED' },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 3,
+        select: { id: true, number: true },
+      }),
+      this.prisma.productionOrder.findMany({
+        where: {
+          archivedAt: null,
+          status: ProductionOrderStatus.WAITING_FOR_MATERIALS,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 3,
+        select: {
+          id: true,
+          number: true,
+          salesOrderId: true,
+          salesOrder: { select: { number: true } },
+        },
+      }),
+      canFinancial
+        ? this.prisma.invoice.findMany({
+            where: {
+              archivedAt: null,
+              outstandingAmount: { gt: 0 },
+              OR: [
+                { status: InvoiceStatus.OVERDUE },
+                {
+                  status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
+                  dueDate: { lt: dayStart },
+                },
+              ],
+            },
+            orderBy: { outstandingAmount: 'desc' },
+            take: 2,
+            select: {
+              id: true,
+              number: true,
+              outstandingAmount: true,
+              customer: { select: { id: true, name: true, nameEn: true } },
+            },
+          })
+        : Promise.resolve([]),
+      this.prisma.productionTask.findMany({
+        where: {
+          status: TaskStatus.COMPLETED,
+          actualCompletion: { gte: dayStart },
+        },
+        orderBy: { actualCompletion: 'desc' },
+        take: 3,
+        select: {
+          id: true,
+          number: true,
+          name: true,
+          actualCompletion: true,
+          productionOrder: { select: { id: true, number: true } },
+        },
+      }),
+      this.prisma.qualityInspection.findMany({
+        where: {
+          result: { in: ['PASSED', 'PASSED_WITH_NOTES', 'FAILED_REWORK_REQUIRED'] },
+          inspectedAt: { gte: dayStart },
+        },
+        orderBy: { inspectedAt: 'desc' },
+        take: 2,
+        select: {
+          id: true,
+          number: true,
+          result: true,
+          inspectedAt: true,
+          productionOrder: { select: { id: true } },
+        },
+      }),
+      this.prisma.delivery.findMany({
+        where: {
+          OR: [
+            { status: 'OUT_FOR_DELIVERY', updatedAt: { gte: dayStart } },
+            { actualDeliveredAt: { gte: dayStart } },
+          ],
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 2,
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          updatedAt: true,
+          actualDeliveredAt: true,
+        },
+      }),
+      this.prisma.goodsReceipt.findMany({
+        where: { createdAt: { gte: dayStart } },
+        orderBy: { createdAt: 'desc' },
+        take: 2,
+        select: {
+          id: true,
+          number: true,
+          createdAt: true,
+          purchaseOrder: { select: { number: true } },
+        },
+      }),
+      canFinancial
+        ? this.prisma.payment.findMany({
+            where: { paymentDate: { gte: dayStart } },
+            orderBy: { paymentDate: 'desc' },
+            take: 2,
+            select: {
+              id: true,
+              number: true,
+              amount: true,
+              paymentDate: true,
+              customer: { select: { name: true, nameEn: true } },
+            },
+          })
+        : Promise.resolve([]),
+      this.prisma.returnRequest.findMany({
+        where: { updatedAt: { gte: dayStart } },
+        orderBy: { updatedAt: 'desc' },
+        take: 2,
+        select: {
+          id: true,
+          number: true,
+          physicalStatus: true,
+          updatedAt: true,
+        },
+      }),
+      this.prisma.inventoryLot.findMany({
+        where: {
+          producedAt: { gte: dayStart },
+          inventoryItem: { itemClass: 'FINISHED_GOOD' },
+        },
+        orderBy: { producedAt: 'desc' },
+        take: 2,
+        select: {
+          id: true,
+          producedAt: true,
+          productionOrder: { select: { id: true, number: true } },
+        },
+      }),
+      this.prisma.productionOrder.findMany({
+        where: {
+          archivedAt: null,
+          OR: [
+            {
+              status: {
+                in: [ProductionOrderStatus.ON_HOLD, ProductionOrderStatus.WAITING_FOR_MATERIALS],
+              },
+            },
+            {
+              status: {
+                notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
+              },
+              tasks: { some: { blockers: { some: { resolvedAt: null } } } },
+            },
+          ],
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          salesOrder: { select: { number: true } },
+          tasks: {
+            where: { blockers: { some: { resolvedAt: null } } },
+            take: 1,
+            select: {
+              blockers: {
+                where: { resolvedAt: null },
+                take: 1,
+                select: { category: true, reason: true },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const attention: MgmtAttentionCard[] = [];
+
+    for (const so of lateSoRows) {
+      attention.push(
+        mgmtAttention({
+          id: `late-${so.id}`,
+          title: so.number,
+          why: 'Past committed / required delivery — schedule marked late',
+          actionLabel: 'Review schedule',
+          priority: 'critical',
+          href: `/sales-orders/${so.id}`,
+          filter: MGMT_HREF.overdueOrders.filter,
+        }),
+      );
+    }
+    for (const qc of failQcRows) {
+      attention.push(
+        mgmtAttention({
+          id: `qc-${qc.id}`,
+          title: qc.productionOrder?.number ?? qc.number,
+          why: 'Quality failed — open rework or blocked inspection',
+          actionLabel: 'Open quality',
+          priority: 'critical',
+          href: `/quality/${qc.id}`,
+          filter: MGMT_HREF.qualityFail.filter,
+        }),
+      );
+    }
+    for (const ret of returnAttentionRows) {
+      const waiting = ret.physicalStatus === 'WAITING_RETURN';
+      attention.push(
+        mgmtAttention({
+          id: `ret-${ret.id}`,
+          title: ret.number,
+          why: waiting
+            ? 'Approved return — waiting for physical receipt'
+            : 'Returned goods awaiting inspection / fate',
+          actionLabel: waiting ? 'Confirm returned' : 'Inspect return',
+          priority: waiting ? 'high' : 'critical',
+          href: `/returns?id=${ret.id}`,
+          filter: waiting
+            ? MGMT_HREF.returnsWaitingReturn.filter
+            : MGMT_HREF.returnsInspect.filter,
+        }),
+      );
+    }
+    for (const so of setupRequiredRows) {
+      attention.push(
+        mgmtAttention({
+          id: `setup-${so.id}`,
+          title: so.number,
+          why: 'Production setup incomplete (SETUP_REQUIRED)',
+          actionLabel: 'Continue setup',
+          priority: 'high',
+          href: `/sales-orders/${so.id}/production-setup`,
+          filter: MGMT_HREF.setupRequired.filter,
+        }),
+      );
+    }
+    for (const po of materialBlockRows) {
+      attention.push(
+        mgmtAttention({
+          id: `mat-${po.id}`,
+          title: po.salesOrder?.number ?? po.number,
+          why: 'Waiting for materials — production blocked',
+          actionLabel: 'View materials',
+          priority: 'high',
+          href: po.salesOrderId
+            ? `/sales-orders/${po.salesOrderId}`
+            : `/production/${po.id}`,
+          filter: MGMT_HREF.blockingProduction.filter,
+        }),
+      );
+    }
+    for (const inv of overdueDealerRows) {
+      const name = inv.customer.nameEn || inv.customer.name || 'Dealer';
+      attention.push(
+        mgmtAttention({
+          id: `fin-${inv.id}`,
+          title: inv.number,
+          why: `${name} has overdue balance ${Number(inv.outstandingAmount)}`,
+          actionLabel: 'Open statement',
+          priority: 'high',
+          href: `/customers/${inv.customer.id}`,
+          filter: MGMT_HREF.overdueInvoices.filter,
+        }),
+      );
+    }
+
+    if (canInventory && rawShortages > 0) {
+      attention.push(
+        mgmtAttention({
+          id: 'raw-shortages',
+          title: 'Raw shortages',
+          why: `${rawShortages} raw items at or below min stock`,
+          actionLabel: 'Open inventory',
+          priority: 'normal',
+          href: MGMT_HREF.rawShortages.href,
+          filter: MGMT_HREF.rawShortages.filter,
+        }),
+      );
+    }
+
+    const blocked: MgmtBlockedItem[] = blockedRows.map((po) => {
+      const blocker = po.tasks[0]?.blockers[0];
+      const why =
+        po.status === ProductionOrderStatus.WAITING_FOR_MATERIALS
+          ? 'Waiting for materials'
+          : po.status === ProductionOrderStatus.ON_HOLD
+            ? 'Order on hold'
+            : blocker
+              ? `${blocker.category}: ${blocker.reason}`
+              : 'Open blocker on floor task';
+      return {
+        id: po.id,
+        title: po.salesOrder?.number ?? po.number,
+        why,
+        href: `/production/${po.id}`,
+        filter: MGMT_HREF.productionBlocked.filter,
+      };
+    });
+
+    const productionEvents: MgmtEvent[] = prodEvents.map((t) => ({
+      at: (t.actualCompletion ?? now).toISOString(),
+      label: `Completed ${t.name} on ${t.productionOrder.number}`,
+      href: `/production/${t.productionOrder.id}`,
+    }));
+
+    const activity: MgmtEvent[] = [];
+    for (const e of deliveryEvents) {
+      activity.push({
+        at: (e.actualDeliveredAt ?? e.updatedAt).toISOString(),
+        label:
+          e.status === 'OUT_FOR_DELIVERY'
+            ? `Truck departed ${e.number}`
+            : `Delivery ${e.number} updated`,
+        href: `/deliveries/${e.id}`,
+      });
+    }
+    for (const e of qcEvents) {
+      activity.push({
+        at: (e.inspectedAt ?? now).toISOString(),
+        label: `QC ${e.number}: ${e.result}`,
+        href: `/quality/${e.id}`,
+      });
+    }
+    for (const e of receiptEvents) {
+      activity.push({
+        at: e.createdAt.toISOString(),
+        label: `GRN ${e.number} for ${e.purchaseOrder?.number ?? 'PO'}`,
+        href: `/purchasing`,
+      });
+    }
+    for (const e of paymentEvents) {
+      const name = e.customer?.nameEn || e.customer?.name || 'Dealer';
+      activity.push({
+        at: e.paymentDate.toISOString(),
+        label: `Payment ${e.number} from ${name}`,
+        href: `/payments`,
+      });
+    }
+    for (const e of finEvents) {
+      activity.push({
+        at: e.producedAt.toISOString(),
+        label: `Finished goods posted${e.productionOrder ? ` (${e.productionOrder.number})` : ''}`,
+        href: e.productionOrder
+          ? `/production/${e.productionOrder.id}`
+          : MGMT_HREF.finishedWaiting.href,
+      });
+    }
+    for (const e of returnEvents) {
+      activity.push({
+        at: e.updatedAt.toISOString(),
+        label: `Return ${e.number} → ${e.physicalStatus}`,
+        href: `/returns?id=${e.id}`,
+      });
+    }
+    activity.sort((a, b) => b.at.localeCompare(a.at));
+
+    const H = MGMT_HREF;
+    return {
+      attention: capAttentionCards(attention, 12),
+      today: {
+        productionStarting: mgmtTile(
+          'productionStarting',
+          productionStarting,
+          H.productionStarting.href,
+          H.productionStarting.filter,
+        ),
+        productionDue: mgmtTile(
+          'productionDue',
+          productionDue,
+          H.productionDue.href,
+          H.productionDue.filter,
+        ),
+        qualityWaiting: mgmtTile(
+          'qualityWaiting',
+          qualityWaiting,
+          H.qualityWaiting.href,
+          H.qualityWaiting.filter,
+        ),
+        finishedToday: mgmtTile(
+          'finishedToday',
+          finishedToday,
+          H.productionCompletedToday.href,
+          H.productionCompletedToday.filter,
+        ),
+        leavingToday: mgmtTile(
+          'leavingToday',
+          leavingToday,
+          H.leavingToday.href,
+          H.leavingToday.filter,
+        ),
+        receivingToday: mgmtTile(
+          'receivingToday',
+          receivingToday,
+          H.receivingToday.href,
+          H.receivingToday.filter,
+        ),
+      },
+      factoryFlow: buildFactoryFlow({
+        prepare: flowPrepare,
+        ready_factory: flowReady,
+        in_production: flowInProd,
+        quality_rework: flowQuality,
+        packaging: flowPackaging,
+        finished: flowFinished,
+      }),
+      production: {
+        activeOrders: mgmtTile(
+          'activeOrders',
+          activeOrders,
+          H.productionActive.href,
+          H.productionActive.filter,
+        ),
+        tasksCompletedToday: mgmtTile(
+          'tasksCompletedToday',
+          tasksCompletedToday,
+          H.productionCompletedToday.href,
+          H.productionCompletedToday.filter,
+        ),
+        blocked: mgmtTile(
+          'blocked',
+          blockedCount,
+          H.productionBlocked.href,
+          H.productionBlocked.filter,
+        ),
+        dueToday: mgmtTile(
+          'dueToday',
+          dueTodayPo,
+          H.productionDue.href,
+          H.productionDue.filter,
+        ),
+        events: productionEvents.slice(0, 3),
+      },
+      blocked,
+      workers,
+      late: {
+        overdue: mgmtTile(
+          'overdue',
+          overdueCount,
+          H.overdueOrders.href,
+          H.overdueOrders.filter,
+        ),
+        atRiskLimited: true as const,
+      },
+      outbound: {
+        finishedWaiting: mgmtTile(
+          'finishedWaiting',
+          finishedWaiting,
+          H.finishedWaiting.href,
+          H.finishedWaiting.filter,
+        ),
+        leavingToday: mgmtTile(
+          'leavingToday',
+          leavingToday,
+          H.leavingToday.href,
+          H.leavingToday.filter,
+        ),
+        overduePickup: mgmtTile(
+          'overduePickup',
+          overduePickup,
+          H.overduePickup.href,
+          H.overduePickup.filter,
+        ),
+        shippedAwaitingDealer: mgmtTile(
+          'shippedAwaitingDealer',
+          shippedAwaitingDealer,
+          H.shippedAwaiting.href,
+          H.shippedAwaiting.filter,
+        ),
+      },
+      materials: {
+        needsPurchasing: mgmtTile(
+          'needsPurchasing',
+          needsPurchasing,
+          H.needsPurchasing.href,
+          H.needsPurchasing.filter,
+        ),
+        blockingProduction: mgmtTile(
+          'blockingProduction',
+          blockingProduction,
+          H.blockingProduction.href,
+          H.blockingProduction.filter,
+        ),
+        arrivingToday: mgmtTile(
+          'arrivingToday',
+          arrivingToday,
+          H.arrivingToday.href,
+          H.arrivingToday.filter,
+        ),
+        lateSupplierPos: mgmtTile(
+          'lateSupplierPos',
+          lateSupplierPos,
+          H.lateSupplierPos.href,
+          H.lateSupplierPos.filter,
+        ),
+      },
+      inventory: {
+        rawShortages: mgmtTile(
+          'rawShortages',
+          canInventory ? rawShortages : 0,
+          H.rawShortages.href,
+          H.rawShortages.filter,
+        ),
+        semiHandoff: mgmtTile(
+          'semiHandoff',
+          canInventory ? semiHandoff : 0,
+          H.semiHandoff.href,
+          H.semiHandoff.filter,
+        ),
+        finishedWaiting: mgmtTile(
+          'finishedWaiting',
+          inventoryFinishedWaiting,
+          H.finishedWaiting.href,
+          H.finishedWaiting.filter,
+        ),
+        correctionsAttention: mgmtTile(
+          'correctionsAttention',
+          correctionsAttention,
+          H.corrections.href,
+          H.corrections.filter,
+        ),
+      },
+      quality: {
+        waitingInspection: mgmtTile(
+          'waitingInspection',
+          Math.max(waitingInspection, qualityWaiting),
+          H.qualityWaiting.href,
+          H.qualityWaiting.filter,
+        ),
+        failRework: mgmtTile(
+          'failRework',
+          failRework,
+          H.qualityFail.href,
+          H.qualityFail.filter,
+        ),
+        readyReinspection: mgmtTile(
+          'readyReinspection',
+          readyReinspection,
+          H.qualityReinspect.href,
+          H.qualityReinspect.filter,
+        ),
+        passedToday: mgmtTile(
+          'passedToday',
+          passedToday,
+          H.qualityPassedToday.href,
+          H.qualityPassedToday.filter,
+        ),
+      },
+      exceptions: {
+        returnsOpen: mgmtTile(
+          'returnsOpen',
+          returnsOpen,
+          H.returnsOpen.href,
+          H.returnsOpen.filter,
+        ),
+        waitingReturn: mgmtTile(
+          'waitingReturn',
+          waitingReturn,
+          H.returnsWaitingReturn.href,
+          H.returnsWaitingReturn.filter,
+        ),
+        waitingInspection: mgmtTile(
+          'waitingInspection',
+          returnsWaitingInspect,
+          H.returnsInspect.href,
+          H.returnsInspect.filter,
+        ),
+        cancelDisposition: mgmtTile(
+          'cancelDisposition',
+          cancelDisposition,
+          H.cancelDisposition.href,
+          H.cancelDisposition.filter,
+        ),
+        inventoryCorrections: mgmtTile(
+          'inventoryCorrections',
+          inventoryCorrections,
+          H.corrections.href,
+          H.corrections.filter,
+        ),
+      },
+      finance,
+      manufacturing,
+      activity: activity.slice(0, 8),
+      generatedAt: now.toISOString(),
+    };
   }
 
   toCsv(rows: Record<string, unknown>[]): string {

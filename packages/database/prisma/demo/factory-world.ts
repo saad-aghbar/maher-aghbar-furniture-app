@@ -9,8 +9,22 @@ import { seedDemoCatalog } from './catalog';
 import { emptySeq, seedDemoSequences } from './seq';
 import { seedDemoStock } from './stock';
 import { seedDemoOrders } from './orders';
+import { seedPiece1LifecycleExamples } from './piece1-lifecycle';
+import { seedPiece2ProductionSetupExamples } from './piece2-production-setup';
+import { seedPiece3ProductionPlanExamples } from './piece3-production-plan';
+import { seedPiece4ManufacturingSpecExamples } from './piece4-manufacturing-spec';
+import { seedPiece5ManufacturingCostExamples } from './piece5-manufacturing-cost';
+import { seedPiece6PurchasingReceivingExamples } from './piece6-purchasing-receiving';
+import { seedPiece7DealerFinanceExamples } from './piece7-dealer-finance';
+import { seedPiece8FactoryFloorExamples } from './piece8-factory-floor';
+import { seedPiece9QualityPackagingExamples } from './piece9-quality-packaging';
+import { seedPiece10FinishedOutboundExamples } from './piece10-finished-outbound';
+import { seedPiece11ExceptionsReturnsExamples } from './piece11-exceptions-returns';
+import { seedPiece12ManagementDashboardExamples } from './piece12-management-dashboard';
+import { seedPiece14FullSystemExamples } from './piece14-full-system';
 import { seedDemoExtras } from './extras';
 import { wipeOperationalData } from './wipe';
+import { ensureQuotationAcceptedUniqueIndex } from './quotation-accepted-index';
 
 export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
   const passwordHash = hashSync('123', 12);
@@ -79,6 +93,105 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
     rawWhId: stock.rawWhId,
   });
 
+  console.log('Seeding Piece 1 order lifecycle examples…');
+  await seedPiece1LifecycleExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+  });
+
+  console.log('Seeding Piece 2 production setup examples…');
+  await seedPiece2ProductionSetupExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+  });
+
+  console.log('Seeding Piece 3 production plan examples…');
+  await seedPiece3ProductionPlanExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+    workerIds: people.workers.map((w) => w.id),
+    workers: people.workers,
+  });
+
+  console.log('Seeding Piece 4 manufacturing spec examples…');
+  await seedPiece4ManufacturingSpecExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+  });
+
+  console.log('Seeding Piece 5 manufacturing cost examples…');
+  await seedPiece5ManufacturingCostExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+  });
+
+  console.log('Seeding Piece 6 purchasing / receiving examples…');
+  await seedPiece6PurchasingReceivingExamples(prisma, {
+    adminUserId: people.adminId,
+  });
+
+  console.log('Seeding Piece 7 dealer commercial finance examples…');
+  await seedPiece7DealerFinanceExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+  });
+
+  console.log('Seeding Piece 8 factory floor SEMI handoff examples…');
+  await seedPiece8FactoryFloorExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+    workerIds: people.workers.map((w) => w.id),
+    workers: people.workers,
+  });
+
+  console.log('Seeding Piece 9 quality / rework / packaging examples…');
+  await seedPiece9QualityPackagingExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+    workerIds: people.workers.map((w) => w.id),
+    workers: people.workers,
+  });
+
+  console.log('Seeding Piece 10 finished outbound / dealer receipt examples…');
+  await seedPiece10FinishedOutboundExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+    workerIds: people.workers.map((w) => w.id),
+    workers: people.workers,
+    driverId: people.driverId,
+  });
+
+  console.log('Seeding Piece 11 exceptions / returns / cancel examples…');
+  await seedPiece11ExceptionsReturnsExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+    workerIds: people.workers.map((w) => w.id),
+    workers: people.workers,
+    driverId: people.driverId,
+  });
+
+  console.log('Seeding Piece 12 management dashboard mapping log…');
+  await seedPiece12ManagementDashboardExamples(prisma);
+
+  console.log('Seeding Piece 14 full-system walkthrough examples…');
+  await seedPiece14FullSystemExamples(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
+    adminUserId: people.adminId,
+    workerIds: people.workers.map((w) => w.id),
+    workers: people.workers,
+  });
+
   console.log('Seeding extras…');
   await seedDemoExtras(prisma, {
     adminId: people.adminId,
@@ -101,5 +214,6 @@ export async function runDemoReset(prisma: PrismaClient): Promise<void> {
   await wipeOperationalData(prisma);
   console.log('Demo reset: re-seeding foundation after wipe…');
   await seedFoundation(prisma);
+  await ensureQuotationAcceptedUniqueIndex(prisma);
   await seedDemoFactory(prisma);
 }

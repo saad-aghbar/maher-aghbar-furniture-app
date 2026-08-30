@@ -6,6 +6,7 @@ import {
   type MaterialsListRow,
 } from '@/components/admin/materials-list-editor';
 import { SupplierSearchPicker } from '@/components/admin/supplier-search-picker';
+import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
 import { Link, useRouter } from '@/i18n/navigation';
 import { apiFetch, ApiClientError } from '@/lib/api-client';
 import {
@@ -66,6 +67,12 @@ interface POLine {
   quantity: string | number;
   inventoryItemId?: string | null;
 }
+interface PoPresentation {
+  phase: string;
+  labelKey: string;
+  tone?: string;
+  progress?: number;
+}
 interface PORow {
   id: string;
   number: string;
@@ -74,6 +81,72 @@ interface PORow {
   supplier?: { name: string; nameAr?: string | null; nameEn?: string | null; nameHe?: string | null };
   total?: string | number;
   lines?: POLine[];
+  presentation?: PoPresentation;
+}
+
+type DemandRow = {
+  inventoryItemId?: string;
+  sku: string;
+  nameEn: string;
+  nameAr?: string | null;
+  nameHe?: string | null;
+  unit: string;
+  category?: string | null;
+  imageUrl?: string | null;
+  onHandQty: number;
+  reservedQty: number;
+  freeQty: number;
+  availableQty?: number;
+  requiredQty: number;
+  incomingQty: number;
+  stillNeeded?: number;
+  nextEta: string | null;
+  nextRequiredBy: string | null;
+  status: 'COVERED' | 'AT_RISK' | 'SHORTAGE' | 'NO_ETA';
+  affected: Array<{
+    productionOrderNumber: string;
+    stageCode: string;
+    qty: number;
+    requiredBy: string | null;
+  }>;
+};
+
+const DEMAND_CATEGORIES = [
+  'WOOD',
+  'FABRIC',
+  'FOAM',
+  'PAINT',
+  'ADHESIVE',
+  'METAL_ACCESSORY',
+  'DECORATIVE_ACCESSORY',
+  'PACKAGING',
+  'OTHER',
+] as const;
+
+type PurchasingPhaseKey =
+  | 'phaseDraft'
+  | 'phaseOrdered'
+  | 'phasePartial'
+  | 'phaseReceived'
+  | 'phaseClosed'
+  | 'phaseCancelled';
+
+function poPresentationLabel(
+  presentation: PoPresentation | undefined,
+  tPurchasing: (key: PurchasingPhaseKey) => string,
+): string | null {
+  if (!presentation?.labelKey) return null;
+  const key = presentation.labelKey.replace(/^purchasing\./, '') as PurchasingPhaseKey;
+  const known: PurchasingPhaseKey[] = [
+    'phaseDraft',
+    'phaseOrdered',
+    'phasePartial',
+    'phaseReceived',
+    'phaseClosed',
+    'phaseCancelled',
+  ];
+  if (known.includes(key)) return tPurchasing(key);
+  return presentation.phase || null;
 }
 interface PRSupplier {
   id?: string;
@@ -155,6 +228,7 @@ export default function PurchasingPage() {
   const locale = useLocale();
   const tNav = useTranslations('navigation');
   const tc = useTranslations('catalog');
+  const tPurchasing = useTranslations('purchasing');
   const tCommon = useTranslations('common');
   const tStatus = useTranslations('statuses');
   const queryClient = useQueryClient();
@@ -183,14 +257,27 @@ export default function PurchasingPage() {
   const [poSupplierId, setPoSupplierId] = useState('');
   const [prSupplierId, setPrSupplierId] = useState('');
   const [siSupplierId, setSiSupplierId] = useState('');
+  const [poDateFrom, setPoDateFrom] = useState('');
+  const [poDateTo, setPoDateTo] = useState('');
+  const [demandQ, setDemandQ] = useState('');
+  const [demandCategory, setDemandCategory] = useState('');
 
   const poParams = useMemo(() => {
     const params = new URLSearchParams({ pageSize: '100' });
     if (poSearch.trim()) params.set('q', poSearch.trim());
     if (poStatus) params.set('status', poStatus);
     if (poSupplierId) params.set('supplierId', poSupplierId);
+    if (poDateFrom) params.set('dateFrom', poDateFrom);
+    if (poDateTo) params.set('dateTo', poDateTo);
     return params.toString();
-  }, [poSearch, poStatus, poSupplierId]);
+  }, [poSearch, poStatus, poSupplierId, poDateFrom, poDateTo]);
+
+  const demandParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (demandQ.trim()) params.set('q', demandQ.trim());
+    if (demandCategory) params.set('category', demandCategory);
+    return params.toString();
+  }, [demandQ, demandCategory]);
 
   const prParams = useMemo(() => {
     const params = new URLSearchParams({ pageSize: '100' });
@@ -238,6 +325,14 @@ export default function PurchasingPage() {
     queryFn: () =>
       apiFetch<{ data: Warehouse[] }>('/api/v1/warehouses?pageSize=50').then((r) => r.data),
   });
+  const demandQuery = useQuery({
+    queryKey: ['material-demand', demandParams],
+    queryFn: () =>
+      apiFetch<DemandRow[]>(
+        `/api/v1/material-demand${demandParams ? `?${demandParams}` : ''}`,
+      ),
+    placeholderData: keepPreviousData,
+  });
 
   const poStatusOpts = statusOptions(tStatus, PURCHASE_ORDER_STATUSES, {
     label: tCommon('all'),
@@ -279,7 +374,10 @@ export default function PurchasingPage() {
     onSuccess: async () => {
       setFormError(null);
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['material-demand'] });
       setPoOpen(false);
+      setPoMaterials(emptyMaterialsList());
+      setSupplierId('');
       setBanner(tc('purchaseOrderCreated'));
     },
     onError: (err) => setFormError(mutationErrorMessage(err)),
@@ -452,6 +550,44 @@ export default function PurchasingPage() {
     setSupplierOpen(true);
   }
 
+  function openPoDraft() {
+    setWarehouseId((prev) => prev || warehouses[0]?.id || '');
+    setFormError(null);
+    setPoOpen(true);
+  }
+
+  function addDemandToPurchase(row: DemandRow) {
+    const itemId = row.inventoryItemId;
+    const qty = Number(row.stillNeeded ?? 0);
+    if (!itemId || !(qty > 0)) return;
+    setPoMaterials((prev) => {
+      const existing = prev.find((r) => r.inventoryItemId === itemId);
+      if (existing) {
+        return prev.map((r) =>
+          r.inventoryItemId === itemId
+            ? { ...r, quantity: String((Number(r.quantity) || 0) + qty) }
+            : r,
+        );
+      }
+      return [
+        ...prev,
+        {
+          key: `demand-${itemId}-${Date.now()}`,
+          inventoryItemId: itemId,
+          sku: row.sku,
+          nameEn: row.nameEn,
+          nameAr: row.nameAr ?? '',
+          category: row.category ?? undefined,
+          unit: row.unit?.trim() || 'pcs',
+          quantity: String(qty),
+          unitPrice: '0',
+          imageUrl: row.imageUrl ?? null,
+        },
+      ];
+    });
+    setBanner(tc('addToPurchase'));
+  }
+
   const supplierFilterOptions = (
     <>
       <option value="">{tc('allSuppliers')}</option>
@@ -519,6 +655,9 @@ export default function PurchasingPage() {
               <Tab value="supplier-invoices" count={supplierInvoices.length}>
                 {tc('supplierInvoices')}
               </Tab>
+              <Tab value="demand" count={demandQuery.data?.length}>
+                {tc('materialDemand')}
+              </Tab>
             </TabList>
             <Button
               variant="secondary"
@@ -532,7 +671,7 @@ export default function PurchasingPage() {
 
           <TabPanel value="orders" className="maher-purchasing-panel">
             <div
-              key={`orders-${poStatus}-${poSupplierId}`}
+              key={`orders-${poStatus}-${poSupplierId}-${poDateFrom}-${poDateTo}`}
               className="space-y-4"
             >
               <div className="maher-purchasing-filters maher-stagger mb-1 flex flex-wrap items-end gap-3">
@@ -559,6 +698,20 @@ export default function PurchasingPage() {
                 >
                   {supplierFilterOptions}
                 </Select>
+                <Input
+                  type="date"
+                  label={tc('dateFrom')}
+                  value={poDateFrom}
+                  onChange={(e) => setPoDateFrom(e.target.value)}
+                  className="w-40"
+                />
+                <Input
+                  type="date"
+                  label={tc('dateTo')}
+                  value={poDateTo}
+                  onChange={(e) => setPoDateTo(e.target.value)}
+                  className="w-40"
+                />
               </div>
               <div
                 className={`maher-purchasing-results maher-stagger grid gap-3 lg:grid-cols-2 ${
@@ -573,13 +726,17 @@ export default function PurchasingPage() {
                   orders.map((row) => {
                     const warehouse = warehouses.find((w) => w.id === row.warehouseId);
                     const lineCount = row.lines?.length ?? 0;
+                    const phaseLabel = poPresentationLabel(row.presentation, tPurchasing);
                     return (
                       <article
                         key={row.id}
                         className="maher-purchasing-card flex flex-col rounded-xl border border-border bg-surface"
                       >
                         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                          <StatusBadge status={row.status} />
+                          <StatusBadge
+                            status={row.presentation?.phase ?? row.status}
+                            label={phaseLabel ?? undefined}
+                          />
                           <Link
                             href={`/purchasing/${row.id}`}
                             className="rounded-md px-2 py-1 text-sm font-medium text-brand transition hover:bg-[var(--maher-brand-soft)]"
@@ -868,6 +1025,117 @@ export default function PurchasingPage() {
                   })
                 )}
               </div>
+            </div>
+          </TabPanel>
+          <TabPanel value="demand" className="maher-purchasing-panel">
+            <div className="space-y-4">
+              <div className="maher-purchasing-filters maher-stagger mb-1 flex flex-wrap items-end gap-3">
+                <label className="relative min-w-[220px] flex-1">
+                  <Input
+                    value={demandQ}
+                    onChange={(e) => setDemandQ(e.target.value)}
+                    placeholder={tc('purchasingSearchPlaceholder')}
+                    withSearchIcon
+                  />
+                </label>
+                <Select
+                  value={demandCategory}
+                  onChange={(e) => setDemandCategory(e.target.value)}
+                  className="min-w-[180px]"
+                  aria-label={tc('category')}
+                >
+                  <option value="">{tCommon('all')}</option>
+                  {DEMAND_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {tc(`materialCategories.${cat}`)}
+                    </option>
+                  ))}
+                </Select>
+                {poMaterials.length > 0 ? (
+                  <Button className="maher-lift shrink-0" onClick={openPoDraft}>
+                    {tc('newPurchaseOrder')} ({poMaterials.length})
+                  </Button>
+                ) : null}
+              </div>
+              {demandQuery.isLoading && !demandQuery.data ? (
+                <Skeleton className="h-40 w-full" />
+              ) : demandQuery.error ? (
+                <ErrorState
+                  title={tCommon('error')}
+                  onRetry={() => void demandQuery.refetch()}
+                />
+              ) : (demandQuery.data ?? []).length === 0 ? (
+                <EmptyState title={tc('materialDemandEmpty')} />
+              ) : (
+                <div
+                  className={`space-y-3 ${demandQuery.isFetching ? 'opacity-70 transition-opacity' : ''}`}
+                >
+                  {(demandQuery.data ?? []).map((row) => {
+                    const need = Number(row.stillNeeded ?? 0);
+                    return (
+                      <article
+                        key={row.sku}
+                        className="rounded-2xl border border-border bg-surface p-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="flex min-w-0 items-center gap-3 font-semibold" dir="ltr">
+                            <InventoryItemThumb src={row.imageUrl} alt="" size={40} />
+                            {row.sku}
+                            <span className="ms-2 font-normal text-text-secondary">
+                              {localizedName(locale, row)}
+                            </span>
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge
+                              status={
+                                row.status === 'COVERED'
+                                  ? 'READY'
+                                  : row.status === 'AT_RISK'
+                                    ? 'NEEDS_REVIEW'
+                                    : 'FAILED'
+                              }
+                              label={
+                                row.status === 'COVERED'
+                                  ? tc('demandCovered')
+                                  : row.status === 'AT_RISK'
+                                    ? tc('demandAtRisk')
+                                    : row.status === 'SHORTAGE'
+                                      ? tc('demandShortage')
+                                      : tc('demandNoEta')
+                              }
+                            />
+                            {need > 0 && row.inventoryItemId ? (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => addDemandToPurchase(row)}
+                              >
+                                {tc('addToPurchase')}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <p className="mt-2 text-sm text-text-secondary" dir="ltr">
+                          {row.availableQty ?? row.freeQty} {row.unit} {tc('availableQty')} ·{' '}
+                          {row.requiredQty} required · {row.incomingQty} {tc('incomingQty')}
+                          {need > 0 ? ` · ${need} ${tc('stillNeeded')}` : ''}
+                          {row.nextRequiredBy
+                            ? ` · ${tc('requiredBy')} ${row.nextRequiredBy.slice(0, 10)}`
+                            : ''}
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm text-text-tertiary">
+                          {row.affected.map((hit) => (
+                            <li key={`${hit.productionOrderNumber}-${hit.stageCode}`} dir="ltr">
+                              {hit.productionOrderNumber} · {hit.stageCode} × {hit.qty}
+                              {hit.requiredBy ? ` · ${hit.requiredBy.slice(0, 10)}` : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </TabPanel>
         </Tabs>

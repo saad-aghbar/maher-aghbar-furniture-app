@@ -11,6 +11,7 @@ import type { WorkflowListItem } from '@/api/modules/workflow';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -99,12 +100,23 @@ export function WorkflowListScreen() {
         />
 
         {canManage ? (
-          <PrimaryButton
-            label={t('mobile.production.workflow.newWorkflow')}
-            onPress={() => setCreateOpen(true)}
-            leading={<Ionicons name="add" size={18} color={colors.onBrand} />}
-            style={{ borderRadius: theme.radius.xl }}
-          />
+          <View style={{ gap: theme.spacing.sm }}>
+            <PrimaryButton
+              label={t('mobile.production.workflow.newWorkflow')}
+              onPress={() => setCreateOpen(true)}
+              leading={<Ionicons name="add" size={18} color={colors.onBrand} />}
+              style={{ borderRadius: theme.radius.xl }}
+            />
+            <SecondaryButton
+              label={t('mobile.production.workflow.manageStages')}
+              onPress={() => {
+                void haptics.selection();
+                router.push('/(app)/(admin)/production/workflow/stages' as Href);
+              }}
+              leading={<Ionicons name="layers-outline" size={18} color={colors.brand} />}
+              style={{ borderRadius: theme.radius.xl }}
+            />
+          </View>
         ) : null}
 
         {listQuery.isLoading ? (

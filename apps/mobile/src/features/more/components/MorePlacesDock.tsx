@@ -31,7 +31,8 @@ export function MorePlacesDock() {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const pad = theme.spacing.lg;
   const gap = theme.spacing.sm;
-  const halfW = (width - pad * 2 - gap) / 2;
+  const fullW = width - pad * 2;
+  const halfW = (fullW - gap) / 2;
 
   const places = useMemo(
     () =>
@@ -80,7 +81,7 @@ export function MorePlacesDock() {
             key={place.key}
             place={place}
             index={index}
-            width={halfW}
+            width={place.span === 'full' ? fullW : halfW}
             onPress={() => {
               void haptics.confirmLight();
               router.push(place.href);

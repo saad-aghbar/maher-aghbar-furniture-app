@@ -47,8 +47,10 @@ type ProductionTaskSheetProps = {
   onAssign: (payload: {
     employeeId: string;
     priority: string;
+    plannedStart?: string;
     plannedCompletion?: string;
     estimatedMinutes?: number;
+    overrideConflict?: boolean;
   }) => void;
   onSaveNotes: (notes: string) => void;
   onHold: () => void;

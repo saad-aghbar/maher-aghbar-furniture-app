@@ -22,6 +22,7 @@ export const DEMO_WIPE_TABLES = [
   'supplier_invoice_lines',
   'supplier_invoices',
   'statement_entries',
+  'payment_allocations',
   'payments',
   'invoice_lines',
   'invoices',

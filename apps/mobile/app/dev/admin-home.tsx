@@ -4,6 +4,8 @@ import { AdminHomeScreen } from '@/features/admin-home/AdminHomeScreen';
 import {
   adminHomeEmptyFixture,
   adminHomeSuccessFixture,
+  managementSummaryEmptyFixture,
+  managementSummarySuccessFixture,
 } from '@/features/admin-home/fixtures';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
@@ -25,6 +27,8 @@ export default function AdminHomeGalleryScreen() {
 
   const fixture =
     state === 'empty' ? adminHomeEmptyFixture : adminHomeSuccessFixture;
+  const managementFixture =
+    state === 'empty' ? managementSummaryEmptyFixture : managementSummarySuccessFixture;
 
   return (
     <View style={{ flex: 1 }}>
@@ -58,6 +62,9 @@ export default function AdminHomeGalleryScreen() {
       <AdminHomeScreen
         forceState={state}
         fixture={state === 'error' || state === 'loading' ? undefined : fixture}
+        managementFixture={
+          state === 'error' || state === 'loading' ? undefined : managementFixture
+        }
       />
     </View>
   );

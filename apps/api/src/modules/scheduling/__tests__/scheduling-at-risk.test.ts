@@ -285,6 +285,22 @@ describe('resolve at-risk', () => {
     expect(result.riskStatus).toBe('AWAITING_APPROVAL');
   });
 
+  it('resolve at-risk generate is not anchored in the past', async () => {
+    const { service, prisma } = makeService();
+    const po = order({ status: 'READY_FOR_DELIVERY' });
+    prisma.productionOrder.findUnique.mockResolvedValue(po);
+    prisma.productionSchedule.findFirst.mockResolvedValue(schedule({ productionOrder: po }));
+    const generate = jest.spyOn(service, 'generateForProductionOrder').mockResolvedValue({} as never);
+    await service.resolveAtRisk('po-1', { id: 'admin' });
+    expect(generate).toHaveBeenCalledWith(
+      'po-1',
+      'admin',
+      expect.objectContaining({ reason: 'at-risk-resolve' }),
+    );
+    const opts = generate.mock.calls[0]?.[2] as { fromDate?: Date } | undefined;
+    expect(opts?.fromDate).toBeUndefined();
+  });
+
   it('keeps an impossible commitment and does not claim success', async () => {
     const { service, prisma } = makeService();
     const po = order({ status: 'IN_PROGRESS', committedDeliveryDate: nextWeek });

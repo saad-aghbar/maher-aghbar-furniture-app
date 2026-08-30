@@ -59,6 +59,8 @@
   "FABRIC_LOCKED": "Fabric fields are locked because production has started.",
 
   "STAGE_LOCKED": "This stage is locked until prerequisites are completed.",
+  "LOCKED_ANCHOR_STAGE": "Material Prep, Inspection, Packaging, and Delivery cannot be deleted.",
+  "LOCKED_ANCHOR_NAME": "The name of Material Prep, Inspection, Packaging, and Delivery cannot be changed.",
   "ASSIGN_LOCKED": "Task assignment cannot be changed in the current state.",
   "PHOTOS_REQUIRED": "Photos are required before completing this task.",
 
@@ -124,10 +126,26 @@
   "SETUP_OUTPUT_QTY_INVALID": "Output quantity per unit must be greater than zero.",
   "SETUP_CONSUME_INPUTS_REQUIRED": "Choose which semi-finished outputs this stage uses.",
   "SETUP_CONSUME_OUTPUT_MISSING": "A selected input is not a saved output on this product.",
+  "SETUP_CONSUME_OUTPUT_ALREADY_CLAIMED": "That semi-finished piece is already taken by another stage.",
   "SETUP_EXCLUDED_REQUIRED_PRODUCER": "A required producing stage cannot be excluded.",
+  "SETUP_MATERIAL_STAGE_UNKNOWN": "Map materials to a real workflow stage.",
+  "SETUP_MATERIAL_SKU_UNKNOWN": "Map only real inventory SKUs to stages.",
+  "SETUP_MATERIAL_QTY_INVALID": "Material quantity per unit must be greater than zero.",
+  "SETUP_MATERIAL_QTY_OVER_BOM": "Stage material quantities exceed the product BOM total for one or more SKUs.",
+  "SETUP_MATERIAL_DUPLICATE": "The same SKU cannot be mapped twice on one stage.",
+  "SETUP_MATERIAL_SKU_UNMAPPED": "A BOM SKU is not mapped to a stage.",
   "SETUP_DEFAULT_WAREHOUSE_SEMI": "Set a default semi-finished warehouse.",
   "SETUP_DEFAULT_WAREHOUSE_FINISHED": "Set a default finished-goods warehouse.",
   "SETUP_DEFAULT_WAREHOUSE_RAW": "Set a default raw-materials warehouse.",
   "SETUP_QC_FLAG_REQUIRED": "Finished-product stages should run after a quality inspection.",
-  "SETUP_STAGES_INCOMPLETE": "Configure at least one producing stage."
+  "SETUP_STAGES_INCOMPLETE": "Configure at least one producing stage.",
+  "SETUP_FINISHED_ONLY_PACKAGING": "Only the Packaging stage may produce finished goods.",
+  "SETUP_FINISHED_MULTIPLE": "Only Packaging may produce the finished product.",
+  "SETUP_PACK_PIECES_INVALID": "Packaging needs at least one package piece per product unit.",
+  "SETUP_PACK_LABELS_REQUIRED": "Name every ship package for Packaging (for example A, legs, 3).",
+  "SETUP_INSPECTION_MUST_NOT_PRODUCE": "Inspection confirms quality only and must not create stocked inventory.",
+  "SETUP_DELIVERY_MUST_NOT_PRODUCE": "Delivery checks packages onto the truck and must not create stocked inventory.",
+  "SETUP_PACKAGING_MUST_PRODUCE_FINISHED": "Packaging must produce the finished product with ship packages.",
+  "SETUP_PACKAGING_MUST_CONSUME_SEMI": "Packaging must take the upstream semi-finished kit.",
+  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "Inspection must take the upstream semi-finished kit to confirm."
 }

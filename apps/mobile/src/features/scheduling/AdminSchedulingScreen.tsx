@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,9 +40,14 @@ import {
   approveSchedule,
   dealerDateChange,
   deleteCalendarException,
+  getLatestManualSyncRun,
+  getLatestCapacityOptimizeRun,
   getOrderSchedule,
   getReplanRun,
   isOwnOrderSchedule,
+  postFactorySync,
+  postCapacityOptimizePreview,
+  postCapacityOptimizeApply,
   recalculateSchedule,
   resolveAllAtRisk,
   resolveAllConflicts,
@@ -62,6 +67,8 @@ import {
   RecalculateScheduleSheet,
   ResolveAllAtRiskSheet,
   ResolveConflictSheet,
+  SyncScheduleSheet,
+  OptimizeScheduleSheet,
 } from './components/AdminScheduleSheets';
 import { AtRiskOrderCard, atRiskActionIcon } from './components/AtRiskOrderCard';
 import { FactoryCapacitySection } from './components/FactoryCapacitySection';
@@ -107,6 +114,22 @@ import {
   type ConflictRowModel,
 } from './selectScheduleDates';
 import { pollReplanRun, selectReplanResultToast } from './pollReplanRun';
+import {
+  MANUAL_SYNC_POLL_TIMEOUT_MS,
+  selectSyncSheetPhase,
+  shouldToastSyncCompletion,
+  syncStatsFromResult,
+  type SyncScheduleSheetPhase,
+  type SyncScheduleStats,
+} from './syncScheduleUi';
+import {
+  CAPACITY_OPTIMIZE_POLL_TIMEOUT_MS,
+  optimizeStatsFromResult,
+  selectOptimizeSheetPhase,
+  shouldToastOptimizeCompletion,
+  type OptimizeScheduleSheetPhase,
+  type OptimizeScheduleStats,
+} from './optimizeScheduleUi';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { adminProductionFlowHref } from '@/features/production-flow/flowRoutes';
 
@@ -166,6 +189,16 @@ export function AdminSchedulingScreen() {
   const [atRiskResolveOpen, setAtRiskResolveOpen] = useState(false);
   const [atRiskResolveResult, setAtRiskResolveResult] = useState<ResolveAllAtRiskResult | null>(null);
   const [reviewRow, setReviewRow] = useState<ConflictRowModel | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncPhase, setSyncPhase] = useState<SyncScheduleSheetPhase>('confirm');
+  const [syncStats, setSyncStats] = useState<SyncScheduleStats | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const syncPollRef = useRef<string | null>(null);
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [optimizePhase, setOptimizePhase] = useState<OptimizeScheduleSheetPhase>('confirm');
+  const [optimizeStats, setOptimizeStats] = useState<OptimizeScheduleStats | null>(null);
+  const [optimizeError, setOptimizeError] = useState<string | null>(null);
+  const optimizePollRef = useRef<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [userPullRefreshing, setUserPullRefreshing] = useState(false);
@@ -212,6 +245,215 @@ export function AdminSchedulingScreen() {
       needsWeekWindow ? weekCalendarQuery.refetch() : Promise.resolve(null),
     ]);
   };
+
+  const applySyncRun = (run: { status: string; result?: Parameters<typeof syncStatsFromResult>[0] }) => {
+    const stats = syncStatsFromResult(run.result);
+    setSyncStats(stats);
+    const phase = selectSyncSheetPhase({
+      run: { status: run.status as 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED', result: run.result },
+    });
+    setSyncPhase(phase);
+    if (shouldToastSyncCompletion(phase)) {
+      showToast({
+        variant: 'error',
+        message: t('mobile.adminScheduling.sync.failed'),
+      });
+    }
+  };
+
+  const pollFactorySync = async (runId: string, opts?: { alreadyInProgress?: boolean; conflictInProgress?: boolean }) => {
+    if (syncPollRef.current === runId) return;
+    syncPollRef.current = runId;
+    setSyncOpen(true);
+    setSyncPhase(
+      selectSyncSheetPhase({
+        run: { status: 'RUNNING' },
+        alreadyInProgress: opts?.alreadyInProgress,
+        conflictInProgress: opts?.conflictInProgress,
+      }),
+    );
+    try {
+      const run = await pollReplanRun(getReplanRun, runId, { timeoutMs: MANUAL_SYNC_POLL_TIMEOUT_MS });
+      applySyncRun(run);
+      void refetchAll();
+      for (const key of invalidateKeys.afterScheduleMutation()) {
+        void queryClient.invalidateQueries({ queryKey: key as readonly unknown[] });
+      }
+    } catch (err) {
+      setSyncPhase('failed');
+      setSyncError(toastMessageForError(err));
+    } finally {
+      if (syncPollRef.current === runId) syncPollRef.current = null;
+    }
+  };
+
+  const startFactorySync = () => {
+    setSyncError(null);
+    void (async () => {
+      try {
+        const queued = await postFactorySync();
+        if (!queued.replanJobId) {
+          setSyncPhase('failed');
+          return;
+        }
+        await pollFactorySync(queued.replanJobId, { alreadyInProgress: queued.alreadyInProgress });
+      } catch (err) {
+        if (isApiError(err) && err.code === 'SYNC_ALREADY_IN_PROGRESS') {
+          setSyncPhase('inProgress');
+          setSyncOpen(true);
+          if (err.runId) {
+            await pollFactorySync(err.runId, { conflictInProgress: true });
+          }
+          return;
+        }
+        setSyncPhase('failed');
+        setSyncError(toastMessageForError(err));
+        setSyncOpen(true);
+      }
+    })();
+  };
+
+  const applyOptimizeRun = (run: {
+    status: string;
+    result?: Parameters<typeof optimizeStatsFromResult>[0];
+  }) => {
+    const stats = optimizeStatsFromResult(run.result);
+    setOptimizeStats(stats);
+    const phase = selectOptimizeSheetPhase({
+      run: { status: run.status as 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED', result: run.result },
+    });
+    setOptimizePhase(phase);
+    if (shouldToastOptimizeCompletion(phase)) {
+      showToast({
+        variant: 'error',
+        message: t('mobile.adminScheduling.optimize.failed'),
+      });
+    }
+  };
+
+  const pollCapacityOptimize = async (
+    runId: string,
+    opts?: { alreadyInProgress?: boolean; conflictInProgress?: boolean; awaitingApply?: boolean },
+  ) => {
+    if (optimizePollRef.current === runId) return;
+    optimizePollRef.current = runId;
+    setOptimizeOpen(true);
+    setOptimizePhase(
+      selectOptimizeSheetPhase({
+        run: { status: 'RUNNING', result: { mode: opts?.awaitingApply ? 'apply' : 'preview' } },
+        alreadyInProgress: opts?.alreadyInProgress,
+        conflictInProgress: opts?.conflictInProgress,
+        awaitingApply: opts?.awaitingApply,
+      }),
+    );
+    try {
+      const run = await pollReplanRun(getReplanRun, runId, {
+        timeoutMs: CAPACITY_OPTIMIZE_POLL_TIMEOUT_MS,
+      });
+      applyOptimizeRun(run);
+      void refetchAll();
+      for (const key of invalidateKeys.afterScheduleMutation()) {
+        void queryClient.invalidateQueries({ queryKey: key as readonly unknown[] });
+      }
+    } catch (err) {
+      setOptimizePhase('failed');
+      setOptimizeError(toastMessageForError(err));
+    } finally {
+      if (optimizePollRef.current === runId) optimizePollRef.current = null;
+    }
+  };
+
+  const startCapacityOptimizePreview = () => {
+    setOptimizeError(null);
+    void (async () => {
+      try {
+        const queued = await postCapacityOptimizePreview();
+        if (!queued.replanJobId) {
+          setOptimizePhase('failed');
+          return;
+        }
+        await pollCapacityOptimize(queued.replanJobId, { alreadyInProgress: queued.alreadyInProgress });
+      } catch (err) {
+        if (isApiError(err) && err.code === 'OPTIMIZE_ALREADY_IN_PROGRESS') {
+          setOptimizePhase('inProgress');
+          setOptimizeOpen(true);
+          if (err.runId) {
+            await pollCapacityOptimize(err.runId, { conflictInProgress: true });
+          }
+          return;
+        }
+        setOptimizePhase('failed');
+        setOptimizeError(toastMessageForError(err));
+        setOptimizeOpen(true);
+      }
+    })();
+  };
+
+  const startCapacityOptimizeApply = () => {
+    setOptimizeError(null);
+    void (async () => {
+      try {
+        const queued = await postCapacityOptimizeApply();
+        if (!queued.replanJobId) {
+          setOptimizePhase('failed');
+          return;
+        }
+        await pollCapacityOptimize(queued.replanJobId, {
+          alreadyInProgress: queued.alreadyInProgress,
+          awaitingApply: true,
+        });
+      } catch (err) {
+        if (isApiError(err) && err.code === 'OPTIMIZE_ALREADY_IN_PROGRESS') {
+          setOptimizePhase('inProgress');
+          setOptimizeOpen(true);
+          if (err.runId) {
+            await pollCapacityOptimize(err.runId, { conflictInProgress: true, awaitingApply: true });
+          }
+          return;
+        }
+        setOptimizePhase('failed');
+        setOptimizeError(toastMessageForError(err));
+        setOptimizeOpen(true);
+      }
+    })();
+  };
+
+  const latestSyncQuery = useQuery({
+    queryKey: [...queryKeys.scheduling.all, 'replan-runs', 'latest-sync'],
+    queryFn: getLatestManualSyncRun,
+    enabled: canManage,
+    staleTime: 8_000,
+    refetchInterval: syncPhase === 'syncing' || syncPhase === 'inProgress' ? 4_000 : false,
+  });
+
+  useEffect(() => {
+    const run = latestSyncQuery.data;
+    if (!run || !canManage) return;
+    if (run.status !== 'QUEUED' && run.status !== 'RUNNING') return;
+    setSyncOpen(true);
+    void pollFactorySync(run.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- join in-flight run once per id
+  }, [canManage, latestSyncQuery.data?.id, latestSyncQuery.data?.status]);
+
+  const latestOptimizeQuery = useQuery({
+    queryKey: [...queryKeys.scheduling.all, 'replan-runs', 'latest-optimize'],
+    queryFn: getLatestCapacityOptimizeRun,
+    enabled: canManage,
+    staleTime: 8_000,
+    refetchInterval:
+      optimizePhase === 'previewing' || optimizePhase === 'applying' || optimizePhase === 'inProgress'
+        ? 4_000
+        : false,
+  });
+
+  useEffect(() => {
+    const run = latestOptimizeQuery.data;
+    if (!run || !canManage) return;
+    if (run.status !== 'QUEUED' && run.status !== 'RUNNING') return;
+    setOptimizeOpen(true);
+    void pollCapacityOptimize(run.id, { awaitingApply: run.changeType === 'capacity-optimize' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- join in-flight run once per id
+  }, [canManage, latestOptimizeQuery.data?.id, latestOptimizeQuery.data?.status]);
 
   const onPullRefresh = () => {
     setUserPullRefreshing(true);
@@ -924,24 +1166,77 @@ export function AdminSchedulingScreen() {
           />
         }
       >
-        <View style={{ gap: theme.spacing.xs }}>
-          <AppText
-            variant="caption"
-            weight={locale === 'ar' ? 'regular' : 'medium'}
-            style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              color: colors.brand,
-            }}
-          >
-            {t('mobile.adminScheduling.eyebrow')}
-          </AppText>
-          <AppText variant="title" weight={titleWeight}>
-            {t('mobile.adminScheduling.title')}
-          </AppText>
-          <AppText variant="caption" color="muted">
-            {t('mobile.adminScheduling.subtitle')}
-          </AppText>
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: theme.spacing.md,
+          }}
+        >
+          <View style={{ flex: 1, gap: theme.spacing.xs }}>
+            <AppText
+              variant="caption"
+              weight={locale === 'ar' ? 'regular' : 'medium'}
+              style={{
+                letterSpacing: locale === 'ar' ? 0 : 1.4,
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                color: colors.brand,
+              }}
+            >
+              {t('mobile.adminScheduling.eyebrow')}
+            </AppText>
+            <AppText variant="title" weight={titleWeight}>
+              {t('mobile.adminScheduling.title')}
+            </AppText>
+            <AppText variant="caption" color="muted">
+              {t('mobile.adminScheduling.subtitle')}
+            </AppText>
+          </View>
+          {canManage ? (
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                flexWrap: 'wrap',
+                gap: theme.spacing.sm,
+                justifyContent: 'flex-end',
+                maxWidth: '72%',
+              }}
+            >
+              <FloorHeaderAction
+                label={t('mobile.adminScheduling.sync.action')}
+                accessibilityLabel={t('mobile.adminScheduling.sync.title')}
+                icon="sync-outline"
+                loading={syncPhase === 'syncing'}
+                onPress={() => {
+                  if (syncPollRef.current || syncPhase === 'syncing') {
+                    setSyncOpen(true);
+                    return;
+                  }
+                  setSyncError(null);
+                  setSyncPhase('confirm');
+                  setSyncStats(null);
+                  setSyncOpen(true);
+                }}
+              />
+              <FloorHeaderAction
+                label={t('mobile.adminScheduling.optimize.action')}
+                accessibilityLabel={t('mobile.adminScheduling.optimize.title')}
+                icon="flash-outline"
+                loading={optimizePhase === 'previewing' || optimizePhase === 'applying'}
+                onPress={() => {
+                  if (optimizePollRef.current || optimizePhase === 'previewing' || optimizePhase === 'applying') {
+                    setOptimizeOpen(true);
+                    return;
+                  }
+                  setOptimizeError(null);
+                  setOptimizePhase('confirm');
+                  setOptimizeStats(null);
+                  setOptimizeOpen(true);
+                }}
+              />
+            </View>
+          ) : null}
         </View>
 
         <View
@@ -1576,6 +1871,68 @@ export function AdminSchedulingScreen() {
         }
         onConfirm={() => {
           void runResolveAllAtRisk();
+        }}
+      />
+      <SyncScheduleSheet
+        open={syncOpen}
+        phase={syncPhase}
+        stats={syncStats}
+        errorMessage={syncError}
+        onClose={() => {
+          if (syncPhase === 'syncing') {
+            setSyncOpen(false);
+            return;
+          }
+          setSyncOpen(false);
+          setSyncPhase('confirm');
+          setSyncStats(null);
+          setSyncError(null);
+        }}
+        onConfirm={() => {
+          setSyncPhase('syncing');
+          startFactorySync();
+        }}
+        onRetry={() => {
+          setSyncPhase('syncing');
+          setSyncError(null);
+          startFactorySync();
+        }}
+        onViewAttention={() => {
+          setSyncOpen(false);
+          setFocus('atRisk');
+        }}
+      />
+      <OptimizeScheduleSheet
+        open={optimizeOpen}
+        phase={optimizePhase}
+        stats={optimizeStats}
+        errorMessage={optimizeError}
+        onClose={() => {
+          if (optimizePhase === 'previewing' || optimizePhase === 'applying') {
+            setOptimizeOpen(false);
+            return;
+          }
+          setOptimizeOpen(false);
+          setOptimizePhase('confirm');
+          setOptimizeStats(null);
+          setOptimizeError(null);
+        }}
+        onConfirm={() => {
+          setOptimizePhase('previewing');
+          startCapacityOptimizePreview();
+        }}
+        onApply={() => {
+          setOptimizePhase('applying');
+          startCapacityOptimizeApply();
+        }}
+        onRetry={() => {
+          setOptimizePhase('previewing');
+          setOptimizeError(null);
+          startCapacityOptimizePreview();
+        }}
+        onViewAttention={() => {
+          setOptimizeOpen(false);
+          setFocus('atRisk');
         }}
       />
 
@@ -2463,6 +2820,65 @@ function ConflictFocusRow({
         </View>
       </View>
     </View>
+  );
+}
+
+function FloorHeaderAction({
+  label,
+  accessibilityLabel,
+  icon,
+  loading,
+  onPress,
+}: {
+  label: string;
+  accessibilityLabel: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  loading?: boolean;
+  onPress: () => void;
+}) {
+  const { locale } = useLocale();
+  const { colors, theme } = useTheme();
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      disabled={loading}
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={{
+        minHeight: 40,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        borderRadius: theme.radius.xl,
+        borderWidth: 1,
+        borderColor: colors.borderStrong,
+        backgroundColor: colors.surface,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.xs,
+        overflow: 'hidden',
+        ...theme.elevation.card,
+      }}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.brand} />
+      ) : (
+        <>
+          <Ionicons name={icon} size={15} color={colors.brand} />
+          <AppText
+            variant="caption"
+            weight={locale === 'ar' ? 'medium' : 'semibold'}
+            style={{ color: colors.brand }}
+            numberOfLines={1}
+          >
+            {label}
+          </AppText>
+        </>
+      )}
+    </AnimatedPressable>
   );
 }
 

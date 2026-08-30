@@ -6,11 +6,18 @@ import {
   ApproveScheduleDialog,
   ChangeDateDialog,
   RecalculateScheduleDialog,
+  SyncScheduleDialog,
+  OptimizeScheduleDialog,
+  type SyncDialogPhase,
+  type SyncDialogStats,
+  type OptimizeDialogPhase,
+  type OptimizeDialogStats,
 } from '@/components/scheduling/schedule-action-dialogs';
 import { ScheduleOrderRow } from '@/components/scheduling/schedule-order-row';
 import { StatChips } from '@/components/scheduling/stat-chips';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
+import { useAuthMe } from '@/hooks/use-auth-me';
 import {
   filterScheduleCards,
   formatYmdLabel,
@@ -45,10 +52,11 @@ import {
   Skeleton,
   SurfaceCard,
 } from '@maher/ui';
+import { can } from '@maher/permissions';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw, Settings2 } from 'lucide-react';
+import { Gauge, RefreshCcw, RefreshCw, Settings2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface CapacityApiShape {
   departments?: CapacityRow[];
@@ -106,11 +114,139 @@ function focusTitleKey(focus: ScheduleFocusKey): string {
   return 'conflictsTitle';
 }
 
+type ReplanRunPayload = {
+  id: string;
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | string;
+  changeType?: string;
+  result?: {
+    outcome?: 'UP_TO_DATE' | 'CHANGED' | 'PARTIAL' | 'FAILED';
+    mode?: 'preview' | 'apply';
+    scannedOrders?: number;
+    alreadyValid?: number;
+    generated?: number;
+    replanned?: number;
+    replannedOrders?: number;
+    pastDueRescheduled?: number;
+    moved?: number;
+    wouldMove?: number;
+    candidateOrders?: number;
+    atRiskRecovered?: number;
+    recoveredAtRisk?: number;
+    stillNeedsAttention?: number;
+    blocked?: number;
+    manualAttention?: number;
+    conflictsResolved?: number;
+    emptyDays?: Array<{ ymd: string; causeKey?: string | null }>;
+    failures?: unknown[];
+    alreadyValid?: number;
+    generated?: number;
+    replanned?: number;
+    replannedOrders?: number;
+    atRiskRecovered?: number;
+    recoveredAtRisk?: number;
+    stillNeedsAttention?: number;
+    blocked?: number;
+    manualAttention?: number;
+    conflictsResolved?: number;
+    failures?: unknown[];
+  } | null;
+};
+
+type SyncEnqueuePayload = {
+  replanQueued?: boolean;
+  replanJobId?: string;
+  alreadyInProgress?: boolean;
+  status?: string;
+};
+
+function syncStatsFromRun(run?: ReplanRunPayload | null): SyncDialogStats {
+  const result = run?.result;
+  return {
+    scanned: result?.scannedOrders ?? 0,
+    alreadyValid: result?.alreadyValid ?? 0,
+    generated: result?.generated ?? 0,
+    replanned: result?.replanned ?? result?.replannedOrders ?? 0,
+    pastDueRescheduled: result?.pastDueRescheduled ?? 0,
+    atRiskRecovered: result?.atRiskRecovered ?? result?.recoveredAtRisk ?? 0,
+    stillAttention: result?.stillNeedsAttention ?? (result?.blocked ?? 0) + (result?.manualAttention ?? 0),
+    conflictsResolved: result?.conflictsResolved ?? 0,
+  };
+}
+
+function syncPhaseFromRun(run?: ReplanRunPayload | null): SyncDialogPhase {
+  if (!run) return 'confirm';
+  if (run.status === 'QUEUED' || run.status === 'RUNNING') return 'syncing';
+  if (run.status === 'FAILED') return 'failed';
+  const outcome = run.result?.outcome;
+  if (outcome === 'UP_TO_DATE') return 'upToDate';
+  if (outcome === 'PARTIAL') return 'partial';
+  if (outcome === 'FAILED') return 'failed';
+  if (outcome === 'CHANGED') return 'changed';
+  const stats = syncStatsFromRun(run);
+  if (stats.generated + stats.replanned === 0 && stats.stillAttention === 0) return 'upToDate';
+  if (stats.stillAttention > 0) return 'partial';
+  return 'changed';
+}
+
+function optimizeStatsFromRun(run?: ReplanRunPayload | null): OptimizeDialogStats {
+  const result = run?.result;
+  return {
+    scanned: result?.scannedOrders ?? 0,
+    wouldMove: result?.wouldMove ?? result?.candidateOrders ?? 0,
+    moved: result?.moved ?? result?.replanned ?? 0,
+    stillAttention: result?.stillNeedsAttention ?? (result?.blocked ?? 0),
+    emptyDays: (result?.emptyDays ?? [])
+      .filter((d) => d.causeKey)
+      .slice(0, 8)
+      .map((d) => ({ ymd: d.ymd, causeKey: d.causeKey as string })),
+  };
+}
+
+function optimizePhaseFromRun(run?: ReplanRunPayload | null): OptimizeDialogPhase {
+  if (!run) return 'confirm';
+  if (run.status === 'QUEUED' || run.status === 'RUNNING') {
+    return run.result?.mode === 'apply' ? 'applying' : 'previewing';
+  }
+  if (run.status === 'FAILED') return 'failed';
+  const outcome = run.result?.outcome;
+  const mode = run.result?.mode;
+  if (mode !== 'apply') {
+    if (outcome === 'UP_TO_DATE') return 'upToDate';
+    if (outcome === 'FAILED') return 'failed';
+    if (outcome === 'CHANGED' || outcome === 'PARTIAL') return 'preview';
+  }
+  if (outcome === 'UP_TO_DATE') return 'upToDate';
+  if (outcome === 'PARTIAL') return 'partial';
+  if (outcome === 'FAILED') return 'failed';
+  if (outcome === 'CHANGED') return 'changed';
+  const stats = optimizeStatsFromRun(run);
+  if (mode !== 'apply') {
+    if (stats.wouldMove === 0) return 'upToDate';
+    return 'preview';
+  }
+  if (stats.moved === 0 && stats.stillAttention === 0) return 'upToDate';
+  if (stats.stillAttention > 0) return 'partial';
+  return 'changed';
+}
+
+async function pollReplanRun(runId: string, timeoutMs = 5 * 60_000): Promise<ReplanRunPayload> {
+  const started = Date.now();
+  let last: ReplanRunPayload | null = null;
+  while (Date.now() - started < timeoutMs) {
+    last = await apiFetch<ReplanRunPayload>(`/api/v1/scheduling/replan-runs/${encodeURIComponent(runId)}`);
+    if (last.status === 'COMPLETED' || last.status === 'FAILED') return last;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  return last ?? { id: runId, status: 'RUNNING' };
+}
+
 export default function SchedulingPage() {
   const t = useTranslations('mobile.adminScheduling');
   const tp = useTranslations('production');
   const locale = useLocale();
   const qc = useQueryClient();
+  const me = useAuthMe();
+  const canManage = can(me.data, 'schedule.manage');
 
   const today = todayYmd();
   const weekRange = useMemo(() => weekRangeFromYmd(today), [today]);
@@ -127,6 +263,16 @@ export default function SchedulingPage() {
   const [dayExceptionOpen, setDayExceptionOpen] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncPhase, setSyncPhase] = useState<SyncDialogPhase>('confirm');
+  const [syncStats, setSyncStats] = useState<SyncDialogStats | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const syncPollRef = useRef<string | null>(null);
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [optimizePhase, setOptimizePhase] = useState<OptimizeDialogPhase>('confirm');
+  const [optimizeStats, setOptimizeStats] = useState<OptimizeDialogStats | null>(null);
+  const [optimizeError, setOptimizeError] = useState<string | null>(null);
+  const optimizePollRef = useRef<string | null>(null);
 
   const monthRange = useMemo(() => monthRangeYmd(year, monthIndex), [year, monthIndex]);
   const needsWeekWindow = focus === 'today' || focus === 'week';
@@ -235,6 +381,149 @@ export default function SchedulingPage() {
       qc.invalidateQueries({ queryKey: ['scheduling-capacity'] }),
     ]);
   }
+
+  async function pollFactorySync(runId: string, conflictInProgress = false) {
+    if (syncPollRef.current === runId) return;
+    syncPollRef.current = runId;
+    setSyncOpen(true);
+    setSyncPhase(conflictInProgress ? 'inProgress' : 'syncing');
+    try {
+      const run = await pollReplanRun(runId);
+      const phase = syncPhaseFromRun(run);
+      setSyncPhase(phase);
+      setSyncStats(syncStatsFromRun(run));
+      if (phase === 'upToDate') {
+        setBanner(t('sync.upToDate'));
+      } else if (phase === 'changed') {
+        setBanner(t('sync.complete'));
+      } else if (phase === 'partial') {
+        setBanner(t('sync.partial'));
+      } else if (phase === 'failed') {
+        setError(t('sync.failed'));
+      }
+      await invalidateBoard();
+    } catch (err) {
+      setSyncPhase('failed');
+      setSyncError(mutationErrorMessage(err, t('sheets.genericError')));
+    } finally {
+      if (syncPollRef.current === runId) syncPollRef.current = null;
+    }
+  }
+
+  async function startFactorySync() {
+    setSyncError(null);
+    setSyncPhase('syncing');
+    try {
+      const queued = await apiFetch<SyncEnqueuePayload>('/api/v1/scheduling/sync', { method: 'POST' });
+      if (!queued.replanJobId) {
+        setSyncPhase('failed');
+        return;
+      }
+      await pollFactorySync(queued.replanJobId);
+    } catch (err) {
+      if (err instanceof ApiClientError && err.status === 409) {
+        const runId = (err.body as { runId?: string } | undefined)?.runId;
+        setSyncPhase('inProgress');
+        setSyncOpen(true);
+        if (runId) await pollFactorySync(runId, true);
+        return;
+      }
+      setSyncPhase('failed');
+      setSyncError(mutationErrorMessage(err, t('sheets.genericError')));
+      setSyncOpen(true);
+    }
+  }
+
+  const latestSyncQuery = useQuery({
+    queryKey: ['scheduling-replan-latest'],
+    queryFn: async () =>
+      (await apiFetch<ReplanRunPayload | null>('/api/v1/scheduling/replan-runs/latest')) ?? null,
+    enabled: canManage,
+    staleTime: 8_000,
+    refetchInterval: syncPhase === 'syncing' || syncPhase === 'inProgress' ? 4_000 : false,
+  });
+
+  useEffect(() => {
+    const run = latestSyncQuery.data;
+    if (!canManage || !run) return;
+    if (run.status !== 'QUEUED' && run.status !== 'RUNNING') return;
+    void pollFactorySync(run.id);
+    // Join an in-flight manual sync when returning to the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManage, latestSyncQuery.data?.id, latestSyncQuery.data?.status]);
+
+  async function pollCapacityOptimize(runId: string, conflictInProgress = false) {
+    if (optimizePollRef.current === runId) return;
+    optimizePollRef.current = runId;
+    setOptimizeOpen(true);
+    setOptimizePhase(conflictInProgress ? 'inProgress' : 'previewing');
+    try {
+      const run = await pollReplanRun(runId);
+      const phase = optimizePhaseFromRun(run);
+      setOptimizePhase(phase);
+      setOptimizeStats(optimizeStatsFromRun(run));
+      if (phase === 'upToDate') {
+        setBanner(t('optimize.upToDate'));
+      } else if (phase === 'changed') {
+        setBanner(t('optimize.complete'));
+      } else if (phase === 'partial') {
+        setBanner(t('optimize.partial'));
+      } else if (phase === 'failed') {
+        setError(t('optimize.failed'));
+      }
+      if (phase === 'changed' || phase === 'partial') await invalidateBoard();
+    } catch (err) {
+      setOptimizePhase('failed');
+      setOptimizeError(mutationErrorMessage(err, t('sheets.genericError')));
+    } finally {
+      if (optimizePollRef.current === runId) optimizePollRef.current = null;
+    }
+  }
+
+  async function startCapacityOptimize(path: '/api/v1/scheduling/optimize/preview' | '/api/v1/scheduling/optimize/apply') {
+    setOptimizeError(null);
+    setOptimizePhase(path.endsWith('apply') ? 'applying' : 'previewing');
+    try {
+      const queued = await apiFetch<SyncEnqueuePayload>(path, { method: 'POST' });
+      if (!queued.replanJobId) {
+        setOptimizePhase('failed');
+        return;
+      }
+      await pollCapacityOptimize(queued.replanJobId);
+    } catch (err) {
+      if (err instanceof ApiClientError && err.status === 409) {
+        const runId = (err.body as { runId?: string } | undefined)?.runId;
+        setOptimizePhase('inProgress');
+        setOptimizeOpen(true);
+        if (runId) await pollCapacityOptimize(runId, true);
+        return;
+      }
+      setOptimizePhase('failed');
+      setOptimizeError(mutationErrorMessage(err, t('sheets.genericError')));
+      setOptimizeOpen(true);
+    }
+  }
+
+  const latestOptimizeQuery = useQuery({
+    queryKey: ['scheduling-replan-latest-optimize'],
+    queryFn: async () =>
+      (await apiFetch<ReplanRunPayload | null>('/api/v1/scheduling/replan-runs/latest-optimize')) ??
+      null,
+    enabled: canManage,
+    staleTime: 8_000,
+    refetchInterval:
+      optimizePhase === 'previewing' || optimizePhase === 'applying' || optimizePhase === 'inProgress'
+        ? 4_000
+        : false,
+  });
+
+  useEffect(() => {
+    const run = latestOptimizeQuery.data;
+    if (!canManage || !run) return;
+    if (run.status !== 'QUEUED' && run.status !== 'RUNNING') return;
+    void pollCapacityOptimize(run.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManage, latestOptimizeQuery.data?.id, latestOptimizeQuery.data?.status]);
 
   function jumpToScheduleStart(detail: ProductionScheduleDetail) {
     const allocations = detail.schedule?.allocations ?? [];
@@ -438,10 +727,61 @@ export default function SchedulingPage() {
 
   return (
     <div className="space-y-6">
-      <PageHero eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} tone="soft" />
+      <PageHero
+        eyebrow={t('eyebrow')}
+        title={t('title')}
+        description={t('subtitle')}
+        tone="soft"
+        actions={
+          canManage ? (
+            <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              leadingIcon={<RefreshCcw className="h-3.5 w-3.5" />}
+              loading={syncPhase === 'syncing'}
+              onClick={() => {
+                if (syncPollRef.current || syncPhase === 'syncing') {
+                  setSyncOpen(true);
+                  return;
+                }
+                setSyncError(null);
+                setSyncPhase('confirm');
+                setSyncStats(null);
+                setSyncOpen(true);
+              }}
+            >
+              {t('sync.action')}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              leadingIcon={<Gauge className="h-3.5 w-3.5" />}
+              loading={optimizePhase === 'previewing' || optimizePhase === 'applying'}
+              onClick={() => {
+                if (
+                  optimizePollRef.current ||
+                  optimizePhase === 'previewing' ||
+                  optimizePhase === 'applying'
+                ) {
+                  setOptimizeOpen(true);
+                  return;
+                }
+                setOptimizeError(null);
+                setOptimizePhase('confirm');
+                setOptimizeStats(null);
+                setOptimizeOpen(true);
+              }}
+            >
+              {t('optimize.action')}
+            </Button>
+            </div>
+          ) : null
+        }
+      />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
-      {error && !approveOpen && !changeDateOpen && !recalculateOpen && !dayExceptionOpen ? (
+      {error && !approveOpen && !changeDateOpen && !recalculateOpen && !dayExceptionOpen && !syncOpen && !optimizeOpen ? (
         <Alert variant="error">{error}</Alert>
       ) : null}
 
@@ -651,6 +991,49 @@ export default function SchedulingPage() {
         loading={dayExceptionMutation.isPending}
         errorMessage={dayExceptionOpen ? error : null}
         onAction={(kind, overtimeEnd) => dayExceptionMutation.mutate({ kind, overtimeEnd })}
+      />
+      <SyncScheduleDialog
+        open={syncOpen}
+        phase={syncPhase}
+        stats={syncStats}
+        error={syncError}
+        onClose={() => {
+          setSyncOpen(false);
+          if (syncPhase !== 'syncing') {
+            setSyncPhase('confirm');
+            setSyncStats(null);
+            setSyncError(null);
+          }
+        }}
+        onConfirm={() => {
+          void startFactorySync();
+        }}
+        onRetry={() => {
+          void startFactorySync();
+        }}
+      />
+      <OptimizeScheduleDialog
+        open={optimizeOpen}
+        phase={optimizePhase}
+        stats={optimizeStats}
+        error={optimizeError}
+        onClose={() => {
+          setOptimizeOpen(false);
+          if (optimizePhase !== 'previewing' && optimizePhase !== 'applying') {
+            setOptimizePhase('confirm');
+            setOptimizeStats(null);
+            setOptimizeError(null);
+          }
+        }}
+        onConfirm={() => {
+          void startCapacityOptimize('/api/v1/scheduling/optimize/preview');
+        }}
+        onApply={() => {
+          void startCapacityOptimize('/api/v1/scheduling/optimize/apply');
+        }}
+        onRetry={() => {
+          void startCapacityOptimize('/api/v1/scheduling/optimize/preview');
+        }}
       />
     </div>
   );

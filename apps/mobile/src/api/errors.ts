@@ -5,6 +5,7 @@ export type ApiErrorBody = {
   message: string;
   fieldErrors?: ApiFieldErrors;
   requestId?: string | null;
+  runId?: string;
 };
 
 export class ApiError extends Error {
@@ -12,6 +13,7 @@ export class ApiError extends Error {
   readonly code: string;
   readonly fieldErrors: ApiFieldErrors;
   readonly requestId: string | null;
+  readonly runId: string | null;
   readonly isOffline: boolean;
   readonly isAborted: boolean;
   readonly isTimeout: boolean;
@@ -23,6 +25,7 @@ export class ApiError extends Error {
       code: string;
       fieldErrors?: ApiFieldErrors;
       requestId?: string | null;
+      runId?: string | null;
     },
   ) {
     super(message);
@@ -31,6 +34,7 @@ export class ApiError extends Error {
     this.code = options.code;
     this.fieldErrors = options.fieldErrors ?? {};
     this.requestId = options.requestId ?? null;
+    this.runId = options.runId ?? null;
     this.isOffline = options.code === 'OFFLINE';
     this.isAborted = options.code === 'ABORTED';
     this.isTimeout = options.code === 'TIMEOUT';
@@ -77,6 +81,7 @@ export function apiErrorFromResponse(
     code,
     fieldErrors: normalizeFieldErrors(parsed?.fieldErrors),
     requestId: parsed?.requestId ?? fallbackRequestId ?? null,
+    runId: parsed?.runId ?? null,
   });
 }
 

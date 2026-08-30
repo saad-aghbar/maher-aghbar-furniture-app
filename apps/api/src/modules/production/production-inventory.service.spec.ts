@@ -18,7 +18,8 @@ describe('ProductionInventoryService', () => {
   it('does not produce finished goods when inspection has not passed', async () => {
     const applyMovement = jest.fn();
     const tx = {
-      productionTask: { count: jest.fn().mockResolvedValue(0) },
+      productionTask: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      inventoryTransaction: { findFirst: jest.fn().mockResolvedValue(null) },
       productionOrderWorkflowSnapshotNode: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'snap-1',
@@ -50,19 +51,22 @@ describe('ProductionInventoryService', () => {
       warehouse: { findFirst: jest.fn(), findUnique: jest.fn() },
     };
     const { service: svc } = service(tx, applyMovement);
-    await svc.onStageTaskComplete({
-      productionOrderId: 'po-1',
-      stageInstanceId: 'stage-1',
-      userId: 'u1',
-      tx: tx as never,
-    });
+    await expect(
+      svc.onStageTaskComplete({
+        productionOrderId: 'po-1',
+        stageInstanceId: 'stage-1',
+        userId: 'u1',
+        tx: tx as never,
+      }),
+    ).rejects.toMatchObject({ response: { code: 'INSPECTION_PASS_REQUIRED' } });
     expect(applyMovement).not.toHaveBeenCalled();
   });
 
   it('produces finished goods after a PASSED inspection', async () => {
     const applyMovement = jest.fn().mockResolvedValue({ id: 'tx-1' });
     const tx = {
-      productionTask: { count: jest.fn().mockResolvedValue(0) },
+      productionTask: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      inventoryTransaction: { findFirst: jest.fn().mockResolvedValue(null) },
       productionOrderWorkflowSnapshotNode: {
         findMany: jest.fn().mockResolvedValue([
           {
@@ -108,6 +112,7 @@ describe('ProductionInventoryService', () => {
         findFirst: jest.fn().mockResolvedValue({ id: 'fg-item' }),
         findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(),
+        update: jest.fn().mockResolvedValue({ id: 'fg-item' }),
       },
     };
     const { service: svc } = service(tx, applyMovement);
@@ -128,7 +133,8 @@ describe('ProductionInventoryService', () => {
   it('receives Milano Sofa Frame qty = order qty × output per unit once', async () => {
     const applyMovement = jest.fn().mockResolvedValue({ id: 'tx-1' });
     const tx = {
-      productionTask: { count: jest.fn().mockResolvedValue(0) },
+      productionTask: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      inventoryTransaction: { findFirst: jest.fn().mockResolvedValue(null) },
       productionOrderWorkflowSnapshotNode: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'snap-carpentry',
@@ -199,7 +205,7 @@ describe('ProductionInventoryService', () => {
   it('rejects WIP shortage without issuing a partial quantity', async () => {
     const applyMovement = jest.fn();
     const tx = {
-      productionTask: { count: jest.fn().mockResolvedValue(0) },
+      productionTask: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
       productionOrderWorkflowSnapshotNode: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'snap-uph',
@@ -248,7 +254,8 @@ describe('ProductionInventoryService', () => {
   it('throws WAREHOUSE_CONFIGURATION_REQUIRED instead of creating phantom WIP', async () => {
     const applyMovement = jest.fn();
     const tx = {
-      productionTask: { count: jest.fn().mockResolvedValue(0) },
+      productionTask: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      inventoryTransaction: { findFirst: jest.fn().mockResolvedValue(null) },
       productionOrderWorkflowSnapshotNode: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'snap-1',
@@ -358,7 +365,8 @@ describe('ProductionInventoryService', () => {
   it('uses snapshotted output qty even if the live product row would differ', async () => {
     const applyMovement = jest.fn().mockResolvedValue({ id: 'tx-1' });
     const tx = {
-      productionTask: { count: jest.fn().mockResolvedValue(0) },
+      productionTask: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+      inventoryTransaction: { findFirst: jest.fn().mockResolvedValue(null) },
       productionOrderWorkflowSnapshotNode: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'snap-1',
@@ -413,7 +421,7 @@ describe('ProductionInventoryService', () => {
   it('requires both snapshotted WIP inputs and does not partially issue', async () => {
     const applyMovement = jest.fn();
     const tx = {
-      productionTask: { count: jest.fn().mockResolvedValue(0) },
+      productionTask: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
       productionOrderWorkflowSnapshotNode: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'snap-uph',

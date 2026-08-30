@@ -74,6 +74,7 @@ function makeService() {
       create: jest.fn().mockResolvedValue({ id: 'run-1', status: 'QUEUED' }),
       findUnique: jest.fn(),
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => data),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
@@ -166,7 +167,7 @@ describe('factory replan wiring', () => {
       actorId: 'user-1',
       changeType: 'calendar-exception:EXTRA_SHIFT',
       reason: 'calendar-exception:EXTRA_SHIFT',
-      payload: { capacityDelta: 'increase', affectedYmd: '2026-08-19' },
+      payload: { capacityDelta: 'increase', affectedYmd: '2026-12-15' },
     });
     prisma.productionSchedule.findMany.mockResolvedValue([atRiskSchedule('po-1', 'HIGH')]);
     prisma.productionSchedule.findFirst.mockResolvedValue({
@@ -216,6 +217,33 @@ describe('factory replan wiring', () => {
     expect(completed[0].data.result.moved).toBe(1);
   });
 
+  it('does not pull current incomplete work into a historical opened day', async () => {
+    const { service, prisma } = makeService();
+    prisma.schedulingReplanRun.findUnique.mockResolvedValue({
+      id: 'run-1',
+      status: 'QUEUED',
+      actorId: 'user-1',
+      changeType: 'calendar-exception:EXTRA_SHIFT',
+      reason: 'calendar-exception:EXTRA_SHIFT',
+      payload: { capacityDelta: 'increase', affectedYmd: '2026-08-18' },
+    });
+    prisma.productionSchedule.findMany.mockResolvedValue([atRiskSchedule('po-1', 'HIGH')]);
+    prisma.productionSchedule.findFirst.mockResolvedValue({
+      status: 'APPROVED',
+      unschedulableReason: null,
+      requiresAdminEstimateReview: false,
+      materialRisk: false,
+      requestedDateFeasible: false,
+      earliestAvailableDate: amman(2026, 8, 22, 16, 0),
+      suggestedDeliveryDate: amman(2026, 8, 22, 16, 0),
+      committedDeliveryDate: amman(2026, 8, 12, 16, 0),
+      allocations: [],
+    });
+    const gen = jest.spyOn(service, 'generateForProductionOrder').mockResolvedValue({} as never);
+    await (service as any).processSchedulingJob('REPLAN_FACTORY', { runId: 'run-1' });
+    expect(gen).not.toHaveBeenCalled();
+  });
+
   it('one PO throw records failure and continues', async () => {
     const { service, prisma } = makeService();
     prisma.schedulingReplanRun.findUnique.mockResolvedValue({
@@ -224,7 +252,7 @@ describe('factory replan wiring', () => {
       actorId: 'user-1',
       changeType: 'calendar-exception:EXTRA_SHIFT',
       reason: 'x',
-      payload: { capacityDelta: 'increase', affectedYmd: '2026-08-19' },
+      payload: { capacityDelta: 'increase', affectedYmd: '2026-12-15' },
     });
     prisma.productionSchedule.findMany.mockResolvedValue([
       atRiskSchedule('po-1', 'HIGH'),
@@ -283,7 +311,7 @@ describe('factory replan wiring', () => {
       actorId: 'user-1',
       changeType: 'calendar-exception:cleared',
       reason: 'calendar-exception:cleared',
-      payload: { capacityDelta: 'increase', affectedYmd: '2026-08-19' },
+      payload: { capacityDelta: 'increase', affectedYmd: '2026-12-15' },
     });
     prisma.productionSchedule.findMany.mockResolvedValue([atRiskSchedule('po-1', 'HIGH')]);
     prisma.productionSchedule.findFirst.mockResolvedValue({
@@ -325,7 +353,7 @@ describe('factory replan wiring', () => {
       actorId: 'user-1',
       changeType: 'calendar-exception:cleared',
       reason: 'calendar-exception:cleared',
-      payload: { capacityDelta: 'increase', affectedYmd: '2026-08-19' },
+      payload: { capacityDelta: 'increase', affectedYmd: '2026-12-15' },
     });
     prisma.productionSchedule.findMany.mockResolvedValue([atRiskSchedule('po-1', 'HIGH')]);
     prisma.productionSchedule.findFirst.mockResolvedValue({
@@ -376,7 +404,7 @@ describe('factory replan wiring', () => {
       actorId: 'user-1',
       changeType: 'calendar-exception:cleared',
       reason: 'calendar-exception:cleared',
-      payload: { capacityDelta: 'increase', affectedYmd: '2026-08-19' },
+      payload: { capacityDelta: 'increase', affectedYmd: '2026-12-15' },
     });
     prisma.productionSchedule.findMany.mockResolvedValue([
       atRiskSchedule('po-1', 'HIGH'),
@@ -460,5 +488,192 @@ describe('factory replan wiring', () => {
     expect(gen).not.toHaveBeenCalled();
     expect(prisma.productionSchedule.create).not.toHaveBeenCalled();
     expect(prisma.schedulingReplanRun.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('manual sync enqueue', () => {
+  it('returns the existing manual-sync run instead of packing twice', async () => {
+    const { service, prisma, queue } = makeService();
+    prisma.schedulingReplanRun.findMany.mockResolvedValue([
+      {
+        id: 'run-sync',
+        status: 'RUNNING',
+        changeType: 'manual-sync',
+        startedAt: new Date(),
+      },
+    ]);
+    const result = await service.enqueueManualSync('user-1');
+    expect(result.alreadyInProgress).toBe(true);
+    expect(result.replanJobId).toBe('run-sync');
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('rejects when another factory replan is already live', async () => {
+    const { service, prisma } = makeService();
+    prisma.schedulingReplanRun.findMany.mockResolvedValue([
+      { id: 'run-cal', status: 'QUEUED', changeType: 'calendar-settings-updated', startedAt: null },
+    ]);
+    await expect(service.enqueueManualSync('user-1')).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'SYNC_ALREADY_IN_PROGRESS',
+      }),
+    });
+  });
+
+  it('enqueues REPLAN_FACTORY with capacityDelta sync', async () => {
+    const { service, prisma, queue } = makeService();
+    prisma.schedulingReplanRun.findMany.mockResolvedValue([]);
+    const result = await service.enqueueManualSync('user-1');
+    expect(prisma.schedulingReplanRun.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          changeType: 'manual-sync',
+          payload: expect.objectContaining({ capacityDelta: 'sync' }),
+        }),
+      }),
+    );
+    expect(queue.enqueue).toHaveBeenCalledWith('REPLAN_FACTORY', { runId: 'run-1' });
+    expect(result.replanJobId).toBe('run-1');
+    expect(result.alreadyInProgress).toBe(false);
+  });
+
+  it('does not generate still-blocked orders during a sync job', async () => {
+    const { service, prisma } = makeService();
+    prisma.schedulingReplanRun.findUnique.mockResolvedValue({
+      id: 'run-1',
+      status: 'QUEUED',
+      actorId: 'user-1',
+      changeType: 'manual-sync',
+      reason: 'manual-sync',
+      payload: { capacityDelta: 'sync' },
+    });
+    jest.spyOn(service as any, 'loadManualSyncFacts').mockResolvedValue([
+      {
+        productionOrderId: 'blocked-1',
+        number: 'PO-BLK',
+        poStatus: 'WAITING_FOR_MATERIALS',
+        hasActiveSchedule: false,
+        hasIncompleteFutureAllocations: false,
+        hasStaleIncomplete: false,
+        hasPastIncompletePin: false,
+        primaryStatus: 'BLOCKED',
+        stillBlocked: true,
+        blockerKind: 'MATERIAL_NOT_READY',
+        blockerCleared: false,
+        illegalUnpinned: false,
+        illegalPinned: false,
+        ineligibleAssignedWorker: false,
+        inMovableConflict: false,
+        inPinnedConflict: false,
+        hasPromiseDate: true,
+        planningMode: null,
+        priority: {
+          id: 'blocked-1',
+          customerId: 'c1',
+          isPinned: false,
+          priority: 'NORMAL',
+          createdAt: amman(2026, 8, 1, 8, 0),
+        },
+      },
+    ]);
+    const gen = jest.spyOn(service, 'generateForProductionOrder').mockResolvedValue({} as never);
+    await (service as any).processSchedulingJob('REPLAN_FACTORY', { runId: 'run-1' });
+    expect(gen).not.toHaveBeenCalled();
+    const saved = prisma.schedulingReplanRun.update.mock.calls.find((call: Array<{ data?: { result?: { outcome?: string } } }>) =>
+      call[0]?.data?.result,
+    );
+    expect(saved?.[0]?.data?.result?.outcome).toBe('PARTIAL');
+    expect(saved?.[0]?.data?.result?.blocked).toBe(1);
+    expect(saved?.[0]?.data?.result?.generated).toBe(0);
+  });
+});
+
+describe('capacity optimize enqueue', () => {
+  it('returns the existing preview run instead of packing twice', async () => {
+    const { service, prisma, queue } = makeService();
+    prisma.schedulingReplanRun.findMany.mockResolvedValue([
+      {
+        id: 'run-opt',
+        status: 'RUNNING',
+        changeType: 'capacity-optimize-preview',
+        startedAt: new Date(),
+      },
+    ]);
+    const result = await service.enqueueCapacityOptimize('user-1', false);
+    expect(result.alreadyInProgress).toBe(true);
+    expect(result.replanJobId).toBe('run-opt');
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('rejects preview when Sync is already live', async () => {
+    const { service, prisma } = makeService();
+    prisma.schedulingReplanRun.findMany.mockResolvedValue([
+      { id: 'run-sync', status: 'QUEUED', changeType: 'manual-sync', startedAt: null },
+    ]);
+    await expect(service.enqueueCapacityOptimize('user-1', false)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'OPTIMIZE_ALREADY_IN_PROGRESS',
+      }),
+    });
+  });
+
+  it('rejects apply when a preview is in flight', async () => {
+    const { service, prisma } = makeService();
+    prisma.schedulingReplanRun.findMany.mockResolvedValue([
+      {
+        id: 'run-preview',
+        status: 'RUNNING',
+        changeType: 'capacity-optimize-preview',
+        startedAt: new Date(),
+      },
+    ]);
+    await expect(service.enqueueCapacityOptimize('user-1', true)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'OPTIMIZE_ALREADY_IN_PROGRESS',
+        runId: 'run-preview',
+      }),
+    });
+  });
+
+  it('enqueues REPLAN_FACTORY with capacityDelta optimize and preview mode', async () => {
+    const { service, prisma, queue } = makeService();
+    prisma.schedulingReplanRun.findMany.mockResolvedValue([]);
+    const result = await service.enqueueCapacityOptimize('user-1', false);
+    expect(prisma.schedulingReplanRun.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          changeType: 'capacity-optimize-preview',
+          payload: expect.objectContaining({ capacityDelta: 'optimize', mode: 'preview' }),
+        }),
+      }),
+    );
+    expect(queue.enqueue).toHaveBeenCalledWith('REPLAN_FACTORY', { runId: 'run-1' });
+    expect(result.replanJobId).toBe('run-1');
+    expect(result.alreadyInProgress).toBe(false);
+  });
+
+  it('preview persist is skipped — generate is not called', async () => {
+    const { service, prisma } = makeService();
+    prisma.schedulingReplanRun.findUnique.mockResolvedValue({
+      id: 'run-1',
+      status: 'QUEUED',
+      actorId: 'user-1',
+      changeType: 'capacity-optimize-preview',
+      reason: 'capacity-optimize-preview',
+      payload: { capacityDelta: 'optimize', mode: 'preview' },
+    });
+    jest.spyOn(service as any, 'runCapacityOptimize').mockResolvedValue({
+      outcome: 'CHANGED',
+      moved: 0,
+      wouldMove: 3,
+      newConflictCount: 0,
+    });
+    const gen = jest.spyOn(service, 'generateForProductionOrder').mockResolvedValue({} as never);
+    await (service as any).processSchedulingJob('REPLAN_FACTORY', { runId: 'run-1' });
+    expect(gen).not.toHaveBeenCalled();
+    expect((service as any).runCapacityOptimize).toHaveBeenCalledWith(
+      expect.objectContaining({ changeType: 'capacity-optimize-preview' }),
+      false,
+    );
   });
 });

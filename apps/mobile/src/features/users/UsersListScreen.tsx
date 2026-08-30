@@ -37,8 +37,8 @@ import { UserBoardCard } from './components/UserBoardCard';
 import { UsersFilterTriggers } from './components/UsersFilterTriggers';
 import { UsersSegmentRail } from './components/UsersSegmentRail';
 import {
+  UsersFilterSheet,
   UsersRoleFilterSheet,
-  UsersStatusFilterSheet,
   type UserStatusFilter,
 } from './components/UsersStatusFilterSheet';
 import { localizedRoleName } from './display';
@@ -48,11 +48,11 @@ import {
   useDeactivateUserMutation,
   useDeleteUserMutation,
   useDepartmentsQuery,
-  useRolesQuery,
   useStaffTypesQuery,
   useUsersInfiniteQuery,
 } from './query';
 import { roleKindForSegment, type UsersSegment } from './segment';
+import { useStageLibraryQuery } from '@/features/workflow/query';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 
 function UsersScreenTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
@@ -105,7 +105,7 @@ export function UsersListScreen() {
   const [debouncedQ, setDebouncedQ] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [isActive, setIsActive] = useState<UserStatusFilter>('');
-  const [roleCode, setRoleCode] = useState('');
+  const [stageDefinitionId, setStageDefinitionId] = useState('');
   const [staffTypeId, setStaffTypeId] = useState('');
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -113,7 +113,6 @@ export function UsersListScreen() {
   const [editPasswordMode, setEditPasswordMode] = useState(false);
   const [deptFilterOpen, setDeptFilterOpen] = useState(false);
   const [statusFilterOpen, setStatusFilterOpen] = useState(false);
-  const [roleFilterOpen, setRoleFilterOpen] = useState(false);
   const [staffTypeFilterOpen, setStaffTypeFilterOpen] = useState(false);
   const [confirm, setConfirm] = useState<
     { type: 'activate' | 'deactivate' | 'delete'; user: UserRow } | null
@@ -125,12 +124,11 @@ export function UsersListScreen() {
   }, [q]);
 
   useEffect(() => {
-    setRoleCode('');
+    setStageDefinitionId('');
     setDepartmentId('');
     setStaffTypeId('');
   }, [segment]);
 
-  const showRoleFilter = segment === 'all';
   const showStaffTypeFilter = segment === 'staff';
   // Department is unused for Worker/Admin/Customer/Staff; only relevant for other roles under "all".
   const showDepartmentFilter = segment === 'all';
@@ -142,7 +140,7 @@ export function UsersListScreen() {
     return {
       q: debouncedQ || undefined,
       isActive: isActive || undefined,
-      roleCode: showRoleFilter ? roleCode || undefined : undefined,
+      stageDefinitionId: stageDefinitionId || undefined,
       roleKind: showStaffTypeFilter && staffTypeId ? undefined : roleKind,
       staffTypeId: showStaffTypeFilter && staffTypeId ? staffTypeId : undefined,
       departmentId: showDepartmentFilter && departmentId ? departmentId : undefined,
@@ -151,18 +149,17 @@ export function UsersListScreen() {
     debouncedQ,
     departmentId,
     isActive,
-    roleCode,
+    stageDefinitionId,
     segment,
     showDepartmentFilter,
-    showRoleFilter,
     showStaffTypeFilter,
     staffTypeId,
   ]);
 
   const query = useUsersInfiniteQuery(listFilters, allowed);
-  const rolesQuery = useRolesQuery(allowed);
   const staffTypesQuery = useStaffTypesQuery(allowed && showStaffTypeFilter, { isActive: true });
   const departmentsQuery = useDepartmentsQuery(allowed && showDepartmentFilter);
+  const stagesQuery = useStageLibraryQuery(allowed);
 
   const activateMutation = useActivateUserMutation();
   const deactivateMutation = useDeactivateUserMutation();
@@ -170,8 +167,8 @@ export function UsersListScreen() {
 
   const rows = flattenUsers(query.data);
   const departments = departmentsQuery.data?.data ?? [];
-  const roles = rolesQuery.data ?? [];
   const staffTypes = staffTypesQuery.data ?? [];
+  const stages = stagesQuery.data ?? [];
 
   /** Pull-to-refresh only — not segment / filter transitions. */
   const pullRefreshing =
@@ -195,11 +192,11 @@ export function UsersListScreen() {
     return dept ? localizedName(locale, dept, dept.code) : null;
   }, [departmentId, departments, locale]);
 
-  const roleLabel = useMemo(() => {
-    if (!roleCode) return null;
-    const role = roles.find((r) => r.code === roleCode);
-    return role ? localizedRoleName(role, locale) : roleCode;
-  }, [locale, roleCode, roles]);
+  const skillLabel = useMemo(() => {
+    if (!stageDefinitionId) return null;
+    const stage = stages.find((s) => s.id === stageDefinitionId);
+    return stage ? localizedName(locale, stage, stage.code) : null;
+  }, [locale, stageDefinitionId, stages]);
 
   const staffTypeLabel = useMemo(() => {
     if (!staffTypeId) return null;
@@ -210,17 +207,26 @@ export function UsersListScreen() {
   const statusLabel = useMemo(() => {
     if (isActive === 'true') return t('users.active');
     if (isActive === 'false') return t('users.inactive');
-    return t('common.all');
+    return null;
   }, [isActive, t]);
 
-  const roleOptions = useMemo(
+  const filterActiveCount = (isActive ? 1 : 0) + (stageDefinitionId ? 1 : 0);
+
+  const filterSummary = useMemo(() => {
+    if (filterActiveCount === 0) return null;
+    const parts = [statusLabel, skillLabel].filter(Boolean);
+    return parts.length ? parts.join(' · ') : t('users.filterTitle');
+  }, [filterActiveCount, skillLabel, statusLabel, t]);
+
+  const skillOptions = useMemo(
     () =>
-      roles.map((r) => ({
-        id: r.id,
-        code: r.code,
-        label: localizedRoleName(r, locale),
-      })),
-    [locale, roles],
+      stages
+        .filter((s) => s.isActive)
+        .map((s) => ({
+          id: s.id,
+          label: localizedName(locale, s, s.code),
+        })),
+    [locale, stages],
   );
 
   const staffTypeOptions = useMemo(
@@ -406,13 +412,9 @@ export function UsersListScreen() {
                 departmentLabel={departmentLabel}
                 onOpenDepartment={() => setDeptFilterOpen(true)}
                 onClearDepartment={() => setDepartmentId('')}
-                statusLabel={statusLabel}
-                statusActive={Boolean(isActive)}
-                onOpenStatus={() => setStatusFilterOpen(true)}
-                showRole={showRoleFilter}
-                roleLabel={roleLabel}
-                onOpenRole={() => setRoleFilterOpen(true)}
-                onClearRole={() => setRoleCode('')}
+                filterSummary={filterSummary}
+                filterActiveCount={filterActiveCount}
+                onOpenFilter={() => setStatusFilterOpen(true)}
                 showStaffType={showStaffTypeFilter}
                 staffTypeLabel={staffTypeLabel}
                 onOpenStaffType={() => setStaffTypeFilterOpen(true)}
@@ -481,18 +483,15 @@ export function UsersListScreen() {
         onSelect={(id) => setDepartmentId(id ?? '')}
         allowNone
       />
-      <UsersStatusFilterSheet
+      <UsersFilterSheet
         open={statusFilterOpen}
         onClose={() => setStatusFilterOpen(false)}
-        value={isActive}
-        onApply={setIsActive}
-      />
-      <UsersRoleFilterSheet
-        open={roleFilterOpen}
-        onClose={() => setRoleFilterOpen(false)}
-        roles={roleOptions}
-        value={roleCode}
-        onApply={setRoleCode}
+        value={{ isActive, stageDefinitionId }}
+        skills={skillOptions}
+        onApply={(next) => {
+          setIsActive(next.isActive);
+          setStageDefinitionId(next.stageDefinitionId);
+        }}
       />
       <UsersRoleFilterSheet
         open={staffTypeFilterOpen}

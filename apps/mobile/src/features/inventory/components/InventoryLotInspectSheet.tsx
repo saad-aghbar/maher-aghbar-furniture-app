@@ -7,11 +7,14 @@ import { StatusBadge } from '@/components/badges/StatusBadge';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
+import { InventorySheetFooter } from './InventorySheetFooter';
 
 type Props = {
   open: boolean;
   lot: SemiFinishedLot | null;
   onClose: () => void;
+  onShowQr?: (lot: SemiFinishedLot) => void;
+  onPrintQr?: (lot: SemiFinishedLot) => void;
 };
 
 function movementLabel(type: string, t: (k: string) => string) {
@@ -143,7 +146,13 @@ function SectionEyebrow({ label }: { label: string }) {
   );
 }
 
-export function InventoryLotInspectSheet({ open, lot, onClose }: Props) {
+export function InventoryLotInspectSheet({
+  open,
+  lot,
+  onClose,
+  onShowQr,
+  onPrintQr,
+}: Props) {
   const { t, locale, isRTL, formatDateTime } = useLocale();
   const { colors, theme } = useTheme();
   if (!lot) return null;
@@ -170,8 +179,21 @@ export function InventoryLotInspectSheet({ open, lot, onClose }: Props) {
           nameHe: lot.stageInstance?.stageDefinition?.nameHe,
         })
       : null;
+  const nextStage =
+    lot.nextConsumingStageNameEn || lot.nextConsumingStageNameAr
+      ? localizedName(locale, {
+          nameEn: lot.nextConsumingStageNameEn ?? '',
+          nameAr: lot.nextConsumingStageNameAr ?? '',
+        })
+      : null;
+  const stageFlow =
+    stage && nextStage ? `${stage} → ${nextStage}` : stage ?? nextStage;
   const orderNumber = lot.productionOrderNumber ?? lot.productionOrder?.number ?? null;
   const warehouseName = localizedName(locale, lot.warehouse);
+  const binLabel = lot.location
+    ? lot.location.name?.trim() || lot.location.code
+    : null;
+  const scanCode = lot.qrCode?.trim() || lot.wipKit?.qrCode?.trim() || null;
   const movements = lot.laterMovements ?? [];
   const statusLabel = t(`mobile.inventory.lotStatus.${lot.status}`);
 
@@ -303,8 +325,8 @@ export function InventoryLotInspectSheet({ open, lot, onClose }: Props) {
               value={orderNumber}
             />
           ) : null}
-          {stage ? (
-            <FactRow icon="construct-outline" label={t('inventory.stage')} value={stage} />
+          {stageFlow ? (
+            <FactRow icon="construct-outline" label={t('inventory.stage')} value={stageFlow} />
           ) : null}
           <FactRow
             icon="time-outline"
@@ -315,8 +337,24 @@ export function InventoryLotInspectSheet({ open, lot, onClose }: Props) {
             icon="business-outline"
             label={t('inventory.warehouse')}
             value={warehouseName}
-            last
+            last={!binLabel && !scanCode}
           />
+          {binLabel ? (
+            <FactRow
+              icon="location-outline"
+              label={t('mobile.inventory.wipLocation')}
+              value={binLabel}
+              last={!scanCode}
+            />
+          ) : null}
+          {scanCode ? (
+            <FactRow
+              icon="qr-code-outline"
+              label={t('mobile.inventory.wipQrLabel')}
+              value={scanCode}
+              last
+            />
+          ) : null}
         </View>
 
         <View style={{ gap: theme.spacing.sm }}>
@@ -331,32 +369,68 @@ export function InventoryLotInspectSheet({ open, lot, onClose }: Props) {
             }}
           >
             {movements.length === 0 ? (
-              <View
-                style={{
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                  paddingVertical: theme.spacing.xl,
-                  paddingHorizontal: theme.spacing.lg,
-                }}
-              >
+              nextStage ? (
                 <View
                   style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.border,
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'flex-start',
+                    gap: theme.spacing.sm,
+                    padding: theme.spacing.md,
                   }}
                 >
-                  <Ionicons name="git-commit-outline" size={18} color={colors.textMuted} />
+                  <View
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: colors.surface,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <Ionicons name="arrow-forward-outline" size={15} color={colors.brand} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <AppText variant="bodySecondary" weight="medium">
+                      {t('mobile.inventory.lotAwaitsStage', { stage: nextStage })}
+                    </AppText>
+                    <AppText variant="caption" color="muted">
+                      {stage
+                        ? t('mobile.inventory.lotFlowHint', { from: stage, to: nextStage })
+                        : t('mobile.inventory.lotNoLaterYet')}
+                    </AppText>
+                  </View>
                 </View>
-                <AppText variant="caption" color="muted" align="center">
-                  {t('mobile.inventory.lotNoLater')}
-                </AppText>
-              </View>
+              ) : (
+                <View
+                  style={{
+                    alignItems: 'center',
+                    gap: theme.spacing.sm,
+                    paddingVertical: theme.spacing.xl,
+                    paddingHorizontal: theme.spacing.lg,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: colors.surface,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <Ionicons name="git-commit-outline" size={18} color={colors.textMuted} />
+                  </View>
+                  <AppText variant="caption" color="muted" align="center">
+                    {t('mobile.inventory.lotNoLater')}
+                  </AppText>
+                </View>
+              )
             ) : (
               movements.map((m, i) => {
                 const last = i === movements.length - 1;
@@ -403,6 +477,15 @@ export function InventoryLotInspectSheet({ open, lot, onClose }: Props) {
             )}
           </View>
         </View>
+
+        {scanCode && onShowQr ? (
+          <InventorySheetFooter
+            primaryLabel={t('mobile.inventory.wipShowQr')}
+            onPrimary={() => onShowQr(lot)}
+            secondaryLabel={onPrintQr ? t('mobile.inventory.wipPrintKitLabel') : t('mobile.inventory.cancel')}
+            onSecondary={onPrintQr ? () => onPrintQr(lot) : onClose}
+          />
+        ) : null}
       </ScrollView>
     </BottomSheet>
   );

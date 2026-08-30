@@ -92,6 +92,30 @@ describe('resolveProductStageOutput', () => {
     expect(resolved.qtyPerUnit).toBe(1);
   });
 
+  it('uses SEMI pieceLabels length as expectedPieceCount', () => {
+    const resolved = resolveProductStageOutput(node, [
+      {
+        id: 'out-1',
+        productId: 'bed',
+        workflowNodeId: 'node-carpentry',
+        stageDefinitionId: 'stage-carpentry',
+        itemClass: InventoryItemClass.SEMI_FINISHED_GOOD,
+        inventoryTracking: 'PRODUCES_SEMI_FINISHED',
+        outputNameAr: 'طقم هيكل',
+        outputNameEn: 'Frame kit',
+        outputNameHe: null,
+        outputQtyPerUnit: 1,
+        expectedPieceCount: 9,
+        pieceLabels: [{ nameEn: 'Left rail' }, { nameEn: 'Right rail' }],
+        unit: 'pcs',
+        defaultWarehouseId: 'semi-wh',
+        inventoryItemId: 'frame-item',
+      },
+    ]);
+    expect(resolved.pieceLabels.map((p) => p.nameEn)).toEqual(['Left rail', 'Right rail']);
+    expect(resolved.expectedPieceCount).toBe(2);
+  });
+
   it('does not invent output when tracking is NONE and no product row exists', () => {
     const resolved = resolveProductStageOutput({
       ...node,

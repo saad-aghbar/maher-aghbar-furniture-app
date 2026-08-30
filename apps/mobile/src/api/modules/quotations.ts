@@ -1,4 +1,6 @@
+import type { PaginatedResponse } from '@maher/types';
 import { apiGet, apiPatch, apiPost } from '../client';
+import { toSearchParams, type PageParams } from '../pagination';
 import { openAuthedPdf, withPdfOptions } from '../openPdf';
 import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
 
@@ -58,6 +60,7 @@ export type QuotationLine = {
   depth?: number | string | null;
   notes?: string | null;
   taxRate?: number | string | null;
+  discountValue?: number | string | null;
 };
 
 export type QuotationDetail = {
@@ -93,7 +96,17 @@ export type QuotationDetail = {
   } | null;
   lines?: QuotationLine[];
   salesOrders?: Array<{ id: string; number: string; status: string }>;
+  acceptedBy?: { id: string; firstName?: string; lastName?: string } | null;
+  acceptedAt?: string | null;
+  discountTotal?: number | string | null;
+  expirationDate?: string | null;
 };
+
+export async function listQuotations(
+  params: PageParams & { status?: string; q?: string } = {},
+): Promise<PaginatedResponse<QuotationSummary & { total?: number | string; version?: number }>> {
+  return apiGet(`/quotations${toSearchParams(params)}`);
+}
 
 export async function createQuotation(
   body: CreateQuotationInput,
@@ -128,6 +141,15 @@ export async function sendQuotation(id: string): Promise<QuotationDetail> {
 
 export async function acceptQuotation(id: string): Promise<QuotationDetail> {
   return apiPost<QuotationDetail>(`/quotations/${encodeURIComponent(id)}/accept`, {});
+}
+
+export async function requestQuotationRevision(
+  id: string,
+  comment?: string,
+): Promise<QuotationDetail> {
+  return apiPost<QuotationDetail>(`/quotations/${encodeURIComponent(id)}/request-revision`, {
+    comment,
+  });
 }
 
 export async function reviseQuotation(id: string): Promise<QuotationSummary> {

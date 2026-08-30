@@ -6,10 +6,11 @@ import { StatusBadge } from '@/components/badges/StatusBadge';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import type { SemiFinishedLot } from '@/api/modules/inventory';
+import type { FinishedLot, SemiFinishedLot } from '@/api/modules/inventory';
+import { fgDeliveryStatusLabel } from '../fgFilters';
 
 type WipProps = {
-  lot: SemiFinishedLot;
+  lot: SemiFinishedLot | FinishedLot;
   index: number;
   animateEnter?: boolean;
   onPress?: () => void;
@@ -117,6 +118,55 @@ function MetaChip({
       <AppText variant="caption" color="secondary" numberOfLines={1} style={{ flexShrink: 1 }}>
         {label}
       </AppText>
+    </View>
+  );
+}
+
+/** Producing stage → next consuming stage as one chip so the flow never wraps mid-arrow. */
+function StageFlowChip({ from, to }: { from?: string | null; to?: string | null }) {
+  const { colors, theme } = useTheme();
+  const { isRTL } = useLocale();
+  if (!from && !to) return null;
+
+  return (
+    <View
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        gap: 5,
+        maxWidth: '100%',
+        paddingHorizontal: theme.spacing.sm,
+        paddingVertical: 4,
+        borderRadius: theme.radius.md,
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <Ionicons name="construct-outline" size={12} color={colors.textMuted} />
+      {from ? (
+        <AppText variant="caption" color="secondary" numberOfLines={1} style={{ flexShrink: 1 }}>
+          {from}
+        </AppText>
+      ) : null}
+      {from && to ? (
+        <Ionicons
+          name={isRTL ? 'arrow-back-outline' : 'arrow-forward-outline'}
+          size={12}
+          color={colors.brand}
+        />
+      ) : null}
+      {to ? (
+        <AppText
+          variant="caption"
+          color="secondary"
+          weight="medium"
+          numberOfLines={1}
+          style={{ flexShrink: 1 }}
+        >
+          {to}
+        </AppText>
+      ) : null}
     </View>
   );
 }
@@ -300,16 +350,48 @@ export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: Wi
           <Ionicons name={chevron} size={16} color={colors.textMuted} style={{ marginTop: 4 }} />
         </View>
 
-        {orderNumber || stageName ? (
+        {orderNumber || stageName || lot.nextConsumingStageNameEn || lot.nextConsumingStageNameAr || lot.salesOrderNumber ? (
           <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
               flexWrap: 'wrap',
               gap: theme.spacing.xs,
+              alignItems: 'center',
             }}
           >
             {orderNumber ? <MetaChip icon="document-text-outline" label={orderNumber} /> : null}
-            {stageName ? <MetaChip icon="construct-outline" label={stageName} /> : null}
+            {lot.salesOrderNumber ? (
+              <MetaChip icon="briefcase-outline" label={lot.salesOrderNumber} />
+            ) : null}
+            <StageFlowChip
+              from={stageName}
+              to={
+                lot.nextConsumingStageNameEn || lot.nextConsumingStageNameAr
+                  ? localizedName(locale, {
+                      nameEn: lot.nextConsumingStageNameEn ?? '',
+                      nameAr: lot.nextConsumingStageNameAr ?? '',
+                    })
+                  : null
+              }
+            />
+            {lot.location ? (
+              <MetaChip
+                icon="location-outline"
+                label={lot.location.name?.trim() || lot.location.code}
+              />
+            ) : null}
+            {lot.qrCode || lot.wipKit?.qrCode ? (
+              <MetaChip icon="qr-code-outline" label={lot.qrCode || lot.wipKit!.qrCode} />
+            ) : null}
+            {'daysWaiting' in lot && typeof lot.daysWaiting === 'number' ? (
+              <MetaChip
+                icon="time-outline"
+                label={t('mobile.inventory.daysWaiting', { days: lot.daysWaiting })}
+              />
+            ) : null}
+            {'deliveryStatus' in lot && !lot.deliveryStatus ? (
+              <MetaChip icon="bus-outline" label={t('lifecycle.waitingForTruck')} />
+            ) : null}
           </View>
         ) : null}
 
@@ -485,6 +567,173 @@ export function InventoryFinishedRow({
             emphasize={free > 0 && !quarantined}
             warning={quarantined && free > 0}
           />
+        </View>
+      </AnimatedPressable>
+    </ListItemEnter>
+  );
+}
+
+type FgLotProps = {
+  lot: FinishedLot;
+  index: number;
+  animateEnter?: boolean;
+  onPress?: () => void;
+};
+
+/** Finished-goods lot row — order/dealer/delivery context, not WIP stage flow. */
+export function InventoryFgLotRow({ lot, index, animateEnter = true, onPress }: FgLotProps) {
+  const { t, isRTL, formatDate, locale } = useLocale();
+  const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const productName =
+    lot.productNameEn || lot.productNameAr
+      ? localizedName(locale, {
+          nameEn: lot.productNameEn ?? '',
+          nameAr: lot.productNameAr ?? '',
+        })
+      : localizedName(locale, lot.inventoryItem);
+  const dealerName =
+    lot.dealerNameEn || lot.dealerNameAr
+      ? localizedName(locale, {
+          nameEn: lot.dealerNameEn ?? '',
+          nameAr: lot.dealerNameAr ?? '',
+        })
+      : null;
+  const imageUrl = lot.inventoryItem.product?.imageUrl;
+  const qty = Number(lot.quantity);
+  const accent = lotAccent(lot.status, colors);
+  const chevron = isRTL ? 'chevron-back' : 'chevron-forward';
+  const waitingForTruck = !lot.deliveryStatus;
+  const statusLabel = fgDeliveryStatusLabel(lot, t);
+
+  return (
+    <ListItemEnter index={index} enabled={animateEnter}>
+      <AnimatedPressable
+        variant="card"
+        accessibilityRole="button"
+        accessibilityLabel={productName}
+        onPress={() => {
+          void haptics.selection();
+          onPress?.();
+        }}
+        style={{
+          minHeight: theme.sizes.touch.min * 1.65,
+          borderWidth: 1,
+          borderColor: waitingForTruck ? colors.warning : colors.borderStrong,
+          borderRadius: theme.radius.xl,
+          padding: theme.spacing.md,
+          paddingLeft: isRTL ? theme.spacing.md : theme.spacing.md + 4,
+          paddingRight: isRTL ? theme.spacing.md + 4 : theme.spacing.md,
+          backgroundColor: colors.surface,
+          gap: theme.spacing.sm,
+          overflow: 'hidden',
+          ...theme.elevation.card,
+        }}
+      >
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
+            width: 3,
+            backgroundColor: waitingForTruck ? colors.warning : accent,
+            opacity: 0.9,
+          }}
+        />
+
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'flex-start',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <ThumbWell imageUrl={imageUrl} icon="cube-outline" accent={accent} />
+          <View style={{ flex: 1, gap: 4 }}>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <AppText variant="body" weight={titleWeight} style={{ flex: 1 }} numberOfLines={2}>
+                {productName}
+              </AppText>
+              {statusLabel ? (
+                <StatusBadge
+                  status={lot.deliveryStatus ?? 'WAITING'}
+                  label={statusLabel}
+                  dot
+                />
+              ) : null}
+            </View>
+            {lot.projectName ? (
+              <AppText variant="caption" color="muted" numberOfLines={1}>
+                {lot.projectName}
+              </AppText>
+            ) : null}
+          </View>
+          <Ionicons name={chevron} size={16} color={colors.textMuted} style={{ marginTop: 4 }} />
+        </View>
+
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexWrap: 'wrap',
+            gap: theme.spacing.xs,
+            alignItems: 'center',
+          }}
+        >
+          {lot.salesOrderNumber ? (
+            <MetaChip icon="briefcase-outline" label={lot.salesOrderNumber} />
+          ) : null}
+          {lot.productionOrderNumber ?? lot.productionOrder?.number ? (
+            <MetaChip
+              icon="document-text-outline"
+              label={lot.productionOrderNumber ?? lot.productionOrder?.number ?? ''}
+            />
+          ) : null}
+          {dealerName ? <MetaChip icon="people-outline" label={dealerName} /> : null}
+          <MetaChip
+            icon="shield-checkmark-outline"
+            label={
+              String(lot.qcStatus ?? 'PASS').toUpperCase().includes('FAIL')
+                ? t('lifecycle.qcFailed')
+                : t('lifecycle.qcPassed')
+            }
+          />
+          {lot.packagingComplete !== false ? (
+            <MetaChip icon="cube-outline" label={t('lifecycle.packagingComplete')} />
+          ) : null}
+          {lot.deliveryNumber ? (
+            <MetaChip icon="car-outline" label={lot.deliveryNumber} />
+          ) : null}
+          {typeof lot.daysWaiting === 'number' ? (
+            <MetaChip
+              icon="time-outline"
+              label={t('mobile.inventory.daysWaiting', { days: lot.daysWaiting })}
+            />
+          ) : null}
+          {lot.deliveryDate ? (
+            <MetaChip icon="calendar-outline" label={formatDate(lot.deliveryDate)} />
+          ) : null}
+        </View>
+
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <StatPill label={t('mobile.inventory.onHandShort')} value={String(qty)} emphasize />
+          <AppText variant="caption" color="muted" numberOfLines={1}>
+            {localizedName(locale, lot.warehouse)}
+          </AppText>
         </View>
       </AnimatedPressable>
     </ListItemEnter>

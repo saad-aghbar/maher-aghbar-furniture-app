@@ -8,7 +8,7 @@ import { createInvoiceFromSalesOrder, getInvoice, listInvoices } from './api';
 import { invoiceListCustomerScope } from './selectInvoice';
 
 export function useInvoicesInfiniteQuery(
-  filters: { status?: string; q?: string; customerId?: string },
+  filters: { status?: string; q?: string; customerId?: string; overdue?: boolean },
   enabled: boolean,
 ) {
   const { user } = useAuth();

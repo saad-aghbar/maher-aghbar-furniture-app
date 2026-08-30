@@ -56,6 +56,7 @@ describe('TasksService assignment isolation', () => {
     const productionTaskFindMany = jest.fn().mockResolvedValue([]);
     const productionTaskFindUniqueOrThrow = jest.fn();
     const documentFindMany = jest.fn().mockResolvedValue([]);
+    const snapshotNodeFindFirst = jest.fn().mockResolvedValue(null);
 
     const prisma: {
       $transaction: jest.Mock;
@@ -65,6 +66,7 @@ describe('TasksService assignment isolation', () => {
         findUniqueOrThrow: jest.Mock;
       };
       document: { findMany: jest.Mock };
+      productionOrderWorkflowSnapshotNode: { findFirst: jest.Mock };
     } = {
       $transaction: jest.fn(async (ops: unknown) => {
         if (Array.isArray(ops)) return Promise.all(ops);
@@ -78,6 +80,9 @@ describe('TasksService assignment isolation', () => {
       document: {
         findMany: documentFindMany,
       },
+      productionOrderWorkflowSnapshotNode: {
+        findFirst: snapshotNodeFindFirst,
+      },
     };
 
     const storage = {
@@ -87,7 +92,13 @@ describe('TasksService assignment isolation', () => {
     const service = new TasksService(
       prisma as unknown as PrismaService,
       {} as StagePipelineService,
-      { onStageTaskComplete: jest.fn(), assertStageInventoryReady: jest.fn() } as any,
+      { onStageTaskComplete: jest.fn(), assertStageInventoryReady: jest.fn(), onStageQtyProgress: jest.fn() } as any,
+      { hasUsageRows: jest.fn().mockResolvedValue(false), finalizeForTask: jest.fn(), ensureExpectedLines: jest.fn(), recordLines: jest.fn() } as any,
+      {
+        registerFromTaskComplete: jest.fn(),
+        markConsumedForStage: jest.fn(),
+        claimRequirementsForTask: jest.fn().mockResolvedValue({ required: false, kits: [], unclaimed: [], allClaimed: true }),
+      } as any,
       {} as InvoicesService,
       storage as unknown as LocalStorageService,
       mockIdempotency(),
@@ -123,12 +134,41 @@ describe('TasksService assignment isolation', () => {
     expect(ids.includes('worker-b')).toBe(false);
   });
 
-  it('defaults workers to open tasks (excludes completed/cancelled)', async () => {
+  it('defaults workers to open unlocked tasks (excludes completed/cancelled and PENDING stages)', async () => {
     const { service, productionTaskFindMany } = makeService();
     await service.list({ page: 1, pageSize: 20 }, 'worker-a', WORKER_PERMS);
-    expect(productionTaskFindMany.mock.calls[0][0].where.status).toEqual({
-      notIn: ['COMPLETED', 'CANCELLED'],
-    });
+    const where = productionTaskFindMany.mock.calls[0][0].where;
+    expect(where.AND).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+        }),
+        expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({
+              status: {
+                in: ['READY', 'IN_PROGRESS', 'PAUSED', 'BLOCKED', 'READY_FOR_INSPECTION'],
+              },
+            }),
+            expect.objectContaining({
+              status: 'NOT_STARTED',
+              stageInstance: { status: { in: ['READY', 'IN_PROGRESS'] } },
+            }),
+          ]),
+        }),
+        expect.objectContaining({
+          NOT: { stageDefinition: { code: { in: ['DELIVERY'] } } },
+        }),
+      ]),
+    );
+  });
+
+  it('does not hide PENDING stages from supervisor open lists', async () => {
+    const { service, productionTaskFindMany } = makeService();
+    await service.list({ page: 1, pageSize: 20, scope: 'open' }, 'supervisor', SUPERVISOR_PERMS);
+    const where = productionTaskFindMany.mock.calls[0][0].where;
+    expect(where.status).toEqual({ notIn: ['COMPLETED', 'CANCELLED'] });
+    expect(where.AND).toBeUndefined();
   });
 
   it('scopes completed list to COMPLETED + assignee', async () => {
@@ -173,12 +213,38 @@ describe('TasksService assignment isolation', () => {
     );
   });
 
-  it('allows Worker A to view own task and strips progressPercent', async () => {
+  it('forbids Worker A from viewing own task while stage is still PENDING', async () => {
+    const { service, productionTaskFindUniqueOrThrow } = makeService();
+    productionTaskFindUniqueOrThrow.mockResolvedValue({
+      id: 'task-locked',
+      assignedEmployeeId: 'worker-a',
+      productionOrderId: 'po-1',
+      status: 'NOT_STARTED',
+      stageInstanceId: 'si-1',
+      stageInstance: { id: 'si-1', status: 'PENDING' },
+      productionOrder: {
+        number: 'PO-1',
+        product: { imageUrl: null },
+        salesOrder: null,
+      },
+    });
+
+    await expect(
+      service.getById('task-locked', 'worker-a', WORKER_PERMS),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'STAGE_LOCKED' }),
+    });
+  });
+
+  it('allows Worker A to view own unlocked READY task and strips progressPercent', async () => {
     const { service, productionTaskFindUniqueOrThrow, documentFindMany } = makeService();
     productionTaskFindUniqueOrThrow.mockResolvedValue({
       id: 'task-a',
       assignedEmployeeId: 'worker-a',
       productionOrderId: 'po-1',
+      status: 'READY',
+      stageInstanceId: 'si-1',
+      stageInstance: { id: 'si-1', status: 'READY' },
       progressPercent: 60,
       name: 'Assembly',
       productionOrder: {

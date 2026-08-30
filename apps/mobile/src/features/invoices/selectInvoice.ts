@@ -8,9 +8,15 @@ export type InvoiceCardModel = {
   dealerName: string;
   status: string;
   outstanding: number;
+  paid: number;
   total: number;
+  availableCredit: number;
+  amountDue: number;
   outstandingLabel: string;
+  paidLabel: string;
   totalLabel: string;
+  amountDueLabel: string;
+  availableCreditLabel: string;
   dueDateLabel: string | null;
   invoiceDateLabel: string;
   factoryOrderNumber: string | null;
@@ -35,6 +41,8 @@ export type InvoiceDetailModel = {
   total: number;
   subtotal: number;
   tax: number;
+  availableCredit: number;
+  amountDue: number;
   lines: Array<{
     id: string;
     description: string;
@@ -92,15 +100,24 @@ export function selectInvoiceCard(inv: Invoice, locale: string): InvoiceCardMode
   const typed = asLocale(locale);
   const total = toNum(inv.total);
   const outstanding = toNum(inv.outstandingAmount ?? inv.total);
+  const paid = toNum(inv.paidAmount ?? Math.max(0, total - outstanding));
+  const amountDue = toNum(inv.dealerFinance?.amountDue ?? outstanding);
+  const availableCredit = toNum(inv.dealerFinance?.availableCredit);
   return {
     id: inv.id,
     number: inv.number,
     dealerName: dealerNameFor(inv, locale),
     status: inv.status,
     outstanding,
+    paid,
     total,
+    availableCredit,
+    amountDue,
     outstandingLabel: moneyLabel(locale, outstanding),
+    paidLabel: moneyLabel(locale, paid),
     totalLabel: moneyLabel(locale, total),
+    amountDueLabel: moneyLabel(locale, amountDue),
+    availableCreditLabel: moneyLabel(locale, availableCredit),
     dueDateLabel: inv.dueDate ? formatDate(typed, inv.dueDate) : null,
     invoiceDateLabel: inv.invoiceDate ? formatDate(typed, inv.invoiceDate) : '—',
     factoryOrderNumber: inv.salesOrder?.number?.trim() || null,
@@ -155,6 +172,8 @@ export function selectInvoiceDetail(inv: Invoice, locale: string): InvoiceDetail
     total,
     subtotal,
     tax,
+    availableCredit: toNum(inv.dealerFinance?.availableCredit),
+    amountDue: toNum(inv.dealerFinance?.amountDue ?? outstanding),
     lines,
     payments,
     jofotara: {

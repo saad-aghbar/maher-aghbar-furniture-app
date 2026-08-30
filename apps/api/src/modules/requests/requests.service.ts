@@ -6,7 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@maher/database';
-import type { AuthUser } from '@maher/types';
+import {
+  appendReviewHistory,
+  mapOrderPresentation,
+  requestStatusesForGroup,
+  type AuthUser,
+} from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
@@ -19,6 +24,7 @@ import {
   preserveFabricOnItems,
   type DealerEditPolicy,
 } from './dealer-edit-policy';
+import { loadCatalogMap, mapRequestItemCreate } from './request-line-classify';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { firstImageDocument } from '../../common/helpers/document-image.util';
@@ -54,11 +60,43 @@ export class RequestsService {
     });
   }
 
+  private async notifyNeedsInformation(request: {
+    id: string;
+    number: string;
+    customerId: string;
+    informationRequestReason?: string | null;
+  }) {
+    await this.notifications.notifyCustomerUsers(request.customerId, {
+      templateCode: 'ORDER_NEEDS_INFORMATION',
+      vars: {
+        number: request.number,
+        reason: request.informationRequestReason || '—',
+      },
+      linkUrl: `/requests/${request.id}`,
+    });
+  }
+
+  private assertStaffReview(user?: AuthUser) {
+    if (user?.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Dealers cannot perform factory review actions.',
+      });
+    }
+  }
+
   async list(query: ListRequestsDto, user?: AuthUser) {
+    const groupStatuses = query.statusGroup
+      ? requestStatusesForGroup(query.statusGroup)
+      : null;
     const where: Prisma.RequestForQuotationWhereInput = {
       archivedAt: null,
       ...customerScopeFilter(user),
-      ...(query.status ? { status: query.status } : {}),
+      ...(groupStatuses?.length
+        ? { status: { in: groupStatuses as Prisma.EnumRequestStatusFilter['in'] } }
+        : query.status
+          ? { status: query.status }
+          : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.source ? { source: query.source } : {}),
       ...(query.q
@@ -72,6 +110,7 @@ export class RequestsService {
               { customer: { nameEn: { contains: query.q, mode: 'insensitive' } } },
               { customer: { nameHe: { contains: query.q, mode: 'insensitive' } } },
               { customer: { code: { contains: query.q, mode: 'insensitive' } } },
+              { items: { some: { productName: { contains: query.q, mode: 'insensitive' } } } },
             ],
           }
         : {}),
@@ -207,6 +246,16 @@ export class RequestsService {
         documents: safeDocuments,
         title: primaryName || row.number,
         imageUrl: catalogImage ?? attachmentImage,
+        presentationKey: mapOrderPresentation({ requestStatus: row.status }),
+        productCount: row.items.length,
+        hasCustomLines: row.items.some(
+          (i) =>
+            i.manufacturingComplexity === 'CUSTOM' ||
+            i.manufacturingComplexity === 'MODIFIED' ||
+            !i.productId,
+        ),
+        attachmentCount: documents.length,
+        informationRequestReason: row.informationRequestReason,
       };
     });
 
@@ -266,6 +315,8 @@ export class RequestsService {
       title: primaryName || request.number,
       imageUrl,
       editPolicy,
+      presentationKey: mapOrderPresentation({ requestStatus: request.status }),
+      informationRequestReason: request.informationRequestReason,
     };
   }
 
@@ -400,6 +451,7 @@ export class RequestsService {
     }
 
     const number = await this.sequences.next('RFQ', 'RFQ');
+    const catalogMap = await loadCatalogMap(this.prisma, dto.items);
     const created = await this.prisma.requestForQuotation.create({
       data: {
         number,
@@ -423,26 +475,24 @@ export class RequestsService {
         status: opts?.submit ? 'SUBMITTED' : 'DRAFT',
         submittedAt: opts?.submit ? new Date() : undefined,
         createdById: userId,
+        reviewHistory: opts?.submit
+          ? ([
+              {
+                at: new Date().toISOString(),
+                by: userId,
+                action: 'SUBMITTED',
+                message: null,
+              },
+            ] as unknown as Prisma.InputJsonValue)
+          : undefined,
         items: {
-          create: dto.items.map((item, index) => ({
-            category: item.category,
-            productId: item.productId,
-            productName: item.productName,
-            description: item.description,
-            quantity: item.quantity,
-            unit: item.unit ?? 'pcs',
-            width: item.width,
-            height: item.height,
-            depth: item.depth,
-            material: item.material,
-            fabricType: item.fabric,
-            fabricColor: item.color,
-            notes: item.notes,
-            customMeasurements: item.customMeasurements?.length
-              ? (item.customMeasurements as unknown as Prisma.InputJsonValue)
-              : undefined,
-            sortOrder: index,
-          })),
+          create: dto.items.map((item, index) =>
+            mapRequestItemCreate(
+              item,
+              index,
+              item.productId ? catalogMap.get(item.productId) : null,
+            ),
+          ),
         },
       },
       include: { items: true, customer: true },
@@ -515,6 +565,7 @@ export class RequestsService {
       items = preserveFabricOnItems(existingItems, items);
     }
 
+    const catalogMap = items ? await loadCatalogMap(this.prisma, items) : new Map();
     const updated = await this.prisma.$transaction(async (tx) => {
       if (items) {
         await tx.requestItem.deleteMany({ where: { requestId: id } });
@@ -543,25 +594,13 @@ export class RequestsService {
           ...(items
             ? {
                 items: {
-                  create: items.map((item, index) => ({
-                    category: item.category,
-                    productId: item.productId,
-                    productName: item.productName,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unit: item.unit ?? 'pcs',
-                    width: item.width,
-                    height: item.height,
-                    depth: item.depth,
-                    material: item.material,
-                    fabricType: item.fabric,
-                    fabricColor: item.color,
-                    notes: item.notes,
-                    customMeasurements: item.customMeasurements?.length
-                      ? (item.customMeasurements as unknown as Prisma.InputJsonValue)
-                      : undefined,
-                    sortOrder: index,
-                  })),
+                  create: items.map((item, index) =>
+                    mapRequestItemCreate(
+                      item,
+                      index,
+                      item.productId ? catalogMap.get(item.productId) : null,
+                    ),
+                  ),
                 },
               }
             : {}),
@@ -611,13 +650,37 @@ export class RequestsService {
         message: 'Only draft or needs-information requests can be submitted.',
       });
     }
+    if (!request.items?.length) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Add at least one product before submitting.',
+      });
+    }
+    for (const item of request.items) {
+      if (!item.productName?.trim() || Number(item.quantity) <= 0) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Each line needs a product name and quantity greater than zero.',
+        });
+      }
+    }
 
     const submittedAt = new Date();
+    const wasNeedsInfo = request.status === 'NEEDS_INFORMATION';
+    const history = appendReviewHistory(request.reviewHistory, {
+      at: submittedAt.toISOString(),
+      by: user?.id ?? null,
+      action: wasNeedsInfo ? 'RESUBMITTED' : 'SUBMITTED',
+      message: wasNeedsInfo ? request.informationRequestReason : null,
+    });
+
     const updated = await this.prisma.requestForQuotation.update({
       where: { id },
       data: {
         status: 'SUBMITTED',
         submittedAt: request.submittedAt ?? submittedAt,
+        informationRequestReason: null,
+        reviewHistory: history as unknown as Prisma.InputJsonValue,
       },
       include: { items: true, customer: true },
     });
@@ -626,7 +689,7 @@ export class RequestsService {
       await this.prisma.auditEvent.create({
         data: {
           userId: user.id,
-          action: 'request.submit',
+          action: wasNeedsInfo ? 'request.resubmit' : 'request.submit',
           entityType: 'RequestForQuotation',
           entityId: id,
           oldValues: { status: request.status } as Prisma.InputJsonValue,
@@ -641,20 +704,59 @@ export class RequestsService {
     await this.notifyNewOrder(updated).catch(() => undefined);
 
     const editPolicy = await this.buildEditPolicy(updated, user);
-    return { ...updated, editPolicy };
+    return {
+      ...updated,
+      editPolicy,
+      presentationKey: mapOrderPresentation({ requestStatus: updated.status }),
+    };
   }
 
-  async markUnderReview(id: string) {
+  async discardDraft(id: string, user?: AuthUser) {
+    const request = await this.getById(id, user);
+    if (request.status !== 'DRAFT') {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Only draft orders can be discarded.',
+      });
+    }
+    await this.prisma.requestForQuotation.update({
+      where: { id },
+      data: { archivedAt: new Date() },
+    });
+    return { id, discarded: true };
+  }
+
+  async markUnderReview(id: string, user?: AuthUser) {
+    this.assertStaffReview(user);
+    const existing = await this.getById(id);
+    const history = appendReviewHistory(existing.reviewHistory, {
+      at: new Date().toISOString(),
+      by: user?.id ?? null,
+      action: 'UNDER_REVIEW',
+    });
     return this.prisma.requestForQuotation.update({
       where: { id },
-      data: { status: 'UNDER_REVIEW' },
+      data: {
+        status: 'UNDER_REVIEW',
+        reviewHistory: history as unknown as Prisma.InputJsonValue,
+      },
     });
   }
 
-  async markReadyForQuotation(id: string) {
+  async markReadyForQuotation(id: string, user?: AuthUser) {
+    this.assertStaffReview(user);
+    const existing = await this.getById(id);
+    const history = appendReviewHistory(existing.reviewHistory, {
+      at: new Date().toISOString(),
+      by: user?.id ?? null,
+      action: 'READY_FOR_QUOTATION',
+    });
     return this.prisma.requestForQuotation.update({
       where: { id },
-      data: { status: 'READY_FOR_QUOTATION' },
+      data: {
+        status: 'READY_FOR_QUOTATION',
+        reviewHistory: history as unknown as Prisma.InputJsonValue,
+      },
     });
   }
 
@@ -665,21 +767,49 @@ export class RequestsService {
     });
   }
 
-  async markNeedsInformation(id: string, notes?: string) {
+  async markNeedsInformation(id: string, reason?: string, user?: AuthUser) {
+    this.assertStaffReview(user);
     const existing = await this.getById(id);
-    return this.prisma.requestForQuotation.update({
+    const trimmed = reason?.trim();
+    if (!trimmed) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'A reason is required when requesting information.',
+      });
+    }
+    if (!['SUBMITTED', 'UNDER_REVIEW', 'READY_FOR_QUOTATION'].includes(existing.status)) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Only submitted or in-review requests can be returned for information.',
+      });
+    }
+    const history = appendReviewHistory(existing.reviewHistory, {
+      at: new Date().toISOString(),
+      by: user?.id ?? null,
+      action: 'NEEDS_INFORMATION',
+      message: trimmed,
+    });
+    const updated = await this.prisma.requestForQuotation.update({
       where: { id },
       data: {
         status: 'NEEDS_INFORMATION',
-        internalNotes: notes
-          ? [existing.internalNotes, notes].filter(Boolean).join('\n')
-          : existing.internalNotes,
+        informationRequestReason: trimmed,
+        internalNotes: [existing.internalNotes, `Needs info: ${trimmed}`]
+          .filter(Boolean)
+          .join('\n'),
+        reviewHistory: history as unknown as Prisma.InputJsonValue,
       },
       include: { items: true, customer: true },
     });
+    await this.notifyNeedsInformation(updated).catch(() => undefined);
+    return {
+      ...updated,
+      presentationKey: mapOrderPresentation({ requestStatus: updated.status }),
+    };
   }
 
-  async close(id: string) {
+  async close(id: string, user?: AuthUser) {
+    this.assertStaffReview(user);
     return this.prisma.requestForQuotation.update({
       where: { id },
       data: { status: 'CLOSED' },

@@ -751,7 +751,13 @@ function Metric({
           </AnimatedPressable>
         ) : null}
       </View>
-      <AppText variant="label" weight="semibold" dir={ltr ? 'ltr' : 'auto'} numberOfLines={2}>
+      <AppText
+        variant="label"
+        weight="semibold"
+        dir={ltr ? 'ltr' : 'auto'}
+        face={ltr ? 'latin' : 'app'}
+        numberOfLines={2}
+      >
         {value}
       </AppText>
     </View>

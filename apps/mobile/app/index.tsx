@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { useRootNavigationState, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
 import { BrandMark } from '@/components/BrandMark';
 import { AppText } from '@/components/AppText';
@@ -14,11 +14,13 @@ import { useTheme } from '@/theme';
  */
 export default function SplashGate() {
   const router = useRouter();
+  const rootNav = useRootNavigationState();
   const { status, bootstrap, user } = useAuth();
   const { colors, theme } = useTheme();
   const { t } = useLocale();
 
   useEffect(() => {
+    if (!rootNav?.key) return;
     switch (status) {
       case 'bootstrapping':
       case 'authenticating':
@@ -42,7 +44,7 @@ export default function SplashGate() {
       default:
         router.replace('/(auth)/login' as Href);
     }
-  }, [status, router, user]);
+  }, [status, router, user, rootNav?.key]);
 
   return (
     <View

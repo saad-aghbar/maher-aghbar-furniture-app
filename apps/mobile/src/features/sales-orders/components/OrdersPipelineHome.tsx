@@ -76,7 +76,7 @@ export function OrdersPipelineHome({
       status: o.status,
       title: o.title,
       imageUrl: o.imageUrl,
-      progressPercent: o.progressPercent,
+      progressPercent: o.progressPercent ?? 0,
       progressLabel: o.progressLabel,
       deliveryDate: o.deliveryDate,
       dealerName: o.dealerName,

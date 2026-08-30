@@ -14,8 +14,10 @@ import {
   getInventoryOverview,
   issueStock,
   listFinishedGoodsItems,
+  listFinishedLots,
   listInventoryGroups,
   listInventoryItems,
+  listInventoryOpenReceipts,
   listInventoryStockCounts,
   listInventoryTransactions,
   listSemiFinishedLots,
@@ -34,6 +36,11 @@ import {
   type StockReceiptInput,
   type UpdateInventoryItemInput,
 } from './api';
+import {
+  getMaterialDemand,
+  receivePurchaseOrder,
+  type GoodsReceiptInput,
+} from '@/api/modules/purchasing';
 
 export function useInventoryGroupsQuery(enabled: boolean) {
   return useQuery({
@@ -123,8 +130,53 @@ export function useReceiveStockMutation(itemId?: string) {
         qc.invalidateQueries({
           queryKey: queryKeys.inventory.transactions(id, {}),
         }),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.openReceipts(id) }),
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.lists() }),
       ]);
     },
+  });
+}
+
+export function useReceiveAgainstPoMutation(itemId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { purchaseOrderId: string; body: GoodsReceiptInput }) =>
+      receivePurchaseOrder(args.purchaseOrderId, args.body),
+    onSuccess: async (_data, variables) => {
+      const id = itemId ?? variables.body.lines[0]?.inventoryItemId;
+      await Promise.all([
+        id
+          ? qc.invalidateQueries({ queryKey: queryKeys.inventory.detail(id) })
+          : Promise.resolve(),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.lists() }),
+        qc.invalidateQueries({ queryKey: queryKeys.inventory.groups() }),
+        id
+          ? qc.invalidateQueries({ queryKey: queryKeys.inventory.openReceipts(id) })
+          : Promise.resolve(),
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.lists() }),
+        qc.invalidateQueries({
+          queryKey: queryKeys.purchasing.detail(variables.purchaseOrderId),
+        }),
+      ]);
+    },
+  });
+}
+
+export function useInventoryOpenReceiptsQuery(itemId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.inventory.openReceipts(itemId ?? ''),
+    queryFn: () => listInventoryOpenReceipts(itemId!),
+    enabled: Boolean(itemId) && enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useMaterialDemandQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.materialDemand(),
+    queryFn: getMaterialDemand,
+    enabled,
+    staleTime: 30_000,
   });
 }
 
@@ -279,6 +331,12 @@ export function useCompleteWarehouseTransferMutation() {
         qc.invalidateQueries({ queryKey: queryKeys.inventory.lists() }),
         qc.invalidateQueries({ queryKey: queryKeys.inventory.groups() }),
         qc.invalidateQueries({ queryKey: queryKeys.inventory.overview() }),
+        qc.invalidateQueries({
+          queryKey: [...queryKeys.inventory.all, 'finished-lots'],
+        }),
+        qc.invalidateQueries({
+          queryKey: [...queryKeys.inventory.all, 'semi-finished'],
+        }),
       ]);
     },
   });
@@ -342,6 +400,43 @@ export function useFinishedGoodsInfiniteQuery(filters: { q?: string }, enabled: 
 
 export function flattenFinishedGoodsPages(
   data: ReturnType<typeof useFinishedGoodsInfiniteQuery>['data'],
+) {
+  return flattenPaginatedPages(data?.pages);
+}
+
+export function useFinishedLotsInfiniteQuery(
+  filters: {
+    q?: string;
+    warehouseId?: string;
+    scope?: 'inWarehouse' | 'history';
+    from?: string;
+    to?: string;
+    pageSize?: number;
+  },
+  enabled: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.inventory.finishedLots(filters),
+    queryFn: ({ pageParam }) =>
+      listFinishedLots({
+        page: pageParam,
+        pageSize: filters.pageSize ?? 20,
+        q: filters.q,
+        warehouseId: filters.warehouseId,
+        scope: filters.scope,
+        from: filters.from,
+        to: filters.to,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: getNextPageParamFromMeta,
+    enabled,
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function flattenFinishedLotsPages(
+  data: ReturnType<typeof useFinishedLotsInfiniteQuery>['data'],
 ) {
   return flattenPaginatedPages(data?.pages);
 }

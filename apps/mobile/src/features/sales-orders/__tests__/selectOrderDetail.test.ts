@@ -41,6 +41,18 @@ describe('selectOrderDetail', () => {
     expect(vm.productionOrders).toEqual([]);
   });
 
+  it('keeps preparing orders editable for admin', () => {
+    const vm = selectOrderDetail(
+      {
+        ...adminDraftOrderDetailFixture,
+        productionSetupRequired: true,
+      },
+      'admin',
+    );
+    expect(vm.productionSetupRequired).toBe(true);
+    expect(vm.canEdit).toBe(true);
+  });
+
   it('keeps dealer-safe stages and omits costs, worker, and end-customer', () => {
     const vm = selectOrderDetail(dealerOrderDetailFixture, 'dealer');
     expect(vm.sellerPrice).toBe(12000);
@@ -54,12 +66,12 @@ describe('selectOrderDetail', () => {
     expect(vm.assignedWorkerName).toBeNull();
   });
 
-  it('strips costs/worker when admin-shaped payload is mapped as dealer', () => {
+  it('keeps deliveries for dealer while stripping costs/worker', () => {
     const vm = selectOrderDetail(adminOrderDetailFixture, 'dealer');
     assertDealerDetailSafe(vm);
     expect(vm.stages.length).toBeGreaterThan(0);
     expect(vm.assignedWorkerName).toBeNull();
     expect(vm.endCustomerName).toBeNull();
-    expect(vm.deliveries).toEqual([]);
+    expect(vm.deliveries).toHaveLength(1);
   });
 });

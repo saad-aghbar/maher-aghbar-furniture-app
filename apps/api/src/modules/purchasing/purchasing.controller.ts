@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import {
   IsString,
   IsUUID,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -31,6 +33,15 @@ import type { AuthUser } from '@maher/types';
 import { PurchasingService } from './purchasing.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { InventoryTxType } from '@maher/database';
+import {
+  classifyPurchaseOrder,
+  purchaseVariance,
+} from './purchase-order-presentation';
+import {
+  acceptedReceiptQty,
+  isOverReceipt,
+  remainingOrderedQty,
+} from './goods-receipt-cost';
 
 class PurchaseLineDto {
   @IsString()
@@ -76,6 +87,37 @@ class CreatePurchaseOrderDto {
   @ValidateNested({ each: true })
   @Type(() => PurchaseLineDto)
   lines!: PurchaseLineDto[];
+}
+
+class PatchPurchaseOrderDto {
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsDateString()
+  expectedDeliveryDate?: string | null;
+}
+
+class UpdateDraftPurchaseOrderDto {
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  warehouseId?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsDateString()
+  expectedDeliveryDate?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PurchaseLineDto)
+  lines?: PurchaseLineDto[];
 }
 
 class CreatePurchaseRequestDto {
@@ -487,14 +529,37 @@ export class PurchasingController {
   @Get('purchase-orders')
   @RequirePermissions('purchase-order.read')
   async listOrders(
-    @Query() query: PaginationDto & { status?: string; q?: string; supplierId?: string },
+    @Query()
+    query: PaginationDto & {
+      status?: string;
+      q?: string;
+      supplierId?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    },
   ) {
     const { page, pageSize, skip, take } = pageSkipTake(query);
     const mode = 'insensitive' as const;
+    const createdAt: Prisma.DateTimeFilter = {};
+    if (query.dateFrom) {
+      const from = new Date(query.dateFrom);
+      if (!Number.isNaN(from.getTime())) createdAt.gte = from;
+    }
+    if (query.dateTo) {
+      const to = new Date(query.dateTo);
+      if (!Number.isNaN(to.getTime())) {
+        // Inclusive end-of-day when date-only
+        if (/^\d{4}-\d{2}-\d{2}$/.test(query.dateTo.trim())) {
+          to.setHours(23, 59, 59, 999);
+        }
+        createdAt.lte = to;
+      }
+    }
     const where: Prisma.PurchaseOrderWhereInput = {
       archivedAt: null,
       ...(query.status ? { status: query.status as PurchaseOrderStatus } : {}),
       ...(query.supplierId ? { supplierId: query.supplierId } : {}),
+      ...(Object.keys(createdAt).length ? { createdAt } : {}),
       ...(query.q
         ? {
             OR: [
@@ -504,6 +569,18 @@ export class PurchasingController {
               { supplier: { nameEn: { contains: query.q, mode } } },
               { supplier: { nameHe: { contains: query.q, mode } } },
               { supplier: { code: { contains: query.q, mode } } },
+              { lines: { some: { description: { contains: query.q, mode } } } },
+              {
+                lines: {
+                  some: { inventoryItem: { sku: { contains: query.q, mode } } },
+                },
+              },
+              {
+                lines: {
+                  some: { inventoryItem: { nameEn: { contains: query.q, mode } } },
+                },
+              },
+              { goodsReceipts: { some: { number: { contains: query.q, mode } } } },
             ],
           }
         : {}),
@@ -512,13 +589,250 @@ export class PurchasingController {
       this.prisma.purchaseOrder.count({ where }),
       this.prisma.purchaseOrder.findMany({
         where,
-        include: { supplier: true, lines: true, purchaseRequest: true },
+        include: {
+          supplier: true,
+          lines: { include: { inventoryItem: true } },
+          purchaseRequest: true,
+          goodsReceipts: { include: { lines: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take,
       }),
     ]);
-    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+    const enriched = data.map((po) => {
+      const orderedQty = po.lines.reduce((s, l) => s + Number(l.quantity), 0);
+      let receivedAcceptedQty = 0;
+      for (const grn of po.goodsReceipts) {
+        for (const line of grn.lines) {
+          receivedAcceptedQty +=
+            Number(line.receivedQty) - Number(line.rejectedQty ?? 0);
+        }
+      }
+      return {
+        ...po,
+        presentation: classifyPurchaseOrder({
+          status: po.status,
+          expectedDeliveryDate: po.expectedDeliveryDate,
+          orderedQty,
+          receivedAcceptedQty,
+        }),
+        receivedAcceptedQty,
+        orderedQty,
+      };
+    });
+    return { data: enriched, meta: paginatedMeta(page, pageSize, totalItems) };
+  }
+
+  @Get('material-demand')
+  @RequirePermissions('purchase-order.read')
+  async materialDemand(
+    @Query() query: { q?: string; category?: string },
+  ) {
+    const rows = await this.purchasing.materialDemand();
+    const q = query.q?.trim().toLowerCase();
+    const category = query.category?.trim().toUpperCase();
+    return rows.filter((row) => {
+      if (category) {
+        const cat = String((row as { category?: string | null }).category ?? '').toUpperCase();
+        if (cat !== category) return false;
+      }
+      if (!q) return true;
+      const hay = [row.sku, row.nameEn, row.nameAr, row.nameHe]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  @Patch('purchase-orders/:id')
+  @RequirePermissions('purchase-order.create')
+  patchOrder(
+    @Param('id') id: string,
+    @Body() dto: PatchPurchaseOrderDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const expectedDeliveryDate = dto.expectedDeliveryDate
+      ? new Date(dto.expectedDeliveryDate)
+      : dto.expectedDeliveryDate === null
+        ? null
+        : undefined;
+    if (expectedDeliveryDate === undefined) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'expectedDeliveryDate is required.',
+      });
+    }
+    return this.purchasing.patchPurchaseOrderEta(id, expectedDeliveryDate, user.id);
+  }
+
+  /**
+   * Draft-only structural edit (lines/prices/supplier/notes).
+   * After SENT/any GRN: rejected — use ETA patch or cancel if allowed.
+   */
+  @Patch('purchase-orders/:id/draft')
+  @RequirePermissions('purchase-order.create')
+  async updateDraft(
+    @Param('id') id: string,
+    @Body() dto: UpdateDraftPurchaseOrderDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const existing = await this.prisma.purchaseOrder.findUniqueOrThrow({
+      where: { id },
+      include: { goodsReceipts: { select: { id: true } } },
+    });
+    if (existing.status !== PurchaseOrderStatus.DRAFT) {
+      throw new BadRequestException({
+        code: 'PO_NOT_EDITABLE',
+        message: 'Only draft purchase orders can be structurally edited.',
+      });
+    }
+    if (existing.goodsReceipts.length > 0) {
+      throw new BadRequestException({
+        code: 'PO_HAS_RECEIPTS',
+        message: 'Cannot edit a purchase order that already has goods receipts.',
+      });
+    }
+    if (dto.supplierId) {
+      await this.purchasing.assertSupplierCertified(dto.supplierId);
+    }
+    if (dto.lines?.length) {
+      if (dto.lines.some((l) => l.unitPrice == null)) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'unitPrice is required on purchase order lines.',
+        });
+      }
+      await this.assertPurchasableItems(dto.lines.map((l) => l.inventoryItemId));
+    }
+
+    const inventoryIds = dto.lines?.length
+      ? [
+          ...new Set(
+            dto.lines.map((l) => l.inventoryItemId).filter((x): x is string => Boolean(x)),
+          ),
+        ]
+      : [];
+    const inventoryUnits = inventoryIds.length
+      ? Object.fromEntries(
+          (
+            await this.prisma.inventoryItem.findMany({
+              where: { id: { in: inventoryIds } },
+              select: { id: true, unit: true },
+            })
+          ).map((i) => [i.id, i.unit]),
+        )
+      : ({} as Record<string, string>);
+
+    const po = await this.prisma.$transaction(async (tx) => {
+      if (dto.lines?.length) {
+        await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: id } });
+        const lines = dto.lines.map((l) => {
+          const unitPrice = Number(l.unitPrice);
+          const lineTotal = Number(l.quantity) * unitPrice;
+          const unit =
+            l.unit?.trim() ||
+            (l.inventoryItemId ? inventoryUnits[l.inventoryItemId] : undefined) ||
+            'pcs';
+          return {
+            purchaseOrderId: id,
+            description: l.description,
+            quantity: roundMoney(l.quantity),
+            unit,
+            unitPrice: roundMoney(unitPrice),
+            taxRate: roundMoney(0.16),
+            lineTotal: roundMoney(lineTotal * 1.16),
+            inventoryItemId: l.inventoryItemId,
+          };
+        });
+        await tx.purchaseOrderLine.createMany({ data: lines });
+        const subtotal = lines.reduce(
+          (s, l) => s + Number(l.quantity) * Number(l.unitPrice),
+          0,
+        );
+        const taxAmount = subtotal * 0.16;
+        await tx.purchaseOrder.update({
+          where: { id },
+          data: {
+            ...(dto.supplierId ? { supplierId: dto.supplierId } : {}),
+            ...(dto.warehouseId !== undefined ? { warehouseId: dto.warehouseId } : {}),
+            ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+            ...(dto.expectedDeliveryDate
+              ? { expectedDeliveryDate: new Date(dto.expectedDeliveryDate) }
+              : {}),
+            subtotal: roundMoney(subtotal),
+            taxAmount: roundMoney(taxAmount),
+            total: roundMoney(subtotal + taxAmount),
+          },
+        });
+      } else {
+        await tx.purchaseOrder.update({
+          where: { id },
+          data: {
+            ...(dto.supplierId ? { supplierId: dto.supplierId } : {}),
+            ...(dto.warehouseId !== undefined ? { warehouseId: dto.warehouseId } : {}),
+            ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+            ...(dto.expectedDeliveryDate
+              ? { expectedDeliveryDate: new Date(dto.expectedDeliveryDate) }
+              : {}),
+          },
+        });
+      }
+      return tx.purchaseOrder.findUniqueOrThrow({
+        where: { id },
+        include: { lines: { include: { inventoryItem: true } }, supplier: true },
+      });
+    });
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'purchase-order.update-draft',
+        entityType: 'PurchaseOrder',
+        entityId: id,
+      },
+    });
+    return po;
+  }
+
+  /** Soft-cancel. Blocked after any GRN (historical integrity). No hard-delete. */
+  @Post('purchase-orders/:id/cancel')
+  @RequirePermissions('purchase-order.approve')
+  async cancelOrder(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.purchaseOrder.findUniqueOrThrow({
+      where: { id },
+      include: { goodsReceipts: { select: { id: true } } },
+    });
+    if (existing.goodsReceipts.length > 0) {
+      throw new BadRequestException({
+        code: 'PO_HAS_RECEIPTS',
+        message: 'Cannot cancel a purchase order that has goods receipts. No hard-delete of received POs.',
+      });
+    }
+    if (
+      existing.status === PurchaseOrderStatus.RECEIVED ||
+      existing.status === PurchaseOrderStatus.CLOSED ||
+      existing.status === PurchaseOrderStatus.CANCELLED
+    ) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Purchase order cannot be cancelled in current status.',
+      });
+    }
+    const po = await this.prisma.purchaseOrder.update({
+      where: { id },
+      data: { status: PurchaseOrderStatus.CANCELLED },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'purchase-order.cancel',
+        entityType: 'PurchaseOrder',
+        entityId: id,
+      },
+    });
+    return po;
   }
 
   @Post('purchase-orders')
@@ -653,13 +967,20 @@ export class PurchasingController {
 
   @Get('purchase-orders/:id')
   @RequirePermissions('purchase-order.read')
-  getOrder(@Param('id') id: string) {
-    return this.prisma.purchaseOrder.findUniqueOrThrow({
+  async getOrder(@Param('id') id: string) {
+    const po = await this.prisma.purchaseOrder.findUniqueOrThrow({
       where: { id },
       include: {
         supplier: true,
+        warehouse: true,
         lines: { include: { inventoryItem: true } },
-        goodsReceipts: { include: { lines: true } },
+        goodsReceipts: {
+          include: {
+            lines: { include: { inventoryItem: true } },
+            warehouse: true,
+          },
+          orderBy: { receiptDate: 'asc' },
+        },
         purchaseRequest: true,
         supplierInvoices: {
           where: { archivedAt: null },
@@ -667,6 +988,88 @@ export class PurchasingController {
         },
       },
     });
+
+    const orderedQty = po.lines.reduce((s, l) => s + Number(l.quantity), 0);
+    let receivedAcceptedQty = 0;
+    let actualReceivedValue = 0;
+    const receivedByItem = new Map<string, number>();
+    for (const grn of po.goodsReceipts) {
+      for (const line of grn.lines) {
+        const accepted = Number(line.receivedQty) - Number(line.rejectedQty ?? 0);
+        receivedAcceptedQty += accepted;
+        if (line.unitCost != null && accepted > 0) {
+          actualReceivedValue += accepted * Number(line.unitCost);
+        } else if (line.extendedCost != null) {
+          actualReceivedValue += Number(line.extendedCost);
+        }
+        if (line.inventoryItemId) {
+          receivedByItem.set(
+            line.inventoryItemId,
+            (receivedByItem.get(line.inventoryItemId) ?? 0) + accepted,
+          );
+        }
+      }
+    }
+    const expectedTotal = po.lines.reduce(
+      (s, l) => s + Number(l.quantity) * Number(l.unitPrice),
+      0,
+    );
+    const variance = purchaseVariance({ expectedTotal, actualReceivedValue });
+    const presentation = classifyPurchaseOrder({
+      status: po.status,
+      expectedDeliveryDate: po.expectedDeliveryDate,
+      orderedQty,
+      receivedAcceptedQty,
+    });
+
+    const lines = po.lines.map((line) => {
+      const received = line.inventoryItemId
+        ? receivedByItem.get(line.inventoryItemId) ?? 0
+        : 0;
+      const ordered = Number(line.quantity);
+      return {
+        ...line,
+        receivedQty: received,
+        remainingQty: Math.max(0, ordered - received),
+      };
+    });
+
+    // Attachments via existing uploads: category PURCHASE_ORDER:{id} / GOODS_RECEIPT:{grnId}
+    const grnIds = po.goodsReceipts.map((g) => g.id);
+    const attachmentCategories = [
+      `PURCHASE_ORDER:${id}`,
+      `PO_QUOTE:${id}`,
+      `PO_ORDER:${id}`,
+      ...grnIds.flatMap((gid) => [`GOODS_RECEIPT:${gid}`, `GRN_NOTE:${gid}`, `GRN_PHOTO:${gid}`]),
+    ];
+    const attachments = await this.prisma.document.findMany({
+      where: {
+        archivedAt: null,
+        category: { in: attachmentCategories },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        fileName: true,
+        mimeType: true,
+        category: true,
+        sizeBytes: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      ...po,
+      lines,
+      presentation,
+      purchasingCosting: {
+        expectedTotal: variance.expectedTotal,
+        actualReceivedValue: variance.actualReceivedValue,
+        purchaseVariance: variance.variance,
+      },
+      attachments,
+    };
   }
 
   @Post('purchase-orders/:id/goods-receipts')
@@ -678,11 +1081,15 @@ export class PurchasingController {
       warehouseId: string;
       deliveryDocRef?: string;
       notes?: string;
+      /** Request-level key — retries return the same GRN instead of duplicating stock. */
+      idempotencyKey?: string;
       lines: {
         inventoryItemId: string;
         orderedQty: number;
         receivedQty: number;
         rejectedQty?: number;
+        /** Actual receipt unit cost; defaults to PO line unitPrice. */
+        unitCost?: number;
         batchNumber?: string;
         qualityStatus?: string;
       }[];
@@ -712,9 +1119,113 @@ export class PurchasingController {
         message: 'Purchase order is not receivable in current status.',
       });
     }
+
+    const requestKey = body.idempotencyKey?.trim() || null;
+    if (requestKey) {
+      const existing = await this.prisma.goodsReceipt.findUnique({
+        where: { idempotencyKey: requestKey },
+        include: { lines: { include: { inventoryItem: true } }, warehouse: true },
+      });
+      if (existing) {
+        if (existing.purchaseOrderId !== id) {
+          throw new BadRequestException({
+            code: 'IDEMPOTENCY_CONFLICT',
+            message: 'Idempotency key already used for another purchase order.',
+          });
+        }
+        return existing;
+      }
+    }
+
+    // Prior accepted by inventory item (received − rejected).
+    const priorAccepted = new Map<string, number>();
+    for (const r of po.goodsReceipts) {
+      for (const l of r.lines) {
+        const prev = priorAccepted.get(l.inventoryItemId) ?? 0;
+        priorAccepted.set(
+          l.inventoryItemId,
+          prev + Number(l.receivedQty) - Number(l.rejectedQty ?? 0),
+        );
+      }
+    }
+    const orderedByItem = new Map<string, number>();
+    const priceByItem = new Map<string, number>();
+    for (const line of po.lines) {
+      if (!line.inventoryItemId) continue;
+      orderedByItem.set(
+        line.inventoryItemId,
+        (orderedByItem.get(line.inventoryItemId) ?? 0) + Number(line.quantity),
+      );
+      priceByItem.set(line.inventoryItemId, Number(line.unitPrice));
+    }
+
+    for (const line of body.lines) {
+      const received = Number(line.receivedQty) || 0;
+      const rejected = Number(line.rejectedQty ?? 0) || 0;
+      if (rejected < 0 || received < 0) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Quantities must be non-negative.',
+        });
+      }
+      if (rejected > received + 1e-9) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Rejected quantity cannot exceed received quantity.',
+        });
+      }
+      const accepted = acceptedReceiptQty(received, rejected);
+      if (accepted <= 0) continue;
+      const ordered = orderedByItem.get(line.inventoryItemId) ?? 0;
+      const already = priorAccepted.get(line.inventoryItemId) ?? 0;
+      const remaining = remainingOrderedQty(ordered, already);
+      if (isOverReceipt(accepted, remaining)) {
+        throw new BadRequestException({
+          code: 'OVER_RECEIPT',
+          message: `Cannot receive more than remaining ordered qty for item (${remaining}).`,
+        });
+      }
+    }
+
     const number = await this.sequences.next('GRN', 'GRN');
 
     const receipt = await this.prisma.$transaction(async (tx) => {
+      if (requestKey) {
+        const race = await tx.goodsReceipt.findUnique({
+          where: { idempotencyKey: requestKey },
+          include: { lines: { include: { inventoryItem: true } }, warehouse: true },
+        });
+        if (race) return race;
+      }
+
+      const lineCreates = body.lines.map((l) => {
+        const received = Number(l.receivedQty) || 0;
+        const rejected = Number(l.rejectedQty ?? 0) || 0;
+        const accepted = Math.max(0, received - rejected);
+        const mappedPrice = priceByItem.get(l.inventoryItemId);
+        const rawCost =
+          l.unitCost != null && Number(l.unitCost) > 0
+            ? Number(l.unitCost)
+            : mappedPrice != null && mappedPrice > 0
+              ? mappedPrice
+              : null;
+        const unitCost = rawCost != null ? Number(roundMoney(rawCost)) : null;
+        const extendedCost =
+          unitCost != null && accepted > 0 ? Number(roundMoney(unitCost * accepted)) : null;
+        return {
+          inventoryItemId: l.inventoryItemId,
+          orderedQty: roundMoney(l.orderedQty),
+          receivedQty: roundMoney(received),
+          rejectedQty: roundMoney(rejected),
+          unitCost: unitCost != null ? roundMoney(unitCost) : null,
+          extendedCost: extendedCost != null ? roundMoney(extendedCost) : null,
+          batchNumber: l.batchNumber,
+          qualityStatus: l.qualityStatus,
+          _accepted: accepted,
+          _unitCostNum: unitCost,
+        };
+      });
+
       const grn = await tx.goodsReceipt.create({
         data: {
           number,
@@ -723,35 +1234,27 @@ export class PurchasingController {
           deliveryDocRef: body.deliveryDocRef,
           notes: body.notes,
           createdById: user.id,
+          ...(requestKey ? { idempotencyKey: requestKey } : {}),
           lines: {
-            create: body.lines.map((l) => ({
-              inventoryItemId: l.inventoryItemId,
-              orderedQty: roundMoney(l.orderedQty),
-              receivedQty: roundMoney(l.receivedQty),
-              rejectedQty: roundMoney(l.rejectedQty ?? 0),
-              batchNumber: l.batchNumber,
-              qualityStatus: l.qualityStatus,
-            })),
+            create: lineCreates.map(({ _accepted, _unitCostNum, ...rest }) => rest),
           },
         },
-        include: { lines: true },
+        include: { lines: { include: { inventoryItem: true } }, warehouse: true },
       });
 
-      for (const line of body.lines) {
-        if (line.receivedQty <= 0) continue;
-        const accepted = line.receivedQty - (line.rejectedQty ?? 0);
-        if (accepted <= 0) continue;
-
+      for (const prepared of lineCreates) {
+        if (prepared._accepted <= 0) continue;
         await this.inventory.applyMovement({
           type: InventoryTxType.PURCHASE_RECEIPT,
-          inventoryItemId: line.inventoryItemId,
+          inventoryItemId: prepared.inventoryItemId,
           warehouseId: body.warehouseId,
-          quantity: accepted,
+          quantity: prepared._accepted,
+          unitCost: prepared._unitCostNum ?? undefined,
           userId: user.id,
           referenceType: 'GoodsReceipt',
           referenceId: grn.id,
           notes: `GRN ${number}`,
-          idempotencyKey: `grn:${grn.id}:${line.inventoryItemId}`,
+          idempotencyKey: `grn:${grn.id}:${prepared.inventoryItemId}`,
           db: tx,
         });
       }
@@ -774,7 +1277,7 @@ export class PurchasingController {
       const fullyReceived = po.lines.every((line) => {
         if (!line.inventoryItemId) return true;
         const got = receivedByItem.get(line.inventoryItemId) ?? 0;
-        return got >= Number(line.quantity);
+        return got + 1e-9 >= Number(line.quantity);
       });
 
       await tx.purchaseOrder.update({

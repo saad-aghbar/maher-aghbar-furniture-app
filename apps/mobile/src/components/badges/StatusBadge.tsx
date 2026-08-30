@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
-import { statusLabel } from '@maher/i18n';
 import { useLocale } from '@/i18n';
+import { presentStatus } from '@/lib/presentStatus';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import {
   getBadgeContainerStyle,
@@ -21,10 +21,10 @@ function normalizeStatusKey(status: string): string {
 
 export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
   const { theme } = useTheme();
-  const { locale, isRTL } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const key = normalizeStatusKey(status);
   const variant = resolveStatusVariant(key);
-  const display = label ?? statusLabel(locale, key);
+  const display = label ?? presentStatus(status, t);
 
   return (
     <View

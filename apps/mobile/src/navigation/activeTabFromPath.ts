@@ -55,6 +55,7 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
       segments.includes('purchasing') ||
       segments.includes('invoices') ||
       segments.includes('returns') ||
+      segments.includes('reports') ||
       segments.includes('ai-intake') ||
       segments.includes('ai-chat') ||
       segments.includes('notifications') ||
@@ -68,7 +69,7 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
   if (surface === 'customer') {
     if (segments.includes('catalog')) return 'catalog';
     if (segments.includes('new-order') || segments.includes('requests')) return 'new-order';
-    if (segments.includes('orders')) return 'orders';
+    if (segments.includes('orders') || segments.includes('quotations')) return 'orders';
     if (segments.includes('schedule') || segments.includes('calendar')) return 'account';
     if (
       segments.includes('account') ||

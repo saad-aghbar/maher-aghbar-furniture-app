@@ -1,0 +1,8 @@
+{
+  "phaseDraft": "مسودة",
+  "phaseOrdered": "تم الطلب",
+  "phasePartial": "استلام جزئي",
+  "phaseReceived": "مستلم",
+  "phaseClosed": "مغلق",
+  "phaseCancelled": "ملغى"
+}

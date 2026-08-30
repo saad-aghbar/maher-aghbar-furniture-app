@@ -27,6 +27,7 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { TextField } from '@/components/forms/TextField';
 import { PhoneField } from '@/components/forms/PhoneField';
 import { KeyboardAwareScreen } from '@/components/layout/KeyboardAwareScreen';
+import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
 import { FadeIn, FormShake, SlideIn, haptics } from '@/motion';
 import { dealerTokens, useTheme } from '@/theme';
@@ -166,6 +167,7 @@ export function NewOrderScreen() {
   const [draftSavedNumber, setDraftSavedNumber] = useState<string | null>(null);
   const [successKey, setSuccessKey] = useState(0);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
 
   const productQuery = useBrowseProductQuery(productId || undefined, Boolean(productId));
   const favorites = useDealerFavorites(user?.id);
@@ -1427,7 +1429,14 @@ export function NewOrderScreen() {
                       hideActions
                       onBack={goBack}
                       onSaveDraft={() => void persistDraft()}
-                      onSubmit={() => void submitOrder()}
+                      onSubmit={() => {
+                        if (!validateForSubmit()) {
+                          if (!resolvedName || !isValidQuantity(quantity)) setStep(1);
+                          else setStep(3);
+                          return;
+                        }
+                        setSubmitConfirmOpen(true);
+                      }}
                       onViewOrders={() =>
                         router.replace('/(app)/(customer)/(tabs)/orders')
                       }
@@ -1506,6 +1515,19 @@ export function NewOrderScreen() {
                   ? product.nameHe || product.nameEn
                   : product.nameEn || product.nameAr;
             setCustomProductName(name || product.nameEn || product.nameAr || '');
+          }}
+        />
+
+        <ConfirmationSheet
+          open={submitConfirmOpen}
+          onClose={() => setSubmitConfirmOpen(false)}
+          title={t('mobile.newOrder.submitConfirmTitle')}
+          message={t('mobile.newOrder.submitConfirmBody')}
+          confirmLabel={t('mobile.newOrder.submitConfirmAction')}
+          cancelLabel={t('mobile.newOrder.submitConfirmCancel')}
+          onConfirm={() => {
+            setSubmitConfirmOpen(false);
+            void submitOrder();
           }}
         />
 

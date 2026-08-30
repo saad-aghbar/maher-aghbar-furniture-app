@@ -130,6 +130,7 @@ describe('UpdateNodeDto', () => {
 describe('compileWorkflow', () => {
   it('excludes painting and bridges Carpentry → Assembly', () => {
     const compiled = compileWorkflow({
+      enforceTerminalChain: false,
       nodes: [
         node('carp', 'CARPENTRY', { sortOrder: 1 }),
         node('paint', 'PAINTING', { sortOrder: 2, canBeSkipped: true, isRequiredByDefault: false }),
@@ -156,6 +157,7 @@ describe('compileWorkflow', () => {
 
   it('keeps parallel foam and painting then merge to upholstery', () => {
     const compiled = compileWorkflow({
+      enforceTerminalChain: false,
       nodes: [
         node('carp', 'CARPENTRY'),
         node('foam', 'FOAM'),
@@ -176,6 +178,7 @@ describe('compileWorkflow', () => {
 
   it('marks estimate review when no duration available', () => {
     const compiled = compileWorkflow({
+      enforceTerminalChain: false,
       nodes: [
         node('a', 'A', {
           defaultEstimatedMinutes: null,

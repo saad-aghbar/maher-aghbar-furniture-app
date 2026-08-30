@@ -9,6 +9,7 @@ export type StageDefinition = {
   requiresInspection?: boolean;
   requiresPhotos?: boolean;
   responsibleDepartment?: string | null;
+  executionKind?: 'PRODUCTION' | 'QUALITY' | 'LOGISTICS';
   isActive: boolean;
 };
 
@@ -23,6 +24,7 @@ export type WorkflowNode = {
   inventoryTracking?: 'NONE' | 'PRODUCES_SEMI_FINISHED' | 'PRODUCES_FINISHED';
   consumesRawMaterials?: boolean;
   consumesSemiFinished?: boolean;
+  expectedPieceCount?: number | null;
   stageDefinition: StageDefinition;
 };
 

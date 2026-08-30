@@ -6,8 +6,8 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
+import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
@@ -53,7 +53,6 @@ export function NewOrderFloatingDock({
 }: NewOrderFloatingDockProps) {
   const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
-  const insets = useSafeAreaInsets();
   const dark = colorScheme === 'dark';
   const dealer = dealerTokens(colors);
 
@@ -62,23 +61,9 @@ export function NewOrderFloatingDock({
   const primaryKey = newOrderDockPrimaryKey(mode);
   const primaryLabel = primaryKey ? t(primaryKey) : '';
   const showSave = newOrderDockShowsSaveDraft(mode) && onSaveDraft;
-  const footerClearance = DEALER_TAB_BAR_CLEARANCE + theme.spacing.sm;
-  // When keyboard / safe area already tall, still clear the pill.
-  const bottomPad = Math.max(footerClearance, insets.bottom + theme.spacing.md);
 
   return (
-    <View
-      pointerEvents="box-none"
-      style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        paddingHorizontal: theme.spacing.lg,
-        paddingBottom: bottomPad,
-        backgroundColor: 'transparent',
-      }}
-    >
+    <FloatingActionDock floating tabClearance={DEALER_TAB_BAR_CLEARANCE}>
       <View
         style={{
           borderRadius: theme.radius.xl + 4,
@@ -209,6 +194,6 @@ export function NewOrderFloatingDock({
           </View>
         </View>
       </View>
-    </View>
+    </FloatingActionDock>
   );
 }

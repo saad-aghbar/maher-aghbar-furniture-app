@@ -3,6 +3,7 @@
 import { ProductionFlowMap, type FlowMapStage } from '@/components/workflow/production-flow-map';
 import { apiFetch } from '@/lib/api-client';
 import type { ProductStageEstimateRow } from '@/lib/scheduling';
+import { workflowVersionToFlowStages } from '@/lib/workflow-labels';
 import { localizedName } from '@maher/i18n';
 import { Card, EmptyState, Skeleton } from '@maher/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -80,37 +81,21 @@ export function ProductWorkflowTimes({
 
   const stages: FlowMapStage[] = useMemo(() => {
     const version = workflowQuery.data?.activeVersion;
-    const nodes = version?.nodes ?? [];
-    const edges = version?.edges ?? [];
-    const byId = new Map(nodes.map((n) => [n.id, n]));
-    const deps = new Map<string, string[]>();
-    for (const node of nodes) {
-      const code = node.stageDefinition?.code ?? node.id;
-      deps.set(code, []);
-    }
-    for (const edge of edges) {
-      const from = byId.get(edge.fromNodeId);
-      const to = byId.get(edge.toNodeId);
-      const fromCode = from?.stageDefinition?.code ?? from?.id;
-      const toCode = to?.stageDefinition?.code ?? to?.id;
-      if (!fromCode || !toCode) continue;
-      const list = deps.get(toCode) ?? [];
-      list.push(fromCode);
-      deps.set(toCode, list);
-    }
-    return nodes.map((node, index) => {
-      const def = node.stageDefinition;
-      const code = def?.code ?? node.id;
+    if (!version) return [];
+    const nodes = version.nodes ?? [];
+    const edges = version.edges ?? [];
+    return workflowVersionToFlowStages(nodes, edges, locale).map((s) => {
+      const node = nodes.find((n) => n.id === s.id);
+      const def = node?.stageDefinition;
+      const displayCode = def?.code ?? s.id;
       const minutes = def?.id ? estimateMap.get(def.id) : undefined;
       return {
-        id: node.id,
-        code,
-        name: def ? localizedName(locale, def, code) : code,
+        ...s,
+        // Keep layout code = node id so dependsOnCodes (node ids) still match.
+        name: def ? localizedName(locale, def, displayCode) : displayCode,
         status: minutes && minutes > 0 ? 'COMPLETED' : 'PENDING',
         progressPercent: minutes && minutes > 0 ? 100 : 0,
-        dependsOnCodes: deps.get(code) ?? [],
-        sortOrder: node.sortOrder ?? index,
-        estimatedMinutes: minutes ?? node.estimatedMinutes ?? null,
+        estimatedMinutes: minutes ?? node?.estimatedMinutes ?? null,
       };
     });
   }, [estimateMap, locale, workflowQuery.data?.activeVersion]);

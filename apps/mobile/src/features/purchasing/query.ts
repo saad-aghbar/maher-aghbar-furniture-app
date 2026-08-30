@@ -11,6 +11,7 @@ import {
   createSupplier,
   getPurchaseOrder,
   getPurchaseRequest,
+  getSupplier,
   getSupplierInvoice,
   listPurchaseOrders,
   listPurchaseRequests,
@@ -24,7 +25,13 @@ import {
   type GoodsReceiptInput,
 } from './api';
 
-type ListFilters = { q?: string; status?: string; supplierId?: string };
+type ListFilters = {
+  q?: string;
+  status?: string;
+  supplierId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+};
 
 export function usePurchaseOrdersInfiniteQuery(filters: ListFilters, enabled: boolean) {
   return useInfiniteQuery({
@@ -109,6 +116,14 @@ export function useSuppliersQuery(enabled: boolean, q?: string) {
   });
 }
 
+export function useSupplierDetailQuery(id: string | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: [...queryKeys.purchasing.all, 'supplier', id ?? ''] as const,
+    queryFn: () => getSupplier(id!),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
 export function useCreatePurchaseMutation() {
   const qc = useQueryClient();
   return useMutation({
@@ -159,7 +174,16 @@ export function usePurchaseActionMutation(id: string) {
     }),
     receive: useMutation({
       mutationFn: (body: GoodsReceiptInput) => receivePurchaseOrder(id, body),
-      onSuccess: invalidate,
+      onSuccess: async () => {
+        await invalidate();
+        await qc.invalidateQueries({ queryKey: queryKeys.purchasing.materialDemand() });
+        await qc.invalidateQueries({ queryKey: queryKeys.inventory.lists() });
+        await qc.invalidateQueries({ queryKey: queryKeys.inventory.overview() });
+        await qc.invalidateQueries({ queryKey: queryKeys.inventory.warehouses() });
+        await qc.invalidateQueries({ queryKey: queryKeys.production.lists() });
+        await qc.invalidateQueries({ queryKey: queryKeys.production.summary() });
+        await qc.invalidateQueries({ queryKey: queryKeys.production.all });
+      },
     }),
   };
 }

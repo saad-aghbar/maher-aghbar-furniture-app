@@ -37,10 +37,13 @@ import {
   eachYmdInclusive,
   overlapWorkingMinutes,
   parseYmd,
+  addDaysYmd,
   assessMaterialReadiness,
-  applyMaterialNotBefore,
+  applyStageOrOrderMaterialFloors,
+  frozenInputsFromSnapshotNodes,
   applyConsumeWipDependencies,
   assessWipLotsReady,
+  assessWipKitsReady,
   requirementFromNeeds,
   inventorySkuKey,
   inventoryGroupKey,
@@ -68,6 +71,13 @@ import {
   workingMinutesOnYmd,
   ymdInTimezone,
   OccupancyCollisionError,
+  PastFloorViolationError,
+  resolvePlannerNow,
+  resolveSchedulingFloor,
+  classifyAllocationForFloor,
+  allocationViolatesSchedulingFloor,
+  assertNoPastIncompleteAllocations,
+  isHistoricalCapacityIncrease,
   unionOccupancyIntervals,
   stripOccupancyForOrder,
   plannedAllocationsToOccupancy,
@@ -82,6 +92,23 @@ import {
   type ConflictAllocationInput,
   type DetectedConflict,
   type ScheduleRiskClassification,
+  isHardLocked,
+  stillNonRecoverableBlocker,
+  blockerKindFromReadiness,
+  selectManualSyncCandidates,
+  deriveManualSyncOutcome,
+  type ManualSyncOrderFacts,
+  applyNDayFloor,
+  attachEmptyDayCauses,
+  simulatePolicy,
+  sortPullForwardOrders,
+  deriveOptimizeOutcome,
+  emptyDayCauseI18nKey,
+  isOptimizeChangeType,
+  movableSimOrders,
+  blockedSimOrders,
+  OPTIMIZE_APPLY_CHANGE_TYPE,
+  OPTIMIZE_PREVIEW_CHANGE_TYPE,
   actualDeliveryValue,
   buildDealerDeliveryView,
   plannedDeliveryValue,
@@ -104,6 +131,7 @@ import type {
   ProductStageEstimateInputDto,
   RecalculateDto,
 } from './dto/scheduling.dto';
+import { loadCapacityOptimizeWorld } from './capacity-optimize-world';
 
 const DEBOUNCE_WINDOW_MS = 60_000;
 
@@ -184,6 +212,8 @@ export class SchedulingService implements OnModuleInit {
           shiftEnd: '16:00',
           breaks: [{ start: '12:00', end: '13:00' }] as unknown as Prisma.InputJsonValue,
           deliveryBufferWorkingDays: 1,
+          maxProductionEarlyWorkingDays: 10,
+          targetFactoryUtilizationPercent: 85,
           isDefault: true,
         },
       });
@@ -284,9 +314,26 @@ export class SchedulingService implements OnModuleInit {
         ...(dto.deliveryBufferWorkingDays != null
           ? { deliveryBufferWorkingDays: dto.deliveryBufferWorkingDays }
           : {}),
+        ...(dto.maxProductionEarlyWorkingDays != null
+          ? { maxProductionEarlyWorkingDays: dto.maxProductionEarlyWorkingDays }
+          : {}),
+        ...(dto.targetFactoryUtilizationPercent != null
+          ? { targetFactoryUtilizationPercent: dto.targetFactoryUtilizationPercent }
+          : {}),
       },
     });
     await this.audit(userId, 'schedule.calendar.update', 'FactoryCalendar', row.id, dto);
+    const capacityAffecting =
+      Boolean(dto.timezone) ||
+      Boolean(dto.workingWeekdays) ||
+      Boolean(dto.shiftStart) ||
+      Boolean(dto.shiftEnd) ||
+      Boolean(dto.breaks) ||
+      dto.deliveryBufferWorkingDays != null;
+    const calendar = await this.getCalendar();
+    if (!capacityAffecting) {
+      return { ...calendar, replanQueued: false, replanned: 0 };
+    }
     const { calendar: afterCal } = await this.getCalendarDomain();
     const todayYmd = ymdInTimezone(new Date(), afterCal.timezone);
     const capacityDelta = classifySettingsDelta(beforeCal, afterCal, todayYmd);
@@ -296,7 +343,6 @@ export class SchedulingService implements OnModuleInit {
       affectedYmd: todayYmd,
       reason: 'calendar-settings-updated',
     });
-    const calendar = await this.getCalendar();
     return { ...calendar, ...queued };
   }
 
@@ -400,6 +446,8 @@ export class SchedulingService implements OnModuleInit {
       this.buildOrderCards(from, rangeEnd, {
         calendar,
         bufferWorkingDays: row.deliveryBufferWorkingDays ?? 1,
+        fromYmd: query.from,
+        toYmd: query.to,
       }),
       this.pinnedOnClosedDayCounts(calendar, from, rangeEnd),
     ]);
@@ -413,7 +461,12 @@ export class SchedulingService implements OnModuleInit {
   private async buildOrderCards(
     fromDate: Date,
     toDate: Date,
-    presentation?: { calendar: WorkingCalendar; bufferWorkingDays: number },
+    presentation?: {
+      calendar: WorkingCalendar;
+      bufferWorkingDays: number;
+      fromYmd?: string;
+      toYmd?: string;
+    },
   ) {
     const allocations = await this.prisma.scheduleAllocation.findMany({
       where: {
@@ -468,7 +521,15 @@ export class SchedulingService implements OnModuleInit {
       committedCompletionDate: Date | null;
       minStart: Date;
       maxEnd: Date;
+      occupiedDates: Set<string>;
     }
+    const calendar = presentation?.calendar;
+    const occupyFromYmd = presentation?.fromYmd;
+    const occupyToYmd = presentation?.toYmd;
+    const occupiedFor = (a: (typeof allocations)[number]): Set<string> => {
+      if (!calendar) return new Set();
+      return new Set(calendar.occupiedLocalYmds(a.plannedStart, a.plannedEnd, occupyFromYmd, occupyToYmd));
+    };
     const toBucket = (a: (typeof allocations)[number]): Bucket => ({
       scheduleId: a.schedule.id,
       version: a.schedule.version,
@@ -487,6 +548,7 @@ export class SchedulingService implements OnModuleInit {
       committedCompletionDate: a.schedule.committedCompletionDate,
       minStart: a.plannedStart,
       maxEnd: a.plannedEnd,
+      occupiedDates: occupiedFor(a),
     });
     const byOrder = new Map<string, Bucket>();
     for (const a of allocations) {
@@ -505,6 +567,9 @@ export class SchedulingService implements OnModuleInit {
       }
       if (a.plannedStart.getTime() < existing.minStart.getTime()) existing.minStart = a.plannedStart;
       if (a.plannedEnd.getTime() > existing.maxEnd.getTime()) existing.maxEnd = a.plannedEnd;
+      if (calendar) {
+        for (const ymd of occupiedFor(a)) existing.occupiedDates.add(ymd);
+      }
     }
 
     const conflicts = await this.listConflicts();
@@ -550,7 +615,6 @@ export class SchedulingService implements OnModuleInit {
       : [];
     const orphanById = new Map(orphanCustomers.map((c) => [c.id, c]));
 
-    const calendar = presentation?.calendar;
     const bufferWorkingDays = presentation?.bufferWorkingDays ?? 1;
     return orderIds.map((id) => {
       const bucket = byOrder.get(id)!;
@@ -579,6 +643,7 @@ export class SchedulingService implements OnModuleInit {
         materialRisk: bucket.materialRisk,
         plannedStart: bucket.minStart.toISOString(),
         plannedEnd: bucket.maxEnd.toISOString(),
+        occupiedDates: calendar ? [...bucket.occupiedDates].sort() : undefined,
         hasConflict: conflictOrderIds.has(id),
         requestedDeliveryDate: requested,
         suggestedDeliveryDate: bucket.suggestedDeliveryDate,
@@ -1063,14 +1128,14 @@ export class SchedulingService implements OnModuleInit {
         inventory[key] = { ...row, available: (row.available ?? 0) + qty };
       }
     }
-    return assessMaterialReadiness(required, inventory);
+    return { ...assessMaterialReadiness(required, inventory), inventory };
   }
 
   private async loadWipLots(productionOrderId: string) {
     return this.prisma.inventoryLot.findMany({
       where: {
         productionOrderId,
-        status: 'AVAILABLE',
+        status: { in: ['AVAILABLE', 'PARTIALLY_CONSUMED'] },
         inventoryItem: { itemClass: 'SEMI_FINISHED_GOOD' },
       },
       select: { inventoryItemId: true, quantity: true },
@@ -1095,6 +1160,7 @@ export class SchedulingService implements OnModuleInit {
       (await this.prisma.productionOrderWorkflowSnapshotNode.findMany({
         where: { snapshot: { productionOrderId } },
         select: {
+          id: true,
           stageCode: true,
           isSkipped: true,
           consumesSemiFinished: true,
@@ -1102,25 +1168,38 @@ export class SchedulingService implements OnModuleInit {
           outputInventoryItemId: true,
           outputQtyPerUnit: true,
           consumeInventoryItemIds: true,
+          stageInstanceId: true,
         },
       }));
     const lots = await this.loadWipLots(productionOrderId);
-    return assessWipLotsReady(
-      nodes.map((n) => ({
-        stageCode: n.stageCode,
-        isSkipped: n.isSkipped,
-        consumesSemiFinished: n.consumesSemiFinished,
-        inventoryTracking: n.inventoryTracking,
-        outputInventoryItemId: n.outputInventoryItemId,
-        outputQtyPerUnit: n.outputQtyPerUnit != null ? Number(n.outputQtyPerUnit) : null,
-        consumeInventoryItemIds: n.consumeInventoryItemIds,
-      })),
+    const mapped = nodes.map((n) => ({
+      id: 'id' in n && typeof (n as { id?: string }).id === 'string' ? (n as { id: string }).id : undefined,
+      stageCode: n.stageCode,
+      isSkipped: n.isSkipped,
+      consumesSemiFinished: n.consumesSemiFinished,
+      inventoryTracking: n.inventoryTracking,
+      outputInventoryItemId: n.outputInventoryItemId,
+      outputQtyPerUnit: n.outputQtyPerUnit != null ? Number(n.outputQtyPerUnit) : null,
+      consumeInventoryItemIds: n.consumeInventoryItemIds,
+      stageInstanceId:
+        'stageInstanceId' in n
+          ? ((n as { stageInstanceId?: string | null }).stageInstanceId ?? null)
+          : null,
+    }));
+    const lotsReady = assessWipLotsReady(
+      mapped,
       lots.map((lot) => ({
         inventoryItemId: lot.inventoryItemId,
         quantity: Number(lot.quantity),
       })),
       orderQty,
     );
+    if (!lotsReady) return false;
+    const kits = await this.prisma.wipKit.findMany({
+      where: { productionOrderId },
+      select: { stageInstanceId: true, status: true, nextSnapshotNodeIds: true },
+    });
+    return assessWipKitsReady(mapped, kits);
   }
 
   private async wipProducersCompleted(productionOrderId: string): Promise<boolean> {
@@ -1204,6 +1283,8 @@ export class SchedulingService implements OnModuleInit {
       existingOccupancy?: OccupancyInterval[];
       /** Reject the plan before persist if it overlaps existingOccupancy / loaded occupancy. */
       validateAgainstOccupancy?: boolean;
+      /** Optimize-only: pin unpinned stages notBefore N working days before the commercial target. */
+      earlyWindowWorkingDays?: number;
     },
   ) {
     const po = await this.prisma.productionOrder.findUnique({
@@ -1231,6 +1312,17 @@ export class SchedulingService implements OnModuleInit {
       return result;
     } catch (err) {
       if (err instanceof OccupancyCollisionError) throw err;
+      if (err instanceof PastFloorViolationError) {
+        throw new ConflictException({
+          code: err.code,
+          message: err.message,
+          productionOrderId: poId,
+          violations: err.violations.map((v) => ({
+            stageCode: v.stageCode,
+            plannedStart: v.plannedStart.toISOString(),
+          })),
+        });
+      }
       if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
       if (opts?.failHard) {
         const message = err instanceof Error ? err.message : 'Scheduling failed';
@@ -1274,6 +1366,7 @@ export class SchedulingService implements OnModuleInit {
       abortIfMissesCommitment?: boolean;
       existingOccupancy?: OccupancyInterval[];
       validateAgainstOccupancy?: boolean;
+      earlyWindowWorkingDays?: number;
     },
   ) {
     const latest = await this.prisma.productionSchedule.findFirst({
@@ -1298,7 +1391,7 @@ export class SchedulingService implements OnModuleInit {
     const hasEstimates = (po.product?.stageEstimates.length ?? 0) > 0;
     const snapshot = await this.prisma.productionOrderWorkflowSnapshot.findUnique({
       where: { productionOrderId: po.id },
-      include: { nodes: true, edges: true },
+      include: { nodes: { include: { materialInputs: true } }, edges: true },
     });
     const snapshotHasAllEstimates = Boolean(
       snapshot?.nodes.length &&
@@ -1362,12 +1455,9 @@ export class SchedulingService implements OnModuleInit {
         task.status === 'COMPLETED' ||
         task.status === 'IN_PROGRESS' ||
         task.status === 'BLOCKED';
-      const pinStart =
-        override?.start ?? prior?.plannedStart ?? (lockInPlace ? task.plannedStart : null);
-      const pinEnd =
-        override?.end ?? prior?.plannedEnd ?? (lockInPlace ? task.plannedCompletion : null);
-      const isPinned =
-        Boolean(override) || Boolean(prior) || Boolean(lockInPlace && pinStart && pinEnd);
+      const pinStart = prior?.plannedStart ?? (lockInPlace ? task.plannedStart : null);
+      const pinEnd = prior?.plannedEnd ?? (lockInPlace ? task.plannedCompletion : null);
+      const isPinned = Boolean(prior) || Boolean(lockInPlace && pinStart && pinEnd);
 
       const schedulingResourceMode =
         snap?.schedulingResourceMode ??
@@ -1402,7 +1492,22 @@ export class SchedulingService implements OnModuleInit {
     }
 
     const materialReadiness = await this.assessLiveMaterialReadiness(po);
-    if (!materialReadiness.ready && !materialReadiness.materialReadyAt) {
+    const consumingRawCodes = (snapshot?.nodes ?? [])
+      .filter((n) => !n.isSkipped && n.consumesRawMaterials)
+      .map((n) => n.stageCode);
+    const frozenInputs = frozenInputsFromSnapshotNodes(snapshot?.nodes ?? []);
+    const materialApplied = applyStageOrOrderMaterialFloors({
+      stages,
+      frozenInputs,
+      orderQty: Number(po.quantity) || 1,
+      inventory: materialReadiness.inventory,
+      orderWideReadyAt: materialReadiness.materialReadyAt,
+      consumingStageCodes: consumingRawCodes,
+    });
+    if (
+      (!frozenInputs.length && !materialReadiness.ready && !materialReadiness.materialReadyAt) ||
+      (frozenInputs.length > 0 && materialApplied.unknownRequired)
+    ) {
       await this.persistUnschedulable(
         po,
         userId,
@@ -1419,15 +1524,6 @@ export class SchedulingService implements OnModuleInit {
       }
       return this.getOrderSchedule(po.id);
     }
-
-    const consumingRawCodes = (snapshot?.nodes ?? [])
-      .filter((n) => !n.isSkipped && n.consumesRawMaterials)
-      .map((n) => n.stageCode);
-    const materialApplied = applyMaterialNotBefore(
-      stages,
-      materialReadiness.materialReadyAt,
-      consumingRawCodes,
-    );
     let plannedStages = materialApplied.stages;
 
     const wipNodes = (snapshot?.nodes ?? []).map((n) => ({
@@ -1493,7 +1589,32 @@ export class SchedulingService implements OnModuleInit {
       this.getCalendarDomain(),
     ]);
     const occupancy = opts?.existingOccupancy ? unionOccupancyIntervals(occupancyRaw) : occupancyRaw;
-    const now = opts?.fromDate && !Number.isNaN(opts.fromDate.getTime()) ? opts.fromDate : new Date();
+    const wallNow = new Date();
+    const floor = resolveSchedulingFloor(calendar, wallNow);
+    const now = resolvePlannerNow(calendar, wallNow, opts?.fromDate);
+
+    const taskById = new Map(po.tasks.map((t) => [t.id, t]));
+    plannedStages = plannedStages.map((stage) => {
+      if (!stage.productionTaskId) return stage;
+      const override = opts?.pinOverrides?.find((o) => o.productionTaskId === stage.productionTaskId);
+      if (!override) return stage;
+      const task = taskById.get(stage.productionTaskId);
+      const lockInPlace =
+        task?.status === 'COMPLETED' ||
+        task?.status === 'IN_PROGRESS' ||
+        task?.status === 'BLOCKED';
+      if (!lockInPlace && override.start.getTime() < floor.getTime()) {
+        return stage;
+      }
+      return {
+        ...stage,
+        isPinned: true,
+        pinnedStart: override.start,
+        pinnedEnd: override.end,
+        preferredEmployeeId: override.employeeId ?? stage.preferredEmployeeId,
+      };
+    });
+
     const promiseDate = po.committedDeliveryDate ?? po.requiredDeliveryDate;
     const latestCompletionTarget = promiseDate
       ? calendar.latestProductionCompletion(
@@ -1501,6 +1622,15 @@ export class SchedulingService implements OnModuleInit {
           calendarRow.deliveryBufferWorkingDays ?? 1,
         )
       : null;
+    if (opts?.earlyWindowWorkingDays && opts.mode === 'forward') {
+      plannedStages = applyNDayFloor(
+        plannedStages,
+        calendar,
+        latestCompletionTarget ?? po.committedDeliveryDate ?? po.requiredDeliveryDate,
+        opts.earlyWindowWorkingDays,
+        now,
+      );
+    }
 
     const orderInput: PlannerOrderInput = {
       id: po.id,
@@ -1519,6 +1649,19 @@ export class SchedulingService implements OnModuleInit {
 
     const useBackward = opts?.mode ? opts.mode === 'backward' : Boolean(promiseDate);
     const result = useBackward ? backwardSchedule([orderInput], ctx) : forwardSchedule([orderInput], ctx);
+
+    assertNoPastIncompleteAllocations(
+      result.allocations.map((alloc) => ({
+        plannedStart: alloc.plannedStart,
+        isPinned: alloc.isPinned,
+        stageCode: alloc.stageCode,
+        allocationKey: alloc.productionTaskId ?? alloc.stageCode,
+        taskStatus: alloc.productionTaskId
+          ? (taskById.get(alloc.productionTaskId)?.status ?? null)
+          : null,
+      })),
+      floor,
+    );
 
     if (opts?.validateAgainstOccupancy) {
       const plannedOcc = plannedAllocationsToOccupancy(po.id, result.allocations);
@@ -1600,6 +1743,8 @@ export class SchedulingService implements OnModuleInit {
           status: 'PROPOSED',
           promiseState: 'AWAITING_APPROVAL',
           requestedDeliveryDate: po.requiredDeliveryDate,
+          committedDeliveryDate: latest?.committedDeliveryDate ?? po.committedDeliveryDate,
+          committedCompletionDate: latest?.committedCompletionDate ?? null,
           requestedDateFeasible: result.requestedDateFeasible,
           planningMode: result.planningMode,
           unschedulableReason: result.unschedulableReason ?? null,
@@ -1752,6 +1897,17 @@ export class SchedulingService implements OnModuleInit {
     userId: string,
     opts?: { reason?: string },
   ) {
+    const { calendar } = await this.getCalendarDomain();
+    const floor = resolveSchedulingFloor(calendar);
+    const floorYmd = ymdInTimezone(floor, calendar.timezone);
+    const targetYmd = ymdInTimezone(targetDate, calendar.timezone);
+    if (targetYmd < floorYmd) {
+      return this.generateForProductionOrder(poId, userId, {
+        reason: opts?.reason ?? 'Admin moved schedule date',
+        mode: 'forward',
+        failHard: true,
+      });
+    }
     const latest = await this.prisma.productionSchedule.findFirst({
       where: {
         productionOrderId: poId,
@@ -3199,6 +3355,7 @@ export class SchedulingService implements OnModuleInit {
       ),
       this.getCalendarDomain(),
     ]);
+    const floor = resolveSchedulingFloor(calendar, now);
 
     const placement = findResolutionPlacement({
       movable: movableInput,
@@ -3206,7 +3363,7 @@ export class SchedulingService implements OnModuleInit {
       workers,
       occupancy,
       calendar,
-      now,
+      now: floor,
       sameWindowOnly: pick.sameWindowOnly,
     });
     if ('fail' in placement) {
@@ -3501,6 +3658,22 @@ export class SchedulingService implements OnModuleInit {
       materialRisk: Boolean(schedule?.materialRisk),
       now,
     });
+  }
+
+  private projectedMsFromFingerprint(fp: string | null): number | null {
+    if (!fp) return null;
+    try {
+      const parsed = JSON.parse(fp) as {
+        earliestAvailableDate?: string | null;
+        suggestedDeliveryDate?: string | null;
+      };
+      const iso = parsed.earliestAvailableDate ?? parsed.suggestedDeliveryDate;
+      if (!iso) return null;
+      const ms = new Date(iso).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    } catch {
+      return null;
+    }
   }
 
   private async snapshotScheduleFingerprint(poId: string): Promise<string | null> {
@@ -4063,6 +4236,7 @@ export class SchedulingService implements OnModuleInit {
       affectedYmd?: string | null;
       reason?: string;
       employeeId?: string;
+      payload?: Record<string, unknown>;
     },
   ) {
     const run = await this.prisma.schedulingReplanRun.create({
@@ -4075,6 +4249,7 @@ export class SchedulingService implements OnModuleInit {
           capacityDelta: opts.capacityDelta,
           affectedYmd: opts.affectedYmd ?? null,
           employeeId: opts.employeeId ?? null,
+          ...(opts.payload ?? {}),
         },
       },
     });
@@ -4091,6 +4266,119 @@ export class SchedulingService implements OnModuleInit {
       replanQueued: true,
       replanJobId: run.id,
     };
+  }
+
+  async enqueueManualSync(userId: string) {
+    const inflight = await this.prisma.schedulingReplanRun.findMany({
+      where: { status: { in: ['QUEUED', 'RUNNING'] } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const freshRunningCutoff = this.factoryReplanStaleCutoff();
+    const live = inflight.filter(
+      (row) =>
+        row.status === 'QUEUED' ||
+        (row.status === 'RUNNING' && row.startedAt && row.startedAt >= freshRunningCutoff),
+    );
+    const existingSync = live.find((row) => row.changeType === 'manual-sync');
+    if (existingSync) {
+      await this.audit(userId, 'schedule.sync.requested', 'SchedulingReplanRun', existingSync.id, {
+        alreadyInProgress: true,
+      });
+      return {
+        replanQueued: true,
+        replanJobId: existingSync.id,
+        alreadyInProgress: true,
+        status: existingSync.status,
+      };
+    }
+    const other = live[0];
+    if (other) {
+      throw new ConflictException({
+        code: 'SYNC_ALREADY_IN_PROGRESS',
+        message: 'A factory schedule update is already in progress.',
+        runId: other.id,
+      });
+    }
+
+    await this.audit(userId, 'schedule.sync.requested', 'SchedulingReplanRun', 'pending', {});
+    const queued = await this.enqueueFactoryReplan(userId, {
+      changeType: 'manual-sync',
+      reason: 'manual-sync',
+      capacityDelta: 'sync',
+    });
+    return {
+      replanQueued: queued.replanQueued,
+      replanJobId: queued.replanJobId,
+      alreadyInProgress: false,
+      status: 'QUEUED' as const,
+    };
+  }
+
+  async getLatestManualSyncRun() {
+    return this.prisma.schedulingReplanRun.findFirst({
+      where: { changeType: 'manual-sync' },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async enqueueCapacityOptimize(userId: string, persist: boolean) {
+    const changeType = persist ? OPTIMIZE_APPLY_CHANGE_TYPE : OPTIMIZE_PREVIEW_CHANGE_TYPE;
+    const inflight = await this.prisma.schedulingReplanRun.findMany({
+      where: { status: { in: ['QUEUED', 'RUNNING'] } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const freshRunningCutoff = this.factoryReplanStaleCutoff();
+    const live = inflight.filter(
+      (row) =>
+        row.status === 'QUEUED' ||
+        (row.status === 'RUNNING' && row.startedAt && row.startedAt >= freshRunningCutoff),
+    );
+    const existingSame = live.find((row) => row.changeType === changeType);
+    if (existingSame) {
+      await this.audit(userId, 'schedule.optimize.requested', 'SchedulingReplanRun', existingSame.id, {
+        alreadyInProgress: true,
+        mode: persist ? 'apply' : 'preview',
+      });
+      return {
+        replanQueued: true,
+        replanJobId: existingSame.id,
+        alreadyInProgress: true,
+        status: existingSame.status,
+      };
+    }
+    const other = live[0];
+    if (other) {
+      throw new ConflictException({
+        code: 'OPTIMIZE_ALREADY_IN_PROGRESS',
+        message: 'A factory schedule update is already in progress.',
+        runId: other.id,
+      });
+    }
+
+    await this.audit(userId, 'schedule.optimize.requested', 'SchedulingReplanRun', 'pending', {
+      mode: persist ? 'apply' : 'preview',
+    });
+    const queued = await this.enqueueFactoryReplan(userId, {
+      changeType,
+      reason: changeType,
+      capacityDelta: 'optimize',
+      payload: { mode: persist ? 'apply' : 'preview' },
+    });
+    return {
+      replanQueued: queued.replanQueued,
+      replanJobId: queued.replanJobId,
+      alreadyInProgress: false,
+      status: 'QUEUED' as const,
+    };
+  }
+
+  async getLatestCapacityOptimizeRun() {
+    return this.prisma.schedulingReplanRun.findFirst({
+      where: {
+        changeType: { in: [OPTIMIZE_PREVIEW_CHANGE_TYPE, OPTIMIZE_APPLY_CHANGE_TYPE] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async getReplanRun(id: string) {
@@ -4344,6 +4632,197 @@ export class SchedulingService implements OnModuleInit {
     return countPinnedIssuesByYmd(issues);
   }
 
+  private async loadManualSyncFacts(
+    fromYmd: string,
+    toYmd: string,
+    calendar: WorkingCalendar,
+  ): Promise<ManualSyncOrderFacts[]> {
+    const [pos, classified, workers, conflicts, orders] = await Promise.all([
+      this.prisma.productionOrder.findMany({
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          quantity: true,
+          priority: true,
+          customerId: true,
+          createdAt: true,
+          requiredDeliveryDate: true,
+          committedDeliveryDate: true,
+          salesOrderId: true,
+          salesOrder: { select: { status: true } },
+          product: {
+            select: {
+              bomDefaults: true,
+              productionProfile: { select: { id: true } },
+              stageEstimates: { select: { id: true, stageDefinitionId: true } },
+            },
+          },
+          tasks: { select: { stageDefinitionId: true, status: true } },
+        },
+      }),
+      this.classifyActiveOrders(),
+      this.loadWorkers(),
+      this.detectOperationalConflicts(),
+      this.loadFactoryReplanOrders(fromYmd, toYmd, calendar),
+    ]);
+
+    const classifiedById = new Map(classified.map((row) => [row.order.id, row]));
+    const replanById = new Map(orders.map((row) => [row.productionOrderId, row]));
+    const workerById = new Map(workers.map((w) => [w.id, w]));
+    const decrease = selectDecreaseCandidates(orders, calendar);
+    const illegalUnpinned = new Set(decrease.candidates.map((c) => c.productionOrderId));
+    const illegalPinned = new Set(decrease.pinnedIssues.map((p) => p.productionOrderId));
+
+    const conflictPo = new Map<string, { movable: boolean; pinned: boolean }>();
+    for (const conflict of conflicts) {
+      for (const side of [conflict.allocationA, conflict.allocationB]) {
+        const prev = conflictPo.get(side.productionOrderId) ?? { movable: false, pinned: false };
+        if (isHardLocked(side)) prev.pinned = true;
+        else prev.movable = true;
+        conflictPo.set(side.productionOrderId, prev);
+      }
+    }
+
+    const allocRows = await this.prisma.scheduleAllocation.findMany({
+      where: {
+        schedule: {
+          status: { in: ['APPROVED', 'PROPOSED', 'NEEDS_REVIEW'] },
+          productionOrder: { status: { notIn: ['CANCELLED', 'COMPLETED'] } },
+        },
+      },
+      select: {
+        employeeId: true,
+        isPinned: true,
+        plannedStart: true,
+        plannedEnd: true,
+        productionTask: { select: { status: true, stageDefinitionId: true } },
+        schedule: { select: { productionOrderId: true } },
+      },
+    });
+    const allocsByPo = new Map<string, typeof allocRows>();
+    for (const row of allocRows) {
+      const list = allocsByPo.get(row.schedule.productionOrderId) ?? [];
+      list.push(row);
+      allocsByPo.set(row.schedule.productionOrderId, list);
+    }
+
+    const floor = resolveSchedulingFloor(calendar, new Date());
+    const facts: ManualSyncOrderFacts[] = [];
+    for (const po of pos) {
+      const classifiedRow = classifiedById.get(po.id);
+      const replan = replanById.get(po.id);
+      const poAllocs = allocsByPo.get(po.id) ?? [];
+      let hasStaleIncomplete = false;
+      let hasPastIncompletePin = false;
+      const futureIncomplete = poAllocs.some((a) => {
+        const status = a.productionTask?.status ?? null;
+        if (status === 'COMPLETED' || status === 'CANCELLED') return false;
+        const cls = classifyAllocationForFloor({
+          plannedStart: a.plannedStart,
+          isPinned: a.isPinned,
+          taskStatus: status,
+          floor,
+        });
+        if (cls === 'STALE') hasStaleIncomplete = true;
+        if (cls === 'MANUAL_ATTENTION') hasPastIncompletePin = true;
+        return cls === 'FUTURE' || cls === 'IN_PROGRESS';
+      });
+      const hasActiveSchedule = Boolean(classifiedRow?.schedule);
+      const requiredStages = [
+        ...new Set(po.tasks.map((t) => t.stageDefinitionId).filter((id): id is string => Boolean(id))),
+      ];
+      const hasAnyEligible =
+        requiredStages.length === 0 ||
+        requiredStages.every((stageId) =>
+          workers.some((w) => (w.skillStageDefinitionIds ?? []).includes(stageId)),
+        );
+
+      let ineligibleAssignedWorker = false;
+      for (const alloc of poAllocs) {
+        if (!alloc.employeeId || this.isImmutableTask(alloc.productionTask?.status)) continue;
+        const worker = workerById.get(alloc.employeeId);
+        const stageId = alloc.productionTask?.stageDefinitionId;
+        if (!worker || (stageId && !(worker.skillStageDefinitionIds ?? []).includes(stageId))) {
+          ineligibleAssignedWorker = true;
+          break;
+        }
+      }
+
+      const missingEstimate =
+        !hasActiveSchedule &&
+        !po.product?.productionProfile &&
+        (po.product?.stageEstimates.length ?? 0) === 0;
+
+      const unschedulable = classifiedRow?.schedule?.unschedulableReason ?? null;
+      const reasonCodes = classifiedRow?.classification.reasonCodes ?? [];
+      const needsLive =
+        !hasActiveSchedule ||
+        po.status === 'WAITING_FOR_MATERIALS' ||
+        Boolean(classifiedRow?.schedule?.materialRisk) ||
+        unschedulable === 'MATERIAL_NOT_READY' ||
+        unschedulable === 'WIP_NOT_READY' ||
+        classifiedRow?.classification.primaryStatus === 'BLOCKED' ||
+        reasonCodes.includes('MATERIAL_NOT_READY') ||
+        reasonCodes.includes('WIP_NOT_READY');
+
+      let materialBlocked = false;
+      let wipBlocked = false;
+      if (needsLive && po.status !== 'CANCELLED' && po.status !== 'COMPLETED') {
+        const material = await this.assessLiveMaterialReadiness(po);
+        materialBlocked = !material.ready && !material.materialReadyAt;
+        const wipReady = await this.assessWipReadiness(po.id, Number(po.quantity) || 1);
+        wipBlocked = !wipReady;
+      }
+
+      const readiness = {
+        materialBlocked,
+        wipBlocked,
+        noEligibleWorker: !hasAnyEligible,
+        missingEstimate,
+      };
+      const stillBlocked = stillNonRecoverableBlocker(readiness);
+      const blockerKind = stillBlocked ? blockerKindFromReadiness(readiness) : null;
+      const blockerCleared =
+        !stillBlocked &&
+        (unschedulable === 'MATERIAL_NOT_READY' ||
+          unschedulable === 'WIP_NOT_READY' ||
+          unschedulable === 'NO_ELIGIBLE_WORKER');
+
+      const cf = conflictPo.get(po.id);
+      facts.push({
+        productionOrderId: po.id,
+        number: po.number,
+        poStatus: po.status,
+        hasActiveSchedule,
+        hasIncompleteFutureAllocations: futureIncomplete,
+        hasStaleIncomplete,
+        hasPastIncompletePin,
+        primaryStatus: classifiedRow?.classification.primaryStatus ?? null,
+        stillBlocked,
+        blockerKind,
+        blockerCleared,
+        illegalUnpinned: illegalUnpinned.has(po.id),
+        illegalPinned: illegalPinned.has(po.id),
+        ineligibleAssignedWorker: ineligibleAssignedWorker && hasAnyEligible,
+        inMovableConflict: Boolean(cf?.movable && !cf.pinned),
+        inPinnedConflict: Boolean(cf?.pinned),
+        hasPromiseDate: Boolean(po.committedDeliveryDate ?? po.requiredDeliveryDate),
+        planningMode: classifiedRow?.schedule.planningMode ?? replan?.planningMode ?? null,
+        priority: replan?.priority ?? {
+          id: po.id,
+          customerId: po.customerId ?? po.id,
+          isPinned: poAllocs.some((a) => a.isPinned),
+          priority: po.priority,
+          committedDeliveryDate: po.committedDeliveryDate,
+          requestedDeliveryDate: po.requiredDeliveryDate,
+          createdAt: po.createdAt,
+        },
+      });
+    }
+    return facts;
+  }
+
   private factoryReplanStaleCutoff(now = new Date()) {
     return new Date(now.getTime() - 20 * 60_000);
   }
@@ -4379,6 +4858,247 @@ export class SchedulingService implements OnModuleInit {
     }
   }
 
+  private workingDaysBetween(calendar: WorkingCalendar, from: Date, to: Date): number {
+    const tz = calendar.timezone;
+    const fromYmd = ymdInTimezone(from, tz);
+    const toYmd = ymdInTimezone(to, tz);
+    if (fromYmd === toYmd) return 0;
+    const dir = fromYmd < toYmd ? 1 : -1;
+    let n = 0;
+    let cursor = fromYmd;
+    let guard = 0;
+    while (cursor !== toYmd && guard < 400) {
+      cursor = addDaysYmd(cursor, dir);
+      if (calendar.intervalsForLocalYmd(cursor).length > 0 || cursor === toYmd) {
+        if (cursor !== toYmd && calendar.intervalsForLocalYmd(cursor).length > 0) n += 1;
+        else if (cursor === toYmd) break;
+      }
+      guard += 1;
+    }
+    return n * dir;
+  }
+
+  private async runCapacityOptimize(
+    run: { id: string; actorId: string | null; changeType: string; reason: string | null },
+    persist: boolean,
+  ) {
+    const { calendar, row: calendarRow } = await this.getCalendarDomain();
+    const now = resolveSchedulingFloor(calendar, new Date());
+    const earlyWindow =
+      calendarRow.maxProductionEarlyWorkingDays != null
+        ? calendarRow.maxProductionEarlyWorkingDays
+        : 10;
+    const targetUtil = calendarRow.targetFactoryUtilizationPercent ?? 85;
+    const world = await loadCapacityOptimizeWorld(this.prisma, {
+      calendar,
+      bufferWorkingDays: calendarRow.deliveryBufferWorkingDays ?? 1,
+      now,
+    });
+    const current = simulatePolicy(world, 'CURRENT');
+    const nDay = simulatePolicy(world, 'N_DAY', earlyWindow);
+    const currentWithCauses = attachEmptyDayCauses(current, nDay, world);
+    const movable = movableSimOrders(nDay).filter((order) =>
+      order.allocations.every((alloc) => {
+        const sim = world.orders.find((o) => o.id === order.orderId);
+        const currentAlloc = sim?.currentAllocations.find((c) => c.stageCode === alloc.stageCode);
+        return !allocationViolatesSchedulingFloor({
+          plannedStart: alloc.plannedStart,
+          isPinned: currentAlloc?.isPinned ?? alloc.isPinned,
+          taskStatus: currentAlloc?.taskStatus ?? null,
+          floor: now,
+        });
+      }),
+    );
+    const blocked = blockedSimOrders(nDay);
+    const emptyDays = currentWithCauses.days
+      .filter((d) => d.bucket === 'EMPTY' || d.bucket === 'LT_25')
+      .map((d) => ({
+        ymd: d.ymd,
+        cause: d.cause,
+        causeKey: emptyDayCauseI18nKey(d.cause),
+        occupancyUtilPct: d.occupancyUtilPct,
+      }));
+    const previewMoves = movable.map((order) => {
+      const simOrder = world.orders.find((o) => o.id === order.orderId);
+      const commercial = simOrder?.committedDeliveryDate ?? simOrder?.requestedDeliveryDate ?? null;
+      const daysFinishedBeforeDelivery =
+        order.earliestCompletion && commercial
+          ? this.workingDaysBetween(calendar, order.earliestCompletion, commercial)
+          : null;
+      return {
+        productionOrderId: order.orderId,
+        number: order.number ?? null,
+        currentCompletion: order.currentCompletion?.toISOString() ?? null,
+        proposedCompletion: order.earliestCompletion?.toISOString() ?? null,
+        daysEarlier:
+          order.earliestCompletion && order.currentCompletion
+            ? this.workingDaysBetween(calendar, order.earliestCompletion, order.currentCompletion)
+            : 0,
+        daysFinishedBeforeDelivery,
+        primaryStatus: simOrder?.primaryStatus ?? null,
+        blockReason: order.blockReason,
+      };
+    });
+
+    const blockedItems = blocked.map((order) => ({
+      productionOrderId: order.orderId,
+      number: order.number ?? '',
+      blockerKind: order.blockReason,
+    }));
+
+    const avgBefore = current.avgOccupancyUtilPct;
+    const avgAfter = nDay.avgOccupancyUtilPct;
+    const front10Before =
+      current.days.slice(0, 10).reduce((s, d) => s + d.occupancyUtilPct, 0) /
+      Math.max(1, Math.min(10, current.days.length));
+    const front10After =
+      nDay.days.slice(0, 10).reduce((s, d) => s + d.occupancyUtilPct, 0) /
+      Math.max(1, Math.min(10, nDay.days.length));
+
+    const previewResult = {
+      status: 'COMPLETED' as const,
+      capacityDelta: 'optimize' as const,
+      mode: persist ? ('apply' as const) : ('preview' as const),
+      earlyWindowWorkingDays: earlyWindow,
+      targetFactoryUtilizationPercent: targetUtil,
+      scannedOrders: world.orders.length,
+      candidateOrders: movable.length,
+      alreadyValid: world.orders.length - movable.length - blocked.length,
+      moved: 0,
+      movedEarlier: 0,
+      movedLater: 0,
+      generated: 0,
+      replanned: 0,
+      wouldMove: movable.length,
+      previewMoves,
+      blocked: blockedItems.length,
+      blockedItems,
+      emptyDays,
+      avgOccupancyUtilPctBefore: avgBefore,
+      avgOccupancyUtilPctAfter: avgAfter,
+      front10OccupancyUtilPctBefore: front10Before,
+      front10OccupancyUtilPctAfter: front10After,
+      materialViolations: nDay.materialViolations,
+      newWorkerConflicts: 0,
+      newResourceConflicts: 0,
+      newConflictCount: 0,
+      newConflictsIntroduced: 0,
+      conflictsResolved: 0,
+      failures: [] as Array<{ productionOrderId: string; message: string }>,
+      collisionsSkipped: [] as Array<{ productionOrderId: string; number: string | null }>,
+      outcome: deriveOptimizeOutcome({
+        moved: persist ? 0 : movable.length,
+        failures: 0,
+        collisionsSkipped: 0,
+        newConflictCount: 0,
+      }),
+      stillNeedsAttention: blockedItems.length,
+    };
+
+    if (!persist) {
+      return previewResult;
+    }
+
+    const sortedIds = sortPullForwardOrders(
+      movable
+        .map((m) => world.orders.find((o) => o.id === m.orderId))
+        .filter((o): o is NonNullable<typeof o> => Boolean(o)),
+    ).map((o) => o.id);
+
+    const conflictsBefore = await this.detectOperationalConflicts();
+    const preOverlapKeys = new Set(conflictsBefore.map((c) => operationalOverlapKey(c)));
+    let occupancy = await this.loadOccupancy();
+    const moved: string[] = [];
+    const collisionsSkipped: Array<{ productionOrderId: string; number: string | null }> = [];
+    const failures: Array<{ productionOrderId: string; message: string }> = [];
+    let movedEarlier = 0;
+    const recoveredAtRisk: string[] = [];
+
+    for (const poId of sortedIds) {
+      const sim = world.orders.find((o) => o.id === poId);
+      const riskBefore =
+        sim?.primaryStatus === 'LATE' || sim?.primaryStatus === 'AT_RISK';
+      const beforeFp = await this.snapshotScheduleFingerprint(poId);
+      const occupancyForPo = unionOccupancyIntervals(stripOccupancyForOrder(occupancy, poId));
+      try {
+        const detail = await this.generateForProductionOrder(poId, run.actorId ?? 'system', {
+          reason: 'capacity-optimize',
+          mode: 'forward',
+          earlyWindowWorkingDays: earlyWindow,
+          existingOccupancy: occupancyForPo,
+          validateAgainstOccupancy: true,
+          abortIfMissesCommitment: true,
+        });
+        occupancy = unionOccupancyIntervals([
+          ...stripOccupancyForOrder(occupancy, poId),
+          ...occupancyFromGeneratedAllocations(poId, detail?.schedule?.allocations ?? []),
+        ]);
+        const afterFp = await this.snapshotScheduleFingerprint(poId);
+        if (beforeFp && afterFp && beforeFp === afterFp) continue;
+        moved.push(poId);
+        const beforeMs = this.projectedMsFromFingerprint(beforeFp);
+        const afterMs = this.projectedMsFromFingerprint(afterFp);
+        if (beforeMs != null && afterMs != null && afterMs < beforeMs) movedEarlier += 1;
+        if (riskBefore) {
+          const after = await this.classifyProductionOrder(poId);
+          if (
+            after &&
+            after.classification.primaryStatus !== 'LATE' &&
+            after.classification.primaryStatus !== 'AT_RISK' &&
+            after.classification.primaryStatus !== 'BLOCKED'
+          ) {
+            recoveredAtRisk.push(poId);
+          }
+        }
+      } catch (err) {
+        if (err instanceof OccupancyCollisionError) {
+          collisionsSkipped.push({ productionOrderId: poId, number: sim?.number ?? null });
+          continue;
+        }
+        failures.push({
+          productionOrderId: poId,
+          message: err instanceof Error ? err.message : 'optimize failed',
+        });
+      }
+    }
+
+    const conflictsAfter = await this.detectOperationalConflicts();
+    const postOverlapKeys = new Set(conflictsAfter.map((c) => operationalOverlapKey(c)));
+    const newConflicts = conflictsAfter.filter((c) => !preOverlapKeys.has(operationalOverlapKey(c)));
+    const newWorkerConflicts = newConflicts.filter((c) => c.type === 'WORKER_OVERLAP').length;
+    const newResourceConflicts = newConflicts.filter((c) => c.type !== 'WORKER_OVERLAP').length;
+    const conflictsResolved = [...preOverlapKeys].filter((key) => !postOverlapKeys.has(key)).length;
+    const outcome = deriveOptimizeOutcome({
+      moved: moved.length,
+      failures: failures.length,
+      collisionsSkipped: collisionsSkipped.length,
+      newConflictCount: newConflicts.length,
+    });
+
+    return {
+      ...previewResult,
+      mode: 'apply' as const,
+      moved: moved.length,
+      movedEarlier,
+      movedLater: 0,
+      generated: 0,
+      replanned: moved.length,
+      movedIds: moved,
+      recoveredAtRisk: recoveredAtRisk.length,
+      atRiskRecovered: recoveredAtRisk.length,
+      collisionsSkipped,
+      failures,
+      newWorkerConflicts,
+      newResourceConflicts,
+      newConflictCount: newConflicts.length,
+      newConflictsIntroduced: newConflicts.length,
+      remainingConflicts: conflictsAfter.length,
+      conflictsResolved,
+      outcome,
+      stillNeedsAttention: blockedItems.length + failures.length + collisionsSkipped.length,
+    };
+  }
+
   private async processFactoryReplan(runId: string) {
     const run = await this.prisma.schedulingReplanRun.findUnique({ where: { id: runId } });
     if (!run) return;
@@ -4405,7 +5125,16 @@ export class SchedulingService implements OnModuleInit {
       where: { id: runId },
       data: { status: 'RUNNING', startedAt: new Date() },
     });
-    await this.audit(latest.actorId ?? 'system', 'schedule.factory-replan.started', 'SchedulingReplanRun', runId, {
+    await this.audit(
+      latest.actorId ?? 'system',
+      isOptimizeChangeType(latest.changeType)
+        ? 'schedule.optimize.started'
+        : latest.changeType === 'manual-sync'
+          ? 'schedule.sync.started'
+          : 'schedule.factory-replan.started',
+      'SchedulingReplanRun',
+      runId,
+      {
       changeType: latest.changeType,
     });
 
@@ -4414,8 +5143,26 @@ export class SchedulingService implements OnModuleInit {
         capacityDelta?: CapacityDelta;
         affectedYmd?: string | null;
         employeeId?: string | null;
+        mode?: 'preview' | 'apply';
       };
       const capacityDelta = payload.capacityDelta ?? 'none';
+      if (capacityDelta === 'optimize') {
+        const result = await this.runCapacityOptimize(latest, payload.mode === 'apply');
+        await this.prisma.schedulingReplanRun.update({
+          where: { id: runId },
+          data: {
+            status: 'COMPLETED',
+            result: result as Prisma.InputJsonValue,
+            completedAt: new Date(),
+          },
+        });
+        await this.audit(latest.actorId ?? 'system', 'schedule.optimize.completed', 'SchedulingReplanRun', runId, {
+          outcome: result.outcome,
+          moved: result.moved,
+          newConflictCount: result.newConflictCount,
+        });
+        return;
+      }
       const { calendar } = await this.getCalendarDomain();
       const latestEnd = await this.latestIncompleteAllocationEnd();
       const horizon = factoryReplanHorizonYmd(
@@ -4432,12 +5179,43 @@ export class SchedulingService implements OnModuleInit {
 
       let candidates: FactoryReplanCandidate[] = [];
       let pinnedIssues: PinnedUnavailableIssue[] = [];
+      let scannedOrders = orders.length;
+      let alreadyValid = 0;
+      let generatedIds: string[] = [];
+      const blockedItems: Array<{ productionOrderId: string; number: string; blockerKind?: string | null }> = [];
+      const manualAttentionItems: Array<{ productionOrderId: string; number: string }> = [];
+      let syncSelection: ReturnType<typeof selectManualSyncCandidates> | null = null;
+      let staleSyncIds = new Set<string>();
+
       if (capacityDelta === 'increase') {
-        candidates = selectIncreaseCandidates(orders);
+        const floor = resolveSchedulingFloor(calendar);
+        const floorYmd = ymdInTimezone(floor, calendar.timezone);
+        if (isHistoricalCapacityIncrease(payload.affectedYmd, floorYmd)) {
+          candidates = [];
+        } else {
+          candidates = selectIncreaseCandidates(orders);
+        }
       } else if (capacityDelta === 'decrease') {
         const selected = selectDecreaseCandidates(orders, calendar);
         candidates = selected.candidates;
         pinnedIssues = selected.pinnedIssues;
+      } else if (capacityDelta === 'sync') {
+        const facts = await this.loadManualSyncFacts(horizon.fromYmd, horizon.toYmd, calendar);
+        syncSelection = selectManualSyncCandidates(facts);
+        candidates = syncSelection.candidates;
+        scannedOrders = syncSelection.scanned;
+        alreadyValid = syncSelection.alreadyValid;
+        blockedItems.push(...syncSelection.blocked);
+        manualAttentionItems.push(...syncSelection.manualAttention);
+        pinnedIssues = syncSelection.manualAttention.map((item) => ({
+          productionOrderId: item.productionOrderId,
+          allocationId: item.productionOrderId,
+          orderNumber: item.number,
+          ymd: '',
+        }));
+        staleSyncIds = new Set(
+          facts.filter((f) => f.hasStaleIncomplete).map((f) => f.productionOrderId),
+        );
       }
 
       const moved: string[] = [];
@@ -4445,37 +5223,43 @@ export class SchedulingService implements OnModuleInit {
       const recoveredAtRisk: string[] = [];
       const failures: Array<{ productionOrderId: string; message: string }> = [];
       let atRiskBefore = 0;
+      let movedEarlier = 0;
+      let movedLater = 0;
       const conflictsBefore = await this.detectOperationalConflicts();
       const preExistingConflictIds = conflictsBefore.map((c) => c.conflictId);
       let occupancy = await this.loadOccupancy();
+      const isSync = capacityDelta === 'sync';
 
       for (const candidate of candidates) {
         const before = orders.find((o) => o.productionOrderId === candidate.productionOrderId);
-        if (
+        const fact = syncSelection
+          ? null
+          : before;
+        const riskBefore =
           before?.classification.primaryStatus === 'LATE' ||
-          before?.classification.primaryStatus === 'AT_RISK'
-        ) {
-          atRiskBefore += 1;
-        }
+          before?.classification.primaryStatus === 'AT_RISK' ||
+          (isSync && (candidate.urgency === 'late' || candidate.urgency === 'atRisk'));
+        if (riskBefore) atRiskBefore += 1;
+        void fact;
         const beforeFp = await this.snapshotScheduleFingerprint(candidate.productionOrderId);
         const occupancyForPo = unionOccupancyIntervals(
           stripOccupancyForOrder(occupancy, candidate.productionOrderId),
         );
         const genOpts = {
-          reason: latest.reason ?? 'factory-replan',
+          reason: latest.reason ?? (isSync ? 'manual-sync' : 'factory-replan'),
           existingOccupancy: occupancyForPo,
           validateAgainstOccupancy: true,
         };
         try {
-          let generated = false;
-          for (let attempt = 0; attempt < 2 && !generated; attempt += 1) {
+          let generatedOk = false;
+          for (let attempt = 0; attempt < 2 && !generatedOk; attempt += 1) {
             try {
               const detail = await this.generateForProductionOrder(
                 candidate.productionOrderId,
                 latest.actorId ?? 'system',
                 genOpts,
               );
-              generated = true;
+              generatedOk = true;
               occupancy = unionOccupancyIntervals([
                 ...stripOccupancyForOrder(occupancy, candidate.productionOrderId),
                 ...occupancyFromGeneratedAllocations(
@@ -4491,12 +5275,19 @@ export class SchedulingService implements OnModuleInit {
           const afterFp = await this.snapshotScheduleFingerprint(candidate.productionOrderId);
           if (beforeFp && afterFp && beforeFp === afterFp) {
             unchanged.push(candidate.productionOrderId);
+            if (isSync) alreadyValid += 1;
           } else {
             moved.push(candidate.productionOrderId);
+            if (!beforeFp) generatedIds.push(candidate.productionOrderId);
+            const beforeMs = this.projectedMsFromFingerprint(beforeFp);
+            const afterMs = this.projectedMsFromFingerprint(afterFp);
+            if (beforeMs != null && afterMs != null) {
+              if (afterMs < beforeMs) movedEarlier += 1;
+              else if (afterMs > beforeMs) movedLater += 1;
+            }
             const after = await this.classifyProductionOrder(candidate.productionOrderId);
             if (
-              (before?.classification.primaryStatus === 'LATE' ||
-                before?.classification.primaryStatus === 'AT_RISK') &&
+              riskBefore &&
               after &&
               after.classification.primaryStatus !== 'LATE' &&
               after.classification.primaryStatus !== 'AT_RISK' &&
@@ -4516,6 +5307,7 @@ export class SchedulingService implements OnModuleInit {
       const conflictsAfter = await this.detectOperationalConflicts();
       const postConflictIds = conflictsAfter.map((c) => c.conflictId);
       const preOverlapKeys = new Set(conflictsBefore.map((c) => operationalOverlapKey(c)));
+      const postOverlapKeys = new Set(conflictsAfter.map((c) => operationalOverlapKey(c)));
       const newConflicts = conflictsAfter
         .filter((c) => !preOverlapKeys.has(operationalOverlapKey(c)))
         .map((c) => ({
@@ -4532,22 +5324,50 @@ export class SchedulingService implements OnModuleInit {
         indexA: candidates.findIndex((x) => x.productionOrderId === c.allocationA.productionOrderId),
         indexB: candidates.findIndex((x) => x.productionOrderId === c.allocationB.productionOrderId),
       }));
+      const conflictsResolved = [...preOverlapKeys].filter((key) => !postOverlapKeys.has(key)).length;
+      const replannedCount = moved.filter((id) => !generatedIds.includes(id)).length;
+      const pastDueRescheduled = isSync
+        ? moved.filter((id) => staleSyncIds.has(id)).length
+        : 0;
+      const outcome = isSync
+        ? deriveManualSyncOutcome({
+            generated: generatedIds.length,
+            replanned: replannedCount,
+            failures: failures.length,
+            blocked: blockedItems.length,
+            manualAttention: manualAttentionItems.length,
+          })
+        : undefined;
 
       const result = {
         status: 'COMPLETED',
         capacityDelta,
         horizon,
+        outcome,
+        scannedOrders,
+        alreadyValid: isSync ? alreadyValid : unchanged.length,
+        generated: generatedIds.length,
+        generatedIds,
+        replanned: isSync ? replannedCount : moved.length,
+        pastDueRescheduled,
         candidateOrders: candidates.length,
         considered: candidates.length,
         replannedOrders: moved.length,
         moved: moved.length,
-        movedEarlier: moved.length,
-        movedLater: 0,
+        movedEarlier: isSync ? movedEarlier : moved.length,
+        movedLater: isSync ? movedLater : 0,
         unchanged: unchanged.length,
         atRiskResolved: recoveredAtRisk.length,
         recoveredAtRisk: recoveredAtRisk.length,
+        atRiskRecovered: recoveredAtRisk.length,
         atRiskBefore,
-        stillNeedsAttention: pinnedIssues.length + failures.length + newConflicts.length,
+        stillAtRisk: Math.max(0, atRiskBefore - recoveredAtRisk.length),
+        blocked: blockedItems.length,
+        blockedItems,
+        manualAttention: manualAttentionItems.length,
+        manualAttentionItems,
+        stillNeedsAttention:
+          pinnedIssues.length + failures.length + newConflicts.length + blockedItems.length,
         pinnedIssues,
         pinnedIssueCount: pinnedIssues.length,
         failures,
@@ -4555,9 +5375,13 @@ export class SchedulingService implements OnModuleInit {
         unchangedIds: unchanged,
         preExistingConflictCount: preExistingConflictIds.length,
         postConflictCount: postConflictIds.length,
+        remainingConflicts: postConflictIds.length,
+        conflictsResolved,
         newConflictCount: newConflicts.length,
+        newConflictsIntroduced: newConflicts.length,
         newConflictIds: newConflicts.map((c) => c.conflictId),
         newConflicts,
+        attentionItems: [...blockedItems, ...manualAttentionItems],
       };
 
       await this.prisma.schedulingReplanRun.update({
@@ -4568,11 +5392,14 @@ export class SchedulingService implements OnModuleInit {
           completedAt: new Date(),
         },
       });
-      await this.audit(latest.actorId ?? 'system', 'schedule.factory-replan.completed', 'SchedulingReplanRun', runId, {
+      const doneAction =
+        latest.changeType === 'manual-sync' ? 'schedule.sync.completed' : 'schedule.factory-replan.completed';
+      await this.audit(latest.actorId ?? 'system', doneAction, 'SchedulingReplanRun', runId, {
         moved: result.moved,
         recoveredAtRisk: result.recoveredAtRisk,
         pinnedIssueCount: result.pinnedIssueCount,
         failures: failures.length,
+        outcome: result.outcome ?? null,
       });
       } catch (err) {
         await this.prisma.schedulingReplanRun.update({
@@ -4585,7 +5412,16 @@ export class SchedulingService implements OnModuleInit {
             completedAt: new Date(),
           },
         });
-        await this.audit(latest.actorId ?? 'system', 'schedule.factory-replan.failed', 'SchedulingReplanRun', runId, {
+        await this.audit(
+          latest.actorId ?? 'system',
+          isOptimizeChangeType(latest.changeType)
+            ? 'schedule.optimize.failed'
+            : latest.changeType === 'manual-sync'
+              ? 'schedule.sync.failed'
+              : 'schedule.factory-replan.failed',
+          'SchedulingReplanRun',
+          runId,
+          {
           message: err instanceof Error ? err.message : 'replan failed',
         });
         throw err;

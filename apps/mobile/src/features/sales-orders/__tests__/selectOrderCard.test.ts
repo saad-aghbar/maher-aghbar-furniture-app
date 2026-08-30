@@ -14,7 +14,7 @@ describe('selectOrderCard', () => {
     expect(card.manufacturingCost).toEqual(expect.any(Number));
     expect(card.profit).toEqual(expect.any(Number));
     expect(card.sellerPrice).toEqual(expect.any(Number));
-    expect(card.progressPercent).toBeGreaterThanOrEqual(0);
+    expect(card.progressPercent == null || card.progressPercent >= 0).toBe(true);
   });
 
   it('prefers localized dealer name when available', () => {

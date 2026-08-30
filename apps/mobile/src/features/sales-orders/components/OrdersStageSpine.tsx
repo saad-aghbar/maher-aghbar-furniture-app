@@ -26,7 +26,7 @@ type Props = {
   onStageFocusChange: (next: OrdersStageFocus) => void;
 };
 
-function stageTint(colors: ThemeColors, key: OrdersStageKey) {
+function stageTint(colors: ThemeColors, key: OrdersStageKey): { tint: string; soft: string } {
   switch (key) {
     case 'pending':
       return { tint: colors.brand, soft: colors.brandSoft };
@@ -34,6 +34,8 @@ function stageTint(colors: ThemeColors, key: OrdersStageKey) {
       return { tint: colors.info, soft: colors.infoSoft };
     case 'ready':
       return { tint: colors.success, soft: colors.successSoft };
+    default:
+      return { tint: colors.brand, soft: colors.brandSoft };
   }
 }
 

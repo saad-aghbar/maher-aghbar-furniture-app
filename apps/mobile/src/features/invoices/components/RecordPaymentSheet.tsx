@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
@@ -20,11 +20,16 @@ type Props = {
   onClose: () => void;
   invoiceId: string;
   customerId: string;
+  /** Invoice remaining (outstanding) — overpay above this becomes account credit. */
   defaultAmount: number;
 };
 
+function round3(n: number) {
+  return Math.round(n * 1000) / 1000;
+}
+
 /**
- * Record payment bottom sheet — safe bottom inset, localized methods.
+ * Record payment bottom sheet — allows overpay; shows allocation vs account credit.
  */
 export function RecordPaymentSheet({
   open,
@@ -33,7 +38,7 @@ export function RecordPaymentSheet({
   customerId,
   defaultAmount,
 }: Props) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const { height } = useWindowDimensions();
@@ -43,16 +48,25 @@ export function RecordPaymentSheet({
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
 
-  const sheetHeight = Math.min(Math.round(height * 0.62), 520);
+  const remaining = Math.max(0, defaultAmount);
+  const sheetHeight = Math.min(Math.round(height * 0.72), 620);
 
   useEffect(() => {
     if (!open) return;
     setMethod('BANK_TRANSFER');
-    setAmount(
-      defaultAmount > 0 ? String(Number(defaultAmount.toFixed(3))) : '',
-    );
+    setAmount(remaining > 0 ? String(Number(remaining.toFixed(3))) : '');
     setReference('');
-  }, [open, defaultAmount]);
+  }, [open, remaining]);
+
+  const payN = Number(amount);
+  const breakdown = useMemo(() => {
+    if (!Number.isFinite(payN) || payN <= 0) {
+      return { allocated: 0, credit: 0, overpay: false };
+    }
+    const allocated = round3(Math.min(payN, remaining));
+    const credit = round3(Math.max(0, payN - remaining));
+    return { allocated, credit, overpay: credit > 0.0005 };
+  }, [payN, remaining]);
 
   const payMutation = useMutation({
     mutationFn: recordPayment,
@@ -60,6 +74,8 @@ export function RecordPaymentSheet({
       await qc.invalidateQueries({ queryKey: queryKeys.invoices.detail(invoiceId) });
       await qc.invalidateQueries({ queryKey: queryKeys.invoices.lists() });
       await qc.invalidateQueries({ queryKey: queryKeys.payments.lists() });
+      await qc.invalidateQueries({ queryKey: queryKeys.payments.dealerSummary(customerId) });
+      await qc.invalidateQueries({ queryKey: queryKeys.statements.detail(customerId) });
     },
   });
 
@@ -125,13 +141,48 @@ export function RecordPaymentSheet({
           onChangeText={setReference}
         />
 
+        {Number.isFinite(payN) && payN > 0 ? (
+          <View
+            style={{
+              gap: theme.spacing.sm,
+              padding: theme.spacing.md,
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceSecondary,
+            }}
+          >
+            <BreakdownRow
+              label={t('accounting.paymentAmount')}
+              value={formatCurrency(payN)}
+            />
+            <BreakdownRow
+              label={t('accounting.allocatedToInvoices')}
+              value={formatCurrency(breakdown.allocated)}
+            />
+            <BreakdownRow
+              label={t('accounting.addedToAccountCredit')}
+              value={formatCurrency(breakdown.credit)}
+              emphasize={breakdown.overpay}
+            />
+            {breakdown.overpay ? (
+              <AppText
+                variant="caption"
+                color="muted"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {t('accounting.overpayCreditHint')}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
+
         <PrimaryButton
           label={t('accounting.recordPayment')}
           loading={payMutation.isPending}
           style={{ borderRadius: theme.radius.xl }}
           onPress={() => {
-            const n = Number(amount);
-            if (!Number.isFinite(n) || n <= 0) {
+            if (!Number.isFinite(payN) || payN <= 0) {
               void haptics.error();
               showToast({
                 variant: 'error',
@@ -139,14 +190,19 @@ export function RecordPaymentSheet({
               });
               return;
             }
+            const allocated = breakdown.allocated;
             payMutation.mutate(
               {
                 customerId,
                 invoiceId,
-                amount: n,
+                amount: payN,
                 method,
                 referenceNumber: reference.trim() || undefined,
                 idempotencyKey: `pay-${invoiceId}-${Date.now()}`,
+                allocations:
+                  allocated > 0
+                    ? [{ invoiceId, amount: allocated }]
+                    : [],
               },
               {
                 onSuccess: () => {
@@ -175,5 +231,46 @@ export function RecordPaymentSheet({
         />
       </View>
     </BottomSheet>
+  );
+}
+
+function BreakdownRow({
+  label,
+  value,
+  emphasize = false,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
+  const { isRTL } = useLocale();
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+        gap: 8,
+      }}
+    >
+      <AppText
+        variant="caption"
+        color={emphasize ? 'brand' : 'secondary'}
+        style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+      >
+        {label}
+      </AppText>
+      <AppText
+        weight="semibold"
+        dir="ltr"
+        style={{
+          color: emphasize ? colors.brand : colors.textPrimary,
+          fontVariant: ['tabular-nums'],
+        }}
+      >
+        {value}
+      </AppText>
+    </View>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/admin/confirm-dialog';
+import { CancelImpactSheet } from '@/components/sales-orders/cancel-impact-sheet';
 import { Link } from '@/i18n/navigation';
 import { apiFetch } from '@/lib/api-client';
 import { SALES_ORDER_STATUSES, statusOptions } from '@/lib/status-options';
@@ -56,14 +57,10 @@ const HOLDABLE = [
   'WAITING_FOR_MATERIALS',
   'WAITING_FOR_PAYMENT',
 ];
-const CANCELLABLE = [
-  'DRAFT',
-  'CONFIRMED',
-  'READY_FOR_PRODUCTION',
-  'ON_HOLD',
-  'WAITING_FOR_PAYMENT',
-  'WAITING_FOR_MATERIALS',
-];
+
+function canOpenCancel(status: string) {
+  return status !== 'CANCELLED';
+}
 
 function SalesOrdersPageInner() {
   const locale = useLocale();
@@ -78,6 +75,7 @@ function SalesOrdersPageInner() {
   const [status, setStatus] = useState(() => searchParams.get('status') ?? '');
   const [page, setPage] = useState(1);
   const [banner, setBanner] = useState<string | null>(null);
+  const [financeAttention, setFinanceAttention] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [holdId, setHoldId] = useState<string | null>(null);
@@ -133,21 +131,6 @@ function SalesOrdersPageInner() {
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-      apiFetch(`/api/v1/sales-orders/${id}/cancel`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-      }),
-    onSuccess: async () => {
-      setError(null);
-      setCancelId(null);
-      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
-      setBanner(tSales('cancelledBanner'));
-    },
-    onError: (err) => setError(mutationErrorMessage(err)),
-  });
-
   const statusFilterOptions = statusOptions(tStatus, SALES_ORDER_STATUSES, {
     label: tCommon('all'),
   });
@@ -177,6 +160,12 @@ function SalesOrdersPageInner() {
     <div className="space-y-6">
       <PageHero title={t('salesOrders')} description={tSales('emptyHint')} tone="soft" />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
+      {financeAttention ? (
+        <Alert variant="warning">
+          <p className="font-medium">{tSales('cancelImpact.financialAttentionBannerTitle')}</p>
+          <p className="mt-1 text-sm">{tSales('cancelImpact.financialAttentionBannerBody')}</p>
+        </Alert>
+      ) : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
       <div className="flex flex-wrap items-end gap-3">
@@ -262,7 +251,7 @@ function SalesOrdersPageInner() {
                           {tSales('hold')}
                         </Button>
                       ) : null}
-                      {CANCELLABLE.includes(row.status) ? (
+                      {canOpenCancel(row.status) ? (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -336,20 +325,14 @@ function SalesOrdersPageInner() {
         }}
         onClose={() => setHoldId(null)}
       />
-      <ConfirmDialog
+      <CancelImpactSheet
         open={Boolean(cancelId)}
-        title={tSales('cancelOrder')}
-        description={tSales('cancelDescription')}
-        confirmLabel={tSales('cancelOrder')}
-        danger
-        withReason
-        reasonLabel={tCommon('reason')}
-        loading={cancelMutation.isPending}
-        error={error}
-        onConfirm={(reason) => {
-          if (cancelId) cancelMutation.mutate({ id: cancelId, reason });
-        }}
+        salesOrderId={cancelId}
         onClose={() => setCancelId(null)}
+        onCancelled={({ financialAttention }) => {
+          setBanner(tSales('cancelledBanner'));
+          setFinanceAttention(financialAttention);
+        }}
       />
     </div>
   );

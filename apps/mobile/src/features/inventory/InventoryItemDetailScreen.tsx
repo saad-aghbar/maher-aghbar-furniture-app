@@ -1,5 +1,5 @@
 import type { Href } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, RefreshControl, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -11,13 +11,16 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { useToast } from '@/components/feedback/Toast';
+import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
+import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
+import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { ListItemEnter, haptics, useReducedMotion } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme';
 import {
   pickAccessoryPhotoFromLibrary,
@@ -27,16 +30,20 @@ import {
 import { useAccessoryCamera } from './components/AccessoryCameraProvider';
 import { AccessoryPhotoSourceSheet } from './components/AccessoryPhotoSourceSheet';
 import { AddStockSheet } from './components/AddStockSheet';
+import { InventoryQrSheet, qrItemFromCard } from './components/InventoryQrSheet';
 import {
   InventoryBoardCard,
   InventoryQtyStrip,
   InventorySectionHeader,
 } from './components/InventoryBoardCard';
 import { InventoryDetailSkeleton } from './components/InventorySkeleton';
+import { openInventoryLabelPdf, openInventoryQrLabelPdf } from './api';
+import { toGoodsReceiptArgs } from './stockMoveSubmit';
 import {
   flattenInventoryTransactionPages,
   useInventoryItemQuery,
   useInventoryTransactionsInfiniteQuery,
+  useReceiveAgainstPoMutation,
   useReceiveStockMutation,
   useUpdateInventoryItemMutation,
   useWarehousesQuery,
@@ -45,6 +52,7 @@ import {
   formatInventoryMaterialType,
   selectInventoryItemDetail,
   selectInventoryTransaction,
+  showsRawMaterialPhoto,
 } from './selectInventory';
 
 type InventoryItemDetailScreenProps = {
@@ -55,8 +63,8 @@ function lifecycleEyebrow(
   itemClass: string | null | undefined,
   t: (key: string) => string,
 ): string {
-  if (itemClass === 'FINISHED_GOOD') return t('mobile.inventory.finishedHeading');
-  if (itemClass === 'SEMI_FINISHED_GOOD') return t('mobile.inventory.semiHeading');
+  if (itemClass === 'FINISHED_GOOD') return t('mobile.inventory.pulseEyebrowFinished');
+  if (itemClass === 'SEMI_FINISHED_GOOD') return t('mobile.inventory.pulseEyebrowSemi');
   return t('mobile.inventory.pulseEyebrow');
 }
 
@@ -87,14 +95,18 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   const { user } = useAuth();
   const { t, locale, formatDateTime, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
+  const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const reduce = useReducedMotion();
   const allowed = can(user, 'inventory.read');
   const canReceive = can(user, 'inventory.receive');
   const canEditPhoto = can(user, 'inventory.adjust');
 
   const [addOpen, setAddOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const pendingPrintAfterQrRef = useRef(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoSourceOpen, setPhotoSourceOpen] = useState(false);
 
@@ -102,6 +114,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   const txQuery = useInventoryTransactionsInfiniteQuery(itemId, allowed);
   const warehousesQuery = useWarehousesQuery(canReceive && addOpen);
   const receiveMutation = useReceiveStockMutation(itemId);
+  const receivePoMutation = useReceiveAgainstPoMutation(itemId);
   const updateItemMutation = useUpdateInventoryItemMutation();
   const { openAccessoryCamera } = useAccessoryCamera();
 
@@ -109,6 +122,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
     () => (itemQuery.data ? selectInventoryItemDetail(itemQuery.data, locale) : null),
     [itemQuery.data, locale],
   );
+  const showsSkuPhoto = showsRawMaterialPhoto(detail?.itemClass);
 
   const transactions = useMemo(() => {
     if (!detail) return [];
@@ -123,6 +137,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
         warehouseId: b.warehouseId,
         quantityLabel: b.quantityLabel,
         availableQty: b.availableQty,
+        reservedQty: b.reservedQty,
       })),
     [detail?.balances],
   );
@@ -130,8 +145,10 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   const refreshing =
     (itemQuery.isRefetching || txQuery.isRefetching) && !txQuery.isFetchingNextPage;
 
-  const stickyBottom = SURFACE_TAB_BAR_CLEARANCE;
-  const stickyPad = canReceive ? stickyBottom + 88 : theme.spacing['3xl'];
+  const showReceive = canReceive && detail?.isActive && !detail?.archivedAt && detail?.itemClass !== 'FINISHED_GOOD';
+  const stickyPad = showReceive
+    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md) + 88
+    : theme.spacing['3xl'];
 
   async function onRefresh() {
     await Promise.all([itemQuery.refetch(), txQuery.refetch()]);
@@ -197,8 +214,60 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   }
 
   function onAccessoryPhotoPress() {
-    if (!detail?.isAccessory || !canEditPhoto || photoBusy) return;
+    if (!showsSkuPhoto || !canEditPhoto || photoBusy) return;
     setPhotoSourceOpen(true);
+  }
+
+  function openLabelPdf() {
+    if (!detail) return;
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openInventoryLabelPdf(detail.id, detail.sku, opts);
+      } catch {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: toastCopy(
+            t('mobile.inventory.labelPdfFailedTitle'),
+            t('mobile.inventory.labelPdfFailedBody'),
+          ),
+        });
+      }
+    })();
+  }
+
+  function openQrLabelPdf() {
+    if (!detail) return;
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openInventoryQrLabelPdf(detail.id, detail.sku, opts);
+      } catch {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: toastCopy(
+            t('mobile.inventory.labelPdfFailedTitle'),
+            t('mobile.inventory.labelPdfFailedBody'),
+          ),
+        });
+      }
+    })();
+  }
+
+  /** Close QR Modal first — iOS will no-op a second Modal while QR is open. */
+  function printLabelAfterQrCloses() {
+    pendingPrintAfterQrRef.current = true;
+    setQrOpen(false);
+  }
+
+  function flushPendingPrintAfterQr() {
+    if (!pendingPrintAfterQrRef.current) return;
+    pendingPrintAfterQrRef.current = false;
+    openQrLabelPdf();
   }
 
   if (!allowed) {
@@ -358,7 +427,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               </View>
             </View>
 
-            {detail.isAccessory && (detail.imageUrl || canEditPhoto) ? (
+            {showsSkuPhoto && (detail.imageUrl || canEditPhoto) ? (
               <Pressable
                 accessibilityRole={canEditPhoto ? 'button' : 'image'}
                 accessibilityLabel={
@@ -453,6 +522,55 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   {t('mobile.inventory.cost', { value: detail.costLabel })}
                 </AppText>
               ) : null}
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  flexWrap: 'wrap',
+                  gap: theme.spacing.sm,
+                  marginTop: theme.spacing.sm,
+                }}
+              >
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    void haptics.selection();
+                    setQrOpen(true);
+                  }}
+                  style={{
+                    minHeight: 36,
+                    paddingHorizontal: theme.spacing.md,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppText variant="caption" weight="semibold" color="brand">
+                    {t('mobile.inventory.qrCode')}
+                  </AppText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    void haptics.selection();
+                    openLabelPdf();
+                  }}
+                  style={{
+                    minHeight: 36,
+                    paddingHorizontal: theme.spacing.md,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppText variant="caption" weight="semibold" color="brand">
+                    {t('mobile.inventory.labelPdf')}
+                  </AppText>
+                </Pressable>
+              </View>
             </InventoryBoardCard>
 
             {detail.balances.length > 0 ? (
@@ -654,23 +772,13 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
         }}
       />
 
-      {canReceive ? (
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: stickyBottom,
-            paddingHorizontal: theme.spacing.lg,
-            paddingTop: theme.spacing.sm,
-            paddingBottom: theme.spacing.md,
-          }}
-        >
+      {showReceive ? (
+        <FloatingActionDock floating>
           <PrimaryButton
             label={t('mobile.inventory.receive')}
             onPress={() => setAddOpen(true)}
           />
-        </View>
+        </FloatingActionDock>
       ) : null}
 
       <AddStockSheet
@@ -685,10 +793,35 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
           category: detail.category,
           itemClass: detail.itemClass,
           unit: detail.unit,
+          imageUrl: detail.imageUrl,
+          materialType: detail.materialType,
+          onHand: detail.onHand,
+          reservedQty: detail.reservedQty,
+          availableQty: detail.freeQty,
           balances: addStockBalances,
         }}
-        loading={receiveMutation.isPending}
+        loading={receiveMutation.isPending || receivePoMutation.isPending}
         onSubmit={(input) => {
+          const onSuccess = () => {
+            void haptics.confirmMedium();
+            setAddOpen(false);
+            showToast({
+              variant: 'success',
+              message: t('mobile.inventory.receiveStockSuccess'),
+            });
+          };
+          const onError = () => {
+            void haptics.error();
+            showToast({
+              variant: 'error',
+              message: t('mobile.inventory.receiveStockFailed'),
+            });
+          };
+          const po = toGoodsReceiptArgs(input);
+          if (po) {
+            receivePoMutation.mutate(po, { onSuccess, onError });
+            return;
+          }
           receiveMutation.mutate(
             {
               inventoryItemId: input.inventoryItemId,
@@ -697,25 +830,16 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               notes: input.notes,
               idempotencyKey: `mobile-receipt-${input.inventoryItemId}-${Date.now()}`,
             },
-            {
-              onSuccess: () => {
-                void haptics.confirmMedium();
-                setAddOpen(false);
-                showToast({
-                  variant: 'success',
-                  message: t('mobile.inventory.receiveStockSuccess'),
-                });
-              },
-              onError: () => {
-                void haptics.error();
-                showToast({
-                  variant: 'error',
-                  message: t('mobile.inventory.receiveStockFailed'),
-                });
-              },
-            },
+            { onSuccess, onError },
           );
         }}
+      />
+      <InventoryQrSheet
+        open={qrOpen}
+        item={qrItemFromCard(detail)}
+        onClose={() => setQrOpen(false)}
+        onClosed={flushPendingPrintAfterQr}
+        onPrint={() => printLabelAfterQrCloses()}
       />
 
       <AccessoryPhotoSourceSheet
@@ -728,6 +852,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
           detail.imageUrl ? () => void saveAccessoryPhoto(null) : undefined
         }
       />
+      {pdfDownloadSheet}
     </AppScreen>
   );
 }
