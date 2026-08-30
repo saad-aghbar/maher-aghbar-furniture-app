@@ -9,6 +9,9 @@ import { shouldRetryQuery } from './retry';
 import { createSafeAsyncStorage } from './safeAsyncStorage';
 import { QUERY_PERSIST_KEY } from './queryPersist';
 import { isQueryDebugToastMessage } from '@/components/feedback/queryDebugToast';
+import { isTechnicalQueryError } from './toastErrors';
+
+export { isTechnicalQueryError, shouldToastApiError } from './toastErrors';
 
 export { createSafeAsyncStorage } from './safeAsyncStorage';
 export { shouldDehydrateQuery, QUERY_PERSIST_KEY } from './queryPersist';
@@ -45,39 +48,6 @@ export function createQueryPersister() {
     storage: createSafeAsyncStorage(AsyncStorage),
     key: QUERY_PERSIST_KEY,
   });
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  return '';
-}
-
-/** Persist / dehydrate internals — never show these in production UI. */
-export function isTechnicalQueryError(error: unknown): boolean {
-  const message = errorMessage(error).toLowerCase();
-  if (!message) return false;
-  return (
-    message.includes('dehydrated as pending') ||
-    message.includes('was dehydrated') ||
-    (message.includes('dehydrat') && message.includes('pending'))
-  );
-}
-
-/** Codes that should surface as toasts from global handlers. */
-export function shouldToastApiError(error: unknown): boolean {
-  if (isTechnicalQueryError(error)) return false;
-  if (!isApiError(error)) return true;
-  if (error.code === 'UNAUTHORIZED' || error.status === 401) return false;
-  if (error.isAborted) return false;
-  return (
-    error.isOffline ||
-    error.code === 'FORBIDDEN' ||
-    error.code === 'TOO_MANY_REQUESTS' ||
-    error.status >= 500 ||
-    error.code === 'INTERNAL_ERROR' ||
-    error.code === 'OFFLINE'
-  );
 }
 
 export function toastMessageForError(error: unknown, _t?: unknown): string {

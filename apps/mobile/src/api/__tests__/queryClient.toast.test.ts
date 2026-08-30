@@ -1,5 +1,5 @@
 import { abortedError, ApiError, offlineError } from '../errors';
-import { isTechnicalQueryError, shouldToastApiError } from '../queryClient';
+import { isTechnicalQueryError, shouldToastApiError } from '../toastErrors';
 import { isRawNetworkFailure, isRawNetworkFailureMessage } from '../queryErrorToast';
 
 describe('raw network failure copy', () => {
@@ -42,3 +42,4 @@ describe('shouldToastApiError', () => {
     );
   });
 });
+
