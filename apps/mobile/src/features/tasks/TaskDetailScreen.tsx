@@ -95,6 +95,10 @@ const BLOCK_CATEGORIES: TaskBlockerCategory[] = [
 
 const TASKS_FALLBACK = '/(app)/(employee)/(tabs)/tasks' as Href;
 
+function isReadyStatus(status: string): boolean {
+  return status.trim().toUpperCase().replace(/\s+/g, '_') === 'READY';
+}
+
 export function TaskDetailScreen({
   taskId,
   forceState,
@@ -114,9 +118,12 @@ export function TaskDetailScreen({
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const pad = theme.spacing.lg;
   const mediaW = Math.max(0, windowW - pad * 2);
-  const tabClearance = SURFACE_TAB_BAR_CLEARANCE;
-  /** Floating dock (~2 rows) sits above the tab bar. */
-  const dockBottom = tabClearance;
+  /** Dock + last floor board clear the floating tab bar. */
+  const floorClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  const [dockHeight, setDockHeight] = useState(0);
+  const onDockHeight = useCallback((height: number) => {
+    setDockHeight((prev) => (prev === height ? prev : height));
+  }, []);
 
   const allowed = can(user, 'production-task.read');
   const canUpdate = canAny(user, [
@@ -507,7 +514,10 @@ export function TaskDetailScreen({
     vm,
   ]);
 
-  const dockScrollPad = dockActions.length > 0 ? 128 : 0;
+  const dockRows = dockActions.length === 0 ? 0 : dockActions.length <= 2 ? 1 : 2;
+  const dockFallback = dockRows === 0 ? 0 : dockRows === 1 ? 80 : 148;
+  const dockScrollPad =
+    dockActions.length > 0 ? (dockHeight > 0 ? dockHeight : dockFallback) : 0;
 
   if (forceState === 'loading' || (allowed && query.isLoading && !query.data && !forceState)) {
     return (
@@ -580,7 +590,12 @@ export function TaskDetailScreen({
           onBack={onBack}
           title={taskDetailNavTitle(qualityKind, t)}
           subtitle={vm.orderNumber}
-          trailing={<StatusBadge status={vm.status} />}
+          trailing={
+            <StatusBadge
+              status={vm.status}
+              variant={isReadyStatus(vm.status) ? 'brand' : undefined}
+            />
+          }
         />
       </View>
 
@@ -599,7 +614,7 @@ export function TaskDetailScreen({
           }
           contentContainerStyle={{
             paddingHorizontal: pad,
-            paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE + dockScrollPad,
+            paddingBottom: floorClearance + dockScrollPad + theme.spacing.md,
             gap: theme.spacing.md,
           }}
           keyboardShouldPersistTaps="handled"
@@ -708,7 +723,7 @@ export function TaskDetailScreen({
                 weight="semibold"
                 style={{
                   color: colors.brand,
-                  letterSpacing: locale === 'ar' ? 0 : 0.6,
+                  letterSpacing: locale === 'ar' ? 0 : 0.4,
                   fontSize: 11,
                   textAlign: isRTL ? 'right' : 'left',
                 }}
@@ -851,7 +866,11 @@ export function TaskDetailScreen({
           ) : null}
         </ScrollView>
 
-        <TaskActionDock actions={dockActions} bottomOffset={dockBottom} />
+        <TaskActionDock
+          actions={dockActions}
+          bottomOffset={floorClearance}
+          onHeight={onDockHeight}
+        />
       </View>
 
       <ActionSheet
@@ -1045,7 +1064,7 @@ function FloorSection({
           weight="semibold"
           style={{
             color: colors.brand,
-            letterSpacing: locale === 'ar' ? 0 : 0.6,
+            letterSpacing: locale === 'ar' ? 0 : 0.4,
             fontSize: 11,
             textAlign: isRTL ? 'right' : 'left',
           }}

@@ -1,4 +1,5 @@
-import { View } from 'react-native';
+import { useEffect } from 'react';
+import { View, type LayoutChangeEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -23,6 +24,8 @@ export type TaskDockAction = {
 type Props = {
   actions: TaskDockAction[];
   bottomOffset: number;
+  /** Measured chrome height so floor scroll can clear the dock. */
+  onHeight?: (height: number) => void;
 };
 
 function chunkPairs<T>(items: T[]): T[][] {
@@ -36,20 +39,29 @@ function chunkPairs<T>(items: T[]): T[][] {
 /**
  * Floating 2×2 task actions — sits above the worker touch bar.
  */
-export function TaskActionDock({ actions, bottomOffset }: Props) {
+export function TaskActionDock({ actions, bottomOffset, onHeight }: Props) {
   const { isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dark = colorScheme === 'dark';
+
+  useEffect(() => {
+    if (actions.length === 0) onHeight?.(0);
+  }, [actions.length, onHeight]);
 
   if (actions.length === 0) return null;
 
   const cells = actions.slice(0, 4);
   const rows = chunkPairs(cells);
 
+  const reportHeight = (e: LayoutChangeEvent) => {
+    onHeight?.(e.nativeEvent.layout.height);
+  };
+
   return (
     <View
       pointerEvents="box-none"
+      onLayout={reportHeight}
       style={{
         position: 'absolute',
         left: 0,
