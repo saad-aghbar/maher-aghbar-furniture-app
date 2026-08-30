@@ -2645,7 +2645,8 @@
       "CUSTOMER_REQUEST": "Customer request",
       "OTHER": "Other"
     },
-    "subtitle": "Request a return for delivered items when needed."
+    "subtitle": "Request a return for delivered items when needed.",
+    "adminSubtitle": "Factory returns on delivered orders."
   },
   "adminSettings": {
     "eyebrow": "Workspace",

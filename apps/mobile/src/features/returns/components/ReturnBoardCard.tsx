@@ -299,6 +299,7 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
             })()}
             value={reasonLabel}
             isRTL={isRTL}
+            sentenceCase
           />
           <Divider compact plain />
           <MetaRow
@@ -388,6 +389,7 @@ function MetaRow({
   isRTL,
   valueLtr,
   emphasize,
+  sentenceCase,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -395,6 +397,7 @@ function MetaRow({
   isRTL: boolean;
   valueLtr?: boolean;
   emphasize?: boolean;
+  sentenceCase?: boolean;
 }) {
   const { colors, theme } = useTheme();
 
@@ -431,8 +434,8 @@ function MetaRow({
         variant="caption"
         color="muted"
         style={{
-          textTransform: 'uppercase',
-          letterSpacing: 0.45,
+          textTransform: sentenceCase ? 'none' : 'uppercase',
+          letterSpacing: sentenceCase ? 0 : 0.45,
           fontSize: 10,
           flexShrink: 0,
           maxWidth: '34%',
