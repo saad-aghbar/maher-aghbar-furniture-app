@@ -35,7 +35,7 @@ type Props = { requestId: string };
 
 export function PurchaseRequestDetailScreen({ requestId }: Props) {
   const { user } = useAuth();
-  const { t, tPlural, locale, isRTL } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
@@ -86,10 +86,11 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
     <AppScreen backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
         }}
+        scrollIndicatorInsets={{ bottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE }}
       >
         <View
           style={{
@@ -116,7 +117,11 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
             value={resolvePurchaseRequestSupplier(pr, locale)}
           />
           <Meta
-            label={tPlural('catalog.warehouses', warehouseFieldCount(pr.warehouse))}
+            label={
+              warehouseFieldCount(pr.warehouse) > 1
+                ? t('catalog.warehouses')
+                : t('catalog.warehouseShort')
+            }
             value={pr.warehouse ? localizedNamed(locale, pr.warehouse) : '—'}
           />
           {pr.purchaseOrder?.number ? (
@@ -164,14 +169,20 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
           <PrimaryButton
             label={t('mobile.purchasing.approve')}
             onPress={() => setConfirm('approve')}
-            style={{ borderRadius: theme.radius.xl }}
+            style={{
+              borderRadius: theme.radius.xl,
+              marginBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+            }}
           />
         ) : null}
         {canConvert && pr.status === 'APPROVED' && !pr.purchaseOrderId ? (
           <SecondaryButton
             label={t('mobile.purchasing.convertToPo')}
             onPress={() => setConfirm('convert')}
-            style={{ borderRadius: theme.radius.xl }}
+            style={{
+              borderRadius: theme.radius.xl,
+              marginBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+            }}
           />
         ) : null}
       </ScrollView>

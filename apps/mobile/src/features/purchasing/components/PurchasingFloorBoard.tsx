@@ -24,6 +24,7 @@ export function PurchasingFloorBoard({ children, title, style }: Props) {
           borderWidth: 1,
           borderColor: colors.borderStrong,
           backgroundColor: colors.surface,
+          overflow: 'visible',
           ...orderBoardShadow(colorScheme),
         },
         style,

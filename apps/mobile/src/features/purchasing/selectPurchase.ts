@@ -71,9 +71,20 @@ function qtyDisplay(quantity: number | string | null | undefined): string {
   return raw;
 }
 
+function resolvedPlural(
+  locale: Locale,
+  baseKey: string,
+  count: number,
+  qtyText: string,
+): string | null {
+  const label = translatePlural(locale, baseKey, count, { n: qtyText });
+  if (label === baseKey || label === pickPluralKey(baseKey, count)) return null;
+  return label;
+}
+
 /**
- * Qty + unit copy. Known units use catalog.qtyWithUnit plurals (en/ar/he).
- * Unknown units stay honest to the backend code, e.g. `24 m`.
+ * Qty + unit copy. `block` always pluralizes (24 blocks). Unknown units stay
+ * honest to the backend code, e.g. `24 m`.
  */
 export function purchaseLineQtyLabel(
   locale: string,
@@ -84,14 +95,20 @@ export function purchaseLineQtyLabel(
   const unitKey = unit?.trim() || 'pcs';
   const n = Number(quantity);
   const count = Number.isFinite(n) ? n : 0;
+  const typed = asLocale(locale);
   const catalogUnit = unitKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
-  if (!catalogUnit) return `${qtyText} ${unitKey}`;
-  const baseKey = `catalog.qtyWithUnit.${catalogUnit}`;
-  const label = translatePlural(asLocale(locale), baseKey, count, { n: qtyText });
-  if (label === baseKey || label === pickPluralKey(baseKey, count)) {
-    return `${qtyText} ${unitKey}`;
+  if (catalogUnit === 'block') {
+    return (
+      resolvedPlural(typed, 'mobile.purchasing.qtyBlock', count, qtyText) ??
+      resolvedPlural(typed, 'catalog.qtyWithUnit.block', count, qtyText) ??
+      (count === 1 ? `${qtyText} block` : `${qtyText} blocks`)
+    );
   }
-  return label;
+  if (!catalogUnit) return `${qtyText} ${unitKey}`;
+  return (
+    resolvedPlural(typed, `catalog.qtyWithUnit.${catalogUnit}`, count, qtyText) ??
+    `${qtyText} ${unitKey}`
+  );
 }
 
 export function localizedNamed(
