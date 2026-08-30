@@ -88,6 +88,34 @@ function StatPill({
   );
 }
 
+/** PO identifier — Tumbleweed ink on warm silver, not iOS system grey. */
+function PoPill({ label }: { label: string }) {
+  const { colors, theme } = useTheme();
+
+  return (
+    <View
+      style={{
+        paddingHorizontal: theme.spacing.sm,
+        paddingVertical: 3,
+        borderRadius: theme.radius.full,
+        backgroundColor: colors.brandSoft,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <AppText
+        variant="caption"
+        weight="medium"
+        dir="ltr"
+        numberOfLines={1}
+        style={{ color: colors.brandActive, fontSize: 11, lineHeight: 14 }}
+      >
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
 function MetaChip({
   icon,
   label,
@@ -108,13 +136,17 @@ function MetaChip({
         paddingHorizontal: theme.spacing.sm,
         paddingVertical: 4,
         borderRadius: theme.radius.md,
-        backgroundColor: colors.surfaceSecondary,
+        backgroundColor: colors.brandSoft,
         borderWidth: 1,
         borderColor: colors.border,
       }}
     >
-      <Ionicons name={icon} size={12} color={colors.textMuted} />
-      <AppText variant="caption" color="secondary" numberOfLines={1} style={{ flexShrink: 1 }}>
+      <Ionicons name={icon} size={12} color={colors.brand} />
+      <AppText
+        variant="caption"
+        numberOfLines={1}
+        style={{ flexShrink: 1, color: colors.brand }}
+      >
         {label}
       </AppText>
     </View>
@@ -274,6 +306,18 @@ export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: Wi
         >
           <ThumbWell imageUrl={imageUrl} icon="layers-outline" accent={accent} />
           <View style={{ flex: 1, gap: 4 }}>
+            {orderNumber ? (
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <PoPill label={orderNumber} />
+                <Ionicons name={chevron} size={14} color={colors.brand} />
+              </View>
+            ) : null}
             <View
               style={{
                 flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -292,26 +336,21 @@ export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: Wi
               />
             </View>
             {sku ? (
-              <AppText variant="caption" color="muted" numberOfLines={1} dir="ltr">
+              <AppText
+                variant="caption"
+                numberOfLines={1}
+                dir="ltr"
+                style={{ color: colors.brand }}
+              >
                 {sku}
               </AppText>
             ) : null}
-          </View>
-          <Ionicons name={chevron} size={16} color={colors.textMuted} style={{ marginTop: 4 }} />
-        </View>
-
-        {orderNumber || stageName ? (
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              flexWrap: 'wrap',
-              gap: theme.spacing.xs,
-            }}
-          >
-            {orderNumber ? <MetaChip icon="document-text-outline" label={orderNumber} /> : null}
             {stageName ? <MetaChip icon="construct-outline" label={stageName} /> : null}
           </View>
-        ) : null}
+          {orderNumber ? null : (
+            <Ionicons name={chevron} size={16} color={colors.brand} style={{ marginTop: 4 }} />
+          )}
+        </View>
 
         <View
           style={{
@@ -335,7 +374,11 @@ export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: Wi
               gap: 2,
             }}
           >
-            <AppText variant="caption" color="muted" numberOfLines={1}>
+            <AppText
+              variant="caption"
+              numberOfLines={1}
+              style={{ color: colors.brand, opacity: 0.72 }}
+            >
               {warehouseName}
             </AppText>
             <View
@@ -345,8 +388,12 @@ export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: Wi
                 gap: 4,
               }}
             >
-              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-              <AppText variant="caption" color="muted" numberOfLines={1}>
+              <Ionicons name="time-outline" size={12} color={colors.brand} style={{ opacity: 0.72 }} />
+              <AppText
+                variant="caption"
+                numberOfLines={1}
+                style={{ color: colors.brand, opacity: 0.72 }}
+              >
                 {formatDateTime(lot.producedAt)}
               </AppText>
             </View>
