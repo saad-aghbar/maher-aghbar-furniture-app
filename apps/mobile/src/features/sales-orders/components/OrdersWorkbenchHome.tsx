@@ -22,6 +22,7 @@ import { pickHotOrder, type HotOrderCandidate } from '../pickHotOrder';
 import {
   countOrderStages,
   filterByStageFocus,
+  formatJourneyCount,
   toggleStageFocus,
   type OrdersStageFocus,
   type OrdersStageKey,
@@ -150,7 +151,10 @@ export function OrdersWorkbenchHome({
         <AppText
           variant="caption"
           weight="semibold"
-          style={{ color: colors.brand }}
+          style={{
+            color: colors.brand,
+            ...(isRTL ? null : { letterSpacing: 0.2 }),
+          }}
         >
           {t('mobile.orders.workbenchLanesEyebrow')}
         </AppText>
@@ -192,18 +196,22 @@ export function OrdersWorkbenchHome({
                   dir="ltr"
                   style={{ color: tint, fontVariant: ['tabular-nums'] }}
                 >
-                  {String(counts[key])}
+                  {formatJourneyCount(counts[key])}
                 </AppText>
                 <AppText
                   variant="caption"
                   color="secondary"
-                  numberOfLines={2}
+                  numberOfLines={1}
                   align="center"
-                  maxFontSizeMultiplier={1.1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.65}
+                  maxFontSizeMultiplier={1.05}
                   style={{
-                    fontSize: isRTL ? 10 : 11,
-                    lineHeight: isRTL ? 13 : 14,
+                    fontSize: 10,
+                    lineHeight: 13,
                     textAlign: 'center',
+                    width: '100%',
+                    textTransform: 'none',
                   }}
                 >
                   {t(`mobile.orders.stages.${key}`)}

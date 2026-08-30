@@ -414,12 +414,12 @@ function StageNode({
           numberOfLines={1}
           align="center"
           adjustsFontSizeToFit
-          minimumFontScale={0.7}
-          maxFontSizeMultiplier={1.1}
+          minimumFontScale={0.65}
+          maxFontSizeMultiplier={1.05}
           style={{
             fontSize: 10,
             lineHeight: 13,
-            letterSpacing: locale === 'ar' ? 0 : -0.35,
+            letterSpacing: locale === 'ar' ? 0 : -0.4,
             textAlign: 'center',
             width: '100%',
             textTransform: 'none',

@@ -3,6 +3,7 @@ import {
   classifyOrderStage,
   countOrderStages,
   filterByStageFocus,
+  formatJourneyCount,
   matchesStatusChip,
   toggleStageFocus,
 } from '../stageCounts';
@@ -66,6 +67,13 @@ describe('orders stageCounts', () => {
     expect(countOrderStages(items).ready).toBe(1);
     expect(toggleStageFocus('production', 'production')).toBe('all');
     expect(toggleStageFocus('all', 'ready')).toBe('ready');
+  });
+
+  it('shows 0 for an empty journey cell, never a dash', () => {
+    expect(formatJourneyCount(0)).toBe('0');
+    expect(formatJourneyCount(undefined)).toBe('0');
+    expect(formatJourneyCount(null)).toBe('0');
+    expect(formatJourneyCount(4)).toBe('4');
   });
 });
 
