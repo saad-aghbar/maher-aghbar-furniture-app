@@ -7,6 +7,8 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 
 type Props = {
+  /** Page landmark (Gendy) — sits above the error line when set. */
+  landmark?: string;
   title: string;
   description?: string;
   actionLabel?: string;
@@ -18,6 +20,7 @@ type Props = {
  * Shared floor status — Liquorice line, Army Camo pill, clears the tab bar.
  */
 export function FloorStatus({
+  landmark,
   title,
   description,
   actionLabel,
@@ -43,6 +46,18 @@ export function FloorStatus({
           gap: theme.spacing.md,
         }}
       >
+        {landmark ? (
+          <AppText
+            variant="title"
+            weight={titleWeight}
+            style={{
+              color: colors.textPrimary,
+              textAlign: isRTL ? 'right' : 'left',
+            }}
+          >
+            {landmark}
+          </AppText>
+        ) : null}
         <AppText
           variant="heading"
           weight={titleWeight}

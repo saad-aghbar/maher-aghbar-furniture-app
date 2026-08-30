@@ -2,6 +2,7 @@ import { useLocale } from '@/i18n';
 import { FloorStatus } from './FloorStatus';
 
 type ErrorStateProps = {
+  landmark?: string;
   title: string;
   description?: string;
   retryLabel?: string;
@@ -9,6 +10,7 @@ type ErrorStateProps = {
 };
 
 export function ErrorState({
+  landmark,
   title,
   description,
   retryLabel,
@@ -20,6 +22,7 @@ export function ErrorState({
   return (
     <FloorStatus
       tone="error"
+      landmark={landmark}
       title={title}
       description={description}
       actionLabel={onRetry ? resolvedRetry : undefined}
