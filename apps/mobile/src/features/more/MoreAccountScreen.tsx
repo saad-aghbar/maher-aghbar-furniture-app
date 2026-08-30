@@ -27,6 +27,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
+import { isolateLtr } from '@/i18n/format';
 import { displayRolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
@@ -48,6 +49,15 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Linking, Pressable, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+
+function looksLatinValue(value: string): boolean {
+  return !/[\u0600-\u06FF\u0590-\u05FF]/.test(value);
+}
+
+function latinValue(isRTL: boolean, value: string): string {
+  if (!isRTL || !value || !looksLatinValue(value)) return value;
+  return isolateLtr(value);
+}
 
 function splitName(name: string): { first: string; last: string } {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -345,6 +355,50 @@ export function MoreAccountScreen({
               {subtitle}
             </AppText>
           </View>
+        ) : isRTL ? (
+          <View>
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                zIndex: 1,
+              }}
+            >
+              <BackButton
+                onPress={() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace(backFallback);
+                }}
+                label={backLabel}
+              />
+            </View>
+            <View
+              style={{
+                gap: theme.spacing.xs,
+                paddingRight: theme.sizes.touch.min + theme.spacing.sm,
+              }}
+            >
+              <AppText
+                variant="caption"
+                weight="regular"
+                align="start"
+                style={{
+                  letterSpacing: 0,
+                  textTransform: 'none',
+                  color: colors.brand,
+                }}
+              >
+                {eyebrow}
+              </AppText>
+              <AppText variant="title" weight={titleWeight} align="start">
+                {title}
+              </AppText>
+              <AppText variant="caption" color="muted" weight="regular" align="start">
+                {subtitle}
+              </AppText>
+            </View>
+          </View>
         ) : (
           <>
             <BackButton
@@ -392,6 +446,7 @@ export function MoreAccountScreen({
               label={t('users.username')}
               value={`@${user.username}`}
               isRTL={isRTL}
+              isolateValue
             />
             <ProfileRow label={t('users.roles')} value={roles} isRTL={isRTL} />
             {profileLocked ? (
@@ -400,17 +455,29 @@ export function MoreAccountScreen({
                   label={t('users.firstName')}
                   value={firstName || '—'}
                   isRTL={isRTL}
+                  isolateValue={looksLatinValue(firstName)}
                 />
                 <ProfileRow
                   label={t('users.lastName')}
                   value={lastName || '—'}
                   isRTL={isRTL}
+                  isolateValue={looksLatinValue(lastName)}
                 />
                 {email ? (
-                  <ProfileRow label={t('users.email')} value={email} isRTL={isRTL} />
+                  <ProfileRow
+                    label={t('users.email')}
+                    value={email}
+                    isRTL={isRTL}
+                    isolateValue
+                  />
                 ) : null}
                 {phone ? (
-                  <ProfileRow label={t('users.phone')} value={phone} isRTL={isRTL} />
+                  <ProfileRow
+                    label={t('users.phone')}
+                    value={phone}
+                    isRTL={isRTL}
+                    isolateValue
+                  />
                 ) : null}
                 <AppText variant="caption" color="muted" weight="regular">
                   {t('mobile.more.profileManagedHint')}
@@ -423,12 +490,14 @@ export function MoreAccountScreen({
                   value={firstName}
                   onChangeText={setFirstName}
                   autoCapitalize="words"
+                  dir={looksLatinValue(firstName) ? 'ltr' : 'auto'}
                 />
                 <TextField
                   label={t('users.lastName')}
                   value={lastName}
                   onChangeText={setLastName}
                   autoCapitalize="words"
+                  dir={looksLatinValue(lastName) ? 'ltr' : 'auto'}
                 />
                 <TextField
                   label={t('users.email')}
@@ -437,11 +506,13 @@ export function MoreAccountScreen({
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  dir="ltr"
                 />
                 <PhoneField
                   label={t('users.phone')}
                   value={phone}
                   onChangeText={setPhone}
+                  chipAtStart
                 />
                 <PrimaryButton
                   label={t('mobile.more.saveProfile')}
@@ -689,6 +760,7 @@ function SectionLabel({ label, locale }: { label: string; locale: string }) {
     <AppText
       variant="caption"
       weight={locale === 'ar' ? 'regular' : 'medium'}
+      align="start"
       style={{
         letterSpacing: locale === 'ar' ? 0 : 0.8,
         textTransform: locale === 'ar' ? 'none' : 'uppercase',
@@ -705,18 +777,26 @@ function ProfileRow({
   label,
   value,
   isRTL,
+  isolateValue = false,
 }: {
   label: string;
   value: string;
   isRTL: boolean;
+  isolateValue?: boolean;
 }) {
   return (
     <View style={{ gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-      <AppText variant="caption" color="muted" weight="regular">
+      <AppText variant="caption" color="muted" weight="regular" align="start">
         {label}
       </AppText>
-      <AppText variant="body" weight="medium" numberOfLines={2}>
-        {value}
+      <AppText
+        variant="body"
+        weight="medium"
+        numberOfLines={2}
+        align="start"
+        dir={isolateValue ? 'ltr' : 'auto'}
+      >
+        {isolateValue ? latinValue(isRTL, value) : value}
       </AppText>
     </View>
   );

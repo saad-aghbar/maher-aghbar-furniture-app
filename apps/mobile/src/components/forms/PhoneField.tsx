@@ -14,6 +14,7 @@ import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
+import { isolateLtr } from '@/i18n/format';
 import { AnimatedPressable, haptics } from '@/motion';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { AppTextInput } from './AppTextInput';
@@ -35,11 +36,16 @@ type Props = {
   containerStyle?: StyleProp<ViewStyle>;
   /** ISO2 used when `value` has no country prefix. Default Palestine (970). */
   defaultIso2?: string;
+  /**
+   * Sit the flag + dial chip on the reading-start edge (right in RTL).
+   * Dial digits and the national number stay LTR isolates so they never reverse.
+   */
+  chipAtStart?: boolean;
 };
 
 /**
  * Phone field with country dial-code picker + national number.
- * Dial chip stays LTR (left) in all locales. Emits `+9705…` via `onChangeText`.
+ * Emits `+9705…` via `onChangeText`.
  */
 export function PhoneField({
   label,
@@ -49,6 +55,7 @@ export function PhoneField({
   placeholder,
   containerStyle,
   defaultIso2,
+  chipAtStart = false,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -107,18 +114,19 @@ export function PhoneField({
   }
 
   const touchMin = theme.sizes.touch.min;
+  const chipOnStart = chipAtStart && isRTL;
 
   return (
     <View style={[{ gap: theme.spacing.xs, width: '100%' }, containerStyle]}>
       {label ? (
-        <AppText variant="label" color="secondary">
+        <AppText variant="label" color="secondary" align="start">
           {label}
         </AppText>
       ) : null}
 
       <View
         style={{
-          flexDirection: 'row',
+          flexDirection: chipOnStart ? 'row-reverse' : 'row',
           alignItems: 'stretch',
           minHeight: touchMin,
           borderWidth: 1,
@@ -126,7 +134,7 @@ export function PhoneField({
           borderRadius: theme.radius.xl,
           backgroundColor: colors.surface,
           overflow: 'hidden',
-          direction: 'ltr',
+          ...(chipOnStart ? null : { direction: 'ltr' as const }),
           ...orderBoardShadow(colorScheme),
         }}
       >
@@ -143,7 +151,9 @@ export function PhoneField({
             gap: 6,
             paddingHorizontal: theme.spacing.md,
             backgroundColor: colors.brandSoft,
-            borderRightWidth: StyleSheet.hairlineWidth,
+            ...(chipOnStart
+              ? { borderLeftWidth: StyleSheet.hairlineWidth }
+              : { borderRightWidth: StyleSheet.hairlineWidth }),
             borderColor: colors.borderStrong,
             minWidth: 112,
           }}
@@ -157,7 +167,7 @@ export function PhoneField({
             dir="ltr"
             style={{ color: colors.brand, fontVariant: ['tabular-nums'] }}
           >
-            +{country.dial}
+            {isRTL ? isolateLtr(`+${country.dial}`) : `+${country.dial}`}
           </AppText>
           <Ionicons name="chevron-down" size={14} color={colors.brand} />
         </Pressable>
@@ -177,7 +187,7 @@ export function PhoneField({
             color: colors.textPrimary,
             fontSize: theme.typography.variants.body.fontSize,
             lineHeight: theme.typography.variants.body.lineHeight,
-            textAlign: 'left',
+            textAlign: chipOnStart ? 'right' : 'left',
             writingDirection: 'ltr',
             ...resolveAppFontStyle(locale, { variant: 'body' }),
           }}

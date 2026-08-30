@@ -36,6 +36,11 @@ export type TextFieldProps = TextInputProps & {
   copyable?: boolean;
   /** Search pill icon. Defaults to brand in SearchBarShell. */
   iconColor?: string;
+  /**
+   * `ltr` keeps Latin values (email, usernames) from reversing inside RTL
+   * rows. Label alignment still follows locale start-edge.
+   */
+  dir?: 'auto' | 'ltr' | 'rtl';
 };
 
 export function TextField({
@@ -51,6 +56,7 @@ export function TextField({
   iconColor,
   multiline,
   value,
+  dir = 'auto',
   onContentSizeChange,
   ...rest
 }: TextFieldProps) {
@@ -88,7 +94,12 @@ export function TextField({
           fontSize: theme.typography.variants.body.fontSize,
           lineHeight: theme.typography.variants.body.lineHeight,
           textAlign: isRTL ? 'right' : 'left',
+<<<<<<< HEAD
           writingDirection: writingDirectionFor(isRTL),
+=======
+          writingDirection:
+            dir === 'ltr' ? 'ltr' : dir === 'rtl' ? 'rtl' : isRTL ? 'rtl' : 'ltr',
+>>>>>>> 011969f (Fix Manage account RTL leftovers without changing EN or the tab bar.)
           ...resolveAppFontStyle(locale, { variant: 'body' }),
         },
         style,
@@ -112,7 +123,7 @@ export function TextField({
           }}
         >
           {label ? (
-            <AppText variant="label" color="secondary" style={{ flex: 1 }}>
+            <AppText variant="label" color="secondary" align="start" style={{ flex: 1 }}>
               {label}
             </AppText>
           ) : (
