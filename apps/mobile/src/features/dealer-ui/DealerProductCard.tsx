@@ -1,6 +1,7 @@
 import { Image, Platform, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { EmptyProductImage } from '@/components/media/EmptyProductImage';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -81,18 +82,7 @@ export function DealerProductCard({
                   accessibilityIgnoresInvertColors
                 />
               ) : (
-                <View
-                  style={{
-                    flex: 1,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: theme.spacing.sm,
-                  }}
-                >
-                  <AppText variant="caption" color="muted" align="center">
-                    {t('mobile.catalog.noImage')}
-                  </AppText>
-                </View>
+                <EmptyProductImage />
               )}
 
               {orderedBefore ? (

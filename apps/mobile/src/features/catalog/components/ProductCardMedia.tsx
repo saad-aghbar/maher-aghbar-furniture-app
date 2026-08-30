@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
+import { EmptyProductImage } from '@/components/media/EmptyProductImage';
 import { SkeletonShimmer, useReducedMotion } from '@/motion';
-import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 type ProductCardMediaProps = {
@@ -27,7 +27,6 @@ export function ProductCardMedia({
   galleryCount = 0,
 }: ProductCardMediaProps) {
   const { colors, theme } = useTheme();
-  const { t } = useLocale();
   const reduce = useReducedMotion();
   const uris =
     imageUrls && imageUrls.length
@@ -96,18 +95,7 @@ export function ProductCardMedia({
           )}
         </>
       ) : (
-        <View
-          style={{
-            flex: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: theme.spacing.sm,
-          }}
-        >
-          <AppText variant="caption" color="muted" align="center">
-            {t('mobile.catalog.noImage')}
-          </AppText>
-        </View>
+        <EmptyProductImage />
       )}
 
       {multi ? (
