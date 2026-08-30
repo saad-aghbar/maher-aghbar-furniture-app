@@ -14,6 +14,7 @@ import {
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { chevronForwardName, rowDirection, startEdge } from '@/i18n/rtl';
 import { AnimatedPressable, CountUp, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -148,7 +149,7 @@ export function AdminHomeOpsInventory() {
             position: 'absolute',
             top: 0,
             bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
+            [startEdge(isRTL)]: 0,
             width: 3,
             backgroundColor: accent,
             opacity: 0.55,
@@ -161,7 +162,7 @@ export function AdminHomeOpsInventory() {
           accessibilityLabel={t('mobile.opsHome.inventoryTitle')}
           onPress={goInventory}
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: rowDirection(isRTL),
             alignItems: 'center',
             gap: theme.spacing.md,
             padding: theme.spacing.lg,
@@ -206,7 +207,7 @@ export function AdminHomeOpsInventory() {
             </AppText>
           </View>
           <Ionicons
-            name={isRTL ? 'chevron-back' : 'chevron-forward'}
+            name={chevronForwardName(isRTL)}
             size={18}
             color={colors.textMuted}
           />
@@ -215,7 +216,7 @@ export function AdminHomeOpsInventory() {
         {canRead ? (
           <View
             style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: rowDirection(isRTL),
               marginHorizontal: theme.spacing.md,
               marginBottom: hasActions ? theme.spacing.sm : theme.spacing.md,
               borderRadius: theme.radius.lg,

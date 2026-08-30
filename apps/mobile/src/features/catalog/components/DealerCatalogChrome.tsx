@@ -6,10 +6,12 @@ import {
   DealerSearchBar,
 } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { CatalogBrowseMode } from '../catalogBrowseMode';
 import type { BrowseCategory } from '../api';
+import { SearchActionRow } from '@/components/layout/SearchActionRow';
 import { CatalogFilterButton } from './CatalogFilterButton';
 import { DealerCatalogModeTabs } from './DealerCatalogModeTabs';
 import { DealerCategoryRail } from './DealerCategoryRail';
@@ -54,7 +56,7 @@ export function DealerCatalogChrome({
     <View style={{ gap: theme.spacing.md }}>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
           alignItems: 'center',
           gap: theme.spacing.md,
         }}
@@ -116,23 +118,18 @@ export function DealerCatalogChrome({
 
       <DealerCatalogModeTabs value={browseMode} onChange={onBrowseModeChange} />
 
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
-          gap: theme.spacing.sm,
-        }}
+      <SearchActionRow
+        trailing={
+          <CatalogFilterButton activeCount={filterActiveCount} onPress={onOpenFilters} />
+        }
       >
-        <View style={{ flex: 1 }}>
-          <DealerSearchBar
-            value={searchInput}
-            onChangeText={onSearchChange}
-            placeholder={t('mobile.catalog.searchPlaceholder')}
-            accessibilityLabel={t('mobile.catalog.search')}
-          />
-        </View>
-        <CatalogFilterButton activeCount={filterActiveCount} onPress={onOpenFilters} />
-      </View>
+        <DealerSearchBar
+          value={searchInput}
+          onChangeText={onSearchChange}
+          placeholder={t('mobile.catalog.searchPlaceholder')}
+          accessibilityLabel={t('mobile.catalog.search')}
+        />
+      </SearchActionRow>
 
       {showCategories ? (
         <DealerCategoryRail

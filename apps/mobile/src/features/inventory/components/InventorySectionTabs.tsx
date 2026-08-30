@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { useDraggablePillBar, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -111,7 +112,7 @@ export function InventorySectionTabs({ active, onChange }: Props) {
     <GestureDetector gesture={gesture}>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
           alignItems: 'center',
           height: shellH,
           borderRadius: shellH / 2,

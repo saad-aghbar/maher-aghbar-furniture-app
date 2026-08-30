@@ -3,6 +3,7 @@ import { useRouter, type Href } from 'expo-router';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { AnimatedPressable, CountUp, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { AdminHomePayload } from '../api';
@@ -118,7 +119,7 @@ export function AdminHomePulseStrip({ data }: Props) {
         </AppText>
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: rowDirection(isRTL),
             alignItems: 'baseline',
             gap: theme.spacing.sm,
           }}
@@ -140,7 +141,7 @@ export function AdminHomePulseStrip({ data }: Props) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{
           paddingVertical: 2,
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: rowDirection(isRTL),
         }}
       >
         {metrics.map((m, i) => (

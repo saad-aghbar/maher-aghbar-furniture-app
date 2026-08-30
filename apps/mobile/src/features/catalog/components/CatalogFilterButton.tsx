@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
+import { endEdge } from '@/i18n/rtl';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -13,7 +14,7 @@ type Props = {
 
 /** Compact square filter control — mockup-style, brand theme. */
 export function CatalogFilterButton({ onPress, activeCount = 0 }: Props) {
-  const { t } = useLocale();
+  const { t, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const active = activeCount > 0;
   const size = theme.sizes.touch.min;
@@ -50,7 +51,7 @@ export function CatalogFilterButton({ onPress, activeCount = 0 }: Props) {
           style={{
             position: 'absolute',
             top: 6,
-            right: 6,
+            [endEdge(isRTL)]: 6,
             minWidth: 16,
             height: 16,
             paddingHorizontal: 4,

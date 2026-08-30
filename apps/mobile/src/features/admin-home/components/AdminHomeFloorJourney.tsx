@@ -14,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { AnimatedPressable, CountUp, haptics, useReducedMotion } from '@/motion';
 import { useTheme, type ThemeColors } from '@/theme';
 import type { AdminHomePayload } from '../api';
@@ -131,13 +132,25 @@ export function AdminHomeFloorJourney({ data }: Props) {
   return (
     <Wrapper {...wrapperProps} style={{ marginBottom: theme.spacing.xl, gap: theme.spacing.md }}>
       <View style={{ gap: 4 }}>
-        <AppText
-          variant="caption"
-          weight="semibold"
-          style={{ letterSpacing: 1.6, textTransform: 'uppercase', color: colors.brand }}
+        <View
+          style={{
+            flexDirection: rowDirection(isRTL),
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.md,
+          }}
         >
-          {t('mobile.adminHome.journeyEyebrow')}
-        </AppText>
+          <AppText
+            variant="caption"
+            weight="semibold"
+            style={{ letterSpacing: 1.6, textTransform: 'uppercase', color: colors.brand, flex: 1 }}
+          >
+            {t('mobile.adminHome.journeyEyebrow')}
+          </AppText>
+          <AppText variant="caption" color="muted" dir="ltr" style={{ fontSize: 12 }}>
+            {String(total)}
+          </AppText>
+        </View>
         <AppText variant="title" weight="semibold">
           {t('mobile.adminHome.journeyTitle')}
         </AppText>
@@ -167,7 +180,7 @@ export function AdminHomeFloorJourney({ data }: Props) {
               borderRadius: 5,
               backgroundColor: colors.surfaceSecondary,
               overflow: 'hidden',
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: rowDirection(isRTL),
               alignItems: 'stretch',
               gap: filled.length > 1 ? 5 : 0,
             },
@@ -196,7 +209,7 @@ export function AdminHomeFloorJourney({ data }: Props) {
 
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: rowDirection(isRTL),
             justifyContent: 'space-between',
             gap: theme.spacing.xs,
           }}

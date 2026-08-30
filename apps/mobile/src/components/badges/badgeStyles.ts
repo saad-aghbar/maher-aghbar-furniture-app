@@ -1,5 +1,6 @@
-import type { Theme, ThemeColors } from '@/theme';
 import type { TextStyle, ViewStyle } from 'react-native';
+import { rowDirection } from '@/i18n/rtl';
+import type { Theme, ThemeColors } from '@/theme';
 
 export type BadgeVariant = 'default' | 'brand' | 'success' | 'warning' | 'error' | 'info';
 
@@ -136,7 +137,7 @@ export function getBadgeContainerStyle(
   const isRTL = Boolean(opts.isRTL);
   return {
     alignSelf: isRTL ? 'flex-end' : 'flex-start',
-    flexDirection: isRTL ? 'row-reverse' : 'row',
+    flexDirection: rowDirection(isRTL),
     alignItems: 'center',
     gap: theme.spacing['2xs'],
     maxWidth: '100%',

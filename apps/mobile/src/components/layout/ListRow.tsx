@@ -3,7 +3,7 @@ import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
-import { flexDirectionFor, textAlignFor } from '@/i18n/rtl';
+import { chevronForwardName, rowDirection, textAlignFor } from '@/i18n/rtl';
 import { useTheme } from '@/theme';
 
 type ListRowProps = {
@@ -34,9 +34,8 @@ export function ListRow({
 }: ListRowProps) {
   const { isRTL } = useLocale();
   const { colors, theme } = useTheme();
-  const direction = isRTL ? 'rtl' : 'ltr';
-  const row = flexDirectionFor(direction);
-  const align = textAlignFor(direction);
+  const row = rowDirection(isRTL);
+  const align = textAlignFor(isRTL ? 'rtl' : 'ltr');
 
   return (
     <View
@@ -85,7 +84,7 @@ export function ListRow({
       {trailing ? <View style={{ flexShrink: 0, maxWidth: '46%' }}>{trailing}</View> : null}
       {chevron ? (
         <Ionicons
-          name={isRTL ? 'chevron-back' : 'chevron-forward'}
+          name={chevronForwardName(isRTL)}
           size={18}
           color={colors.textMuted}
           accessibilityElementsHidden

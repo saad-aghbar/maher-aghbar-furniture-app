@@ -1,6 +1,7 @@
 import { ScrollView } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { BrowseCategory } from '../api';
@@ -37,7 +38,7 @@ export function CatalogFilterChips({
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
+        flexDirection: rowDirection(isRTL),
         gap: theme.spacing.sm,
         paddingVertical: theme.spacing.xs,
       }}

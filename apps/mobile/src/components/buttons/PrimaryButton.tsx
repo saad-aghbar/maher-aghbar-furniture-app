@@ -6,6 +6,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { AppText } from '@/components/AppText';
+import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import {
@@ -39,8 +40,9 @@ function BaseButton({
   haptic = 'medium',
 }: SharedButtonProps & { variant: ButtonVariant }) {
   const { theme } = useTheme();
+  const { isRTL } = useLocale();
   const isDisabled = disabled || loading;
-  const container = getButtonContainerStyle(theme, variant, isDisabled);
+  const container = getButtonContainerStyle(theme, variant, isDisabled, { isRTL });
   const labelStyle = getButtonLabelStyle(theme, variant, isDisabled);
 
   return (

@@ -23,6 +23,9 @@ export function localeRow(isRTL: boolean): 'row' | 'row-reverse' {
   return I18nManager.isRTL === isRTL ? 'row' : 'row-reverse';
 }
 
+/** Alias used by leftover RTL chrome that landed as `rowDirection`. */
+export const rowDirection = localeRow;
+
 export function flexDirectionFor(direction: Direction): 'row' | 'row-reverse' {
   return localeRow(direction === 'rtl');
 }
@@ -46,6 +49,23 @@ export function extraStartPadding(isRTL: boolean, extra: number): ViewStyle {
 /** Pack children to the reading-start edge in a column. */
 export function alignStart(isRTL: boolean): 'flex-start' | 'flex-end' {
   return isRTL ? 'flex-end' : 'flex-start';
+}
+
+export function chevronForwardName(isRTL: boolean): 'chevron-back' | 'chevron-forward' {
+  return isRTL ? 'chevron-back' : 'chevron-forward';
+}
+
+export function arrowForwardName(isRTL: boolean): 'arrow-back' | 'arrow-forward' {
+  return isRTL ? 'arrow-back' : 'arrow-forward';
+}
+
+/** Physical start edge for absolute chrome (I18nManager does not flip left/right). */
+export function startEdge(isRTL: boolean): 'left' | 'right' {
+  return isRTL ? 'right' : 'left';
+}
+
+export function endEdge(isRTL: boolean): 'left' | 'right' {
+  return isRTL ? 'left' : 'right';
 }
 
 /** Mirror directional icons (chevrons, back arrows) in RTL. */

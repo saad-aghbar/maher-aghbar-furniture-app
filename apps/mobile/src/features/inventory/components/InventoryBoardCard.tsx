@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
 import { useTheme } from '@/theme';
 
 type InventoryBoardCardProps = {
@@ -83,7 +84,7 @@ export function InventorySectionHeader({
   return (
     <View
       style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
+        flexDirection: rowDirection(isRTL),
         alignItems: 'center',
         gap: theme.spacing.sm,
       }}
