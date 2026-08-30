@@ -1,4 +1,5 @@
 import { apiGet } from '../client';
+import { toSearchParams } from '../pagination';
 
 export type AdminHomeUrgentTask = {
   id: string;
@@ -170,4 +171,82 @@ export type WorkerHomePayload = {
 
 export async function getWorkerHome(): Promise<WorkerHomePayload> {
   return apiGet<WorkerHomePayload>('/reports/worker-home');
+}
+
+export type ReportsPeriodQuery = {
+  from: string;
+  to: string;
+};
+
+export type DashboardReportPayload = {
+  activeOrders?: number;
+  ordersInProduction?: number;
+  ordersDueSoon?: number;
+  ordersNearingDelivery?: number;
+  delayedProduction?: number;
+  delayedOrders?: number;
+  outstandingInvoices?: number;
+  openInvoices?: number;
+  revenueInvoiced?: number | string | null;
+  receivablesAmount?: number | string | null;
+  outstandingReceivables?: number | string | null;
+  lowStock?: number;
+  lowStockItems?: number;
+  openPurchases?: number;
+  generatedAt?: string;
+};
+
+export type SalesReportPayload = {
+  ordersByStatus?: Array<{ status?: string; count?: number; total?: number }>;
+  topCustomers?: Array<{
+    customerId: string;
+    customerName: string;
+    orderCount: number;
+    total: number;
+  }>;
+};
+
+export type ProductionReportPayload = {
+  ordersByStatus?: Array<{ status?: string; _count?: number; count?: number }>;
+  tasksByStatus?: Array<{ status?: string; _count?: number; count?: number }>;
+  delayedCount?: number;
+  openCount?: number;
+};
+
+export type FinancialReportPayload = {
+  invoicesByStatus?: Array<{
+    status?: string;
+    count?: number;
+    total?: number;
+    outstanding?: number;
+  }>;
+  paymentsTotal?: number;
+  paymentCount?: number;
+  aging?: {
+    current: number;
+    d1_30: number;
+    d31_60: number;
+    d61_90: number;
+    older: number;
+  };
+};
+
+export async function getDashboardReport(): Promise<DashboardReportPayload> {
+  return apiGet<DashboardReportPayload>('/reports/dashboard');
+}
+
+export async function getSalesReport(query: ReportsPeriodQuery): Promise<SalesReportPayload> {
+  const qs = toSearchParams({ from: query.from, to: query.to });
+  return apiGet<SalesReportPayload>(`/reports/sales${qs}`);
+}
+
+export async function getProductionReport(
+  query: ReportsPeriodQuery,
+): Promise<ProductionReportPayload> {
+  const qs = toSearchParams({ from: query.from, to: query.to });
+  return apiGet<ProductionReportPayload>(`/reports/production${qs}`);
+}
+
+export async function getFinancialReport(): Promise<FinancialReportPayload> {
+  return apiGet<FinancialReportPayload>('/reports/financial');
 }

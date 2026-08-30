@@ -47,6 +47,12 @@ export const queryKeys = {
     adminHome: () => [...queryKeys.reports.all, 'admin-home'] as const,
     dealerHome: () => [...queryKeys.reports.all, 'dealer-home'] as const,
     workerHome: () => [...queryKeys.reports.all, 'worker-home'] as const,
+    dashboard: () => [...queryKeys.reports.all, 'dashboard'] as const,
+    sales: (from: string, to: string) =>
+      [...queryKeys.reports.all, 'sales', from, to] as const,
+    production: (from: string, to: string) =>
+      [...queryKeys.reports.all, 'production', from, to] as const,
+    financial: () => [...queryKeys.reports.all, 'financial'] as const,
   },
   salesOrders: {
     all: ['sales-orders'] as const,

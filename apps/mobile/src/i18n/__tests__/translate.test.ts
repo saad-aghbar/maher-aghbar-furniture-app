@@ -31,6 +31,13 @@ describe('translate', () => {
     expect(translate('en', 'mobile.relativeDueIn', { n: 2, unit: 'days' })).toBe('Due in 2 days');
   });
 
+  it('resolves reports chip labels in full', () => {
+    expect(translate('en', 'accounting.reportFinancial')).toBe('Financial');
+    expect(translate('ar', 'accounting.reportFinancial')).toBe('المالية');
+    expect(translate('en', 'mobile.reports.thisMonth')).toBe('This month');
+    expect(translate('ar', 'mobile.reports.thisMonth')).toBe('هذا الشهر');
+  });
+
   it('resolves accounting invoice keys used by mobile', () => {
     expect(translate('en', 'accounting.outstanding')).toBe('Outstanding');
     expect(translate('en', 'accounting.createFromSalesOrder')).toMatch(/sales order/i);

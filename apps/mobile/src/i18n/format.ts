@@ -124,6 +124,36 @@ export function formatDate(locale: Locale, value: Date | string | number): strin
   return finalizeLocalizedDate(raw);
 }
 
+/**
+ * Inclusive calendar range in the same family as invoice dates.
+ * EN: 1 Aug 2026 – 30 Aug 2026. Never ISO and never ASCII `->`.
+ * Chronological start–end; RTL screens reverse the row, not the string.
+ */
+export function formatDateRange(
+  locale: Locale,
+  start: Date | string | number,
+  end: Date | string | number,
+): string {
+  const a = formatDate(locale, start);
+  const b = formatDate(locale, end);
+  if (!a && !b) return '';
+  if (!b) return a;
+  if (!a) return b;
+  return `${a} ${RANGE_DASH} ${b}`;
+}
+
+export function dateRangeParts(
+  locale: Locale,
+  start: Date | string | number,
+  end: Date | string | number,
+): { start: string; dash: string; end: string } {
+  return {
+    start: formatDate(locale, start),
+    dash: RANGE_DASH,
+    end: formatDate(locale, end),
+  };
+}
+
 export function formatDateTime(locale: Locale, value: Date | string | number): string {
   const date = parseDisplayDate(value);
   const raw = new Intl.DateTimeFormat(dateTimeLocaleTag(locale), {

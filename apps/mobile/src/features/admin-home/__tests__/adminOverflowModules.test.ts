@@ -37,6 +37,12 @@ describe('filterAdminOverflowModules', () => {
     expect(more.some((m) => m.key === 'scheduling')).toBe(true);
   });
 
+  it('shows reports when staff has any report permission', () => {
+    const user = withPerms('report.sales.read');
+    const more = filterAdminOverflowModules(user, 'more');
+    expect(more.some((m) => m.key === 'reports')).toBe(true);
+  });
+
   it('hides scheduling from users without schedule.read or schedule.capacity.read', () => {
     const dealer = withPerms('schedule.read.own', 'schedule.availability.own');
     const worker = withPerms('production-task.update-own');
