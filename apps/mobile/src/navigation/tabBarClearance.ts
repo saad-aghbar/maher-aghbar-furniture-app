@@ -7,6 +7,19 @@ export const SURFACE_TAB_BAR_CLEARANCE = 88;
  */
 export const SURFACE_TAB_BAR_HEIGHT = 58;
 
+/**
+ * Distance from the screen bottom to sit a dock or scroll pad above the
+ * floating pill. The pill itself is already offset by the home-indicator
+ * inset (`max(safeBottom, minGap)`), so that offset must be included here
+ * or Hold/Cancel and last cards tuck under the bar.
+ */
+export function surfaceTabBarStackInset(
+  safeBottom: number,
+  minGap: number = 8,
+): number {
+  return SURFACE_TAB_BAR_CLEARANCE + Math.max(safeBottom, minGap);
+}
+
 /** Dealer FAB sits above the pill — extra clearance for home/catalog scroll. */
 export const DEALER_TAB_BAR_CLEARANCE = 108;
 
