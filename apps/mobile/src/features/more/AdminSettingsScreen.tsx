@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, Switch, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
@@ -28,6 +29,7 @@ import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { haptics, useReducedMotion } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './components/MoreBoard';
 
@@ -139,7 +141,7 @@ export function AdminSettingsScreen() {
 
   if (!allowed) {
     return (
-      <ScrollableScreen>
+      <SettingsScroll>
         <BackButton
           onPress={() => {
             if (router.canGoBack()) router.back();
@@ -151,13 +153,13 @@ export function AdminSettingsScreen() {
           title={t('mobile.adminSettings.forbiddenTitle')}
           description={t('mobile.adminSettings.forbiddenBody')}
         />
-      </ScrollableScreen>
+      </SettingsScroll>
     );
   }
 
   if (settingsQuery.isError) {
     return (
-      <ScrollableScreen>
+      <SettingsScroll>
         <BackButton
           onPress={() => {
             if (router.canGoBack()) router.back();
@@ -170,13 +172,13 @@ export function AdminSettingsScreen() {
           description={t('common.loadFailed')}
           onRetry={() => void settingsQuery.refetch()}
         />
-      </ScrollableScreen>
+      </SettingsScroll>
     );
   }
 
   if (settingsQuery.isLoading || !company || !integrations) {
     return (
-      <ScrollableScreen>
+      <SettingsScroll>
         <BackButton
           onPress={() => {
             if (router.canGoBack()) router.back();
@@ -187,7 +189,7 @@ export function AdminSettingsScreen() {
         <AppText variant="body" color="muted">
           {t('mobile.adminSettings.loading')}
         </AppText>
-      </ScrollableScreen>
+      </SettingsScroll>
     );
   }
 
@@ -197,7 +199,7 @@ export function AdminSettingsScreen() {
       : t('catalog.integrationNotConfigured');
 
   return (
-    <ScrollableScreen>
+    <SettingsScroll>
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
@@ -478,6 +480,34 @@ export function AdminSettingsScreen() {
           </MoreBoard>
         </Animated.View>
       </View>
+    </SettingsScroll>
+  );
+}
+
+/**
+ * Settings is a long stacked form under the persistent floating tab bar.
+ * Put clearance in a real trailing view (not only paddingBottom) so the last
+ * fields and per-section Save fully clear the pill — Yoga can drop
+ * paddingBottom when the scroll content also uses `gap`.
+ */
+function SettingsScroll({ children }: { children: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  return (
+    <ScrollableScreen
+      contentContainerStyle={{
+        paddingBottom: insets.bottom + theme.spacing['3xl'],
+      }}
+      scrollProps={{
+        scrollIndicatorInsets: { bottom: SURFACE_TAB_BAR_CLEARANCE },
+      }}
+    >
+      {children}
+      <View
+        pointerEvents="none"
+        accessible={false}
+        style={{ height: SURFACE_TAB_BAR_CLEARANCE }}
+      />
     </ScrollableScreen>
   );
 }
