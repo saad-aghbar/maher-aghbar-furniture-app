@@ -100,6 +100,48 @@ describe('selectProductionFlowFromStageEstimates', () => {
     );
     expect(stages[0]?.name).toBe('PAINT');
   });
+
+  it('maps backend estimate rows into stage circles instead of an empty hint', () => {
+    const cut: ProductStageEstimate = {
+      stageDefinitionId: 'sd-cut',
+      setupMinutes: 0,
+      minutesPerUnit: 0,
+      fixedMinutes: 120,
+      quantityScalingMode: 'FIXED',
+      stageDefinition: {
+        id: 'sd-cut',
+        code: 'CUT',
+        nameEn: 'Cut',
+        nameAr: 'قص',
+        nameHe: 'חיתוך',
+        sortOrder: 0,
+      },
+    };
+    const stages = selectProductionFlowFromStageEstimates([cut, paint], 'en');
+    expect(stages).toHaveLength(2);
+    expect(stages[0]?.code).toBe('CUT');
+    expect(stages[0]?.estimatedMinutes).toBe(120);
+    expect(stages[0]?.estimateReviewRequired).toBe(false);
+    expect(stages[1]?.code).toBe('PAINT');
+    expect(stages[1]?.estimatedMinutes).toBe(55);
+  });
+
+  it('returns no stages when estimates have no stage definitions', () => {
+    expect(
+      selectProductionFlowFromStageEstimates(
+        [
+          {
+            stageDefinitionId: 'sd-x',
+            setupMinutes: 0,
+            minutesPerUnit: 0,
+            fixedMinutes: 0,
+            quantityScalingMode: 'FIXED',
+          },
+        ],
+        'en',
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe('formatProductIdentity', () => {
