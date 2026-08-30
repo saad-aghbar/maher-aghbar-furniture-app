@@ -917,6 +917,7 @@ export function NewOrderScreen() {
   const successVisible = Boolean(submittedNumber || draftSavedNumber);
   const dockMode = newOrderDockMode({ step, submitted: successVisible });
   const scrollPad = newOrderDockScrollPad(theme.spacing.md);
+  const dockVisible = !keyboardOpen && !successVisible;
   const dockDisabled = busy || uploading;
 
   const onDockPrimary = () => {
@@ -943,12 +944,13 @@ export function NewOrderScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAwareScreen
+        style={dockVisible ? { paddingBottom: scrollPad } : undefined}
         contentContainerStyle={{
           paddingBottom: keyboardOpen
             ? theme.spacing.md
             : successVisible
               ? theme.spacing['3xl']
-              : scrollPad,
+              : theme.spacing.md,
         }}
         header={
           <View style={{ gap: theme.spacing.md }}>

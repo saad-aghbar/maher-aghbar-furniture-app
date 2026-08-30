@@ -22,7 +22,12 @@ import {
 
 export { NEW_ORDER_DOCK_BODY_HEIGHT, NEW_ORDER_DOCK_SCROLL_EXTRA };
 
-/** Scroll padding so wizard content clears dock + floating tab/FAB. */
+/**
+ * Bottom inset so wizard content is laid out above the floating dock
+ * (and the dealer tab/FAB it sits on). Apply to the screen shell, not only
+ * ScrollView content padding — content-only pad leaves short step-1 forms
+ * drawn under Back/Continue.
+ */
 export function newOrderDockScrollPad(spacingMd: number): number {
   return (
     DEALER_TAB_BAR_CLEARANCE +

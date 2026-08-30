@@ -79,4 +79,10 @@ describe('newOrderDockScrollPad', () => {
     expect(NEW_ORDER_DOCK_SCROLL_EXTRA).toBe(40);
     expect(newOrderDockScrollPad(16)).toBe(108 + 72 + 40 + 16);
   });
+
+  it('is tall enough that step content cannot sit under the dock body', () => {
+    expect(newOrderDockScrollPad(12)).toBeGreaterThanOrEqual(
+      108 + NEW_ORDER_DOCK_BODY_HEIGHT,
+    );
+  });
 });
