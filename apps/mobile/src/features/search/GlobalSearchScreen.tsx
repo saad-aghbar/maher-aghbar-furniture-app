@@ -2,12 +2,14 @@ import { FlatList, RefreshControl, View } from 'react-native';
 import { useState } from 'react';
 import { useRouter, type Href } from 'expo-router';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { statusLabel } from '@maher/i18n';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { globalSearch } from '@/api/modules/search';
 import { queryKeys } from '@/api/queryKeys';
 import { flattenPaginatedPages, getNextPageParamFromMeta } from '@/api/infinite';
 import { AppText } from '@/components/AppText';
+import { StatusBadge } from '@/components/badges/StatusBadge';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -20,6 +22,7 @@ import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { parseInvoiceSearchSubtitle } from './selectSearchHit';
 
 function hitHref(type: string, id: string, userCustomerId?: string | null): Href {
   switch (type) {
@@ -44,9 +47,49 @@ function hitHref(type: string, id: string, userCustomerId?: string | null): Href
   }
 }
 
+function SearchHitMeta({
+  type,
+  subtitle,
+}: {
+  type: string;
+  subtitle?: string | null;
+}) {
+  const { formatCurrency, isRTL } = useLocale();
+  const { theme } = useTheme();
+
+  if (type === 'invoice') {
+    const parsed = parseInvoiceSearchSubtitle(subtitle);
+    if (parsed) {
+      return (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: theme.spacing.sm,
+            marginTop: 2,
+          }}
+        >
+          <StatusBadge status={parsed.status} dot />
+          <AppText variant="caption" color="secondary" dir="ltr">
+            {formatCurrency(parsed.amount)}
+          </AppText>
+        </View>
+      );
+    }
+  }
+
+  if (!subtitle) return null;
+  return (
+    <AppText variant="caption" color="secondary">
+      {subtitle}
+    </AppText>
+  );
+}
+
 export function GlobalSearchScreen() {
   const { user } = useAuth();
-  const { t } = useLocale();
+  const { t, locale, formatCurrency } = useLocale();
   const { theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
@@ -137,25 +180,28 @@ export function GlobalSearchScreen() {
             />
           )
         }
-        renderItem={({ item, index }) => (
-          <ListItemEnter index={index}>
-            <SurfaceCard
-              onPress={() => router.push(hitHref(item.type, item.id, user?.customerId))}
-              accessibilityLabel={`${item.title}. ${item.subtitle ?? ''}`}
-              style={{ minHeight: theme.sizes.touch.min }}
-            >
-              <AppText variant="caption" color="muted">
-                {t(`mobile.search.types.${item.type}`)}
-              </AppText>
-              <AppText weight="semibold">{item.title}</AppText>
-              {item.subtitle ? (
-                <AppText variant="caption" color="secondary">
-                  {item.subtitle}
+        renderItem={({ item, index }) => {
+          const invoiceMeta =
+            item.type === 'invoice' ? parseInvoiceSearchSubtitle(item.subtitle) : null;
+          const a11yMeta = invoiceMeta
+            ? `${statusLabel(locale, invoiceMeta.status)} ${formatCurrency(invoiceMeta.amount)}`
+            : (item.subtitle ?? '');
+          return (
+            <ListItemEnter index={index}>
+              <SurfaceCard
+                onPress={() => router.push(hitHref(item.type, item.id, user?.customerId))}
+                accessibilityLabel={`${item.title}. ${a11yMeta}`}
+                style={{ minHeight: theme.sizes.touch.min }}
+              >
+                <AppText variant="caption" color="muted">
+                  {t(`mobile.search.types.${item.type}`)}
                 </AppText>
-              ) : null}
-            </SurfaceCard>
-          </ListItemEnter>
-        )}
+                <AppText weight="semibold">{item.title}</AppText>
+                <SearchHitMeta type={item.type} subtitle={item.subtitle} />
+              </SurfaceCard>
+            </ListItemEnter>
+          );
+        }}
       />
     </AppScreen>
   );
