@@ -5,6 +5,7 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -43,12 +44,23 @@ export function SupplierInvoiceDetailScreen({ invoiceId }: Props) {
     return (
       <AppScreen backFallback={backFallback}>
         {showOfflineBanner ? <OfflineBanner /> : null}
-        <ErrorState
-          title={t('mobile.purchasing.errorTitle')}
-          description={t('mobile.purchasing.errorBody')}
-          retryLabel={t('mobile.purchasing.retry')}
-          onRetry={() => void query.refetch()}
-        />
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            paddingHorizontal: theme.spacing.lg,
+          }}
+        >
+          <ErrorState
+            title={t('mobile.purchasing.errorTitle')}
+            description={t('mobile.purchasing.errorBody')}
+          />
+          <PrimaryButton
+            label={t('mobile.purchasing.retry')}
+            onPress={() => void query.refetch()}
+            style={{ alignSelf: 'stretch' }}
+          />
+        </View>
       </AppScreen>
     );
   }

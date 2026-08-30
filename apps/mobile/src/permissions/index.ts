@@ -8,6 +8,7 @@ export {
   resolveHomePersona,
   resolveComposedHomeKind,
   shouldFetchSalesAdminHome,
+  shouldFetchWorkerQueue,
   WAREHOUSE_HOME_PERMISSIONS,
   type AppSurface,
   type HomePersona,

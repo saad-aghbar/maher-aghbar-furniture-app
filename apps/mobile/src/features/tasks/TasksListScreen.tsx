@@ -6,7 +6,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { can } from '@maher/permissions';
+import { shouldFetchWorkerQueue } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
@@ -76,7 +76,7 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
-  const allowed = can(user, 'production-task.read');
+  const allowed = shouldFetchWorkerQueue(user);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const isCompleted = variant === 'completed';
   /** Same stack inset as admin inventory / order detail so the last card clears the pill. */

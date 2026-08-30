@@ -8,5 +8,6 @@ export function useWorkerHomeQuery(enabled: boolean) {
     queryFn: getWorkerHome,
     enabled,
     staleTime: 30_000,
+    meta: { skipGlobalErrorToast: true },
   });
 }

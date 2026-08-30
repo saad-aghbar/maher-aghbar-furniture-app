@@ -73,6 +73,17 @@ export function shouldFetchSalesAdminHome(user: AuthUser | null | undefined): bo
   return can(user, 'report.sales.read');
 }
 
+/**
+ * Worker-home + floor task queue are employee-surface feeds.
+ * Admins often have `production-task.read` for production ops — that must not
+ * subscribe the worker queue (or toast its failures) on admin/dealer screens.
+ */
+export function shouldFetchWorkerQueue(user: AuthUser | null | undefined): boolean {
+  if (!user) return false;
+  if (resolveAppSurface(user) !== 'employee') return false;
+  return can(user, 'production-task.read');
+}
+
 function isCustomerIdentity(user: AuthUser): boolean {
   if (user.customerId) return true;
   if (user.roles.includes('CUSTOMER')) return true;

@@ -8,6 +8,7 @@ import {
   createQueryClient,
   createQueryPersister,
   shouldDehydrateQuery,
+  shouldSkipGlobalQueryErrorToast,
   shouldToastApiError,
   toastMessageForError,
 } from '@/api/queryClient';
@@ -41,7 +42,8 @@ export function QueryProvider({ children }: { children: ReactNode }) {
 
   const [client] = useState(() =>
     createQueryClient({
-      onError: (error) => {
+      onError: (error, query) => {
+        if (shouldSkipGlobalQueryErrorToast(query?.queryKey, query?.meta)) return;
         if (!shouldToastApiError(error)) return;
         showToastRef.current({
           message: toastMessageForError(error),

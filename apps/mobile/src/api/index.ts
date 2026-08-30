@@ -32,6 +32,8 @@ export {
   shouldToastApiError,
   isTechnicalQueryError,
   sanitizeFeedbackCopy,
+  shouldSkipGlobalQueryErrorToast,
+  isWorkerQueueQueryKey,
   toastMessageForError,
   QUERY_PERSIST_KEY,
 } from './queryClient';

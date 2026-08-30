@@ -98,6 +98,7 @@ export function useSupplierInvoiceQuery(id: string | undefined, enabled: boolean
     queryKey: queryKeys.purchasing.invoiceDetail(id ?? ''),
     queryFn: () => getSupplierInvoice(id!),
     enabled: Boolean(id) && enabled,
+    meta: { skipGlobalErrorToast: true },
   });
 }
 

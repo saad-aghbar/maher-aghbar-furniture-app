@@ -68,8 +68,12 @@ export class SupplierInvoicesService {
   }
 
   async get(id: string) {
+    const key = id.trim();
     const invoice = await this.prisma.supplierInvoice.findFirst({
-      where: { id, archivedAt: null },
+      where: {
+        archivedAt: null,
+        OR: [{ id: key }, { number: { equals: key, mode: 'insensitive' } }],
+      },
       include: {
         supplier: true,
         purchaseOrder: true,
