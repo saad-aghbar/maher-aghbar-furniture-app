@@ -1,8 +1,8 @@
 /**
  * Admin home composition switch.
  *
- * - `signature` — calm factory Home (next step → floor stages → places → recent)
- * - `living` — same hierarchy (alias for earlier living experiments)
+ * - `signature` — Piece 12 management desk (Attention → Today → Flow → …)
+ * - `living` — calm focus / floor journey (legacy living experiments)
  * - `atelierDashboard` — full ops atelier (queues, stage board, ribbons…)
  *
  * Ask to “go back” → set the constant below.

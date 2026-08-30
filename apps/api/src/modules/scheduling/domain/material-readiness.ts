@@ -179,3 +179,128 @@ export function applyMaterialNotBefore(
     orderMaterialReadyAt: null,
   };
 }
+
+export type FrozenStageMaterialInput = {
+  stageCode: string;
+  sku: string;
+  qtyPerUnit: number;
+  quantityMode?: string | null;
+  required?: boolean;
+  skipped?: boolean;
+};
+
+export function scaleMaterialQty(
+  qtyPerUnit: number,
+  orderQty: number,
+  quantityMode?: string | null,
+): number {
+  if (!(qtyPerUnit > 0)) return 0;
+  if (String(quantityMode ?? 'LINEAR').toUpperCase() === 'FIXED') return qtyPerUnit;
+  return qtyPerUnit * Math.max(orderQty, 0);
+}
+
+export function frozenInputsFromSnapshotNodes(
+  nodes: Array<{
+    stageCode: string;
+    isSkipped?: boolean;
+    materialInputs?: Array<{
+      sku: string;
+      qtyPerUnit: unknown;
+      quantityMode?: string | null;
+      required?: boolean;
+      stageCode?: string | null;
+    }>;
+  }>,
+): FrozenStageMaterialInput[] {
+  const out: FrozenStageMaterialInput[] = [];
+  for (const node of nodes) {
+    for (const row of node.materialInputs ?? []) {
+      const sku = String(row.sku ?? '').trim();
+      const qtyPerUnit = Number(row.qtyPerUnit);
+      if (!sku || !(qtyPerUnit > 0)) continue;
+      out.push({
+        stageCode: String(row.stageCode || node.stageCode),
+        sku,
+        qtyPerUnit,
+        quantityMode: row.quantityMode,
+        required: row.required !== false,
+        skipped: Boolean(node.isSkipped),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * When the snapshot froze SKU→stage maps, apply per-stage notBefore from those
+ * SKUs only. Empty maps keep today's order-wide floor.
+ */
+export function applyStageOrOrderMaterialFloors(args: {
+  stages: PlannerStageInput[];
+  frozenInputs: FrozenStageMaterialInput[];
+  orderQty: number;
+  inventory: Partial<Record<string, InventoryAvailability>>;
+  orderWideReadyAt: Date | null;
+  consumingStageCodes: string[];
+}): {
+  stages: PlannerStageInput[];
+  usedStageMaps: boolean;
+  unknownRequired: boolean;
+  stageReadyAt: Record<string, Date | null>;
+  orderMaterialReadyAt: Date | null;
+} {
+  const live = args.frozenInputs.filter((row) => !row.skipped);
+  if (!live.length) {
+    const fallback = applyMaterialNotBefore(
+      args.stages,
+      args.orderWideReadyAt,
+      args.consumingStageCodes,
+    );
+    return {
+      stages: fallback.stages,
+      usedStageMaps: false,
+      unknownRequired: false,
+      stageReadyAt: {},
+      orderMaterialReadyAt: fallback.orderMaterialReadyAt,
+    };
+  }
+
+  const byStage = new Map<string, FrozenStageMaterialInput[]>();
+  for (const row of live) {
+    const list = byStage.get(row.stageCode) ?? [];
+    list.push(row);
+    byStage.set(row.stageCode, list);
+  }
+
+  const stageReadyAt: Record<string, Date | null> = {};
+  let unknownRequired = false;
+  const next = args.stages.map((stage) => {
+    const rows = byStage.get(stage.code);
+    if (!rows?.length) return stage;
+    const needs = rows.map((row) => ({
+      sku: row.sku,
+      qty: scaleMaterialQty(row.qtyPerUnit, args.orderQty, row.quantityMode),
+    }));
+    const required = requirementFromNeeds(needs);
+    const readiness = assessMaterialReadiness(required, args.inventory);
+    const requiredRows = rows.filter((row) => row.required !== false);
+    if (
+      requiredRows.length &&
+      !readiness.ready &&
+      !readiness.materialReadyAt
+    ) {
+      unknownRequired = true;
+    }
+    stageReadyAt[stage.code] = readiness.materialReadyAt;
+    if (!readiness.materialReadyAt) return stage;
+    return { ...stage, notBefore: later(stage.notBefore, readiness.materialReadyAt) };
+  });
+
+  return {
+    stages: next,
+    usedStageMaps: true,
+    unknownRequired,
+    stageReadyAt,
+    orderMaterialReadyAt: null,
+  };
+}

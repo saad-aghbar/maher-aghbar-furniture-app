@@ -1,6 +1,21 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet, apiPatch, apiPost } from '../client';
+import { apiGet, apiPatch, apiPost, apiPut } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
+
+export type SalesOrderProductionReadinessSummary = {
+  productionOrderCount?: number;
+  canStart?: boolean;
+  needsSetup?: boolean;
+  materialsReady?: boolean;
+  assignment?: {
+    required?: number;
+    assigned?: number;
+    missingCount?: number;
+    missing?: unknown[];
+  };
+  actionHint?: string | null;
+  primaryProductionOrderId?: string | null;
+};
 
 export type SalesOrderListItem = {
   id: string;
@@ -25,6 +40,13 @@ export type SalesOrderListItem = {
   sellerPrice?: number | string | null;
   manufacturingCost?: number | string | null;
   profit?: number | string | null;
+  /** Latest linked delivery status (admin list enrichment). */
+  deliveryStatus?: string | null;
+  lineCount?: number | null;
+  productionReadinessSummary?: SalesOrderProductionReadinessSummary | null;
+  /** Piece 1/2 — accepted SO awaiting production setup release */
+  productionSetupRequired?: boolean;
+  productionSetupStatus?: string | null;
   customer?: {
     id: string;
     name: string | null;
@@ -153,6 +175,17 @@ export type SalesOrderDetail = {
   manufacturingCost?: number | string | null;
   costBreakdown?: Record<string, number | string | null> | null;
   profit?: number | string | null;
+  /** Piece 5 — slim usage actual manufacturing cost (staff with inventory.cost.read). */
+  manufacturingCosting?: {
+    status?: string | null;
+    incomplete?: boolean;
+    estimatedTotal?: number | null;
+    actualTotal?: number | null;
+    varianceCost?: number | null;
+    variancePct?: number | null;
+    scrapCost?: number | null;
+    finalizedAt?: string | null;
+  } | null;
   assignedEmployeeId?: string | null;
   assignedEmployee?: { id: string; name: string } | null;
   customer?: {
@@ -212,25 +245,136 @@ export type SalesOrderDetail = {
     id: string;
     number: string;
     approvalStatus: string;
+    physicalStatus?: string | null;
+    needInfoNote?: string | null;
+    inventoryFate?: string | null;
     reason?: string | null;
     productDesc?: string | null;
     quantity?: number | string | null;
     createdAt?: string;
   }[];
+  /** Latest linked delivery status. */
+  deliveryStatus?: string | null;
+  productionReadinessSummary?: SalesOrderProductionReadinessSummary | null;
+  /** Piece 1: accepted SO awaiting Prepare production (confirm). */
+  productionSetupRequired?: boolean;
+  /** Piece 2: setup released; floor still needs worker assignment. */
+  workerAssignmentRequired?: boolean;
+  productionSetupStatus?: string | null;
+  /** Piece 7 — commercial price gate + line statuses (admin). */
+  commercialSummary?: CommercialSummary | null;
+  commercialGrossDifference?: CommercialGrossDifference | null;
+};
+
+export type CommercialSummaryLine = {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  manufacturingComplexity?: string | null;
+  commercialPriceStatus: string;
+  commercialPriceSource?: string | null;
+  commercialPriceNote?: string | null;
+};
+
+export type CommercialSummary = {
+  salesOrderId: string;
+  number: string;
+  orderTotal: number;
+  commercialComplete: boolean;
+  commercialBlock?: { ok: false; code: string; message: string } | null;
+  lines: CommercialSummaryLine[];
+};
+
+export type CommercialGrossDifference = {
+  available: boolean;
+  reason?: string | null;
+  saleTotal: number;
+  manufacturingCost: number | null;
+  grossDifference: number | null;
 };
 
 export type UpdateSalesOrderInput = {
+  number?: string;
   notes?: string;
   projectName?: string;
   externalOrderNumber?: string;
   requiredDeliveryDate?: string | null;
   deliveryAddress?: string;
+  endCustomerName?: string;
+  endCustomerPhone?: string;
+  endCustomerFax?: string;
   manufacturingCost?: number;
   costBreakdown?: Record<string, number>;
 };
 
 export async function getSalesOrder(id: string): Promise<SalesOrderDetail> {
   return apiGet<SalesOrderDetail>(`/sales-orders/${encodeURIComponent(id)}`);
+}
+
+export type ManufacturingCostingPayload = {
+  status: string;
+  incomplete: boolean;
+  finalizedAt: string | null;
+  estimated: {
+    total: number | null;
+    byCategory: Record<string, { qty: number; cost: number }>;
+  };
+  actual: {
+    total: number | null;
+    toDate: number | null;
+    scrapCost: number;
+    returnCredit: number;
+    reworkCost: number;
+    byCategory: Record<string, { qty: number; cost: number; scrapCost: number }>;
+  };
+  variance: { cost: number | null; pct: number | null };
+  bySku: Array<{
+    sku: string;
+    displayName: string | null;
+    category: string | null;
+    plannedQty: number;
+    issuedQty: number;
+    returnedQty: number;
+    scrapQty: number;
+    costedQty: number;
+    unitCost: number | null;
+    estimatedCost: number | null;
+    actualCost: number | null;
+    varianceQty: number;
+    varianceCost: number | null;
+    costAvailable: boolean;
+    origin: 'ORIGINAL' | 'REWORK' | 'MIXED';
+  }>;
+  incompleteSkus?: Array<{ sku: string; displayName: string | null; costedQty: number }>;
+  lines?: Array<{
+    salesOrderLineId: string;
+    manufacturingName: string | null;
+    quantity: number;
+    estimatedTotal: number | null;
+    actualTotal: number | null;
+    varianceCost: number | null;
+    status: string;
+  }>;
+  taskTrace?: Array<{
+    taskId: string;
+    stageCode: string | null;
+    workerName: string | null;
+    sku: string;
+    costedQty: number;
+    actualCost: number | null;
+    isRework: boolean;
+    finalizedAt: string | null;
+  }>;
+};
+
+export async function getSalesOrderManufacturingCost(
+  id: string,
+): Promise<ManufacturingCostingPayload> {
+  return apiGet<ManufacturingCostingPayload>(
+    `/sales-orders/${encodeURIComponent(id)}/manufacturing-cost`,
+  );
 }
 
 export async function updateSalesOrder(
@@ -246,6 +390,17 @@ export async function updateSalesOrder(
 export async function confirmSalesOrder(id: string): Promise<SalesOrderDetail> {
   return apiPost<SalesOrderDetail>(
     `/sales-orders/${encodeURIComponent(id)}/confirm`,
+  );
+}
+
+/** Staff confirms final commercial unit prices on REQUIRED / open lines. */
+export async function confirmCommercialPrices(
+  id: string,
+  lines: Array<{ lineId: string; unitPrice: number; note?: string }>,
+): Promise<SalesOrderDetail> {
+  return apiPost<SalesOrderDetail>(
+    `/sales-orders/${encodeURIComponent(id)}/confirm-commercial-prices`,
+    { lines },
   );
 }
 
@@ -293,4 +448,372 @@ export function canHoldSalesOrder(status: string): boolean {
 
 export function canCancelSalesOrder(status: string): boolean {
   return (CANCELLABLE_STATUSES as readonly string[]).includes(status);
+}
+
+/* ─── Piece 2: order production setup ───────────────────────────────────── */
+
+export type ManufacturingComplexity = 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+
+export type SalesOrderProductionSetupStatus =
+  | 'SETUP_REQUIRED'
+  | 'SETUP_IN_PROGRESS'
+  | 'READY_FOR_RELEASE'
+  | 'RELEASED';
+
+export type SalesOrderLineSetupStatus =
+  | 'NOT_STARTED'
+  | 'NEEDS_REVIEW'
+  | 'READY'
+  | 'BLOCKED';
+
+export type SetupMaterialStatus =
+  | 'READY'
+  | 'SHORTAGE'
+  | 'NEEDS_SELECTION'
+  | 'NEEDS_REVIEW';
+
+export type SetupDims = {
+  width?: number | null;
+  height?: number | null;
+  depth?: number | null;
+  seatHeight?: number | null;
+};
+
+export type SetupValidationIssue = {
+  code: string;
+  message: string;
+  lineId?: string;
+  section?: 'spec' | 'materials' | 'workflow' | 'packaging' | 'review' | string;
+};
+
+export type SetupMaterialRequirement = {
+  id: string;
+  inventoryItemId: string | null;
+  sku: string | null;
+  displayName: string | null;
+  category: string | null;
+  unit: string;
+  expectedQty: number;
+  totalExpectedQty?: number;
+  source?: 'CATALOG' | 'FACTORY_MODIFIED' | 'CUSTOM' | string;
+  needsReview: boolean;
+  notes?: string | null;
+  requestedFabricLabel?: string | null;
+  unitCost?: number | null;
+  estimatedCost?: number | null;
+  costAvailable?: boolean;
+  inventoryItem?: {
+    id: string;
+    sku: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    category?: string | null;
+    unit?: string | null;
+    imageUrl?: string | null;
+  } | null;
+  availability?: {
+    available: number;
+    reserved: number;
+    free: number;
+    short: number;
+    status: string;
+  } | null;
+};
+
+export type SetupEstimatedCostSummary = {
+  fabricQty: number;
+  fabricCost: number;
+  woodQty: number;
+  woodCost: number;
+  foamQty: number;
+  foamCost: number;
+  accessoriesQty: number;
+  accessoriesCost: number;
+  otherQty: number;
+  otherCost: number;
+  totalEstimated: number | null;
+  costAvailable: boolean;
+  someCostsUnavailable: boolean;
+  incomplete?: boolean;
+  estimateIncomplete?: boolean;
+  label?: string;
+};
+
+export type SetupActualCostSummary = {
+  totalActual: number | null;
+  costAvailable: boolean;
+  someCostsUnavailable: boolean;
+  incomplete: boolean;
+  label: string;
+  bySku?: Array<{
+    sku: string;
+    actualQty: number;
+    unitCost: number | null;
+    cost: number | null;
+  }>;
+};
+
+export type SetupLineFabric = {
+  requestedLabel: string | null;
+  selected: SetupMaterialRequirement | null;
+  expectedQty: number;
+  availableQty?: number | null;
+  shortageQty?: number | null;
+  unitCostAvailable?: boolean;
+  unitCost?: number | null;
+  notes?: string | null;
+  imageUrl?: string | null;
+};
+
+export type SetupAttachment = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  url: string;
+};
+
+export type SetupOrderMeasurement = {
+  key: string;
+  label: string;
+  value: number | string | null;
+  unit?: string | null;
+  catalogValue?: number | string | null;
+};
+
+export type SetupCatalogChange = {
+  field: string;
+  label?: string;
+  from: unknown;
+  to: unknown;
+  delta?: number | null;
+};
+
+export type SetupPackagingExpectation = {
+  pieceLabels?: Array<{
+    label?: string;
+    nameEn?: string;
+    nameAr?: string;
+    nameHe?: string;
+  }>;
+  expectedPieceCount?: number | null;
+} | null;
+
+export type SetupLineSectionProgress = {
+  spec: boolean;
+  materials: boolean;
+  workflow: boolean;
+  packaging: boolean;
+  review: boolean;
+};
+
+export type OrderProductionSetupLine = {
+  id: string;
+  salesOrderLineId: string;
+  status: SalesOrderLineSetupStatus | string;
+  manufacturingName: string | null;
+  manufacturingComplexity: ManufacturingComplexity | string | null;
+  quantity: number;
+  catalogDimensions: SetupDims | null;
+  orderDimensions: SetupDims | null;
+  measurements?: SetupOrderMeasurement[];
+  changes: SetupCatalogChange[];
+  changesFromCatalog?: SetupCatalogChange[];
+  requestedFabricLabel: string | null;
+  fabric?: SetupLineFabric;
+  factoryNotes: string | null;
+  packagingExpectation: SetupPackagingExpectation;
+  referenceDocumentIds: string[] | unknown;
+  attachments?: SetupAttachment[];
+  materialsReviewedAt: string | null;
+  workflowId: string | null;
+  workflowConfirmedAt: string | null;
+  workflow: {
+    id: string;
+    code: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    stagePath: Array<{
+      stageCode: string;
+      nameEn: string;
+      nameAr?: string | null;
+    }>;
+  } | null;
+  product: {
+    id: string;
+    sku: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    imageUrl?: string | null;
+  } | null;
+  description: string | null;
+  materials: SetupMaterialRequirement[];
+  estimatedCostSummary?: SetupEstimatedCostSummary | null;
+  actualCostSummary?: SetupActualCostSummary | null;
+  basedOnProduct?: { id: string; nameEn: string; sku: string } | null;
+  materialStatus: SetupMaterialStatus | string;
+  sectionProgress: SetupLineSectionProgress;
+  issues: SetupValidationIssue[];
+};
+
+export type OrderProductionSetup = {
+  id: string;
+  salesOrderId: string;
+  status: SalesOrderProductionSetupStatus | string;
+  releasedAt: string | null;
+  releasedById: string | null;
+  salesOrder: {
+    id: string;
+    number: string;
+    status: string;
+    projectName?: string | null;
+    customerId?: string | null;
+    customer?: {
+      id: string;
+      nameEn?: string | null;
+      nameAr?: string | null;
+      code?: string | null;
+    } | null;
+  };
+  progress: {
+    totalLines: number;
+    readyLines: number;
+    needsReviewLines: number;
+    percent: number;
+    headerStatus: string;
+    steps: Array<{ key: string; done: boolean }>;
+  };
+  validation: { ok: boolean; issues: SetupValidationIssue[] };
+  materialReadiness: {
+    status: SetupMaterialStatus | string;
+    anyShortage: boolean;
+    anyNeedsSelection: boolean;
+    anyNeedsReview: boolean;
+  };
+  lines: OrderProductionSetupLine[];
+};
+
+export type OrderProductionSetupReleasePreview = {
+  salesOrderId: string;
+  headerStatus: string;
+  canRelease: boolean;
+  validation: { ok: boolean; issues: SetupValidationIssue[] };
+  materialReadiness: OrderProductionSetup['materialReadiness'];
+  lines: Array<{
+    salesOrderLineId: string;
+    manufacturingName: string | null;
+    quantity: number;
+    manufacturingComplexity: ManufacturingComplexity | string | null;
+    workflow: OrderProductionSetupLine['workflow'];
+    packagingExpectation: SetupPackagingExpectation;
+    materialStatus: SetupMaterialStatus | string;
+    materials: Array<{
+      sku: string | null;
+      displayName: string | null;
+      expectedQty: number;
+      totalExpectedQty?: number;
+      availability: SetupMaterialRequirement['availability'];
+    }>;
+  }>;
+  note?: string;
+};
+
+export type PatchOrderSetupLineInput = {
+  manufacturingName?: string;
+  factoryNotes?: string | null;
+  orderDimensions?: SetupDims;
+  measurements?: SetupOrderMeasurement[];
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+  requestedFabricLabel?: string | null;
+  packagingExpectation?: {
+    pieceLabels?: Array<{
+      label?: string;
+      nameEn?: string;
+      nameAr?: string;
+      nameHe?: string;
+    }>;
+    expectedPieceCount?: number | null;
+  };
+  workflowId?: string | null;
+  confirmWorkflow?: boolean;
+  materialsReviewed?: boolean;
+  referenceDocumentIds?: string[];
+};
+
+export type PutOrderSetupMaterialsInput = {
+  materials: Array<{
+    inventoryItemId?: string | null;
+    sku?: string | null;
+    displayName?: string | null;
+    category?: string | null;
+    unit?: string;
+    expectedQty: number;
+    source?: 'CATALOG' | 'FACTORY_MODIFIED' | 'CUSTOM';
+    needsReview?: boolean;
+    notes?: string | null;
+    requestedFabricLabel?: string | null;
+  }>;
+};
+
+function setupBase(salesOrderId: string) {
+  return `/sales-orders/${encodeURIComponent(salesOrderId)}/production-setup`;
+}
+
+export async function getOrderProductionSetup(
+  salesOrderId: string,
+): Promise<OrderProductionSetup> {
+  return apiGet<OrderProductionSetup>(setupBase(salesOrderId));
+}
+
+export async function patchOrderSetupLine(
+  salesOrderId: string,
+  lineId: string,
+  body: PatchOrderSetupLineInput,
+): Promise<OrderProductionSetup> {
+  return apiPatch<OrderProductionSetup>(
+    `${setupBase(salesOrderId)}/lines/${encodeURIComponent(lineId)}`,
+    body,
+  );
+}
+
+export async function putOrderSetupLineMaterials(
+  salesOrderId: string,
+  lineId: string,
+  body: PutOrderSetupMaterialsInput,
+): Promise<OrderProductionSetup> {
+  return apiPut<OrderProductionSetup>(
+    `${setupBase(salesOrderId)}/lines/${encodeURIComponent(lineId)}/materials`,
+    body,
+  );
+}
+
+export async function seedOrderSetupLineFromCatalog(
+  salesOrderId: string,
+  lineId: string,
+): Promise<OrderProductionSetup> {
+  return apiPost<OrderProductionSetup>(
+    `${setupBase(salesOrderId)}/lines/${encodeURIComponent(lineId)}/seed-from-catalog`,
+  );
+}
+
+export async function markOrderProductionSetupReady(
+  salesOrderId: string,
+): Promise<OrderProductionSetup> {
+  return apiPost<OrderProductionSetup>(`${setupBase(salesOrderId)}/mark-ready`);
+}
+
+export async function releaseOrderProductionSetup(
+  salesOrderId: string,
+): Promise<OrderProductionSetup> {
+  return apiPost<OrderProductionSetup>(`${setupBase(salesOrderId)}/release`);
+}
+
+export async function getOrderProductionSetupReleasePreview(
+  salesOrderId: string,
+): Promise<OrderProductionSetupReleasePreview> {
+  return apiGet<OrderProductionSetupReleasePreview>(
+    `${setupBase(salesOrderId)}/release-preview`,
+  );
 }

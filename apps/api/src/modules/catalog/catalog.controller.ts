@@ -40,6 +40,7 @@ import {
   type MaterialCostMap,
 } from '../../common/helpers/order-costing.util';
 import { categoriesForGroup } from '../../common/helpers/inventory-category.util';
+import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 import type { AuthUser } from '@maher/types';
 
 class MaterialListQueryDto extends ListActiveQueryDto {
@@ -539,6 +540,16 @@ export class CatalogController {
     });
     const bySku = new Map(materials.map((m) => [m.sku, m]));
     const bom = (product.bomDefaults ?? null) as BomDefaults | null;
+    const bomSkus = (bom?.materials ?? []).map((line) => line.sku).filter(Boolean) as string[];
+    const inventoryPhotos = bomSkus.length
+      ? await this.prisma.inventoryItem.findMany({
+          where: { archivedAt: null, sku: { in: bomSkus } },
+          select: { sku: true, imageUrl: true },
+        })
+      : [];
+    const imageBySku = new Map(
+      inventoryPhotos.map((i) => [i.sku, canonicalInventoryImageUrl(i)]),
+    );
     const bomLines = (bom?.materials ?? []).map((line) => {
       const mat = line.sku ? bySku.get(line.sku) : undefined;
       const qty = Number(line.qty) || 0;
@@ -558,6 +569,7 @@ export class CatalogController {
         nameEn: mat?.nameEn ?? line.sku ?? '',
         nameAr: mat?.nameAr ?? line.sku ?? '',
         materialId: mat?.id ?? null,
+        imageUrl: line.sku ? (imageBySku.get(line.sku) ?? null) : null,
       };
     });
     const { unitCost, breakdown } = productionUnitCost(product, materialCosts);

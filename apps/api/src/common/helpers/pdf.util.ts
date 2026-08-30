@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import PDFDocument from 'pdfkit';
 import fontkit from 'fontkit';
 import QRCode from 'qrcode';
+import { printableScanCode } from '@maher/types';
+
+export { printableScanCode } from '@maher/types';
 
 export type PdfLocale = 'en' | 'ar' | 'he';
 export type PdfTheme = 'white' | 'brown';
@@ -20,6 +23,21 @@ export interface SimplePdfDoc {
   theme?: PdfTheme;
   /** Scannable QR image drawn under footerLines (start-aligned). */
   qr?: { payload: string };
+  /** Optional product photo for statement-style docs (start-aligned). */
+  image?: Buffer;
+}
+
+/** Warehouse inventory label — always centered; photo + QR sized to the page. */
+export interface InventoryLabelPdfDoc {
+  title: string;
+  subtitle?: string;
+  sku: string;
+  scanCode: string;
+  details: Array<{ label: string; value: string }>;
+  hint?: string;
+  locale?: PdfLocale;
+  theme?: PdfTheme;
+  image?: Buffer;
 }
 
 export type PdfRenderOptions = {
@@ -72,7 +90,7 @@ const LOCKUP_Y = 18;
 const TILE = 78;
 const TILE_GAP = 36;
 const QR_SIZE = 110;
-const MOCK_SCAN_CODE = /^(exp:|https?:|file:)/i;
+const STATEMENT_PHOTO_SIZE = 148;
 const ISOLATE_PUNCT = new Set([':', '/']);
 /** Helvetica em-ascent — shared baseline so mixed EN/AR/HE sit on one line. */
 const LATIN_ASCENT = 0.718;
@@ -221,13 +239,6 @@ export function splitScriptRuns(text: string): ScriptRun[] {
 /** Visual LTR paint order. Does not reverse characters inside a run. */
 export function visualRuns(runs: ScriptRun[], rtl: boolean): ScriptRun[] {
   return rtl ? [...runs].reverse() : runs;
-}
-
-/** Drop Expo/dev URLs that were stored as barcode/QR by a mock scanner. */
-export function printableScanCode(value?: string | null, fallback = '—'): string {
-  const v = String(value ?? '').trim();
-  if (!v || MOCK_SCAN_CODE.test(v)) return fallback;
-  return v;
 }
 
 function openOutlineFont(fileName: string, label: string): FkFont | null {
@@ -810,16 +821,59 @@ function drawTableHeader(
   doc.y += 8;
 }
 
-async function qrPngBuffer(payload?: string): Promise<Buffer | null> {
+async function qrPngBuffer(
+  payload?: string,
+  pixelSize = 256,
+): Promise<Buffer | null> {
   const value = printableScanCode(payload, '');
   if (!value) return null;
   try {
     return await QRCode.toBuffer(value, {
       type: 'png',
       margin: 1,
-      width: 256,
+      width: Math.max(128, Math.round(pixelSize)),
       errorCorrectionLevel: 'M',
     });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort fetch of a remote image for PDF embedding.
+ * Returns null on bad URL, non-image, timeout, or oversized body.
+ */
+export async function fetchPdfImageBuffer(
+  url: string | null | undefined,
+): Promise<Buffer | null> {
+  const trimmed = url?.trim();
+  if (!trimmed) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  try {
+    const res = await fetch(parsed.toString(), {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12_000),
+      headers: { Accept: 'image/*,*/*;q=0.8' },
+    });
+    if (!res.ok) return null;
+    const type = (res.headers.get('content-type') ?? '').toLowerCase();
+    if (
+      type &&
+      !type.startsWith('image/') &&
+      !type.includes('octet-stream') &&
+      !type.includes('binary')
+    ) {
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength < 32 || buf.byteLength > 8_000_000) return null;
+    return buf;
   } catch {
     return null;
   }
@@ -908,6 +962,23 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
       doc.y += 2;
     }
     doc.y += 10;
+
+    if (docSpec.image?.length) {
+      if (doc.y + STATEMENT_PHOTO_SIZE > contentBottom(doc)) {
+        doc.addPage();
+      }
+      const imgX = rtl ? PAGE_MARGIN + usable - STATEMENT_PHOTO_SIZE : PAGE_MARGIN;
+      try {
+        doc.image(docSpec.image, imgX, doc.y, {
+          fit: [STATEMENT_PHOTO_SIZE, STATEMENT_PHOTO_SIZE],
+          align: 'center',
+          valign: 'center',
+        });
+      } catch {
+        /* ignore */
+      }
+      doc.y += STATEMENT_PHOTO_SIZE + 12;
+    }
 
     const colCount = Math.max(docSpec.columns.length, 1);
     const widths = columnWidths(colCount, usable);
@@ -1020,6 +1091,601 @@ export async function buildSimplePdf(docSpec: SimplePdfDoc): Promise<Buffer> {
         /* ignore decode errors */
       }
       doc.y += QR_SIZE + 8;
+    }
+
+    doc.end();
+  });
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Inventory QR label PDF — content always centered (EN/AR/HE).
+ * Photo on top + large QR below, sized to fill the page with balanced proportions.
+ */
+export async function buildInventoryLabelPdf(
+  docSpec: InventoryLabelPdfDoc,
+): Promise<Buffer> {
+  const locale = resolveLocale(docSpec.locale);
+  const theme = resolveTheme(docSpec.theme);
+  const rtl = locale === 'ar' || locale === 'he';
+  const palette = THEME[theme];
+  const contact = companyContact(locale);
+  const scanCode = printableScanCode(docSpec.scanCode, docSpec.sku);
+  const hasPhoto = Boolean(docSpec.image?.length);
+  const details = docSpec.details.filter((d) => String(d.value ?? '').trim());
+
+  // A4 content band under letterhead / above footer.
+  const pageH = 841.89;
+  const top = HEADER_BOTTOM + 8;
+  const bottom = pageH - FOOTER_TOP_OFFSET - 10;
+  const available = bottom - top;
+  const pageW = 595.28;
+  const usable = pageW - PAGE_MARGIN * 2;
+
+  const textBudget =
+    34 +
+    (docSpec.subtitle ? 16 : 0) +
+    22 +
+    Math.max(0, details.length - 2) * 14 +
+    (docSpec.hint ? 18 : 0) +
+    36;
+  const mediaBudget = Math.max(280, available - textBudget);
+
+  // Wide + taller photo band so workers see the material clearly.
+  let photoW = 0;
+  let photoH = 0;
+  let qrSize = 0;
+  if (hasPhoto && scanCode) {
+    photoW = usable;
+    photoH = clamp(Math.round(mediaBudget * 0.56), 300, 380);
+    qrSize = clamp(Math.round(mediaBudget * 0.3), 170, 210);
+  } else if (hasPhoto) {
+    photoW = usable;
+    photoH = clamp(Math.round(mediaBudget * 0.68), 320, 420);
+  } else if (scanCode) {
+    qrSize = clamp(Math.round(mediaBudget * 0.55), 200, 280);
+  }
+
+  const qrPng = scanCode
+    ? await qrPngBuffer(scanCode, Math.round(Math.max(qrSize, 180) * 2.5))
+    : null;
+  if (!qrPng) qrSize = 0;
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 0,
+      autoFirstPage: false,
+      bufferPages: true,
+    });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const fonts = loadFonts();
+    doc.on('pageAdded', () => {
+      drawPageChrome(doc, { theme, contact, fonts });
+    });
+    doc.addPage();
+    doc.y = top;
+
+    const centerX = (size: number) => PAGE_MARGIN + (usable - size) / 2;
+
+    const drawCentered = (
+      text: string,
+      opts: {
+        size: number;
+        bold?: boolean;
+        color: string;
+        height?: number;
+        gapAfter?: number;
+      },
+    ) => {
+      drawMixedText(doc, text, {
+        x: PAGE_MARGIN,
+        y: doc.y,
+        width: usable,
+        align: 'center',
+        height: opts.height ?? opts.size + 6,
+        size: opts.size,
+        bold: opts.bold,
+        color: opts.color,
+        fonts,
+        rtl,
+        ellipsis: true,
+      });
+      doc.y += opts.gapAfter ?? 4;
+    };
+
+    if (hasPhoto && docSpec.image && photoW > 0 && photoH > 0) {
+      const boxX = centerX(photoW);
+      const boxY = doc.y;
+      const radius = 12;
+
+      // Frame fill — image is fitted + vertically centered so the material stays visible.
+      doc.save();
+      doc
+        .roundedRect(boxX, boxY, photoW, photoH, radius)
+        .fill(theme === 'brown' ? '#1A1410' : '#F3EEE6');
+      doc.restore();
+
+      doc.save();
+      doc.roundedRect(boxX, boxY, photoW, photoH, radius).clip();
+      try {
+        // `fit` keeps the whole photo visible; center it in the taller frame.
+        doc.image(docSpec.image, boxX, boxY, {
+          fit: [photoW, photoH],
+          align: 'center',
+          valign: 'center',
+        });
+      } catch {
+        /* ignore decode errors */
+      }
+      doc.restore();
+
+      doc
+        .lineWidth(1.15)
+        .strokeColor(palette.rule)
+        .roundedRect(boxX, boxY, photoW, photoH, radius)
+        .stroke();
+      doc.y = boxY + photoH + 10;
+    }
+
+    drawCentered(docSpec.title, {
+      size: 18,
+      bold: true,
+      color: palette.accent,
+      height: 22,
+      gapAfter: 2,
+    });
+
+    if (docSpec.subtitle?.trim()) {
+      drawCentered(docSpec.subtitle.trim(), {
+        size: 10,
+        bold: true,
+        color: palette.text,
+        height: 14,
+        gapAfter: 2,
+      });
+    }
+
+    const metaBits = details
+      .slice(0, 2)
+      .map((d) => `${d.label} · ${String(d.value).trim()}`);
+    if (metaBits.length) {
+      drawCentered(metaBits.join('    '), {
+        size: 9,
+        color: palette.muted,
+        height: 12,
+        gapAfter: 10,
+      });
+    } else {
+      doc.y += 8;
+    }
+
+    if (qrPng && qrSize > 0) {
+      const pad = 16;
+      const card = qrSize + pad * 2;
+      const cardX = centerX(card);
+      const cardY = doc.y;
+
+      doc.save();
+      doc
+        .lineWidth(1.15)
+        .roundedRect(cardX, cardY, card, card, 14)
+        .fillAndStroke('#FFFFFF', palette.rule);
+      try {
+        doc.image(qrPng, cardX + pad, cardY + pad, { width: qrSize });
+      } catch {
+        /* ignore */
+      }
+      doc.restore();
+      doc.y = cardY + card + 8;
+    }
+
+    for (const row of details.slice(2)) {
+      drawCentered(`${row.label}  ·  ${String(row.value).trim()}`, {
+        size: 9,
+        color: palette.text,
+        height: 12,
+        gapAfter: 2,
+      });
+    }
+
+    if (docSpec.hint?.trim()) {
+      doc.y += 4;
+      drawCentered(docSpec.hint.trim(), {
+        size: 9,
+        color: palette.muted,
+        height: 12,
+        gapAfter: 0,
+      });
+    }
+
+    doc.end();
+  });
+}
+
+const REPORT_PHOTO_SIZE = 168;
+const REPORT_QR_SIZE = 140;
+
+export type InventoryItemReportPdfInput = {
+  locale?: PdfLocale;
+  theme?: PdfTheme;
+  reportTitle: string;
+  companyLine: string;
+  generatedLabel: string;
+  generatedAt: string;
+  image?: Buffer | null;
+  itemName: string;
+  itemSku: string;
+  identityRows: Array<[string, string]>;
+  description?: string | null;
+  sections: Array<{
+    title: string;
+    lines?: string[];
+    pairs?: Array<[string, string]>;
+    columns?: string[];
+    rows?: PdfTableRow[];
+  }>;
+  scanTitle: string;
+  scanHint: string;
+  scanCode: string;
+  scanName: string;
+  scanSku: string;
+};
+
+/**
+ * Management Inventory Item Report — photo at top, detailed sections, QR at end.
+ * Separate from the warehouse `buildInventoryLabelPdf` print sheet.
+ */
+export async function buildInventoryItemReportPdf(
+  docSpec: InventoryItemReportPdfInput,
+): Promise<Buffer> {
+  const locale = resolveLocale(docSpec.locale);
+  const theme = resolveTheme(docSpec.theme);
+  const rtl = locale === 'ar' || locale === 'he';
+  const palette = THEME[theme];
+  const contact = companyContact(locale);
+  const scanCode = printableScanCode(docSpec.scanCode, docSpec.scanSku);
+  const qrPng = scanCode
+    ? await qrPngBuffer(scanCode, Math.round(REPORT_QR_SIZE * 2.5))
+    : null;
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 0,
+      autoFirstPage: false,
+      bufferPages: true,
+    });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const fonts = loadFonts();
+    const align: 'left' | 'right' = rtl ? 'right' : 'left';
+    const usable = () => doc.page.width - PAGE_MARGIN * 2;
+
+    doc.on('pageAdded', () => {
+      drawPageChrome(doc, { theme, contact, fonts });
+    });
+    doc.addPage();
+
+    const ensureSpace = (need: number) => {
+      if (doc.y + need > contentBottom(doc)) doc.addPage();
+    };
+
+    const drawHeading = (text: string, size = 11) => {
+      ensureSpace(28);
+      doc.y += 6;
+      drawMixedText(doc, text, {
+        x: PAGE_MARGIN,
+        y: doc.y,
+        width: usable(),
+        align,
+        height: size + 4,
+        size,
+        bold: true,
+        color: palette.accent,
+        fonts,
+        rtl,
+        lineBreak: false,
+      });
+      doc.y += 4;
+      doc
+        .strokeColor(palette.rule)
+        .lineWidth(0.6)
+        .moveTo(PAGE_MARGIN, doc.y)
+        .lineTo(PAGE_MARGIN + usable(), doc.y)
+        .stroke();
+      doc.y += 8;
+    };
+
+    const drawLine = (text: string, opts?: { muted?: boolean; bold?: boolean; size?: number }) => {
+      const size = opts?.size ?? 9;
+      ensureSpace(size + 8);
+      drawMixedText(doc, text, {
+        x: PAGE_MARGIN,
+        y: doc.y,
+        width: usable(),
+        align,
+        height: size + 4,
+        size,
+        bold: opts?.bold,
+        color: opts?.muted ? palette.muted : palette.text,
+        fonts,
+        rtl,
+        ellipsis: true,
+      });
+      doc.y += 2;
+    };
+
+    const drawPairs = (pairs: Array<[string, string]>) => {
+      for (const [label, value] of pairs) {
+        ensureSpace(16);
+        const labelW = Math.min(150, usable() * 0.38);
+        const valueW = usable() - labelW - 8;
+        const labelX = rtl ? PAGE_MARGIN + valueW + 8 : PAGE_MARGIN;
+        const valueX = rtl ? PAGE_MARGIN : PAGE_MARGIN + labelW + 8;
+        const y = doc.y;
+        drawMixedText(doc, label, {
+          x: labelX,
+          y,
+          width: labelW,
+          align,
+          height: 12,
+          size: 9,
+          bold: true,
+          color: palette.muted,
+          fonts,
+          rtl,
+          ellipsis: true,
+          lineBreak: false,
+        });
+        drawMixedText(doc, value, {
+          x: valueX,
+          y,
+          width: valueW,
+          align,
+          height: 12,
+          size: 9,
+          color: palette.text,
+          fonts,
+          rtl,
+          ellipsis: true,
+        });
+        doc.y = y + 14;
+      }
+    };
+
+    const drawTable = (columns: string[], rows: PdfTableRow[]) => {
+      if (!columns.length || !rows.length) return;
+      const widths = columnWidths(columns.length, usable());
+      const kinds = columnKinds(columns.length);
+      const paintHeader = () =>
+        drawTableHeader(doc, columns, widths, kinds, PAGE_MARGIN, palette, fonts, rtl);
+      paintHeader();
+      for (const row of rows) {
+        let rowHeight = 12;
+        row.forEach((cell, i) => {
+          const kind = kinds[i] ?? 'text';
+          const colW = columnBox(i, widths, rtl, PAGE_MARGIN).width - 4;
+          const h =
+            kind === 'text'
+              ? Math.min(24, Math.max(12, measureMixedHeight(doc, String(cell ?? ''), colW, fonts, 8)))
+              : 12;
+          rowHeight = Math.max(rowHeight, h);
+        });
+        if (doc.y + rowHeight > contentBottom(doc)) {
+          doc.addPage();
+          paintHeader();
+        }
+        const y = doc.y;
+        row.forEach((cell, i) => {
+          const kind = kinds[i] ?? 'text';
+          const box = columnBox(i, widths, rtl, PAGE_MARGIN);
+          const cellAlign: 'left' | 'right' =
+            kind === 'money' ? 'right' : rtl ? 'right' : 'left';
+          drawMixedText(doc, String(cell ?? ''), {
+            x: box.x + 2,
+            y,
+            width: box.width - 4,
+            align: cellAlign,
+            height: rowHeight,
+            size: 8,
+            color: palette.text,
+            fonts,
+            rtl,
+            ellipsis: kind === 'text',
+            lineBreak: kind === 'text',
+          });
+        });
+        doc.y = y + rowHeight + 4;
+      }
+    };
+
+    drawMixedText(doc, docSpec.companyLine, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align,
+      height: 14,
+      size: 10,
+      bold: true,
+      color: palette.muted,
+      fonts,
+      rtl,
+      lineBreak: false,
+    });
+    doc.y += 2;
+    drawMixedText(doc, docSpec.reportTitle, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align,
+      height: 20,
+      size: 15,
+      bold: true,
+      color: palette.accent,
+      fonts,
+      rtl,
+      lineBreak: false,
+    });
+    doc.y += 4;
+    drawLine(`${docSpec.generatedLabel}: ${docSpec.generatedAt}`, { muted: true, size: 8 });
+    doc.y += 8;
+
+    if (docSpec.image?.length) {
+      ensureSpace(REPORT_PHOTO_SIZE + 16);
+      const imgX = PAGE_MARGIN + (usable() - REPORT_PHOTO_SIZE) / 2;
+      try {
+        doc
+          .save()
+          .rect(imgX - 2, doc.y - 2, REPORT_PHOTO_SIZE + 4, REPORT_PHOTO_SIZE + 4)
+          .strokeColor(palette.rule)
+          .lineWidth(0.8)
+          .stroke();
+        doc.image(docSpec.image, imgX, doc.y, {
+          fit: [REPORT_PHOTO_SIZE, REPORT_PHOTO_SIZE],
+          align: 'center',
+          valign: 'center',
+        });
+        doc.restore();
+      } catch {
+        /* soft-fail missing/corrupt image */
+      }
+      doc.y += REPORT_PHOTO_SIZE + 12;
+    }
+
+    drawMixedText(doc, docSpec.itemName, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align: 'center',
+      height: 18,
+      size: 14,
+      bold: true,
+      color: palette.accent,
+      fonts,
+      rtl,
+      ellipsis: true,
+    });
+    doc.y += 2;
+    drawMixedText(doc, docSpec.itemSku, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align: 'center',
+      height: 14,
+      size: 11,
+      color: palette.text,
+      fonts,
+      rtl,
+      lineBreak: false,
+    });
+    doc.y += 10;
+
+    if (docSpec.identityRows.length) {
+      drawPairs(docSpec.identityRows);
+      doc.y += 4;
+    }
+    if (docSpec.description?.trim()) {
+      drawLine(docSpec.description.trim(), { size: 9 });
+      doc.y += 4;
+    }
+
+    for (const section of docSpec.sections) {
+      if (!section.title) continue;
+      const hasContent =
+        (section.lines?.length ?? 0) > 0 ||
+        (section.pairs?.length ?? 0) > 0 ||
+        (section.rows?.length ?? 0) > 0;
+      if (!hasContent) continue;
+      drawHeading(section.title);
+      for (const line of section.lines ?? []) drawLine(line);
+      if (section.pairs?.length) drawPairs(section.pairs);
+      if (section.columns?.length && section.rows?.length) {
+        drawTable(section.columns, section.rows);
+      }
+      doc.y += 4;
+    }
+
+    ensureSpace(REPORT_QR_SIZE + 80);
+    drawHeading(docSpec.scanTitle);
+    if (qrPng) {
+      const qrX = PAGE_MARGIN + (usable() - REPORT_QR_SIZE) / 2;
+      try {
+        doc
+          .save()
+          .roundedRect(qrX - 8, doc.y - 8, REPORT_QR_SIZE + 16, REPORT_QR_SIZE + 16, 6)
+          .fillAndStroke('#FFFFFF', palette.rule);
+        doc.image(qrPng, qrX, doc.y, { width: REPORT_QR_SIZE });
+        doc.restore();
+      } catch {
+        /* ignore */
+      }
+      doc.y += REPORT_QR_SIZE + 14;
+    }
+    drawMixedText(doc, docSpec.scanName, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align: 'center',
+      height: 14,
+      size: 11,
+      bold: true,
+      color: palette.text,
+      fonts,
+      rtl,
+      ellipsis: true,
+    });
+    doc.y += 2;
+    drawMixedText(doc, docSpec.scanSku, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align: 'center',
+      height: 12,
+      size: 10,
+      color: palette.muted,
+      fonts,
+      rtl,
+      lineBreak: false,
+    });
+    doc.y += 4;
+    drawMixedText(doc, docSpec.scanHint, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align: 'center',
+      height: 12,
+      size: 9,
+      color: palette.muted,
+      fonts,
+      rtl,
+      ellipsis: true,
+    });
+
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i += 1) {
+      doc.switchToPage(range.start + i);
+      const label = `Page ${i + 1} of ${range.count}`;
+      drawLatin(
+        doc,
+        label,
+        PAGE_MARGIN,
+        doc.page.height - FOOTER_TOP_OFFSET - 12,
+        8,
+        false,
+        palette.muted,
+        fonts,
+      );
     }
 
     doc.end();

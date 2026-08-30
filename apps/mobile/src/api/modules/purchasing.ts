@@ -47,6 +47,21 @@ export type NamedRef = {
   code?: string | null;
 };
 
+export type PurchaseOrderPresentation = {
+  phase: string;
+  labelKey: string;
+  tone?: string;
+  progress: number;
+  attentionReason?: string | null;
+  primaryAction?: string | null;
+};
+
+export type PurchasingCosting = {
+  expectedTotal: number | string;
+  actualReceivedValue: number | string;
+  purchaseVariance: number | string;
+};
+
 export type PurchaseOrderLine = {
   id?: string;
   description: string;
@@ -56,6 +71,36 @@ export type PurchaseOrderLine = {
   lineTotal?: number | string;
   inventoryItemId?: string | null;
   inventoryItem?: { id: string; sku: string; nameEn: string; nameAr: string; unit: string } | null;
+  receivedQty?: number | string;
+  remainingQty?: number | string;
+};
+
+export type GoodsReceiptLine = {
+  id?: string;
+  inventoryItemId?: string;
+  receivedQty?: number | string;
+  rejectedQty?: number | string;
+  unitCost?: number | string | null;
+  extendedCost?: number | string | null;
+  inventoryItem?: { id: string; sku?: string; nameEn?: string; nameAr?: string } | null;
+};
+
+export type GoodsReceipt = {
+  id: string;
+  number?: string;
+  createdAt?: string;
+  receiptDate?: string;
+  notes?: string | null;
+  lines?: GoodsReceiptLine[];
+};
+
+export type PurchaseOrderAttachment = {
+  id: string;
+  fileName: string;
+  mimeType?: string | null;
+  category: string;
+  sizeBytes?: number | null;
+  createdAt: string;
 };
 
 export type GoodsReceiptLine = {
@@ -88,6 +133,27 @@ export type PurchaseOrder = {
   supplier?: Supplier | null;
   lines?: PurchaseOrderLine[];
   goodsReceipts?: GoodsReceipt[];
+  presentation?: PurchaseOrderPresentation;
+  purchasingCosting?: PurchasingCosting;
+  orderedQty?: number | string;
+  receivedAcceptedQty?: number | string;
+  attachments?: PurchaseOrderAttachment[];
+};
+
+export type SupplierLastPurchase = {
+  receiptNumber?: string;
+  receiptDate?: string | null;
+  purchaseOrderNumber?: string;
+  sku?: string | null;
+  nameEn?: string | null;
+  unitCost?: number | null;
+  acceptedQty?: number;
+};
+
+export type SupplierDetail = Supplier & {
+  openPurchaseOrders?: Array<{ id: string; number: string; status: string }>;
+  lastPurchase?: SupplierLastPurchase | null;
+  previousPurchases?: SupplierLastPurchase[];
 };
 
 export type PurchaseRequestLine = {
@@ -188,11 +254,13 @@ export type CreatePurchaseRequestInput = {
 export type GoodsReceiptInput = {
   warehouseId: string;
   notes?: string;
+  idempotencyKey?: string;
   lines: Array<{
     inventoryItemId: string;
     orderedQty: number;
     receivedQty: number;
     rejectedQty?: number;
+    unitCost?: number;
   }>;
 };
 
@@ -200,11 +268,17 @@ export type PurchasingListFilters = PageParams & {
   q?: string;
   status?: string;
   supplierId?: string;
+  dateFrom?: string;
+  dateTo?: string;
 };
 
 export async function listSuppliers(params: PageParams & { q?: string } = {}) {
   const qs = toSearchParams({ page: params.page, pageSize: params.pageSize ?? 50, q: params.q });
   return apiGet<PaginatedResponse<Supplier>>(`/suppliers${qs}`);
+}
+
+export async function getSupplier(id: string) {
+  return apiGet<SupplierDetail>(`/suppliers/${encodeURIComponent(id)}`);
 }
 
 export async function createSupplier(body: CreateSupplierInput) {
@@ -218,6 +292,8 @@ export async function listPurchaseOrders(params: PurchasingListFilters = {}) {
     q: params.q,
     status: params.status,
     supplierId: params.supplierId,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
   });
   return apiGet<PaginatedResponse<PurchaseOrder>>(`/purchase-orders${qs}`);
 }
@@ -249,6 +325,8 @@ export async function listPurchaseRequests(params: PurchasingListFilters = {}) {
     q: params.q,
     status: params.status,
     supplierId: params.supplierId,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
   });
   return apiGet<PaginatedResponse<PurchaseRequest>>(`/purchase-requests${qs}`);
 }
@@ -280,10 +358,53 @@ export async function listSupplierInvoices(params: PurchasingListFilters = {}) {
     q: params.q,
     status: params.status,
     supplierId: params.supplierId,
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
   });
   return apiGet<PaginatedResponse<SupplierInvoice>>(`/supplier-invoices${qs}`);
 }
 
 export async function getSupplierInvoice(id: string) {
   return apiGet<SupplierInvoice>(`/supplier-invoices/${encodeURIComponent(id)}`);
+}
+
+export type MaterialDemandIncoming = {
+  qty: number | string;
+  eta?: string | null;
+  purchaseOrderNumber?: string;
+};
+
+export type MaterialDemandAffected = {
+  productionOrderId: string;
+  productionOrderNumber: string;
+  stageCode: string;
+  qty: number | string;
+  requiredBy?: string | null;
+};
+
+export type MaterialDemandRow = {
+  inventoryItemId: string;
+  sku: string;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
+  unit?: string | null;
+  imageUrl?: string | null;
+  standardCost?: number | string | null;
+  onHandQty?: number | string;
+  reservedQty?: number | string;
+  freeQty?: number | string;
+  availableQty?: number | string;
+  requiredQty: number | string;
+  incomingQty?: number | string;
+  stillNeeded?: number | string;
+  nextEta?: string | null;
+  nextRequiredBy?: string | null;
+  status?: 'COVERED' | 'AT_RISK' | 'SHORTAGE' | 'NO_ETA' | string | null;
+  incoming?: MaterialDemandIncoming[];
+  affected?: MaterialDemandAffected[];
+};
+
+export async function getMaterialDemand() {
+  return apiGet<MaterialDemandRow[]>('/material-demand');
 }

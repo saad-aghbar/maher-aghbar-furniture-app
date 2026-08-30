@@ -13,6 +13,7 @@ export async function seedSequences(prisma: PrismaClient) {
     'delivery',
     'purchase_request',
     'purchase_order',
+    'grn',
     'task',
     'contract',
     'return_request',

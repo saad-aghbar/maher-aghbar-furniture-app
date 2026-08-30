@@ -10,6 +10,7 @@ import type { ProductionTaskRow } from '../selectProduction';
 type ProductionTaskCardProps = {
   task: ProductionTaskRow;
   onPress: () => void;
+  onOpenFloor?: () => void;
 };
 
 function priorityLabel(priority: string, t: (key: string) => string): string {
@@ -21,8 +22,8 @@ function priorityLabel(priority: string, t: (key: string) => string): string {
 /**
  * Floor task row: status, progress bar, assignee, priority — tap opens task sheet.
  */
-export function ProductionTaskCard({ task, onPress }: ProductionTaskCardProps) {
-  const { t, isRTL, locale, formatDateTime } = useLocale();
+export function ProductionTaskCard({ task, onPress, onOpenFloor }: ProductionTaskCardProps) {
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
 
   const pct = Math.max(0, Math.min(100, Math.round(task.progressPercent || 0)));
@@ -47,6 +48,14 @@ export function ProductionTaskCard({ task, onPress }: ProductionTaskCardProps) {
         void haptics.selection();
         onPress();
       }}
+      onLongPress={
+        onOpenFloor
+          ? () => {
+              void haptics.selection();
+              onOpenFloor();
+            }
+          : undefined
+      }
       style={{
         borderRadius: theme.radius.xl,
         borderWidth: 1,

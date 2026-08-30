@@ -7,6 +7,8 @@ export type StoryKind =
   | 'packaging'
   | 'qc'
   | 'in_production'
+  /** SO/PO in production, first stage READY, no issues / WIP / started tasks. */
+  | 'fresh_production'
   | 'not_started'
   | 'waiting_materials'
   | 'proposed'
@@ -34,6 +36,11 @@ export type DemoStory = {
   /** Days after 2026-06-16. */
   orderDay: number;
   deliveryLeadDays: number;
+  /**
+   * When set, physical SEMI/FIN lots and task completedQty use this qty
+   * while the sales/PO quantity stays `qty` (partial progress story).
+   */
+  physicalOutputQty?: number;
 };
 
 const DEALERS = [
@@ -107,6 +114,35 @@ export function buildDemoStories(): DemoStory[] {
       deliveryLeadDays: 35,
     },
     {
+      id: 'nile-fresh-production-blank',
+      dealer: 'nile',
+      sku: 'ARM-01',
+      qty: 1,
+      kind: 'fresh_production',
+      projectName: 'Nile blank production start',
+      fabric: 'Velvet Sand',
+      wood: 'Beech',
+      orderDay: 62,
+      deliveryLeadDays: 30,
+      notes:
+        'Just entered production — empty materials, WIP, and floor progress. Use for production hub / setup checks.',
+    },
+    {
+      id: 'noor-banquette-partial-frames',
+      dealer: 'noor',
+      sku: 'CUS-BANQ',
+      qty: 6,
+      kind: 'in_production',
+      completeThrough: 'CARPENTRY',
+      physicalOutputQty: 4,
+      projectName: 'Noor banquettes 4 of 6 frames',
+      fabric: 'Velvet Navy',
+      wood: 'Beech',
+      orderDay: 44,
+      deliveryLeadDays: 32,
+      notes: 'Partial SEMI: 4 of 6 frames produced; remaining 2 still open.',
+    },
+    {
       id: 'balqis-abdali-banquettes',
       dealer: 'balqis',
       sku: 'CUS-BANQ',
@@ -137,12 +173,14 @@ export function buildDemoStories(): DemoStory[] {
       sku: 'ARM-WING',
       qty: 2,
       kind: 'at_risk_wip',
-      completeThrough: 'CARPENTRY',
-      projectName: 'Diwan wingback foam gate',
+      // Honest WIP_NOT_READY: materials prepped, frames (SEMI) not produced yet.
+      completeThrough: 'MATERIAL_PREP',
+      projectName: 'Diwan wingback frame gate',
       fabric: 'Velvet Navy',
       wood: 'Beech',
       orderDay: 46,
       deliveryLeadDays: 28,
+      notes: 'Waiting on carpentry frames (SEMI lots) before foam/upholstery.',
     },
     {
       id: 'jabal-dining-late',

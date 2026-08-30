@@ -1,6 +1,17 @@
 import { localizedName } from '@maher/i18n';
-import type { SalesOrderDetail, SalesOrderLineItem } from './api';
+import type {
+  SalesOrderDetail,
+  SalesOrderLineItem,
+  SalesOrderProductionReadinessSummary,
+} from './api';
 import type { OrdersListVariant } from './selectOrderCard';
+import type { AdminOrderLifecycle } from './adminOrderLifecycle';
+import { classifyAdminOrderLifecycle } from './adminOrderLifecycle';
+import {
+  mapReturnLifecyclePhase,
+  returnLifecycleBadgeStatus,
+  returnLifecycleLabelKey,
+} from '@/features/returns/selectReturn';
 
 export type OrderGalleryImage = {
   key: string;
@@ -52,6 +63,7 @@ export type OrderDetailViewModel = {
   id: string;
   number: string;
   status: string;
+  deliveryStatus: string | null;
   priority: string;
   title: string | null;
   notes: string | null;
@@ -106,20 +118,27 @@ export type OrderDetailViewModel = {
     id: string;
     number: string;
     status: string;
+    /** Dealer-facing human lifecycle label key (mobile.returns.lifecycle.*). */
+    lifecycleLabelKey?: string;
     reason: string | null;
     productDesc: string | null;
   }[];
   /** Product + public image URLs only; document images resolved separately. */
   heroImageUrls: string[];
   isDraft: boolean;
-  /** Admin draft with no production order — next step is production setup, then release. */
-  needsProductionSetup: boolean;
-  setupProductId: string | null;
+  /** Admin — commercially accepted SO still needs Prepare production. */
+  productionSetupRequired: boolean;
+  /** Admin — Piece 2 released; workers still need assignment. */
+  workerAssignmentRequired: boolean;
   showCosts: boolean;
   showStages: boolean;
   showEndCustomer: boolean;
   showWorker: boolean;
   canEdit: boolean;
+  productionReadinessSummary: SalesOrderProductionReadinessSummary | null;
+  lifecycle: AdminOrderLifecycle | null;
+  actionHint: string | null;
+  totalQuantity: number | null;
 };
 
 function toNumber(value: unknown): number | null {
@@ -269,6 +288,19 @@ export function selectOrderDetail(
 ): OrderDetailViewModel {
   const isAdmin = variant === 'admin';
   const isDraft = order.status === 'DRAFT';
+  const productionSetupRequired = Boolean(
+    order.productionSetupRequired ??
+      (isDraft && (order.productionOrders?.length ?? 0) === 0),
+  );
+  const workerAssignmentRequired = Boolean(
+    order.workerAssignmentRequired ??
+      (!productionSetupRequired &&
+        (order.productionOrders?.length ?? 0) > 0 &&
+        ((order.productionReadinessSummary?.assignment?.missingCount ??
+          order.productionReadinessSummary?.assignment?.missing?.length ??
+          0) > 0 ||
+          Boolean(order.productionReadinessSummary?.needsSetup))),
+  );
   const { flat: stages, productionOrders } = mapStages(order, locale);
   const items = mapItems(order);
   const needsProductionSetup = isAdmin && isDraft && productionOrders.length === 0;
@@ -333,10 +365,40 @@ export function selectOrderDetail(
     null;
   const originalText = order.customerRequest?.originalText ?? null;
 
+  const items = mapItems(order);
+  const totalQuantity = items.reduce((sum, row) => sum + (row.quantity ?? 0), 0);
+  const deliveryStatus =
+    order.deliveryStatus ??
+    order.deliveries?.[0]?.status ??
+    null;
+  const productionReadinessSummary = isAdmin
+    ? (order.productionReadinessSummary ?? null)
+    : null;
+  const progressLabelAdmin = isAdmin
+    ? (order.currentStage
+        ? localizedName(locale, order.currentStage, '') || undefined
+        : undefined) ||
+      progressLabelFromProductionOrders(productionOrders) ||
+      order.progressLabel
+    : order.progressLabel;
+  const lifecycleInput = {
+    status: order.status,
+    deliveryStatus,
+    requiredDeliveryDate: deliveryDate,
+    productionReadinessSummary,
+    progressPercent: order.progressPercent,
+    currentStageLabel: progressLabelAdmin ?? null,
+  };
+  const lifecycle = isAdmin ? classifyAdminOrderLifecycle(lifecycleInput) : null;
+  const actionHint = isAdmin
+    ? (productionReadinessSummary?.actionHint ?? null)
+    : null;
+
   const base = {
     id: order.id,
     number: order.number,
     status: order.status,
+    deliveryStatus,
     priority: order.priority,
     title: order.title,
     notes: order.notes ?? order.customerRequest?.notes ?? null,
@@ -348,13 +410,7 @@ export function selectOrderDetail(
     deliveryDate,
     deliveryAddress,
     progressPercent: Number(order.progressPercent ?? 0),
-    progressLabel: isAdmin
-      ? (order.currentStage
-          ? localizedName(locale, order.currentStage, '') || undefined
-          : undefined) ||
-        progressLabelFromProductionOrders(productionOrders) ||
-        order.progressLabel
-      : order.progressLabel,
+    progressLabel: progressLabelAdmin,
     requestSource: order.customerRequest?.source ?? null,
     sellerPrice: seller,
     fabricSummary: fabricSummary(order),
@@ -374,30 +430,42 @@ export function selectOrderDetail(
       status: inv.status,
       total: toNumber(inv.total),
     })),
-    deliveries: isAdmin
-      ? (order.deliveries ?? []).map((d) => ({
-          id: d.id,
-          number: d.number,
-          status: d.status,
-          deliveryDate: d.deliveryDate ?? null,
-        }))
-      : [],
-    returns: (order.returns ?? []).map((r) => ({
-      id: r.id,
-      number: r.number,
-      status: r.approvalStatus,
-      reason: r.reason ?? null,
-      productDesc: r.productDesc ?? null,
+    deliveries: (order.deliveries ?? []).map((d) => ({
+      id: d.id,
+      number: d.number,
+      status: d.status,
+      deliveryDate: d.deliveryDate ?? null,
     })),
+    returns: (order.returns ?? []).map((r) => {
+      const phase = mapReturnLifecyclePhase({
+        approvalStatus: r.approvalStatus,
+        physicalStatus: r.physicalStatus,
+        inventoryFate: r.inventoryFate,
+      });
+      return {
+        id: r.id,
+        number: r.number,
+        status: isAdmin
+          ? r.approvalStatus
+          : returnLifecycleBadgeStatus(phase),
+        lifecycleLabelKey: isAdmin ? undefined : returnLifecycleLabelKey(phase),
+        reason: r.reason ?? null,
+        productDesc: r.productDesc ?? null,
+      };
+    }),
     heroImageUrls,
     isDraft,
-    needsProductionSetup,
-    setupProductId,
+    productionSetupRequired,
+    workerAssignmentRequired,
     showCosts: isAdmin,
     showStages: isAdmin || productionOrders.some((po) => po.stages.length > 0),
     showEndCustomer: isAdmin,
     showWorker: isAdmin,
-    canEdit: isAdmin && isDraft,
+    canEdit: isAdmin && (isDraft || productionSetupRequired),
+    productionReadinessSummary,
+    lifecycle,
+    actionHint,
+    totalQuantity: totalQuantity > 0 ? totalQuantity : null,
   };
 
   if (!isAdmin) {
@@ -418,7 +486,6 @@ export function selectOrderDetail(
       originalText: null,
       detectedLanguage: null,
       targetLanguage: null,
-      deliveries: [],
       canEdit: false,
     };
   }

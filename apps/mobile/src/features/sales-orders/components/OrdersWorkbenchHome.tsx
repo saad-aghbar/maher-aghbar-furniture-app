@@ -94,7 +94,7 @@ export function OrdersWorkbenchHome({
       status: o.status,
       title: o.title,
       imageUrl: o.imageUrl,
-      progressPercent: o.progressPercent,
+      progressPercent: o.progressPercent ?? 0,
       deliveryDate: o.deliveryDate,
       priority: o.priority,
       dealerName: o.dealerName,
@@ -271,7 +271,7 @@ export function OrdersWorkbenchHome({
 function laneTint(
   colors: ReturnType<typeof useTheme>['colors'],
   key: OrdersStageKey,
-) {
+): { tint: string; soft: string } {
   switch (key) {
     case 'pending':
       return { tint: colors.brand, soft: colors.brandSoft };
@@ -279,6 +279,8 @@ function laneTint(
       return { tint: colors.success, soft: colors.successSoft };
     case 'ready':
       return { tint: colors.warning, soft: colors.warningSoft };
+    default:
+      return { tint: colors.brand, soft: colors.brandSoft };
   }
 }
 

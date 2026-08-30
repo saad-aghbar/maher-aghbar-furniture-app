@@ -9,9 +9,57 @@ export type ProductionListBucket =
   | 'monthly'
   | 'in_production'
   | 'late'
-  | 'completed';
+  | 'completed'
+  | 'needs_setup'
+  | 'ready_to_start'
+  | 'on_floor'
+  | 'blocked'
+  | 'inspection_packaging';
 
 export type ProductionPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+
+export type ProductionReadinessReason = {
+  code: string;
+  stageId?: string | null;
+  stageCode?: string;
+  stageName?: string;
+  taskId?: string;
+  message?: string;
+};
+
+export type ProductionReadiness = {
+  policy: string;
+  canStart: boolean;
+  materialsReady: boolean;
+  workflowReady: boolean;
+  schedulePresent: boolean;
+  workersReady?: boolean;
+  datesReady?: boolean;
+  setupReady?: boolean;
+  assignment: {
+    required: number;
+    assigned: number;
+    missing: Array<{
+      taskId: string;
+      stageId: string | null;
+      stageCode: string;
+      stageName: string;
+    }>;
+  };
+  dates?: {
+    required: number;
+    ready: number;
+    missing: Array<{
+      taskId: string;
+      stageId: string | null;
+      stageCode: string;
+      stageName: string;
+    }>;
+  };
+  blockers: Array<{ kind: string; taskId?: string; message?: string }>;
+  reasons: ProductionReadinessReason[];
+  boardBucket: ProductionListBucket | string;
+};
 
 export type ProductionSummary = {
   dailyProduction: number;
@@ -24,6 +72,11 @@ export type ProductionSummary = {
   inProduction: number;
   lateOrders: number;
   overallProgress: number;
+  needsSetup?: number;
+  readyToStart?: number;
+  onFloor?: number;
+  blocked?: number;
+  inspectionPackaging?: number;
 };
 
 export type ProductionCustomer = {
@@ -41,6 +94,7 @@ export type ProductionOrderListItem = {
   status: string;
   priority: ProductionPriority | string;
   progressPercent: number;
+  quantity?: number | string | null;
   productDescription?: string | null;
   requiredDeliveryDate?: string | null;
   plannedCompletionDate?: string | null;
@@ -71,6 +125,7 @@ export type ProductionOrderListItem = {
     nameAr?: string | null;
     nameHe?: string | null;
   } | null;
+  readiness?: ProductionReadiness | null;
 };
 
 export type ProductionBlocker = {
@@ -125,6 +180,7 @@ export type ProductionTask = {
     nameAr?: string | null;
     nameHe?: string | null;
     responsibleDepartment?: string | null;
+    executionKind?: string | null;
   } | null;
 };
 
@@ -170,7 +226,19 @@ export type ProductionOrderDetail = ProductionOrderListItem & {
     };
     tasks?: ProductionTask[];
   }>;
+  manufacturingCosting?: {
+    status?: string | null;
+    incomplete?: boolean;
+    estimatedTotal?: number | null;
+    actualTotal?: number | null;
+    varianceCost?: number | null;
+    variancePct?: number | null;
+    scrapCost?: number | null;
+    finalizedAt?: string | null;
+  } | null;
 };
+
+export type RecommendBand = 'recommended' | 'busy' | 'conflict' | 'other';
 
 export type AssignableWorker = {
   id: string;
@@ -178,6 +246,10 @@ export type AssignableWorker = {
   lastName: string;
   email?: string | null;
   username?: string | null;
+  activeTaskCount?: number;
+  recommendBand?: RecommendBand;
+  recommendReason?: string | null;
+  recommendReasonCode?: string | null;
   department?: {
     id: string;
     code: string;
@@ -198,6 +270,7 @@ export async function listProductionOrders(
     q?: string;
     /** Dealer (customer) scope — matches API `customerId`. */
     customerId?: string;
+    assignedEmployeeId?: string;
   } = {},
 ) {
   const qs = toSearchParams({
@@ -208,12 +281,24 @@ export async function listProductionOrders(
     status: params.status,
     q: params.q,
     customerId: params.customerId,
+    assignedEmployeeId: params.assignedEmployeeId,
   });
   return apiGet<PaginatedResponse<ProductionOrderListItem>>(`/production-orders${qs}`);
 }
 
 export async function getProductionOrder(id: string) {
   return apiGet<ProductionOrderDetail>(`/production-orders/${encodeURIComponent(id)}`);
+}
+
+export async function startProductionOrder(id: string) {
+  return apiPost<ProductionOrderDetail>(`/production-orders/${encodeURIComponent(id)}/start`);
+}
+
+/** Repair missing floor tasks from stage instances (legacy demos / partial releases). */
+export async function ensureProductionPlanTasks(id: string) {
+  return apiPost<{ created: number }>(
+    `/production-orders/${encodeURIComponent(id)}/ensure-plan-tasks`,
+  );
 }
 
 export async function updateProductionOrder(
@@ -231,8 +316,22 @@ export async function updateProductionOrder(
   );
 }
 
-export async function listAssignableWorkers(q?: string, stageDefinitionId?: string) {
-  const qs = toSearchParams({ q, stageDefinitionId });
+export async function listAssignableWorkers(
+  q?: string,
+  stageDefinitionId?: string,
+  opts?: {
+    taskId?: string;
+    plannedStart?: string;
+    plannedCompletion?: string;
+  },
+) {
+  const qs = toSearchParams({
+    q,
+    stageDefinitionId,
+    taskId: opts?.taskId,
+    plannedStart: opts?.plannedStart,
+    plannedCompletion: opts?.plannedCompletion,
+  });
   return apiGet<AssignableWorker[]>(`/production-orders/assignable-workers${qs}`);
 }
 
@@ -241,8 +340,10 @@ export async function assignTask(
   body: {
     employeeId: string;
     priority?: ProductionPriority | string;
+    plannedStart?: string;
     plannedCompletion?: string;
     estimatedMinutes?: number;
+    overrideConflict?: boolean;
   },
 ) {
   return apiPost(`/tasks/${encodeURIComponent(taskId)}/assign`, body);
@@ -275,6 +376,7 @@ export type ProductionMaterialLine = {
     nameAr: string;
     nameHe?: string | null;
     unit: string;
+    imageUrl?: string | null;
   };
   issuedQty: number;
   returnedQty: number;
@@ -282,8 +384,95 @@ export type ProductionMaterialLine = {
   warehouseId: string | null;
 };
 
+export type ProductionMaterialTransaction = {
+  id: string;
+  number: string;
+  type: string;
+  quantity: number;
+  createdAt: string;
+  notes?: string | null;
+  inventoryItem: {
+    id: string;
+    sku: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    unit: string;
+    imageUrl?: string | null;
+  };
+  warehouse: {
+    id: string;
+    code: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    type: string;
+  } | null;
+};
+
+export type ProductionMaterialsActivity = {
+  materials: ProductionMaterialLine[];
+  transactions: ProductionMaterialTransaction[];
+};
+
+export type ProductionMaterialUsageStatus =
+  | 'ON_TARGET'
+  | 'OVER'
+  | 'UNDER'
+  | 'EXTRA'
+  | 'UNUSED';
+
+export type ProductionMaterialUsageLine = {
+  inventoryItemId: string;
+  sku: string;
+  nameEn: string;
+  nameAr: string;
+  nameHe?: string | null;
+  unit: string;
+  imageUrl?: string | null;
+  itemClass?: string | null;
+  assignedQty: number;
+  usedQty: number;
+  returnedQty: number;
+  scrapQty: number;
+  varianceQty: number;
+  status: ProductionMaterialUsageStatus;
+  isExtra?: boolean;
+  tasks?: Array<{
+    taskId: string;
+    taskNumber: string;
+    stageCode?: string | null;
+    stageNameEn?: string | null;
+    stageNameAr?: string | null;
+    stageNameHe?: string | null;
+    actualQty: number;
+    expectedQty: number;
+    returnedQty?: number;
+    issueWarehouse?: {
+      id: string;
+      code: string;
+      nameEn: string;
+      nameAr: string;
+      nameHe?: string | null;
+    } | null;
+    returnWarehouse?: {
+      id: string;
+      code: string;
+      nameEn: string;
+      nameAr: string;
+      nameHe?: string | null;
+    } | null;
+  }>;
+};
+
+export async function getProductionOrderMaterialUsage(id: string) {
+  return apiGet<{ materials: ProductionMaterialUsageLine[] }>(
+    `/production-orders/${encodeURIComponent(id)}/material-usage`,
+  );
+}
+
 export async function getProductionOrderMaterials(id: string) {
-  return apiGet<{ materials: ProductionMaterialLine[] }>(
+  return apiGet<ProductionMaterialsActivity>(
     `/production-orders/${encodeURIComponent(id)}/materials`,
   );
 }

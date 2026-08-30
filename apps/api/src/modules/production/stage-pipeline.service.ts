@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { InventoryTracking, Prisma, QualityResult } from '@maher/database';
+import { DeliveryStatus, InventoryTracking, Prisma, QualityResult } from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
+import { SequenceService } from '../../common/sequence.service';
 import { calculateWorkflowProgress } from './workflow/domain';
 
 type Tx = Prisma.TransactionClient;
@@ -9,7 +10,10 @@ const SATISFIED = new Set(['COMPLETED', 'SKIPPED']);
 
 @Injectable()
 export class StagePipelineService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sequences: SequenceService,
+  ) {}
 
   private db(tx?: Tx) {
     return tx ?? this.prisma;
@@ -204,8 +208,13 @@ export class StagePipelineService {
 
     const progressPercent = calculateWorkflowProgress(progressNodes);
     const activeStages = refreshed.filter((s) => s.status !== 'SKIPPED');
-    const completed = activeStages.filter((s) => s.status === 'COMPLETED').length;
-    const allComplete = completed === activeStages.length && activeStages.length > 0;
+    // LOGISTICS (DELIVERY) has no ProductionTask — commercial close comes from Delivery entity.
+    const manufacturingStages = activeStages.filter(
+      (s) => s.stageDefinition.executionKind !== 'LOGISTICS',
+    );
+    const manufacturingComplete =
+      manufacturingStages.length > 0 &&
+      manufacturingStages.every((s) => s.status === 'COMPLETED');
 
     const active =
       refreshed.find((s) => s.status === 'IN_PROGRESS') ??
@@ -246,6 +255,99 @@ export class StagePipelineService {
     }
     const readyForDelivery =
       fgNodes.length > 0 ? fgStagesComplete && qcPassed : packagingDone && inspectionDone;
+
+    const poForClose = await db.productionOrder.findUnique({
+      where: { id: productionOrderId },
+      select: { salesOrderId: true },
+    });
+
+    let allComplete = manufacturingComplete;
+    if (manufacturingComplete && poForClose?.salesOrderId) {
+      const delivery = await db.delivery.findFirst({
+        where: { salesOrderId: poForClose.salesOrderId },
+        select: { id: true, status: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      // Missing Delivery is never completion for customer orders.
+      allComplete = delivery?.status === 'DELIVERED';
+
+      // Keep LOGISTICS stage in sync with Delivery entity (idempotent).
+      const logistics = refreshed.filter((s) => s.stageDefinition.executionKind === 'LOGISTICS');
+      for (const stage of logistics) {
+        let next = stage.status;
+        if (!delivery) {
+          next = readyForDelivery ? 'READY' : stage.status;
+        } else if (delivery.status === 'DELIVERED') {
+          next = 'COMPLETED';
+        } else if (delivery.status === 'OUT_FOR_DELIVERY') {
+          next = 'IN_PROGRESS';
+        } else if (['PLANNED', 'READY'].includes(delivery.status)) {
+          next = 'READY';
+        }
+        if (next !== stage.status) {
+          await db.productionStageInstance.update({
+            where: { id: stage.id },
+            data: {
+              status: next,
+              progressPercent: next === 'COMPLETED' ? 100 : stage.progressPercent,
+              actualEnd: next === 'COMPLETED' ? (stage.actualEnd ?? new Date()) : null,
+            },
+          });
+        }
+      }
+
+      // Repair: ensure a Delivery row exists once manufacturing is ready to ship.
+      if (readyForDelivery && !delivery) {
+        const so = await db.salesOrder.findUnique({
+          where: { id: poForClose.salesOrderId },
+          include: {
+            lines: { select: { description: true, quantity: true, deliveryRequired: true } },
+            quotation: {
+              include: { request: { select: { deliveryLat: true, deliveryLng: true } } },
+            },
+          },
+        });
+        if (so?.customerId && so.deliveryAddress) {
+          const rfq = so.quotation?.request;
+          const number = await this.sequences.next('DEL', 'DEL');
+          await db.delivery.create({
+            data: {
+              number,
+              customerId: so.customerId,
+              salesOrderId: so.id,
+              deliveryAddress: so.deliveryAddress,
+              latitude: rfq?.deliveryLat != null ? Number(rfq.deliveryLat) : null,
+              longitude: rfq?.deliveryLng != null ? Number(rfq.deliveryLng) : null,
+              status: DeliveryStatus.PLANNED,
+              items: {
+                create: so.lines
+                  .filter((l) => l.deliveryRequired)
+                  .map((l) => ({
+                    description: l.description,
+                    quantity: l.quantity,
+                  })),
+              },
+            },
+          });
+        }
+      }
+    } else if (manufacturingComplete && !poForClose?.salesOrderId) {
+      // Internal / non-customer production may complete without dealer receipt.
+      allComplete = true;
+      const logistics = refreshed.filter((s) => s.stageDefinition.executionKind === 'LOGISTICS');
+      for (const stage of logistics) {
+        if (stage.status !== 'COMPLETED') {
+          await db.productionStageInstance.update({
+            where: { id: stage.id },
+            data: {
+              status: 'COMPLETED',
+              progressPercent: 100,
+              actualEnd: stage.actualEnd ?? new Date(),
+            },
+          });
+        }
+      }
+    }
 
     await db.productionOrder.update({
       where: { id: productionOrderId },
@@ -288,10 +390,29 @@ export class StagePipelineService {
         ['COMPLETED', 'READY_FOR_DELIVERY', 'READY_FOR_PACKAGING'].includes(s.status),
       );
       if (allReady) {
-        await db.salesOrder.update({
+        const allCompleted = siblings.every((s) => s.status === 'COMPLETED');
+        const currentSo = await db.salesOrder.findUnique({
           where: { id: po.salesOrderId },
-          data: { status: 'READY_FOR_DELIVERY' },
+          select: { status: true },
         });
+        if (allCompleted) {
+          const delivery = await db.delivery.findFirst({
+            where: { salesOrderId: po.salesOrderId },
+            select: { status: true },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (delivery?.status === 'DELIVERED' && currentSo?.status !== 'DELIVERED') {
+            await db.salesOrder.update({
+              where: { id: po.salesOrderId },
+              data: { status: 'DELIVERED' },
+            });
+          }
+        } else if (currentSo?.status !== 'DELIVERED') {
+          await db.salesOrder.update({
+            where: { id: po.salesOrderId },
+            data: { status: 'READY_FOR_DELIVERY' },
+          });
+        }
       }
     }
   }

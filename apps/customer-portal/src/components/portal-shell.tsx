@@ -32,6 +32,7 @@ const items = [
   { href: '/catalog', key: 'catalog', icon: ShoppingBag },
   { href: '/orders/new', key: 'createOrder', icon: SquarePen },
   { href: '/orders', key: 'myOrders', icon: Package },
+  { href: '/quotations', key: 'quotations', icon: FileText },
   { href: '/deliveries', key: 'schedule', icon: CalendarDays },
   { href: '/ai-chat', key: 'aiChat', icon: MessageSquare },
   { href: '/invoices', key: 'invoices', icon: Receipt },

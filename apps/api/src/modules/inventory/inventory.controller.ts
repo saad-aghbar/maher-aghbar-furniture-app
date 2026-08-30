@@ -14,6 +14,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InventoryService } from './inventory.service';
+import { ListFinishedLotsDto } from './dto/finished-lots.dto';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -135,6 +136,10 @@ class CreateInventoryItemDto {
   @IsOptional()
   @IsString()
   barcode?: string;
+
+  @IsOptional()
+  @IsString()
+  qrCode?: string;
 
   @IsOptional()
   @IsUUID()
@@ -360,6 +365,12 @@ export class InventoryController {
     return this.inventory.listSemiFinished(query);
   }
 
+  @Get('finished-lots')
+  @RequirePermissions('inventory.read')
+  listFinishedLots(@Query() query: ListFinishedLotsDto) {
+    return this.inventory.listFinishedLots(query);
+  }
+
   @Get('lots/:id')
   @RequirePermissions('inventory.read')
   async getLot(@Param('id') id: string) {
@@ -412,6 +423,12 @@ export class InventoryController {
   @RequirePermissions('inventory.read')
   byCode(@Param('code') code: string, @CurrentUser() user: AuthUser) {
     return this.inventory.findByCode(code, user.permissions);
+  }
+
+  @Get('items/:id/open-receipts')
+  @RequirePermissions('inventory.receive')
+  openReceipts(@Param('id') id: string) {
+    return this.inventory.listOpenReceipts(id);
   }
 
   @Get('items/:id/transactions')

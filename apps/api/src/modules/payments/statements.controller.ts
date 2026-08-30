@@ -20,6 +20,11 @@ import {
   sendPdf,
 } from '../../common/helpers/pdf.util';
 import { localizedName, pdfMessages } from '../../common/helpers/pdf-i18n';
+import {
+  buildStatementLedger,
+  money,
+  summarizeDealerFinance,
+} from './dealer-finance';
 
 @ApiTags('statements')
 @Controller('statements')
@@ -41,6 +46,8 @@ export class StatementsController {
     @Param('customerId') customerId: string,
     @CurrentUser() user: AuthUser,
     @Res() res: Response,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
     @Query('asOf') asOf?: string,
     @Query('lang') lang?: string,
     @Query('theme') theme?: string,
@@ -53,7 +60,7 @@ export class StatementsController {
       acceptLanguage,
     });
     const m = pdfMessages(locale);
-    const statement = await this.buildStatement(customerId, user, asOf, locale);
+    const statement = await this.buildStatement(customerId, user, { from, to, asOf }, locale);
     const buffer = await buildSimplePdf({
       locale,
       theme: pdfTheme,
@@ -61,16 +68,19 @@ export class StatementsController {
       subtitle: statement.customer.name,
       meta: [
         `${m.asOf}: ${statement.asOf.slice(0, 10)}`,
+        `Opening: ${statement.openingBalance} ${statement.currency}`,
         `${m.closing}: ${statement.closingBalance} ${statement.currency}`,
+        `Amount due: ${statement.amountDue} ${statement.currency}`,
+        `Account credit: ${statement.availableCredit} ${statement.currency}`,
       ],
       columns: [m.date, m.ref, m.description, m.debit, m.credit, m.balance],
       rows: statement.entries.map((e) => [
         e.date.slice(0, 10),
         e.reference,
         e.description,
-        e.debit,
-        e.credit,
-        e.balance,
+        String(e.debit),
+        String(e.credit),
+        String(e.runningBalance),
       ]),
       footerLines: [
         `${m.closing}: ${statement.closingBalance} ${statement.currency}`,
@@ -84,80 +94,74 @@ export class StatementsController {
   async get(
     @Param('customerId') customerId: string,
     @CurrentUser() user: AuthUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
     @Query('asOf') asOf?: string,
   ) {
-    return this.buildStatement(customerId, user, asOf, 'en');
+    return this.buildStatement(customerId, user, { from, to, asOf }, 'en');
   }
 
   private async buildStatement(
     customerId: string,
     user: AuthUser,
-    asOf: string | undefined,
+    range: { from?: string; to?: string; asOf?: string },
     locale: import('../../common/helpers/pdf.util').PdfLocale,
   ) {
     this.assertAccess(user, customerId);
     const customer = await this.prisma.customer.findUniqueOrThrow({
       where: { id: customerId },
     });
-    const asOfDate = asOf ? new Date(asOf) : new Date();
-    const m = pdfMessages(locale);
+    const asOfDate = range.asOf ? new Date(range.asOf) : new Date();
+    const from = range.from ? new Date(range.from) : null;
+    const to = range.to
+      ? new Date(range.to)
+      : range.asOf
+        ? asOfDate
+        : null;
 
     const invoices = await this.prisma.invoice.findMany({
       where: {
         customerId,
         archivedAt: null,
         status: { notIn: ['CANCELLED', 'VOID'] },
-        invoiceDate: { lte: asOfDate },
       },
       orderBy: { invoiceDate: 'asc' },
     });
     const payments = await this.prisma.payment.findMany({
-      where: { customerId, paymentDate: { lte: asOfDate } },
+      where: { customerId },
+      include: { allocations: true },
       orderBy: { paymentDate: 'asc' },
     });
 
-    type Entry = {
-      entityId: string;
-      date: Date;
-      type: 'INVOICE' | 'PAYMENT';
-      reference: string;
-      debit: string;
-      credit: string;
-      description: string;
-    };
-
-    const entries: Entry[] = [
-      ...invoices.map((inv) => ({
-        entityId: inv.id,
-        date: inv.invoiceDate,
-        type: 'INVOICE' as const,
-        reference: inv.number,
-        debit: String(inv.total),
-        credit: '0.000',
-        description: `${m.invoice} ${inv.number}`,
+    const ledger = buildStatementLedger({
+      invoices: invoices.map((inv) => ({
+        id: inv.id,
+        number: inv.number,
+        invoiceDate: inv.invoiceDate,
+        total: inv.total,
+        status: inv.status,
       })),
-      ...payments.map((pay) => ({
-        entityId: pay.id,
-        date: pay.paymentDate,
-        type: 'PAYMENT' as const,
-        reference: pay.number,
-        debit: '0.000',
-        credit: String(pay.amount),
-        description: `${m.paymentReceipt} ${pay.number}`,
+      payments: payments.map((p) => ({
+        id: p.id,
+        number: p.number,
+        paymentDate: p.paymentDate,
+        amount: p.amount,
       })),
-    ].sort((a, b) => a.date.getTime() - b.date.getTime());
+      from,
+      to: to ?? asOfDate,
+    });
 
-    let balance = 0;
-    let totalInvoiced = 0;
-    let totalPaid = 0;
-    const withBalance = entries.map((e) => {
-      balance += Number(e.debit) - Number(e.credit);
-      totalInvoiced += Number(e.debit);
-      totalPaid += Number(e.credit);
-      return { ...e, balance: roundMoney(balance), date: e.date.toISOString() };
+    const finance = summarizeDealerFinance({
+      invoices,
+      payments: payments.map((p) => ({
+        amount: p.amount,
+        allocations: p.allocations,
+      })),
+      currency: invoices[0]?.currency ?? 'ILS',
     });
 
     const displayName = localizedName(locale, customer);
+    const m = pdfMessages(locale);
 
     return {
       customer: {
@@ -166,13 +170,29 @@ export class StatementsController {
         name: displayName || customer.name,
       },
       asOf: asOfDate.toISOString(),
-      openingBalance: '0.000',
-      closingBalance: roundMoney(balance),
-      outstandingBalance: roundMoney(balance),
-      totalInvoiced: roundMoney(totalInvoiced),
-      totalPaid: roundMoney(totalPaid),
-      currency: 'ILS',
-      entries: withBalance,
+      from: from?.toISOString() ?? null,
+      to: (to ?? asOfDate).toISOString(),
+      openingBalance: roundMoney(ledger.openingBalance),
+      closingBalance: roundMoney(ledger.closingBalance),
+      /** @deprecated prefer amountDue / availableCredit */
+      outstandingBalance: roundMoney(finance.netPosition),
+      amountDue: finance.amountDue,
+      availableCredit: finance.availableCredit,
+      openInvoiceCount: finance.openInvoiceCount,
+      overdueAmount: finance.overdueAmount,
+      totalInvoiced: roundMoney(ledger.totalInvoiced),
+      totalPaid: roundMoney(ledger.totalPaid),
+      currency: finance.currency,
+      entries: ledger.entries.map((e) => ({
+        ...e,
+        debit: roundMoney(e.debit),
+        credit: roundMoney(e.credit),
+        balance: roundMoney(e.runningBalance),
+        description:
+          e.type === 'INVOICE'
+            ? `${m.invoice} ${e.reference}`
+            : `${m.paymentReceipt} ${e.reference}`,
+      })),
       payments: payments.map((p) => ({
         id: p.id,
         number: p.number,
@@ -182,6 +202,7 @@ export class StatementsController {
         referenceNumber: p.referenceNumber,
         bank: p.bank,
         notes: p.notes,
+        unallocatedAmount: money(p.amount) - p.allocations.reduce((s, a) => s + money(a.amount), 0),
       })),
     };
   }

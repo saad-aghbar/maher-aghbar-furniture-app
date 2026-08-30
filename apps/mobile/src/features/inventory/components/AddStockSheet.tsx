@@ -10,8 +10,11 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { getInventoryItemByCode, type InventoryItem, type Warehouse } from '../api';
+import type { InventoryItem, Warehouse } from '../api';
+import { resolveInventoryScan } from '../resolveInventoryScan';
 import { selectInventoryItemCard } from '../selectInventory';
+import { useLabelVerifyScan } from '../useLabelVerifyScan';
+import { useInventoryOpenReceiptsQuery } from '../query';
 import {
   preferWarehouseForIssue,
   preferWarehouseForReceive,
@@ -21,7 +24,13 @@ import {
 } from '../preferWarehouseForReceive';
 import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { InventorySheetFooter } from './InventorySheetFooter';
+import { KnownItemLabelConfirm } from './KnownItemLabelConfirm';
+import { ScanInventoryItemAction } from './ScanInventoryItemAction';
 import { WarehousePickList } from './WarehousePickList';
+import {
+  InventoryScanSelectInline,
+  type InlineScanSelectMode,
+} from './InventoryScanSelectInline';
 
 export type StockMoveMode = 'receive' | 'issue';
 
@@ -32,10 +41,16 @@ export type StockMoveItem = {
   category: string;
   itemClass?: string | null;
   unit: string;
+  imageUrl?: string | null;
+  materialType?: string | null;
+  onHand?: number;
+  reservedQty?: number;
+  availableQty?: number;
   balances: Array<{
     warehouseId: string;
     quantityLabel: string;
     availableQty?: number;
+    reservedQty?: number;
   }>;
 };
 
@@ -44,6 +59,8 @@ export type StockMoveSubmit = {
   warehouseId: string;
   quantity: number;
   notes?: string;
+  purchaseOrderId?: string;
+  orderedQty?: number;
 };
 
 type AddStockSheetProps = {
@@ -66,10 +83,16 @@ function toMoveItem(item: InventoryItem, locale: string): StockMoveItem {
     category: card.category,
     itemClass: card.itemClass,
     unit: card.unit,
+    imageUrl: card.imageUrl,
+    materialType: card.materialType,
+    onHand: card.onHand,
+    reservedQty: card.reservedQty,
+    availableQty: card.freeQty,
     balances: card.balances.map((b) => ({
       warehouseId: b.warehouseId,
       quantityLabel: b.quantityLabel,
       availableQty: b.availableQty,
+      reservedQty: b.reservedQty,
     })),
   };
 }
@@ -87,7 +110,7 @@ export function AddStockSheet({
   loading,
   onSubmit,
 }: AddStockSheetProps) {
-  const { t, locale } = useLocale();
+  const { t, locale, formatDate } = useLocale();
   const { theme, colors } = useTheme();
   const { user } = useAuth();
   const { height } = useWindowDimensions();
@@ -103,6 +126,27 @@ export function AddStockSheet({
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
+  const [receiptKind, setReceiptKind] = useState<'po' | 'manual'>('po');
+  const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
+  const [confirmItem, setConfirmItem] = useState<InventoryItem | null>(null);
+  const [confirmMode, setConfirmMode] = useState<InlineScanSelectMode>('confirm');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const canReceive = can(user, 'inventory.receive');
+  const knownItem = Boolean(initialItem?.id);
+  const {
+    verifyKind,
+    verifyScanned,
+    verifyBusy,
+    clearLabelVerify,
+    resetLabelVerify,
+    runLabelVerify,
+  } = useLabelVerifyScan(item?.id);
+
+  const openReceiptsQuery = useInventoryOpenReceiptsQuery(
+    mode === 'receive' && open && item?.id && canReceive ? item.id : undefined,
+    mode === 'receive' && open && Boolean(item?.id) && canReceive,
+  );
+  const openReceipts = openReceiptsQuery.data ?? [];
 
   const compatibleWarehouses = useMemo(
     () =>
@@ -149,13 +193,40 @@ export function AddStockSheet({
     setQty('1');
     setNotes('');
     setError(null);
+    setReceiptKind('po');
+    setSelectedPoId(null);
+    setConfirmOpen(false);
+    setConfirmItem(null);
+    resetLabelVerify();
     // Reset when the sheet opens or the target item / mode changes — not on every parent re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
   }, [open, mode, initialItem?.id]);
 
+  const receiptKey = `${item?.id ?? ''}:${openReceipts.map((row) => row.purchaseOrderId).join(',')}`;
+
+  useEffect(() => {
+    if (!open || mode !== 'receive') return;
+    if (openReceipts.length === 1) {
+      const only = openReceipts[0]!;
+      setSelectedPoId(only.purchaseOrderId);
+      setReceiptKind('po');
+      if (only.suggestedWarehouseId) {
+        setWarehouseId(only.suggestedWarehouseId);
+      }
+    } else if (openReceipts.length === 0) {
+      setSelectedPoId(null);
+      setReceiptKind('manual');
+    } else {
+      setSelectedPoId(null);
+      setReceiptKind('po');
+    }
+    // Receipt rows load after the item is known; key covers id + PO ids.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- receiptKey
+  }, [open, mode, receiptKey]);
+
   useEffect(() => {
     if (!open || !preferredId) return;
-    setWarehouseId(preferredId);
+    setWarehouseId((current) => current || preferredId);
   }, [open, preferredId, item?.id]);
 
   const effectiveWarehouseId = warehouseId || preferredId || orderedWarehouses[0]?.id || '';
@@ -163,6 +234,8 @@ export function AddStockSheet({
   const itemLabel = item ? `${item.sku} — ${item.name}` : '—';
 
   async function lookupCode(codeRaw: string) {
+    // Unknown-item path only — known-item uses KnownItemLabelConfirm.
+    if (knownItem) return;
     const code = codeRaw.trim();
     if (!code) {
       setError(t('mobile.inventory.scanCodeRequired'));
@@ -171,16 +244,41 @@ export function AddStockSheet({
     setLookingUp(true);
     setError(null);
     try {
-      const found = await getInventoryItemByCode(code);
-      setItem(toMoveItem(found, locale));
+      const resolved = await resolveInventoryScan(code);
+      if (resolved.status === 'NOT_FOUND') {
+        void haptics.error();
+        setConfirmItem(null);
+        setConfirmMode('not-found');
+        setConfirmOpen(true);
+        return;
+      }
+      if (resolved.status === 'ERROR') {
+        void haptics.error();
+        setConfirmItem(null);
+        setConfirmMode('error');
+        setConfirmOpen(true);
+        return;
+      }
+      const found = resolved.item;
+      if (!found.isActive || found.archivedAt) {
+        setConfirmItem(found);
+        setConfirmMode('blocked-inactive');
+        setConfirmOpen(true);
+        return;
+      }
+      setConfirmItem(found);
+      setConfirmMode('confirm');
+      setConfirmOpen(true);
       setScanCode('');
-      void haptics.selection();
-    } catch {
-      void haptics.error();
-      setError(t('mobile.inventory.lookupFailed'));
+      void haptics.confirmLight();
     } finally {
       setLookingUp(false);
     }
+  }
+
+  function clearCodeConfirm() {
+    setConfirmOpen(false);
+    setConfirmItem(null);
   }
 
   async function lookup() {
@@ -201,12 +299,25 @@ export function AddStockSheet({
       setError(t('mobile.inventory.addStockQtyInvalid'));
       return;
     }
+    if (mode === 'receive' && openReceipts.length > 0 && receiptKind !== 'manual') {
+      if (!selectedPoId) {
+        setError(t('mobile.inventory.choosePurchaseOrder'));
+        return;
+      }
+    }
     setError(null);
+    const selectedPo = openReceipts.find((row) => row.purchaseOrderId === selectedPoId);
     onSubmit({
       inventoryItemId: item.id,
       warehouseId: effectiveWarehouseId,
       quantity,
       notes: notes.trim() || undefined,
+      ...(mode === 'receive' && receiptKind === 'po' && selectedPo
+        ? {
+            purchaseOrderId: selectedPo.purchaseOrderId,
+            orderedQty: Number(selectedPo.orderedQty),
+          }
+        : {}),
     });
   }
 
@@ -231,44 +342,100 @@ export function AddStockSheet({
           contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing.md }}
         >
           <View style={{ gap: theme.spacing.sm }}>
-            <CodeField
-              label={t('mobile.inventory.scanBarcode')}
-              value={scanCode}
-              onChangeText={(text) => {
-                setScanCode(text);
-                if (error) setError(null);
-              }}
-              placeholder={t('mobile.inventory.scanBarcodeHint')}
-              returnKeyType="search"
-              onSubmitEditing={() => void lookup()}
-              onScanned={(code) => {
-                setError(null);
-                void lookupCode(code);
-              }}
-            />
-            <Pressable
-              accessibilityRole="button"
-              disabled={lookingUp || loading}
-              onPress={() => void lookup()}
-              style={{
-                minHeight: theme.sizes.touch.min,
-                paddingHorizontal: theme.spacing.md,
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surface,
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: lookingUp || loading ? 0.6 : 1,
-                ...theme.elevation.card,
-              }}
-            >
-              <AppText variant="label" weight="semibold" color="brand">
-                {lookingUp ? t('mobile.inventory.lookingUp') : t('mobile.inventory.lookup')}
-              </AppText>
-            </Pressable>
+            {knownItem && item ? (
+              <KnownItemLabelConfirm
+                current={{
+                  id: item.id,
+                  sku: item.sku,
+                  name: item.name,
+                  unit: item.unit,
+                  imageUrl: item.imageUrl,
+                  materialType: item.materialType,
+                }}
+                disabled={lookingUp || loading || verifyBusy}
+                scanning={verifyBusy}
+                allowChangeItem
+                resultKind={verifyKind}
+                resultScanned={verifyScanned}
+                onScanPress={() => void runLabelVerify()}
+                onClearResult={clearLabelVerify}
+                onScanAgain={() => void runLabelVerify()}
+                onUseScanned={(found) => {
+                  setItem(toMoveItem(found, locale));
+                  clearLabelVerify();
+                  setError(null);
+                }}
+              />
+            ) : (
+              <>
+                <ScanInventoryItemAction
+                  disabled={lookingUp || loading}
+                  onItemSelected={(found) => {
+                    setItem(toMoveItem(found, locale));
+                    setError(null);
+                  }}
+                />
+                <CodeField
+                  label={t('mobile.inventory.scanBarcode')}
+                  value={scanCode}
+                  onChangeText={(text) => {
+                    setScanCode(text);
+                    if (error) setError(null);
+                  }}
+                  placeholder={t('mobile.inventory.scanBarcodeHint')}
+                  returnKeyType="search"
+                  onSubmitEditing={() => void lookup()}
+                  onScanned={(code) => {
+                    setError(null);
+                    void lookupCode(code);
+                  }}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={lookingUp || loading}
+                  onPress={() => void lookup()}
+                  style={{
+                    minHeight: theme.sizes.touch.min,
+                    paddingHorizontal: theme.spacing.md,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: lookingUp || loading ? 0.6 : 1,
+                    ...theme.elevation.card,
+                  }}
+                >
+                  <AppText variant="label" weight="semibold" color="brand">
+                    {lookingUp ? t('mobile.inventory.lookingUp') : t('mobile.inventory.lookup')}
+                  </AppText>
+                </Pressable>
+                {confirmOpen ? (
+                  <InventoryScanSelectInline
+                    mode={confirmMode}
+                    item={confirmItem}
+                    onCancel={clearCodeConfirm}
+                    onScanAgain={() => {
+                      clearCodeConfirm();
+                      void lookup();
+                    }}
+                    onUseMaterial={
+                      confirmMode === 'confirm' && confirmItem
+                        ? () => {
+                            setItem(toMoveItem(confirmItem, locale));
+                            setError(null);
+                            clearCodeConfirm();
+                          }
+                        : undefined
+                    }
+                  />
+                ) : null}
+              </>
+            )}
           </View>
 
+          {!knownItem ? (
           <View
             style={{
               borderRadius: theme.radius.xl,
@@ -295,7 +462,97 @@ export function AddStockSheet({
             <AppText variant="body" weight="semibold">
               {itemLabel}
             </AppText>
+            {mode === 'issue' && item ? (
+              <AppText variant="caption" color="muted" dir="ltr">
+                {t('mobile.inventory.available')}: {item.availableQty ?? 0} {unit}
+                {' · '}
+                {t('mobile.inventory.reservedLabel')}: {item.reservedQty ?? 0} {unit}
+              </AppText>
+            ) : null}
           </View>
+          ) : mode === 'issue' && item ? (
+            <AppText variant="caption" color="muted" dir="ltr">
+              {t('mobile.inventory.available')}: {item.availableQty ?? 0} {unit}
+              {' · '}
+              {t('mobile.inventory.reservedLabel')}: {item.reservedQty ?? 0} {unit}
+              {' · '}
+              {t('mobile.inventory.onHand')}: {item.onHand ?? 0} {unit}
+            </AppText>
+          ) : null}
+
+          {mode === 'receive' && item && canReceive && openReceipts.length > 0 ? (
+            <View style={{ gap: theme.spacing.sm }}>
+              {openReceipts.map((row) => {
+                const selected = receiptKind === 'po' && selectedPoId === row.purchaseOrderId;
+                const supplier =
+                  locale === 'ar'
+                    ? row.supplierNameAr || row.supplierName
+                    : locale === 'he'
+                      ? row.supplierNameHe || row.supplierName
+                      : row.supplierName;
+                const expected = row.expectedDeliveryDate
+                  ? formatDate(row.expectedDeliveryDate)
+                  : null;
+                return (
+                  <Pressable
+                    key={row.purchaseOrderId}
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setReceiptKind('po');
+                      setSelectedPoId(row.purchaseOrderId);
+                      if (row.suggestedWarehouseId) setWarehouseId(row.suggestedWarehouseId);
+                      setError(null);
+                    }}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: selected ? colors.brand : colors.borderStrong,
+                      backgroundColor: selected ? colors.brandSoft : colors.surface,
+                      borderRadius: theme.radius.xl,
+                      padding: theme.spacing.md,
+                      gap: theme.spacing.xs,
+                    }}
+                  >
+                    <AppText variant="caption" color="muted">
+                      {t('mobile.inventory.receiveAgainstPo')}
+                    </AppText>
+                    <AppText variant="body" weight="semibold">
+                      {row.purchaseOrderNumber}
+                    </AppText>
+                    <AppText variant="caption" color="muted">
+                      {supplier}
+                    </AppText>
+                    <AppText variant="caption" color="muted" dir="ltr">
+                      {t('mobile.inventory.remaining')}: {Number(row.remainingQty)} {row.unit}
+                    </AppText>
+                    {expected ? (
+                      <AppText variant="caption" color="muted">
+                        {t('mobile.inventory.expected')}: {expected}
+                      </AppText>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setReceiptKind('manual');
+                  setSelectedPoId(null);
+                  setError(null);
+                }}
+                style={{
+                  borderWidth: 1,
+                  borderColor: receiptKind === 'manual' ? colors.brand : colors.borderStrong,
+                  backgroundColor: receiptKind === 'manual' ? colors.brandSoft : colors.surface,
+                  borderRadius: theme.radius.xl,
+                  padding: theme.spacing.md,
+                }}
+              >
+                <AppText variant="body" weight="semibold">
+                  {t('mobile.inventory.manualReceipt')}
+                </AppText>
+              </Pressable>
+            </View>
+          ) : null}
 
           <WarehousePickList
             warehouses={orderedWarehouses}

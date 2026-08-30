@@ -8,16 +8,31 @@ function asLocale(locale: string) {
 }
 
 function dependsOnCodesForStage(
-  code: string,
+  stage: { code: string; nodeKey?: string | null; id: string },
   edges: OrderWorkflowGraph['edges'],
-  nodeKey?: string | null,
 ): string[] {
-  const byCode = edges.filter((e) => e.to === code).map((e) => e.from);
-  if (byCode.length) return byCode;
-  if (nodeKey && nodeKey !== code) {
-    return edges.filter((e) => e.to === nodeKey).map((e) => e.from);
+  // Prefer unique nodeKey / id — library `code` alone collides when reused.
+  const targets = [stage.nodeKey, stage.id, stage.code].filter(
+    (v): v is string => Boolean(v),
+  );
+  const preds: string[] = [];
+  const seen = new Set<string>();
+  for (const e of edges) {
+    if (!targets.includes(e.to) || seen.has(e.from)) continue;
+    seen.add(e.from);
+    preds.push(e.from);
   }
-  return [];
+  return preds;
+}
+
+/** Stable unique key for map layout when stage library codes repeat. */
+export function flowStageGraphKey(stage: {
+  nodeKey?: string | null;
+  id?: string | null;
+  code: string;
+  index?: number;
+}): string {
+  return stage.nodeKey || stage.id || `${stage.code}#${stage.index ?? 0}`;
 }
 
 export function selectProductionFlowFromWorkflowGraph(
@@ -37,8 +52,10 @@ export function selectProductionFlowFromWorkflowGraph(
   locale = 'en',
 ): ProductionFlowModel {
   let stages: ProductionFlowStage[] = graph.stages.map((stage, index) => {
+    const graphKey = flowStageGraphKey({ ...stage, index });
     const base: ProductionFlowStage = {
       code: stage.code,
+      graphKey,
       name: localizedName(
         asLocale(locale),
         { nameEn: stage.nameEn, nameAr: stage.nameAr, nameHe: stage.nameHe },
@@ -46,7 +63,7 @@ export function selectProductionFlowFromWorkflowGraph(
       ),
       status: String(stage.status ?? 'PENDING'),
       progressPercent: Number(stage.progressPercent ?? 0),
-      dependsOnCodes: dependsOnCodesForStage(stage.code, graph.edges, stage.nodeKey),
+      dependsOnCodes: dependsOnCodesForStage(stage, graph.edges),
       sortOrder: index,
       snapshotNodeId: stage.id,
       stageDefinitionId: stage.stageDefinitionId ?? null,

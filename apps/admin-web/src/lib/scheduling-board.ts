@@ -107,11 +107,24 @@ export function adminLoadDensity(orderCount: number, isWorking: boolean): number
 }
 
 export function orderIntersectsDay(order: ScheduleOrderCard, dayYmd: string): boolean {
+  if (order.occupiedDates) {
+    return order.occupiedDates.includes(dayYmd);
+  }
   const start = (order.plannedStart ?? '').slice(0, 10);
   const end = (order.plannedEnd ?? order.plannedStart ?? '').slice(0, 10);
   if (!start) return false;
   const endYmd = end || start;
   return dayYmd >= start && dayYmd <= endYmd;
+}
+
+function orderIntersectsRange(order: ScheduleOrderCard, fromYmd: string, toYmd: string): boolean {
+  if (order.occupiedDates) {
+    return order.occupiedDates.some((d) => d >= fromYmd && d <= toYmd);
+  }
+  const start = (order.plannedStart ?? '').slice(0, 10);
+  const end = (order.plannedEnd ?? order.plannedStart ?? '').slice(0, 10) || start;
+  if (!start) return false;
+  return end >= fromYmd && start <= toYmd;
 }
 
 export function countOrdersForDay(orders: ScheduleOrderCard[] | undefined, dayYmd: string): number {
@@ -228,10 +241,7 @@ export function selectOrdersInRange(
   const seen = new Set<string>();
   const result: AdminScheduleCardModel[] = [];
   for (const order of orders) {
-    const start = (order.plannedStart ?? '').slice(0, 10);
-    const end = (order.plannedEnd ?? order.plannedStart ?? '').slice(0, 10) || start;
-    if (!start) continue;
-    if (end < fromYmd || start > toYmd) continue;
+    if (!orderIntersectsRange(order, fromYmd, toYmd)) continue;
     if (seen.has(order.productionOrderId)) continue;
     seen.add(order.productionOrderId);
     result.push(toScheduleCard(order, locale));

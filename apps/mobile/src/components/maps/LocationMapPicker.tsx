@@ -30,13 +30,9 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+import { formatMapCoord, normalizeMapCoords, type MapCoords } from './mapCoords';
 
-export type MapCoords = {
-  latitude: number;
-  longitude: number;
-  /** Human-readable address from reverse geocode when available. */
-  address?: string;
-};
+export type { MapCoords } from './mapCoords';
 
 type LocationMapPickerProps = {
   open: boolean;
@@ -96,7 +92,7 @@ async function reverseGeocodeLabel(coords: MapCoords): Promise<string> {
   } catch {
     // Fall through to coordinate label.
   }
-  return `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
+  return `${formatMapCoord(coords.latitude)}, ${formatMapCoord(coords.longitude)}`;
 }
 
 function BrandMapPin({ active }: { active: boolean }) {
@@ -217,10 +213,11 @@ export function LocationMapPicker({
   const { setOpen: setMapVisible } = useLocationMapVisibility();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const [coords, setCoords] = useState<MapCoords | null>(initial ?? null);
-  const [region, setRegion] = useState<Region>(
-    initial ? regionFrom(initial) : DEFAULT_REGION,
-  );
+  const [coords, setCoords] = useState<MapCoords | null>(() => normalizeMapCoords(initial));
+  const [region, setRegion] = useState<Region>(() => {
+    const start = normalizeMapCoords(initial);
+    return start ? regionFrom(start) : DEFAULT_REGION;
+  });
   const [busy, setBusy] = useState(false);
   const [mapAvailable, setMapAvailable] = useState(true);
   const [pinKey, setPinKey] = useState(0);
@@ -240,13 +237,16 @@ export function LocationMapPicker({
 
   useEffect(() => {
     if (!open) return;
-    setCoords(initial ?? null);
-    setRegion(initial ? regionFrom(initial) : DEFAULT_REGION);
+    const start = normalizeMapCoords(initial);
+    setCoords(start);
+    setRegion(start ? regionFrom(start) : DEFAULT_REGION);
     setPinKey((k) => k + 1);
   }, [open, initial]);
 
   const dropPin = useCallback((next: MapCoords) => {
-    setCoords(next);
+    const pin = normalizeMapCoords(next);
+    if (!pin) return;
+    setCoords(pin);
     setPinKey((k) => k + 1);
     void haptics.selection();
   }, []);
@@ -352,7 +352,7 @@ export function LocationMapPicker({
               </AppText>
               {coords ? (
                 <AppText variant="caption" color="muted" align="center">
-                  {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
+                  {formatMapCoord(coords.latitude)}, {formatMapCoord(coords.longitude)}
                 </AppText>
               ) : null}
             </View>
@@ -477,8 +477,8 @@ export function LocationMapPicker({
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
                 {t('mobile.newOrder.coordsLabel', {
-                  lat: coords.latitude.toFixed(5),
-                  lng: coords.longitude.toFixed(5),
+                  lat: formatMapCoord(coords.latitude),
+                  lng: formatMapCoord(coords.longitude),
                 })}
               </AppText>
             ) : (
@@ -519,7 +519,8 @@ export function LocationMapPicker({
                 label={t('mobile.newOrder.confirmLocation')}
                 loading={busy}
                 onPress={() => {
-                  if (!coords) {
+                  const pin = normalizeMapCoords(coords);
+                  if (!pin) {
                     showToast({
                       variant: 'warning',
                       message: toastCopy(
@@ -532,8 +533,8 @@ export function LocationMapPicker({
                   void (async () => {
                     setBusy(true);
                     try {
-                      const address = await reverseGeocodeLabel(coords);
-                      onConfirm({ ...coords, address });
+                      const address = await reverseGeocodeLabel(pin);
+                      onConfirm({ ...pin, address });
                       void haptics.confirmMedium();
                     } finally {
                       setBusy(false);

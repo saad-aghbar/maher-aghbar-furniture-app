@@ -196,6 +196,8 @@ describe('scheduling capacity wiring', () => {
     expect(cards).toContain('productionDeadline');
     expect(cards).toContain('deliveryBufferWorkingDays');
     expect(cards).toContain('productionDeadlineIso');
+    expect(cards).toContain('occupiedDates');
+    expect(cards).toContain('occupiedLocalYmds');
 
     const snapshot = src.slice(src.indexOf('private serializeSchedule'), src.indexOf('async getOrderSchedule'));
     expect(snapshot).toContain('materialReadyAt: schedule.materialReadyAt');
@@ -414,9 +416,9 @@ describe('scheduling capacity wiring', () => {
 
   it('listConflicts uses the domain detector and returns unique active count', async () => {
     const { service, prisma } = makeService();
-    const start = new Date('2026-08-16T05:00:00.000Z');
-    const mid = new Date('2026-08-16T08:00:00.000Z');
-    const end = new Date('2026-08-16T11:00:00.000Z');
+    const start = new Date(Date.now() + 48 * 3600_000);
+    const mid = new Date(start.getTime() + 3 * 3600_000);
+    const end = new Date(start.getTime() + 6 * 3600_000);
     prisma.scheduleAllocation.findMany.mockResolvedValue([
       {
         id: 'alloc-a',
@@ -459,7 +461,7 @@ describe('scheduling capacity wiring', () => {
         id: 'alloc-b',
         employeeId: 'w-1',
         resourceSlot: null,
-        plannedStart: new Date('2026-08-16T07:00:00.000Z'),
+        plannedStart: new Date(start.getTime() + 2 * 3600_000),
         plannedEnd: end,
         estimatedMinutes: 180,
         isPinned: false,

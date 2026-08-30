@@ -31,9 +31,12 @@ export type InventoryPickRow = {
   sku: string;
   unit: string;
   productName: string | null;
+  imageUrl: string | null;
   onHandQty: number;
   reservedQty: number;
   freeQty: number;
+  /** Qty shown / allowed for this pick mode context. */
+  displayQty: number;
   transferable: boolean;
 };
 
@@ -88,11 +91,25 @@ export function warehouseScopedQty(
   return { onHandQty, reservedQty, freeQty };
 }
 
+/**
+ * Qty that can leave a warehouse on a same-type transfer.
+ * RAW: free only (do not pull BOM-reserved stock).
+ * SEMI/FG: physical on-hand — order-allocated lots are reserved but still move with the bay.
+ */
+export function transferableQty(item: InventoryItem, warehouseId: string): number {
+  const scoped = warehouseScopedQty(item, warehouseId);
+  const cls = String(item.itemClass ?? '').toUpperCase();
+  if (cls === 'FINISHED_GOOD' || cls === 'SEMI_FINISHED_GOOD' || cls === 'FINISHED_GOODS') {
+    return Math.max(0, scoped.onHandQty);
+  }
+  return Math.max(0, scoped.freeQty);
+}
+
 export function isTransferableFromWarehouse(
   item: InventoryItem,
   warehouseId: string,
 ): boolean {
-  return warehouseScopedQty(item, warehouseId).freeQty > 0;
+  return transferableQty(item, warehouseId) > 0;
 }
 
 export function filterPickableItems(
@@ -128,16 +145,23 @@ export function selectInventoryPickRow(
   const qty = warehouseScopedQty(item, warehouseId);
   const name = localizedItemName(item, locale);
   const productName = localizedProductName(item, locale);
+  const displayQty = transferableQty(item, warehouseId);
+  const imageUrl =
+    item.imageUrl?.trim() ||
+    item.product?.imageUrl?.trim() ||
+    null;
   return {
     id: item.id,
     name,
     sku: item.sku,
     unit: item.unit || 'pcs',
     productName: productName && productName !== name ? productName : null,
+    imageUrl,
     onHandQty: qty.onHandQty,
     reservedQty: qty.reservedQty,
     freeQty: qty.freeQty,
-    transferable: qty.freeQty > 0,
+    displayQty,
+    transferable: displayQty > 0,
   };
 }
 
@@ -148,8 +172,10 @@ export function inventoryPickCopyKey(
   pickItem: string;
   transferRequired: string;
   countRequired: string;
+  searchLabel: string;
   searchPlaceholder: string;
   emptyBody: string;
+  fallbackIcon: 'cube-outline' | 'layers-outline' | 'file-tray-stacked-outline';
 } {
   if (lifecycle === 'semiFinished') {
     return {
@@ -157,8 +183,10 @@ export function inventoryPickCopyKey(
       pickItem: 'mobile.inventory.pickSemiItem',
       transferRequired: 'mobile.inventory.transferRequiredSemi',
       countRequired: 'mobile.inventory.countRequiredSemi',
+      searchLabel: 'mobile.inventory.searchSemiLabel',
       searchPlaceholder: 'mobile.inventory.searchSemiPlaceholder',
       emptyBody: 'mobile.inventory.emptySemiPickerBody',
+      fallbackIcon: 'layers-outline',
     };
   }
   if (lifecycle === 'finished') {
@@ -167,8 +195,10 @@ export function inventoryPickCopyKey(
       pickItem: 'mobile.inventory.pickFinishedItem',
       transferRequired: 'mobile.inventory.transferRequiredFinished',
       countRequired: 'mobile.inventory.countRequiredFinished',
+      searchLabel: 'mobile.inventory.searchFinishedLabel',
       searchPlaceholder: 'mobile.inventory.searchFinishedPlaceholder',
       emptyBody: 'mobile.inventory.emptyFinishedPickerBody',
+      fallbackIcon: 'cube-outline',
     };
   }
   return {
@@ -176,8 +206,10 @@ export function inventoryPickCopyKey(
     pickItem: 'mobile.inventory.pickItem',
     transferRequired: 'mobile.inventory.transferRequired',
     countRequired: 'mobile.inventory.countRequired',
+    searchLabel: 'mobile.inventory.searchMaterials',
     searchPlaceholder: 'mobile.inventory.searchPlaceholder',
     emptyBody: 'mobile.inventory.emptyMaterialsBody',
+    fallbackIcon: 'file-tray-stacked-outline',
   };
 }
 

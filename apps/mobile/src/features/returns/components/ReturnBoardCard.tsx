@@ -1,14 +1,20 @@
-import { Image, View } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { ProductThumb } from '@/components/desk/ProductThumb';
 import { Divider } from '@/components/layout/Divider';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import type { ReturnCardModel } from '../selectReturn';
+import {
+  returnLifecycleBadgeStatus,
+  returnNextActionKey,
+  returnPhysicalLabelKey,
+  type ReturnCardModel,
+} from '../selectReturn';
 
 type Props = {
   item: ReturnCardModel;
@@ -26,6 +32,24 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const productUri = resolveOrderMediaUri(item.productImageUrl);
+
+  const lifecycleLabel = (() => {
+    const v = t(item.lifecycleLabelKey);
+    return v === item.lifecycleLabelKey ? item.lifecyclePhase.replace(/_/g, ' ') : v;
+  })();
+  const badgeStatus = returnLifecycleBadgeStatus(item.lifecyclePhase);
+  const badgeLabel = lifecycleLabel;
+  const nextAction = t(
+    returnNextActionKey(item.lifecyclePhase, {
+      dealerFacing,
+      needsInfo: item.needsInfo,
+    }),
+  );
+  const physicalRaw = t(returnPhysicalLabelKey(item.physicalStatus));
+  const physicalLabel =
+    physicalRaw === returnPhysicalLabelKey(item.physicalStatus)
+      ? item.physicalStatus.replace(/_/g, ' ')
+      : physicalRaw;
 
   const reasonLabel = (() => {
     const fromCatalog = t(item.reasonLabelKey);
@@ -104,75 +128,28 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
           backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <StatusBadge
-          status={item.approvalStatus}
-          label={item.beingResolved ? beingResolvedLabel : undefined}
-          dot
-        />
+        <StatusBadge status={badgeStatus} label={badgeLabel} dot />
         <AppText variant="caption" color="brand" weight="semibold">
           {t('common.details')}
         </AppText>
       </View>
 
-      {/* Product media only */}
+      {/* Product media — shared ProductThumb aspect */}
       <View
         style={{
           marginHorizontal: theme.spacing.md,
           marginTop: theme.spacing.md,
-          height: 148,
-          borderRadius: theme.radius.xl,
-          borderWidth: 1,
-          borderColor: colors.borderStrong,
-          backgroundColor: colors.surfaceSecondary,
+          borderRadius: theme.radius.lg,
           overflow: 'hidden',
           ...orderBoardShadow(colorScheme),
         }}
       >
-        {productUri ? (
-          <Image
-            source={{ uri: productUri }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-          />
-        ) : (
-          <View
-            style={{
-              flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: theme.spacing.sm,
-              backgroundColor: colors.brandSoft,
-            }}
-          >
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <Ionicons name="cube-outline" size={22} color={colors.brand} />
-            </View>
-            <AppText
-              variant="caption"
-              weight="semibold"
-              dir="ltr"
-              style={{
-                color: colors.brand,
-                textTransform: 'uppercase',
-                letterSpacing: 0.9,
-                fontSize: 10,
-              }}
-            >
-              {item.number}
-            </AppText>
-          </View>
-        )}
+        <ProductThumb
+          uri={productUri}
+          aspectRatio={4 / 3}
+          width="100%"
+          radius={theme.radius.lg}
+        />
         <View
           style={{
             position: 'absolute',
@@ -247,37 +224,48 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
             >
               {item.productDesc}
             </AppText>
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                gap: theme.spacing.sm,
-                marginTop: 2,
-              }}
-            >
+            {!dealerFacing ? (
               <View
                 style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 11,
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: colors.surfaceSecondary,
-                  borderWidth: 1,
-                  borderColor: colors.border,
+                  gap: theme.spacing.sm,
+                  marginTop: 2,
                 }}
               >
-                <Ionicons name="storefront-outline" size={12} color={colors.textSecondary} />
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: colors.surfaceSecondary,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <Ionicons name="storefront-outline" size={12} color={colors.textSecondary} />
+                </View>
+                <AppText
+                  variant="caption"
+                  color="secondary"
+                  numberOfLines={1}
+                  style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {item.dealerName}
+                </AppText>
               </View>
+            ) : item.needsInfo ? (
               <AppText
                 variant="caption"
                 color="secondary"
                 numberOfLines={1}
-                style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+                style={{ textAlign: isRTL ? 'right' : 'left', marginTop: 2 }}
               >
-                {item.dealerName}
+                {t('mobile.returns.needInfoHint')}
               </AppText>
-            </View>
+            ) : null}
           </View>
         </View>
 
@@ -334,6 +322,67 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
               />
             </>
           ) : null}
+          <Divider compact />
+          <MetaRow
+            icon="cube-outline"
+            label={(() => {
+              const v = t('mobile.returns.physicalState');
+              return v === 'mobile.returns.physicalState' ? 'Physical' : v;
+            })()}
+            value={physicalLabel}
+            isRTL={isRTL}
+          />
+          <Divider compact />
+          <MetaRow
+            icon="flag-outline"
+            label={(() => {
+              const v = t('mobile.returns.resolutionState');
+              return v === 'mobile.returns.resolutionState' ? 'Resolution' : v;
+            })()}
+            value={lifecycleLabel}
+            isRTL={isRTL}
+          />
+        </View>
+
+        <View
+          style={{
+            borderRadius: theme.radius.lg,
+            borderWidth: 1,
+            borderColor: colors.brand,
+            backgroundColor: colors.brandSoft,
+            paddingHorizontal: theme.spacing.md,
+            paddingVertical: theme.spacing.sm + 2,
+            gap: 4,
+          }}
+        >
+          <AppText
+            variant="caption"
+            weight="semibold"
+            style={{
+              color: colors.brand,
+              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' ? 0 : 0.5,
+              fontSize: 10,
+              textAlign: isRTL ? 'right' : 'left',
+            }}
+          >
+            {(() => {
+              const v = t('mobile.returns.nextAction');
+              return v === 'mobile.returns.nextAction' ? 'Next action' : v;
+            })()}
+          </AppText>
+          <AppText
+            variant="caption"
+            weight="medium"
+            style={{
+              textAlign: isRTL ? 'right' : 'left',
+              color: colors.textPrimary,
+              lineHeight: 17,
+              fontSize: 12,
+            }}
+          >
+            {nextAction}
+          </AppText>
         </View>
 
         {item.description ? (

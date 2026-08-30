@@ -225,8 +225,8 @@ export function formatIdentifier(locale: Locale, id: string): string {
 
 export function formatPercent(locale: Locale, value: number): string {
   const n = toWesternNumberSeparators(toLatinDigits(String(Math.round(value))));
-  const raw = locale === 'ar' ? `${n}٪` : `${n}%`;
-  return maybeRtlIsolate(locale, raw);
+  // ASCII `%` — KO Sans has no Arabic percent glyph, so `٪` did not paint.
+  return maybeRtlIsolate(locale, `${n}%`);
 }
 
 /** Keep number+unit together (14h / 14 س) via existing i18n unit keys. */

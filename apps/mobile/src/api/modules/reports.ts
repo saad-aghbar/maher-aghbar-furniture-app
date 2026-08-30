@@ -69,6 +69,129 @@ export async function getAdminHome(): Promise<AdminHomePayload> {
   return apiGet<AdminHomePayload>('/reports/admin-home');
 }
 
+/** Piece 12 management desk tile — count + deep-link contract. */
+export type MgmtTile = {
+  count: number;
+  key: string;
+  href: string;
+  filter: string;
+};
+
+export type MgmtAttentionCard = {
+  id: string;
+  title: string;
+  why: string;
+  actionLabel: string;
+  priority: 'critical' | 'high' | 'normal';
+  href: string;
+  filter: string;
+};
+
+export type MgmtFlowPhase = {
+  key: string;
+  label: string;
+  count: number;
+  href: string;
+  filter: string;
+};
+
+export type MgmtBlockedItem = {
+  id: string;
+  title: string;
+  why: string;
+  href: string;
+  filter: string;
+};
+
+export type MgmtEvent = {
+  at: string;
+  label: string;
+  href?: string;
+};
+
+export type MgmtFinanceSummary = {
+  receivable: number;
+  overdue: number;
+  /** Never net with overdue. */
+  accountCredit: number;
+  paymentsThisMonth: number;
+  openInvoices: MgmtTile;
+  topOverdue: Array<{ customerId: string; name: string; amount: number; href: string }>;
+};
+
+export type ManagementSummaryPayload = {
+  attention: MgmtAttentionCard[];
+  today: {
+    productionStarting: MgmtTile;
+    productionDue: MgmtTile;
+    qualityWaiting: MgmtTile;
+    finishedToday: MgmtTile;
+    leavingToday: MgmtTile;
+    receivingToday: MgmtTile;
+  };
+  factoryFlow: MgmtFlowPhase[];
+  production: {
+    activeOrders: MgmtTile;
+    tasksCompletedToday: MgmtTile;
+    blocked: MgmtTile;
+    dueToday: MgmtTile;
+    events: MgmtEvent[];
+  };
+  blocked: MgmtBlockedItem[];
+  workers: {
+    workingToday: number;
+    assigned: number;
+    unassigned: number;
+    conflicts: number;
+  } | null;
+  late: { overdue: MgmtTile; atRiskLimited: boolean };
+  outbound: {
+    finishedWaiting: MgmtTile;
+    leavingToday: MgmtTile;
+    overduePickup: MgmtTile;
+    shippedAwaitingDealer: MgmtTile;
+  };
+  materials: {
+    needsPurchasing: MgmtTile;
+    blockingProduction: MgmtTile;
+    arrivingToday: MgmtTile;
+    lateSupplierPos: MgmtTile;
+  };
+  inventory: {
+    rawShortages: MgmtTile;
+    semiHandoff: MgmtTile;
+    finishedWaiting: MgmtTile;
+    correctionsAttention: MgmtTile;
+  };
+  quality: {
+    waitingInspection: MgmtTile;
+    failRework: MgmtTile;
+    readyReinspection: MgmtTile;
+    passedToday: MgmtTile;
+  };
+  exceptions: {
+    returnsOpen: MgmtTile;
+    waitingReturn: MgmtTile;
+    waitingInspection: MgmtTile;
+    cancelDisposition: MgmtTile;
+    inventoryCorrections: MgmtTile;
+  };
+  finance: MgmtFinanceSummary | null;
+  manufacturing: {
+    finalCostOrders: number;
+    finalCostTotal: number;
+    incompleteCosting: number;
+    grossMfgDifference: number | null;
+  } | null;
+  activity: MgmtEvent[];
+  generatedAt: string;
+};
+
+/** `GET /reports/management-summary` — Piece 12 factory management desk. */
+export async function getManagementSummary(): Promise<ManagementSummaryPayload> {
+  return apiGet<ManagementSummaryPayload>('/reports/management-summary');
+}
+
 export type DealerHomeOrder = {
   id: string;
   number: string;

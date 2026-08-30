@@ -168,8 +168,8 @@ describe('dealer own schedule + own-deliveries isolation', () => {
 
   it('keeps a slipped commitment on Aug 19 and omits it from Aug 21 range', async () => {
     const { service, prisma } = makeService();
-    const committed = new Date('2026-08-19T00:00:00.000Z');
-    const slipped = new Date('2026-08-21T00:00:00.000Z');
+    const committed = new Date('2026-08-25T00:00:00.000Z');
+    const slipped = new Date('2026-08-27T00:00:00.000Z');
     prisma.salesOrder.findMany.mockResolvedValue([
       {
         id: 'so-19',
@@ -211,20 +211,20 @@ describe('dealer own schedule + own-deliveries isolation', () => {
 
     const august = await service.listOwnDeliveries(makeUser(), { from: '2026-08-01', to: '2026-08-31' });
     expect(august.data).toHaveLength(1);
-    expect(august.data[0]!.calendarDate).toBe('2026-08-19');
+    expect(august.data[0]!.calendarDate).toBe('2026-08-25');
     expect(august.data[0]!.projectedDeliveryDate).toEqual(slipped);
     expect(august.data[0]!.customerStatus).toBe('MAY_BE_DELAYED');
     expect(august.data[0]!.requiresDealerAttention).toBe(false);
 
     const onPromise = await service.listOwnDeliveries(makeUser(), {
-      from: '2026-08-19',
-      to: '2026-08-19',
+      from: '2026-08-25',
+      to: '2026-08-25',
     });
     expect(onPromise.data.map((r: { salesOrderId: string }) => r.salesOrderId)).toEqual(['so-19']);
 
     const onProjection = await service.listOwnDeliveries(makeUser(), {
-      from: '2026-08-21',
-      to: '2026-08-21',
+      from: '2026-08-27',
+      to: '2026-08-27',
     });
     expect(onProjection.data).toHaveLength(0);
   });

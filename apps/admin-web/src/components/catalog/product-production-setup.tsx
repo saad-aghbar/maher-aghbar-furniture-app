@@ -1,6 +1,7 @@
 'use client';
 
 import { apiFetch, ApiClientError } from '@/lib/api-client';
+import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { formatProductionPreviewStep, localizedName } from '@maher/i18n';
 import {
@@ -28,6 +29,7 @@ type SetupStage = {
   workflowNodeId: string;
   nodeKey: string;
   stageDefinitionId: string;
+  stageCode?: string | null;
   nameEn: string;
   nameAr: string;
   nameHe?: string | null;
@@ -37,6 +39,15 @@ type SetupStage = {
   consumesRawMaterials: boolean;
   consumesSemiFinished: boolean;
   consumeOutputIds: string[];
+  materialInputs?: Array<{
+    sku: string;
+    qtyPerUnit: number;
+    unit?: string;
+    required?: boolean;
+    imageUrl?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+  }>;
   output: {
     id: string | null;
     nameEn: string | null;
@@ -45,6 +56,8 @@ type SetupStage = {
     qtyPerUnit: number | null;
     unit: string | null;
     defaultWarehouseId: string | null;
+    expectedPieceCount?: number | null;
+    pieceLabels?: Array<{ nameEn: string; nameAr?: string | null; nameHe?: string | null }> | null;
   } | null;
 };
 
@@ -52,7 +65,15 @@ type SetupResponse = {
   status: 'READY' | 'NEEDS_SETUP' | 'INVALID';
   issues: Array<{ code: string; message: string; workflowNodeId?: string | null }>;
   workflow: { id: string; nameEn: string; nameAr: string; published: boolean } | null;
-  bomLines: Array<{ sku: string; qty: number; exists: boolean }>;
+  bomLines: Array<{
+    sku: string;
+    qty: number;
+    exists: boolean;
+    imageUrl?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+  }>;
   stages: SetupStage[];
   edges: Array<{ fromNodeKey: string; toNodeKey: string }>;
   warehouses: Array<{
@@ -99,9 +120,31 @@ type Draft = {
   outputNameAr: string;
   outputNameHe: string;
   outputQtyPerUnit: string;
+  expectedPieceCount: string;
+  pieceLabels: Array<{ nameEn: string; nameAr: string; nameHe: string }>;
   defaultWarehouseId: string;
   consumeOutputIds: string[];
+  materialInputs: Array<{ sku: string; qtyPerUnit: string }>;
 };
+
+function resizePackLabels(
+  labels: Array<{ nameEn: string; nameAr: string; nameHe: string }>,
+  count: number,
+): Array<{ nameEn: string; nameAr: string; nameHe: string }> {
+  const n = Math.max(1, Math.min(20, Math.floor(count) || 1));
+  if (labels.length === n) return labels;
+  if (labels.length < n) {
+    return [
+      ...labels,
+      ...Array.from({ length: n - labels.length }, () => ({
+        nameEn: '',
+        nameAr: '',
+        nameHe: '',
+      })),
+    ];
+  }
+  return labels.slice(0, n);
+}
 
 function produces(behavior: Behavior) {
   return (
@@ -113,6 +156,92 @@ function produces(behavior: Behavior) {
 
 function usesSemi(behavior: Behavior) {
   return behavior === 'USES_SEMI_FINISHED' || behavior === 'USES_AND_PRODUCES';
+}
+
+function isPackagingStage(code?: string | null) {
+  const c = String(code ?? '').toUpperCase();
+  return c === 'PACKAGING' || c === 'PACK';
+}
+
+function isInspectionStage(code?: string | null) {
+  return String(code ?? '').toUpperCase() === 'INSPECTION';
+}
+
+function isDeliveryStage(code?: string | null) {
+  return String(code ?? '').toUpperCase() === 'DELIVERY';
+}
+
+function behaviorOptionsForStage(
+  stageCode: string | null | undefined,
+  all: Array<{ value: Behavior; label: string }>,
+) {
+  if (isInspectionStage(stageCode)) {
+    return all.filter((o) => o.value === 'NONE' || o.value === 'USES_SEMI_FINISHED');
+  }
+  if (isDeliveryStage(stageCode)) {
+    return all.filter((o) => o.value === 'NONE');
+  }
+  if (isPackagingStage(stageCode)) {
+    return all.filter((o) => o.value === 'PRODUCES_FINISHED');
+  }
+  return all.filter((o) => o.value !== 'PRODUCES_FINISHED');
+}
+
+/** BOM qty still available for `stageId` after other stages' claims. */
+function remainingBomQtyForStage(
+  sku: string,
+  stageId: string,
+  bomQty: number,
+  drafts: Record<string, Draft>,
+): number {
+  let usedElsewhere = 0;
+  for (const [nodeId, draft] of Object.entries(drafts)) {
+    if (nodeId === stageId) continue;
+    const row = draft.materialInputs.find((r) => r.sku === sku);
+    if (row) usedElsewhere += Number(row.qtyPerUnit) || 0;
+  }
+  return Math.max(0, bomQty - usedElsewhere);
+}
+
+/** True when another stage already takes this SEMI output. */
+function semiOutputClaimedElsewhere(
+  outputId: string,
+  stageId: string,
+  drafts: Record<string, Draft>,
+): boolean {
+  for (const [nodeId, draft] of Object.entries(drafts)) {
+    if (nodeId === stageId) continue;
+    if (draft.consumeOutputIds.includes(outputId)) return true;
+  }
+  return false;
+}
+
+/** Cap each stage's material claims so Σ across stages never exceeds BOM qty. */
+function clampDraftMaterialsToBom(
+  drafts: Record<string, Draft>,
+  bomLines: Array<{ sku: string; qty: number }>,
+): Record<string, Draft> {
+  const remaining = new Map<string, number>();
+  for (const line of bomLines) {
+    const sku = String(line.sku ?? '').trim();
+    if (!sku) continue;
+    remaining.set(sku, Math.max(0, Number(line.qty) || 0));
+  }
+  const next: Record<string, Draft> = {};
+  for (const [nodeId, draft] of Object.entries(drafts)) {
+    const materialInputs: Draft['materialInputs'] = [];
+    for (const row of draft.materialInputs) {
+      const sku = String(row.sku ?? '').trim();
+      if (!sku || !remaining.has(sku)) continue;
+      const want = Math.max(0, Number(row.qtyPerUnit) || 0);
+      const left = remaining.get(sku) ?? 0;
+      const take = Math.min(want, left);
+      remaining.set(sku, Math.max(0, left - take));
+      if (take > 0) materialInputs.push({ sku, qtyPerUnit: String(take) });
+    }
+    next[nodeId] = { ...draft, materialInputs };
+  }
+  return next;
 }
 
 export function ProductProductionSetup({ productId }: { productId: string }) {
@@ -146,8 +275,27 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
         outputNameAr: stage.output?.nameAr ?? '',
         outputNameHe: stage.output?.nameHe ?? '',
         outputQtyPerUnit: String(stage.output?.qtyPerUnit ?? 1),
+        expectedPieceCount: String(
+          (stage.output as { expectedPieceCount?: number } | null)?.expectedPieceCount ?? 1,
+        ),
+        pieceLabels: resizePackLabels(
+          (stage.output?.pieceLabels ?? []).map((row) => ({
+            nameEn: row.nameEn ?? '',
+            nameAr: row.nameAr ?? '',
+            nameHe: row.nameHe ?? '',
+          })),
+          Number(
+            (stage.output as { expectedPieceCount?: number } | null)?.expectedPieceCount ??
+              stage.output?.pieceLabels?.length ??
+              1,
+          ),
+        ),
         defaultWarehouseId: stage.output?.defaultWarehouseId ?? '',
         consumeOutputIds: stage.consumeOutputIds ?? [],
+        materialInputs: (stage.materialInputs ?? []).map((row) => ({
+          sku: row.sku,
+          qtyPerUnit: String(row.qtyPerUnit),
+        })),
       };
     }
     setDrafts(next);
@@ -155,8 +303,25 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const bomLines = setupQuery.data?.bomLines ?? [];
+      const clampedDrafts = clampDraftMaterialsToBom(drafts, bomLines);
+      // Exclusive SEMI handoff: first stage in list keeps a claim; later duplicates drop.
+      const claimedOutputs = new Set<string>();
+      const exclusiveDrafts: Record<string, Draft> = {};
+      for (const stage of setupQuery.data?.stages ?? []) {
+        const d = clampedDrafts[stage.workflowNodeId];
+        if (!d) continue;
+        const keep: string[] = [];
+        for (const id of d.consumeOutputIds) {
+          if (claimedOutputs.has(id)) continue;
+          claimedOutputs.add(id);
+          keep.push(id);
+        }
+        exclusiveDrafts[stage.workflowNodeId] = { ...d, consumeOutputIds: keep };
+      }
+      setDrafts({ ...clampedDrafts, ...exclusiveDrafts });
       const stages = (setupQuery.data?.stages ?? []).map((stage) => {
-        const d = drafts[stage.workflowNodeId];
+        const d = exclusiveDrafts[stage.workflowNodeId] ?? clampedDrafts[stage.workflowNodeId];
         return {
           workflowNodeId: stage.workflowNodeId,
           stageDefinitionId: stage.stageDefinitionId,
@@ -170,8 +335,22 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
           outputNameAr: d?.outputNameAr || null,
           outputNameHe: d?.outputNameHe || null,
           outputQtyPerUnit: Number(d?.outputQtyPerUnit || 1),
+          expectedPieceCount: Number(d?.expectedPieceCount || 1),
+          pieceLabels:
+            d?.behavior === 'PRODUCES_FINISHED'
+              ? (d.pieceLabels ?? [])
+                  .map((row) => ({
+                    nameEn: row.nameEn.trim(),
+                    nameAr: row.nameAr.trim() || row.nameEn.trim(),
+                    nameHe: row.nameHe.trim() || null,
+                  }))
+                  .filter((row) => row.nameEn)
+              : undefined,
           defaultWarehouseId: d?.defaultWarehouseId || null,
           consumeOutputIds: d?.consumeOutputIds ?? [],
+          materialInputs: (d?.materialInputs ?? [])
+            .filter((row) => row.sku && Number(row.qtyPerUnit) > 0)
+            .map((row) => ({ sku: row.sku, qtyPerUnit: Number(row.qtyPerUnit) })),
         };
       });
       return apiFetch(`/api/v1/products/${productId}/production-setup`, {
@@ -288,8 +467,14 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
           ) : (
             <ul className="space-y-1 text-sm text-text-secondary">
               {(setup.bomLines ?? []).map((line) => (
-                <li key={line.sku} dir="ltr">
-                  {t('setup.bomLine', { sku: line.sku, qty: line.qty })}
+                <li key={line.sku} className="flex items-center gap-2" dir="ltr">
+                  <InventoryItemThumb src={line.imageUrl} alt="" size={28} />
+                  <span>
+                    {t('setup.bomLine', {
+                      name: localizedName(locale, line, line.sku),
+                      qty: line.qty,
+                    })}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -329,10 +514,20 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
                   outputNameAr: '',
                   outputNameHe: '',
                   outputQtyPerUnit: '1',
+                  expectedPieceCount: '1',
+                  pieceLabels: [{ nameEn: '', nameAr: '', nameHe: '' }],
                   defaultWarehouseId: '',
                   consumeOutputIds: [],
+                  materialInputs: [],
                 };
-                const upstream = savedOutputs.filter(
+                const upstream = savedOutputs.filter((o) => {
+                  if (!o.workflowNodeId || o.workflowNodeId === stage.workflowNodeId) {
+                    return false;
+                  }
+                  if (d.consumeOutputIds.includes(o.id)) return true;
+                  return !semiOutputClaimedElsewhere(o.id, stage.workflowNodeId, drafts);
+                });
+                const earlierSemiExists = savedOutputs.some(
                   (o) => o.workflowNodeId && o.workflowNodeId !== stage.workflowNodeId,
                 );
                 const warehouseType =
@@ -356,7 +551,7 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
                           },
                         }))
                       }
-                      options={behaviorOptions}
+                      options={behaviorOptionsForStage(stage.stageCode, behaviorOptions)}
                     />
                     {produces(d.behavior) ? (
                       <label className="flex items-center gap-2 text-sm">
@@ -439,6 +634,88 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
                             }))
                           }
                         />
+                        <Input
+                          label={t('setup.expectedPieces')}
+                          type="number"
+                          min={1}
+                          step="1"
+                          value={d.expectedPieceCount}
+                          onChange={(e) => {
+                            const nextCount = e.target.value;
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [stage.workflowNodeId]: {
+                                ...d,
+                                expectedPieceCount: nextCount,
+                                pieceLabels: resizePackLabels(
+                                  d.pieceLabels,
+                                  Number(nextCount) || 1,
+                                ),
+                              },
+                            }));
+                          }}
+                        />
+                        {d.behavior === 'PRODUCES_FINISHED' ? (
+                          <div className="sm:col-span-2 space-y-2 rounded-xl border border-border p-3">
+                            <p className="text-sm font-semibold">{t('setup.packPiecesTitle')}</p>
+                            <p className="text-xs text-text-secondary">
+                              {t('setup.packPieceNamesHint')}
+                            </p>
+                            {(d.pieceLabels ?? []).map((row, index) => (
+                              <div
+                                key={`pack-${stage.workflowNodeId}-${index}`}
+                                className="grid gap-2 sm:grid-cols-3"
+                              >
+                                <Input
+                                  label={t('setup.packPieceN', { n: String(index + 1) })}
+                                  value={row.nameEn}
+                                  placeholder={t('setup.packPieceNamePlaceholder')}
+                                  onChange={(e) =>
+                                    setDrafts((prev) => ({
+                                      ...prev,
+                                      [stage.workflowNodeId]: {
+                                        ...d,
+                                        pieceLabels: d.pieceLabels.map((r, i) =>
+                                          i === index ? { ...r, nameEn: e.target.value } : r,
+                                        ),
+                                      },
+                                    }))
+                                  }
+                                />
+                                <Input
+                                  label={t('setup.pieceNameAr')}
+                                  value={row.nameAr}
+                                  onChange={(e) =>
+                                    setDrafts((prev) => ({
+                                      ...prev,
+                                      [stage.workflowNodeId]: {
+                                        ...d,
+                                        pieceLabels: d.pieceLabels.map((r, i) =>
+                                          i === index ? { ...r, nameAr: e.target.value } : r,
+                                        ),
+                                      },
+                                    }))
+                                  }
+                                />
+                                <Input
+                                  label={t('setup.pieceNameHe')}
+                                  value={row.nameHe}
+                                  onChange={(e) =>
+                                    setDrafts((prev) => ({
+                                      ...prev,
+                                      [stage.workflowNodeId]: {
+                                        ...d,
+                                        pieceLabels: d.pieceLabels.map((r, i) =>
+                                          i === index ? { ...r, nameHe: e.target.value } : r,
+                                        ),
+                                      },
+                                    }))
+                                  }
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                         <Select
                           label={t('setup.destinationWarehouse')}
                           value={d.defaultWarehouseId}
@@ -463,11 +740,135 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
                         />
                       </div>
                     ) : null}
+                    <div>
+                      <p className="mb-2 text-sm font-medium">{t('setup.rawMaterialsTitle')}</p>
+                      {(setup.bomLines ?? []).length === 0 ? (
+                        <p className="text-sm text-text-tertiary">{t('setup.bomEmpty')}</p>
+                      ) : (
+                        <div className="grid gap-2">
+                          {(setup.bomLines ?? [])
+                            .map((line) => {
+                              const mapped = d.materialInputs.find((row) => row.sku === line.sku);
+                              const available = remainingBomQtyForStage(
+                                line.sku,
+                                stage.workflowNodeId,
+                                line.qty,
+                                drafts,
+                              );
+                              return { line, mapped, available };
+                            })
+                            .filter(({ mapped, available }) => Boolean(mapped) || available > 0)
+                            .map(({ line, mapped, available }) => {
+                              const currentQty = mapped ? Number(mapped.qtyPerUnit) || 0 : 0;
+                              const leftForOthers = Math.max(0, available - currentQty);
+                              return (
+                                <label
+                                  key={line.sku}
+                                  className="flex flex-wrap items-center gap-2 text-sm"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(mapped)}
+                                    onChange={(e) => {
+                                      const next = e.target.checked
+                                        ? [
+                                            ...d.materialInputs.filter(
+                                              (row) => row.sku !== line.sku,
+                                            ),
+                                            {
+                                              sku: line.sku,
+                                              qtyPerUnit: String(
+                                                Math.min(line.qty || 1, available || line.qty || 1),
+                                              ),
+                                            },
+                                          ]
+                                        : d.materialInputs.filter((row) => row.sku !== line.sku);
+                                      setDrafts((prev) => ({
+                                        ...prev,
+                                        [stage.workflowNodeId]: { ...d, materialInputs: next },
+                                      }));
+                                    }}
+                                  />
+                                  <InventoryItemThumb src={line.imageUrl} alt="" size={28} />
+                                  <span>{localizedName(locale, line, line.sku)}</span>
+                                  {mapped ? (
+                                    <>
+                                      <Input
+                                        className="w-24"
+                                        type="number"
+                                        min={0.001}
+                                        max={available > 0 ? available : undefined}
+                                        step="0.001"
+                                        value={mapped.qtyPerUnit}
+                                        onChange={(e) => {
+                                          const raw = e.target.value;
+                                          const parsed = Number(raw);
+                                          const capped =
+                                            Number.isFinite(parsed) && available > 0
+                                              ? Math.min(parsed, available)
+                                              : raw;
+                                          const qty =
+                                            typeof capped === 'number' ? String(capped) : capped;
+                                          setDrafts((prev) => ({
+                                            ...prev,
+                                            [stage.workflowNodeId]: {
+                                              ...d,
+                                              materialInputs: d.materialInputs.map((row) =>
+                                                row.sku === line.sku
+                                                  ? { ...row, qtyPerUnit: qty }
+                                                  : row,
+                                              ),
+                                            },
+                                          }));
+                                        }}
+                                      />
+                                      <span className="text-xs text-text-tertiary" dir="ltr">
+                                        {t('setup.materialsRemaining', {
+                                          remaining: leftForOthers,
+                                          bom: line.qty,
+                                        })}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-text-tertiary" dir="ltr">
+                                      {t('setup.materialsRemaining', {
+                                        remaining: available,
+                                        bom: line.qty,
+                                      })}
+                                    </span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          {(setup.bomLines ?? []).every((line) => {
+                            const mapped = d.materialInputs.find((row) => row.sku === line.sku);
+                            const available = remainingBomQtyForStage(
+                              line.sku,
+                              stage.workflowNodeId,
+                              line.qty,
+                              drafts,
+                            );
+                            return !mapped && available <= 0;
+                          }) && (setup.bomLines ?? []).length > 0 ? (
+                            <p className="text-sm text-text-tertiary">
+                              {t('setup.materialsBoardPoolEmpty')}
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
                     {usesSemi(d.behavior) || d.consumesSemiFinished ? (
                       <div>
                         <p className="mb-2 text-sm font-medium">{t('setup.consumeInputs')}</p>
+                        <p className="mb-2 text-xs text-text-tertiary">
+                          {t('setup.consumeInputsHint')}
+                        </p>
                         {upstream.length === 0 ? (
-                          <p className="text-sm text-text-tertiary">{t('setup.noUpstream')}</p>
+                          <p className="text-sm text-text-tertiary">
+                            {earlierSemiExists
+                              ? t('setup.takeSemiAllClaimedHint')
+                              : t('setup.noUpstream')}
+                          </p>
                         ) : (
                           <div className="grid gap-2">
                             {upstream.map((out) => (
@@ -476,12 +877,24 @@ export function ProductProductionSetup({ productId }: { productId: string }) {
                                   type="checkbox"
                                   checked={d.consumeOutputIds.includes(out.id)}
                                   onChange={(e) => {
-                                    const next = e.target.checked
-                                      ? [...d.consumeOutputIds, out.id]
+                                    const exclusiveNext = e.target.checked
+                                      ? semiOutputClaimedElsewhere(
+                                          out.id,
+                                          stage.workflowNodeId,
+                                          drafts,
+                                        )
+                                        ? d.consumeOutputIds
+                                        : [
+                                            ...d.consumeOutputIds.filter((id) => id !== out.id),
+                                            out.id,
+                                          ]
                                       : d.consumeOutputIds.filter((id) => id !== out.id);
                                     setDrafts((prev) => ({
                                       ...prev,
-                                      [stage.workflowNodeId]: { ...d, consumeOutputIds: next },
+                                      [stage.workflowNodeId]: {
+                                        ...d,
+                                        consumeOutputIds: exclusiveNext,
+                                      },
                                     }));
                                   }}
                                 />

@@ -1,9 +1,22 @@
 'use client';
 
 import { useRouter } from '@/i18n/navigation';
-import { apiFetch, ApiClientError } from '@/lib/api-client';
+import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import { useAuthMe } from '@/hooks/use-auth-me';
+import { FinishedOrderBoard } from '@/components/admin/finished-order-board';
+import { FinishedOrderDetail } from '@/components/admin/finished-order-detail';
+import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
+import { ConfirmDialog } from '@/components/admin/confirm-dialog';
+import { SemiOrderBoard, boardQueryFromSemiFilter } from '@/components/admin/semi-order-board';
+import {
+  boardParamsForFinishedScope,
+  selectFinishedOrders,
+  type FinishedBoardScope,
+  type FinishedOrderGroup,
+  type FgFilter,
+} from '@/lib/select-finished-orders';
+import type { SemiOrderFilter } from '@/lib/select-semi-orders';
 import {
   Alert,
   Button,
@@ -22,13 +35,14 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  ImageSourceField,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { can } from '@maher/permissions';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 
 interface Balance {
   availableQty: string | number;
@@ -52,6 +66,7 @@ interface Row {
   materialType?: string | null;
   size?: string | null;
   preferredSupplierId?: string | null;
+  imageUrl?: string | null;
   minStock?: string | number;
   standardCost?: string | number;
   balances?: Balance[];
@@ -61,12 +76,31 @@ interface Row {
   freeQty?: number;
 }
 
+type OpenReceipt = {
+  purchaseOrderId: string;
+  purchaseOrderNumber: string;
+  supplierName: string;
+  orderedQty: number | string;
+  receivedQty: number | string;
+  remainingQty: number | string;
+  unit: string;
+  expectedDeliveryDate?: string | null;
+  suggestedWarehouseId?: string | null;
+  status: string;
+};
+
 interface SemiLot {
   id: string;
   quantity: string | number;
   producedAt: string;
   status: string;
-  inventoryItem: { id: string; sku: string; nameEn: string; nameAr: string };
+  inventoryItem: {
+    id: string;
+    sku: string;
+    nameEn: string;
+    nameAr: string;
+    product?: { imageUrl?: string | null } | null;
+  };
   warehouse: Warehouse;
   productionOrder?: { id: string; number: string } | null;
   stageInstance?: {
@@ -84,6 +118,42 @@ interface SemiLot {
     warehouseNameEn: string;
     warehouseNameAr: string;
   }>;
+}
+
+interface FinishedLot extends SemiLot {
+  daysWaiting?: number;
+  agingBucket?: string;
+  salesOrderNumber?: string | null;
+  salesOrder?: {
+    id: string;
+    number?: string;
+    projectName?: string | null;
+    deliveries?: Array<{ id: string; number?: string; status?: string }>;
+  } | null;
+  projectName?: string | null;
+  dealerNameEn?: string | null;
+  dealerNameAr?: string | null;
+  dealerNameHe?: string | null;
+  deliveryId?: string | null;
+  deliveryStatus?: string | null;
+  deliveryNumber?: string | null;
+  deliveryDate?: string | null;
+  qcStatus?: string | null;
+  qcInspectedAt?: string | null;
+  packagingComplete?: boolean;
+  finishedAt?: string | Date | null;
+  packagesPerUnit?: number;
+  packageCount?: number;
+  pieceLabels?: Array<{ nameEn: string; nameAr: string; nameHe?: string | null }>;
+  packageSummary?: string | null;
+  loadChecked?: number;
+  loadTotal?: number;
+  enteredAt?: string | null;
+  leftAt?: string | null;
+}
+
+function isFgInspectLot(lot: SemiLot): lot is FinishedLot {
+  return 'deliveryStatus' in lot || Boolean((lot as FinishedLot).salesOrderNumber);
 }
 
 interface Overview {
@@ -104,6 +174,7 @@ interface Warehouse {
   nameEn: string;
   nameAr?: string;
   type?: string;
+  locations?: Array<{ id: string; code: string; name?: string | null }>;
 }
 
 interface LowStockItem {
@@ -146,11 +217,23 @@ interface StockCount {
   number: string;
   status: string;
   warehouseId: string;
+  /** Optional reason/notes captured at create — required again at post if missing. */
+  notes?: string | null;
   lines: CountLine[];
 }
 
 type Tab = 'items' | 'transfers' | 'counts';
 type CategoryGroup = 'fabric' | 'foam' | 'wood' | 'accessories';
+
+function defaultHistoryFrom(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d.toISOString().slice(0, 10);
+}
+
+function defaultHistoryTo(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const CATEGORY_TILES: Array<{ key: CategoryGroup; labelKey: string }> = [
   { key: 'fabric', labelKey: 'categoryFabric' },
@@ -206,11 +289,22 @@ function warehousesForItem(
   return list.filter((wh) => warehouseMatchesLifecycleType(wh, required));
 }
 
+async function uploadInventorySkuPhoto(file: File): Promise<string> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await apiUpload<{ downloadPath: string }>(
+    '/api/v1/uploads?category=INVENTORY_IMAGE',
+    form,
+  );
+  return `${API_URL}${res.downloadPath}`;
+}
+
 export default function InventoryPage() {
   const locale = useLocale();
   const t = useTranslations('navigation');
   const ti = useTranslations('inventory');
   const tc = useTranslations('catalog');
+  const tl = useTranslations('lifecycle');
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
   const me = useAuthMe();
@@ -219,12 +313,23 @@ export default function InventoryPage() {
   const canTransfer = can(me.data, 'inventory.transfer');
   const canCount = can(me.data, 'inventory.count');
   const canAdjust = can(me.data, 'inventory.adjust');
+  const canRead = can(me.data, 'inventory.read');
+  const canManageWarehouse = can(me.data, 'warehouse.manage');
 
   const [tab, setTab] = useState<Tab>('items');
   const [lifecycle, setLifecycle] = useState<'materials' | 'semiFinished' | 'finished'>('materials');
+  const [semiFilter, setSemiFilter] = useState<SemiOrderFilter>('active');
   const [categoryGroup, setCategoryGroup] = useState<'fabric' | 'foam' | 'wood' | 'accessories'>('fabric');
   const router = useRouter();
   const [q, setQ] = useState('');
+  const [fgSearch, setFgSearch] = useState('');
+  const [fgFilter, setFgFilter] = useState<FgFilter>('all');
+  const [fgScope, setFgScope] = useState<FinishedBoardScope>('inWarehouse');
+  const [fgHistoryFrom, setFgHistoryFrom] = useState(defaultHistoryFrom);
+  const [fgHistoryTo, setFgHistoryTo] = useState(defaultHistoryTo);
+  const [fgWarehouseId, setFgWarehouseId] = useState('');
+  const [fgPage, setFgPage] = useState(1);
+  const [inspectFinishedOrder, setInspectFinishedOrder] = useState<FinishedOrderGroup | null>(null);
   const [page, setPage] = useState(1);
   const [banner, setBanner] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -251,6 +356,8 @@ export default function InventoryPage() {
     { itemId: '', qty: '' },
   ]);
   const [countPage, setCountPage] = useState(1);
+  /** Confirm before posting a count (creates INVENTORY_ADJUSTMENT txs). */
+  const [postCountConfirm, setPostCountConfirm] = useState<StockCount | null>(null);
 
   const [itemOpen, setItemOpen] = useState(false);
   const [itemSku, setItemSku] = useState('');
@@ -275,8 +382,12 @@ export default function InventoryPage() {
   const [editMaterialType, setEditMaterialType] = useState('');
   const [editSize, setEditSize] = useState('');
   const [editSupplierId, setEditSupplierId] = useState('');
+  const [itemImageUrl, setItemImageUrl] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
   const [inspectLot, setInspectLot] = useState<SemiLot | null>(null);
   const [scanCode, setScanCode] = useState('');
+  const [receiptKind, setReceiptKind] = useState<'po' | 'manual'>('po');
+  const [selectedPoId, setSelectedPoId] = useState('');
   const [countKind, setCountKind] = useState<'periodic' | 'surprise'>('periodic');
 
   const listParams = useMemo(() => {
@@ -292,12 +403,10 @@ export default function InventoryPage() {
     queryKey: ['inventory-items', listParams],
     queryFn: () =>
       apiFetch<{ data: Row[]; meta: { page: number; totalPages: number } }>(
-        lifecycle === 'finished'
-          ? `/api/v1/inventory/finished-goods?${listParams}`
-          : `/api/v1/inventory/items?${listParams}`,
+        `/api/v1/inventory/items?${listParams}`,
       ),
     placeholderData: keepPreviousData,
-    enabled: tab === 'items' && lifecycle !== 'semiFinished',
+    enabled: tab === 'items' && lifecycle === 'materials',
   });
 
   const wipQuery = useQuery({
@@ -308,6 +417,136 @@ export default function InventoryPage() {
       ),
     placeholderData: keepPreviousData,
     enabled: tab === 'items' && lifecycle === 'semiFinished',
+  });
+
+  const wipBoardQuery = useQuery({
+    queryKey: ['inventory-wip-kit-board', semiFilter, q],
+    queryFn: () => {
+      const params = boardQueryFromSemiFilter(semiFilter, q);
+      const qs = new URLSearchParams();
+      if (params.scope) qs.set('scope', params.scope);
+      if (params.q) qs.set('q', params.q);
+      if (params.from) qs.set('from', params.from);
+      if (params.to) qs.set('to', params.to);
+      if (params.warehouseId) qs.set('warehouseId', params.warehouseId);
+      const suffix = qs.toString() ? `?${qs}` : '';
+      return apiFetch<{
+        sections: Array<{
+          stageCode: string;
+          stageNameEn: string;
+          stageNameAr: string;
+          stageNameHe: string | null;
+          kits: Array<{
+            id: string;
+            status: string;
+            qrCode: string;
+            expectedPieceCount: number;
+            custody?: string | null;
+            handoffCount?: number;
+            materialOverageNotes?: string | null;
+            location?: { id: string; code: string; name?: string | null } | null;
+            claimedByUser?: { firstName: string; lastName: string } | null;
+            productionOrder: {
+              id: string;
+              number: string;
+              productDescription: string;
+              product?: {
+                nameEn: string;
+                nameAr: string;
+                nameHe?: string | null;
+                sku?: string | null;
+                imageUrl?: string | null;
+              } | null;
+              salesOrder?: {
+                number: string;
+                customer?: {
+                  code?: string | null;
+                  name?: string | null;
+                  nameEn?: string | null;
+                  nameAr?: string | null;
+                } | null;
+              } | null;
+            };
+            stageInstance: {
+              stageDefinition: {
+                code: string;
+                nameEn: string;
+                nameAr: string;
+                nameHe?: string | null;
+              };
+            };
+            pieces: Array<{ id: string; label: string | null; qrCode: string | null }>;
+          }>;
+        }>;
+        totalKits: number;
+      }>(`/api/v1/inventory/wip-kits/board${suffix}`);
+    },
+    enabled: tab === 'items' && lifecycle === 'semiFinished',
+  });
+
+  const wipStageBinsQuery = useQuery({
+    queryKey: ['inventory-wip-stage-bins'],
+    queryFn: () =>
+      apiFetch<{
+        warehouse: { id: string; code: string; nameEn: string; nameAr?: string } | null;
+        locations: Array<{ id: string; code: string; name: string | null }>;
+      }>('/api/v1/inventory/wip-kits/stage-bins'),
+    enabled: tab === 'items' && lifecycle === 'semiFinished',
+  });
+
+  const [inspectKitId, setInspectKitId] = useState<string | null>(null);
+  const [kitLocationId, setKitLocationId] = useState('');
+  const inspectKitQuery = useQuery({
+    queryKey: ['inventory-wip-kit', inspectKitId],
+    queryFn: () =>
+      apiFetch<{
+        id: string;
+        status: string;
+        qrCode: string;
+        expectedPieceCount: number;
+        materialOverageNotes?: string | null;
+        locationId?: string | null;
+        location?: { id: string; code: string; name?: string | null } | null;
+        productionOrder?: { number?: string };
+        pieces?: Array<{ id: string; label?: string | null; qrCode?: string | null }>;
+      }>(`/api/v1/inventory/wip-kits/${inspectKitId}`),
+    enabled: Boolean(inspectKitId),
+  });
+
+  useEffect(() => {
+    if (inspectKitQuery.data) {
+      setKitLocationId(inspectKitQuery.data.locationId ?? inspectKitQuery.data.location?.id ?? '');
+    }
+  }, [inspectKitQuery.data]);
+
+  const finishedLotsParams = useMemo(() => {
+    const board = boardParamsForFinishedScope(fgScope, {
+      q: fgSearch.trim() || undefined,
+      warehouseId: fgWarehouseId || undefined,
+      from: fgScope === 'history' ? fgHistoryFrom || undefined : undefined,
+      to: fgScope === 'history' ? fgHistoryTo || undefined : undefined,
+    });
+    const params = new URLSearchParams({
+      page: String(fgPage),
+      pageSize: '100',
+      scope: board.scope,
+    });
+    if (board.q) params.set('q', board.q);
+    if (board.warehouseId) params.set('warehouseId', board.warehouseId);
+    if (board.from) params.set('from', board.from);
+    if (board.to) params.set('to', board.to);
+    return params.toString();
+  }, [fgScope, fgSearch, fgWarehouseId, fgHistoryFrom, fgHistoryTo, fgPage]);
+
+  const finishedLotsQuery = useQuery({
+    queryKey: ['inventory-finished-lots', finishedLotsParams],
+    queryFn: () =>
+      apiFetch<{
+        data: FinishedLot[];
+        meta: { page: number; totalPages: number; totalItems: number };
+      }>(`/api/v1/inventory/finished-lots?${finishedLotsParams}`),
+    placeholderData: keepPreviousData,
+    enabled: tab === 'items' && lifecycle === 'finished',
   });
 
   const overviewQuery = useQuery({
@@ -327,6 +566,36 @@ export default function InventoryPage() {
     queryKey: ['inventory-warehouses'],
     queryFn: () => apiFetch<Warehouse[]>('/api/v1/inventory/warehouses'),
   });
+
+  const openReceiptsQuery = useQuery({
+    queryKey: ['inventory-open-receipts', selectedItem?.id],
+    queryFn: () =>
+      apiFetch<OpenReceipt[]>(
+        `/api/v1/inventory/items/${selectedItem!.id}/open-receipts`,
+      ),
+    enabled: moveOpen === 'receive' && Boolean(selectedItem?.id) && canReceive,
+  });
+  const openReceipts = openReceiptsQuery.data ?? [];
+  const receiptKey = `${selectedItem?.id ?? ''}:${openReceipts.map((row) => row.purchaseOrderId).join(',')}`;
+
+  useEffect(() => {
+    if (moveOpen !== 'receive') return;
+    if (openReceipts.length === 1) {
+      const only = openReceipts[0]!;
+      setSelectedPoId(only.purchaseOrderId);
+      setReceiptKind('po');
+      if (only.suggestedWarehouseId) {
+        setWarehouseId(only.suggestedWarehouseId);
+      }
+    } else if (openReceipts.length === 0) {
+      setSelectedPoId('');
+      setReceiptKind('manual');
+    } else {
+      setSelectedPoId('');
+      setReceiptKind('po');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- receiptKey
+  }, [moveOpen, receiptKey]);
 
   const suppliersQuery = useQuery({
     queryKey: ['suppliers-pick-inv'],
@@ -379,6 +648,7 @@ export default function InventoryPage() {
           size: itemSize.trim() || undefined,
           preferredSupplierId: itemSupplierId || undefined,
           category: CATEGORY_FOR_CREATE[categoryGroup],
+          imageUrl: itemImageUrl.trim() || undefined,
         }),
       });
     },
@@ -423,6 +693,7 @@ export default function InventoryPage() {
           materialType: editMaterialType.trim() || undefined,
           size: editSize.trim() || undefined,
           preferredSupplierId: editSupplierId || null,
+          imageUrl: editImageUrl.trim() || null,
         }),
       });
     },
@@ -452,6 +723,26 @@ export default function InventoryPage() {
       if (!selectedItem || !warehouseId || !Number(quantity)) {
         throw new ApiClientError(ti('moveRequired'), 400);
       }
+      if (moveOpen === 'receive' && openReceipts.length > 0 && receiptKind !== 'manual') {
+        if (!selectedPoId) {
+          throw new ApiClientError(ti('choosePurchaseOrder'), 400);
+        }
+        const selectedPo = openReceipts.find((row) => row.purchaseOrderId === selectedPoId);
+        return apiFetch(`/api/v1/purchase-orders/${selectedPoId}/goods-receipts`, {
+          method: 'POST',
+          body: JSON.stringify({
+            warehouseId,
+            notes: notes.trim() || undefined,
+            lines: [
+              {
+                inventoryItemId: selectedItem.id,
+                orderedQty: Number(selectedPo?.orderedQty ?? quantity),
+                receivedQty: Number(quantity),
+              },
+            ],
+          }),
+        });
+      }
       const path = moveOpen === 'receive' ? '/api/v1/inventory/receipts' : '/api/v1/inventory/issues';
       return apiFetch(path, {
         method: 'POST',
@@ -470,6 +761,8 @@ export default function InventoryPage() {
       await queryClient.invalidateQueries({ queryKey: ['inventory-low-stock'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-overview'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-semi-finished'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-open-receipts'] });
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
       setMoveOpen(null);
       setBanner(kind === 'receive' ? ti('stockReceived') : ti('stockIssued'));
     },
@@ -526,11 +819,17 @@ export default function InventoryPage() {
       if (!countWarehouseId || lines.length === 0) {
         throw new ApiClientError(ti('countRequired'), 400);
       }
+      const reason = countNotes.trim();
+      if (!reason) {
+        throw new ApiClientError(ti('countReasonRequired'), 400);
+      }
       return apiFetch('/api/v1/inventory/counts', {
         method: 'POST',
         body: JSON.stringify({
           warehouseId: countWarehouseId,
-          notes: [countKind === 'surprise' ? 'SURPRISE' : 'PERIODIC', countNotes.trim()].filter(Boolean).join(' — ') || undefined,
+          notes: [countKind === 'surprise' ? 'SURPRISE' : 'PERIODIC', reason]
+            .filter(Boolean)
+            .join(' — '),
           lines,
         }),
       });
@@ -549,6 +848,7 @@ export default function InventoryPage() {
       apiFetch(`/api/v1/inventory/counts/${id}/post`, { method: 'POST' }),
     onSuccess: async () => {
       setActionError(null);
+      setPostCountConfirm(null);
       setBanner(ti('countPosted'));
       await queryClient.invalidateQueries({ queryKey: ['inventory-counts'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
@@ -559,16 +859,64 @@ export default function InventoryPage() {
     onError: (err) => setActionError(mutationErrorMessage(err)),
   });
 
+  const ensureWipBinsMutation = useMutation({
+    mutationFn: () => apiFetch('/api/v1/inventory/wip-kits/ensure-stage-bins', { method: 'POST' }),
+    onSuccess: async () => {
+      setBanner(ti('wipBinsReady'));
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['inventory-wip-stage-bins'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-warehouses'] });
+    },
+    onError: (err) => setActionError(mutationErrorMessage(err)),
+  });
+
+  const setWipKitLocationMutation = useMutation({
+    mutationFn: (vars: { kitId: string; locationId: string | null }) =>
+      apiFetch(`/api/v1/inventory/wip-kits/${vars.kitId}/location`, {
+        method: 'PATCH',
+        body: JSON.stringify({ locationId: vars.locationId }),
+      }),
+    onSuccess: async () => {
+      setBanner(ti('wipLocationSaved'));
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['inventory-wip-kit', inspectKitId] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-wip-kit-board'] });
+    },
+    onError: (err) => setActionError(mutationErrorMessage(err)),
+  });
+
   const itemsBusy =
     tab === 'items' &&
     (lifecycle === 'semiFinished'
       ? wipQuery.isLoading && !wipQuery.data
-      : itemsQuery.isLoading && !itemsQuery.data);
+      : lifecycle === 'finished'
+        ? finishedLotsQuery.isLoading && !finishedLotsQuery.data
+        : itemsQuery.isLoading && !itemsQuery.data);
   const itemsFailed =
     tab === 'items' &&
     (lifecycle === 'semiFinished'
       ? wipQuery.isError && !wipQuery.data
-      : itemsQuery.isError && !itemsQuery.data);
+      : lifecycle === 'finished'
+        ? finishedLotsQuery.isError && !finishedLotsQuery.data
+        : itemsQuery.isError && !itemsQuery.data);
+
+  const finishedLotsRaw = finishedLotsQuery.data?.data ?? [];
+  const finishedMeta = finishedLotsQuery.data?.meta;
+  const fgTotalPages = Math.max(1, finishedMeta?.totalPages ?? 1);
+  const fgSafePage = Math.min(fgPage, fgTotalPages);
+  const finishedBoardOrders = useMemo(
+    () =>
+      selectFinishedOrders(finishedLotsRaw, {
+        fgFilter,
+        scope: fgScope,
+      }),
+    [finishedLotsRaw, fgFilter, fgScope],
+  );
+  /** Lots for secondary drill-in — only lots in the current board groups. */
+  const finishedLots = useMemo(() => {
+    const ids = new Set(finishedBoardOrders.flatMap((g) => g.lots.map((l) => l.id)));
+    return finishedLotsRaw.filter((lot) => ids.has(lot.id));
+  }, [finishedLotsRaw, finishedBoardOrders]);
 
   if (itemsBusy) {
     return (
@@ -583,7 +931,11 @@ export default function InventoryPage() {
       <ErrorState
         title={t('inventory')}
         onRetry={() =>
-          lifecycle === 'semiFinished' ? wipQuery.refetch() : itemsQuery.refetch()
+          lifecycle === 'semiFinished'
+            ? wipQuery.refetch()
+            : lifecycle === 'finished'
+              ? finishedLotsQuery.refetch()
+              : itemsQuery.refetch()
         }
         retryLabel={tCommon('retry')}
       />
@@ -592,7 +944,13 @@ export default function InventoryPage() {
 
   const rows = itemsQuery.data?.data ?? [];
   const meta =
-    lifecycle === 'semiFinished' ? wipQuery.data?.meta : itemsQuery.data?.meta;
+    lifecycle === 'semiFinished'
+      ? wipQuery.data?.meta
+      : lifecycle === 'finished'
+        ? finishedMeta
+          ? { page: finishedMeta.page, totalPages: finishedMeta.totalPages }
+          : { page: fgSafePage, totalPages: fgTotalPages }
+        : itemsQuery.data?.meta;
   const wipLots = wipQuery.data?.data ?? [];
   const overview = overviewQuery.data;
   const warehouses = warehousesQuery.data ?? [];
@@ -609,6 +967,8 @@ export default function InventoryPage() {
     setNotes('');
     setScanCode('');
     setFormError(null);
+    setReceiptKind('po');
+    setSelectedPoId('');
     setMoveOpen(kind);
   }
 
@@ -751,6 +1111,11 @@ export default function InventoryPage() {
             onClick={() => {
               setLifecycle('finished');
               setPage(1);
+              setFgPage(1);
+              setFgSearch('');
+              setFgFilter('all');
+              setFgScope('inWarehouse');
+              setFgWarehouseId('');
             }}
           >
             {ti('lifecycleFinished')}
@@ -828,12 +1193,19 @@ export default function InventoryPage() {
             <label className="relative min-w-[220px] flex-1">
               <Input
                 withSearchIcon
-                value={q}
+                value={lifecycle === 'finished' ? fgSearch : q}
                 onChange={(e) => {
-                  setPage(1);
-                  setQ(e.target.value);
+                  if (lifecycle === 'finished') {
+                    setFgPage(1);
+                    setFgSearch(e.target.value);
+                  } else {
+                    setPage(1);
+                    setQ(e.target.value);
+                  }
                 }}
-                placeholder={ti('searchPlaceholder')}
+                placeholder={
+                  lifecycle === 'finished' ? tl('searchOrders') : ti('searchPlaceholder')
+                }
               />
             </label>
             {lifecycle === 'materials' && canAdjust ? (
@@ -851,6 +1223,7 @@ export default function InventoryPage() {
                 setItemMaterialType('');
                 setItemSize('');
                 setItemSupplierId('');
+                setItemImageUrl('');
                 setFormError(null);
                 setItemOpen(true);
               }}
@@ -861,10 +1234,34 @@ export default function InventoryPage() {
           </div>
 
           {lifecycle === 'semiFinished' ? (
-            wipLots.length === 0 ? (
+            <>
+              <SemiOrderBoard
+                sections={wipBoardQuery.data?.sections ?? []}
+                filter={semiFilter}
+                search={q}
+                onFilterChange={(f) => setSemiFilter(f)}
+                onInspectKit={(id) => setInspectKitId(id)}
+                ensureBinsSlot={
+                  canManageWarehouse ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      loading={ensureWipBinsMutation.isPending}
+                      onClick={() => ensureWipBinsMutation.mutate()}
+                    >
+                      {ti('wipEnsureBins')}
+                    </Button>
+                  ) : null
+                }
+              />
+            {wipLots.length === 0 && !(wipBoardQuery.data?.totalKits) ? (
               <EmptyState title={ti('emptySemi')} />
-            ) : (
+            ) : wipLots.length === 0 ? null : (
               <>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-tertiary">
+                  {ti('semiLotsSecondary')}
+                </p>
                 <Table>
                   <TableHead>
                     <TableRow>
@@ -923,15 +1320,130 @@ export default function InventoryPage() {
                   </div>
                 ) : null}
               </>
-            )
+            )}
+            </>
+          ) : lifecycle === 'finished' ? (
+            <>
+              <FinishedOrderBoard
+                lots={finishedLotsRaw}
+                scope={fgScope}
+                filter={fgFilter}
+                search={fgSearch}
+                serverTotalLots={finishedMeta?.totalItems}
+                onScopeChange={(s) => {
+                  setFgScope(s);
+                  setFgPage(1);
+                  setFgFilter('all');
+                }}
+                onFilterChange={(f) => {
+                  setFgFilter(f);
+                }}
+                onOpenOrder={(order) => setInspectFinishedOrder(order)}
+                historyFrom={fgHistoryFrom}
+                historyTo={fgHistoryTo}
+                onHistoryFromChange={(v) => {
+                  setFgHistoryFrom(v);
+                  setFgPage(1);
+                }}
+                onHistoryToChange={(v) => {
+                  setFgHistoryTo(v);
+                  setFgPage(1);
+                }}
+                warehouseId={fgWarehouseId}
+                warehouses={warehouses.filter((wh) =>
+                  warehouseMatchesLifecycleType(wh, 'FINISHED_GOODS'),
+                )}
+                onWarehouseChange={(id) => {
+                  setFgWarehouseId(id);
+                  setFgPage(1);
+                }}
+              />
+              {finishedLots.length === 0 ? null : (
+                <>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-tertiary">
+                    {ti('finishedLotsSecondary')}
+                  </p>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableHeaderCell className="w-12">{ti('itemPhoto')}</TableHeaderCell>
+                        <TableHeaderCell>{ti('sku')}</TableHeaderCell>
+                        <TableHeaderCell>{tc('name')}</TableHeaderCell>
+                        <TableHeaderCell>{ti('salesOrder')}</TableHeaderCell>
+                        <TableHeaderCell>{ti('lotQty')}</TableHeaderCell>
+                        <TableHeaderCell>{ti('warehouse')}</TableHeaderCell>
+                        <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {finishedLots.map((lot) => (
+                        <TableRow
+                          key={lot.id}
+                          className="cursor-pointer"
+                          onClick={() => setInspectLot(lot)}
+                        >
+                          <TableCell>
+                            <InventoryItemThumb
+                              src={lot.inventoryItem.product?.imageUrl}
+                              alt={localizedName(locale, lot.inventoryItem)}
+                            />
+                          </TableCell>
+                          <TableCell>{lot.inventoryItem.sku}</TableCell>
+                          <TableCell>{localizedName(locale, lot.inventoryItem)}</TableCell>
+                          <TableCell dir="ltr">{lot.salesOrderNumber ?? '—'}</TableCell>
+                          <TableCell dir="ltr">{Number(lot.quantity)}</TableCell>
+                          <TableCell>
+                            {lot.warehouse.code} — {localizedName(locale, lot.warehouse)}
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge status={lot.status} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {fgTotalPages > 1 ? (
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={fgSafePage <= 1}
+                        onClick={() => setFgPage((p) => Math.max(1, p - 1))}
+                      >
+                        {tCommon('previous')}
+                      </Button>
+                      <span className="text-sm text-text-secondary" dir="ltr">
+                        {fgSafePage} / {fgTotalPages}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={fgSafePage >= fgTotalPages}
+                        onClick={() => setFgPage((p) => p + 1)}
+                      >
+                        {tCommon('next')}
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
+              )}
+              <FinishedOrderDetail
+                order={inspectFinishedOrder}
+                open={Boolean(inspectFinishedOrder)}
+                onClose={() => setInspectFinishedOrder(null)}
+              />
+            </>
           ) : rows.length === 0 ? (
-            <EmptyState title={lifecycle === 'finished' ? ti('emptyFinished') : ti('empty')} />
+            <EmptyState title={ti('empty')} />
           ) : (
             <>
               <Table>
                 <TableHead>
                   <TableRow>
                     <TableHeaderCell className="w-8" />
+                    {lifecycle === 'materials' ? (
+                      <TableHeaderCell className="w-12">{ti('itemPhoto')}</TableHeaderCell>
+                    ) : null}
                     <TableHeaderCell>{ti('sku')}</TableHeaderCell>
                     <TableHeaderCell>{tc('name')}</TableHeaderCell>
                     <TableHeaderCell>{tc('unit')}</TableHeaderCell>
@@ -939,9 +1451,6 @@ export default function InventoryPage() {
                     <TableHeaderCell>{ti('onHand')}</TableHeaderCell>
                     <TableHeaderCell>{ti('reserved')}</TableHeaderCell>
                     <TableHeaderCell>{ti('available')}</TableHeaderCell>
-                    {lifecycle === 'finished' ? (
-                      <TableHeaderCell>{tCommon('status')}</TableHeaderCell>
-                    ) : null}
                     <TableHeaderCell>{tCommon('actions')}</TableHeaderCell>
                   </TableRow>
                 </TableHead>
@@ -958,7 +1467,6 @@ export default function InventoryPage() {
                     const onHand = Number(row.onHandQty ?? total);
                     const reservedQty = Number(row.reservedQty ?? reserved);
                     const freeQty = Number(row.freeQty ?? onHand - reservedQty);
-                    const quarantined = Number(row.quarantinedQty ?? 0) > 0;
                     const expanded = expandedId === row.id;
                     return (
                       <Fragment key={row.id}>
@@ -978,6 +1486,15 @@ export default function InventoryPage() {
                               )}
                             </button>
                           </TableCell>
+                          {lifecycle === 'materials' ? (
+                            <TableCell>
+                              <InventoryItemThumb
+                                src={row.imageUrl}
+                                alt={localizedName(locale, row)}
+                                size={36}
+                              />
+                            </TableCell>
+                          ) : null}
                           <TableCell>
                             <button
                               type="button"
@@ -995,22 +1512,11 @@ export default function InventoryPage() {
                           <TableCell dir="ltr">{String(onHand)}</TableCell>
                           <TableCell dir="ltr">{String(reservedQty)}</TableCell>
                           <TableCell dir="ltr">{String(freeQty)}</TableCell>
-                          {lifecycle === 'finished' ? (
-                            <TableCell>
-                                <div className="flex flex-wrap gap-1">
-                                  {quarantined ? <StatusBadge status="QUARANTINED" /> : null}
-                                  {reservedQty > 0 ? <StatusBadge status="RESERVED" /> : null}
-                                  {freeQty > 0 && !quarantined ? (
-                                    <StatusBadge status="READY" />
-                                  ) : null}
-                                </div>
-                            </TableCell>
-                          ) : null}
                           <TableCell>
                             <div className="flex flex-wrap items-center gap-1.5">
                               {lifecycle === 'materials' ? (
                                 <>
-                              {canReceive ? (
+                              {canReceive && row.itemClass !== 'FINISHED_GOOD' ? (
                               <Button
                                 size="sm"
                                 variant="subtle"
@@ -1019,7 +1525,7 @@ export default function InventoryPage() {
                                 {ti('receive')}
                               </Button>
                               ) : null}
-                              {canIssue ? (
+                              {canIssue && row.itemClass !== 'FINISHED_GOOD' ? (
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -1043,6 +1549,7 @@ export default function InventoryPage() {
                                   setEditMaterialType(row.materialType ?? '');
                                   setEditSize(row.size ?? '');
                                   setEditSupplierId(row.preferredSupplierId ?? '');
+                                  setEditImageUrl(row.imageUrl ?? '');
                                   setFormError(null);
                                   setEditOpen(true);
                                 }}
@@ -1072,8 +1579,15 @@ export default function InventoryPage() {
                         </TableRow>
                         {expanded ? (
                           <TableRow>
-                            <td className="px-4 py-3 align-middle" colSpan={lifecycle === 'finished' ? 11 : 10}>
-                              <div className="space-y-1 ps-8 text-sm text-text-secondary">
+                            <td className="px-4 py-3 align-middle" colSpan={11}>
+                              <div className="space-y-3 ps-8 text-sm text-text-secondary">
+                                {lifecycle === 'materials' ? (
+                                  <InventoryItemThumb
+                                    src={row.imageUrl}
+                                    alt={localizedName(locale, row)}
+                                    size={96}
+                                  />
+                                ) : null}
                                 <p className="font-medium text-text-primary">
                                   {ti('balancesByWarehouse')}
                                 </p>
@@ -1244,10 +1758,13 @@ export default function InventoryPage() {
                           <Button
                             size="sm"
                             variant="subtle"
-                            loading={postCountMutation.isPending}
+                            loading={
+                              postCountMutation.isPending &&
+                              postCountConfirm?.id === count.id
+                            }
                             onClick={() => {
                               setActionError(null);
-                              postCountMutation.mutate(count.id);
+                              setPostCountConfirm(count);
                             }}
                           >
                             {ti('postCount')}
@@ -1343,9 +1860,38 @@ export default function InventoryPage() {
           >
             {tc('addChecklistItem')}
           </Button>
-          <Input label={ti('notes')} value={countNotes} onChange={(e) => setCountNotes(e.target.value)} />
+          <Input
+            label={ti('countReason')}
+            value={countNotes}
+            onChange={(e) => setCountNotes(e.target.value)}
+            placeholder={ti('countReasonPlaceholder')}
+          />
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(postCountConfirm)}
+        onClose={() => !postCountMutation.isPending && setPostCountConfirm(null)}
+        title={ti('postCountConfirmTitle')}
+        description={ti('postCountConfirmBody', {
+          number: postCountConfirm?.number ?? '',
+        })}
+        confirmLabel={ti('postCount')}
+        loading={postCountMutation.isPending}
+        error={actionError}
+        withReason={!postCountConfirm?.notes?.trim()}
+        reasonRequired={!postCountConfirm?.notes?.trim()}
+        reasonLabel={ti('countReason')}
+        reasonPlaceholder={ti('countReasonPlaceholder')}
+        onConfirm={() => {
+          if (!postCountConfirm) return;
+          // Soft polish: reason already lives on create (`notes`). Posting posts
+          // INVENTORY_ADJUSTMENT txs server-side; extra post-time reason is UX-only
+          // when notes were missing (API post does not accept a body today).
+          setActionError(null);
+          postCountMutation.mutate(postCountConfirm.id);
+        }}
+      />
 
       <Modal
         open={!!moveOpen}
@@ -1371,7 +1917,7 @@ export default function InventoryPage() {
           <div className="flex flex-wrap items-end gap-2">
             <label className="min-w-[180px] flex-1">
               <Input
-                label={ti('scanBarcode')}
+                label={selectedItem ? ti('scanConfirmOptional') : ti('scanBarcode')}
                 value={scanCode}
                 onChange={(e) => setScanCode(e.target.value)}
                 onKeyDown={async (e) => {
@@ -1418,6 +1964,48 @@ export default function InventoryPage() {
             {ti('item')}: <strong>{selectedItem?.sku ?? '—'}</strong>
             {selectedItem ? ` — ${localizedName(locale, selectedItem)}` : null}
           </p>
+          {moveOpen === 'receive' && openReceipts.length > 0 ? (
+            <div className="grid gap-2">
+              {openReceipts.map((row) => (
+                <label
+                  key={row.purchaseOrderId}
+                  className="flex cursor-pointer items-start gap-2 rounded-[var(--maher-radius-md)] border border-border bg-surface p-3 text-sm"
+                >
+                  <input
+                    type="radio"
+                    name="inventory-receipt-kind"
+                    checked={receiptKind === 'po' && selectedPoId === row.purchaseOrderId}
+                    onChange={() => {
+                      setReceiptKind('po');
+                      setSelectedPoId(row.purchaseOrderId);
+                      if (row.suggestedWarehouseId) setWarehouseId(row.suggestedWarehouseId);
+                    }}
+                  />
+                  <span>
+                    <span className="block font-medium">{ti('receiveAgainstPo')}</span>
+                    <span className="block">
+                      {row.purchaseOrderNumber} — {row.supplierName}
+                    </span>
+                    <span className="block text-text-secondary" dir="ltr">
+                      {ti('remaining')}: {row.remainingQty} {row.unit}
+                    </span>
+                  </span>
+                </label>
+              ))}
+              <label className="flex cursor-pointer items-start gap-2 rounded-[var(--maher-radius-md)] border border-border bg-surface p-3 text-sm">
+                <input
+                  type="radio"
+                  name="inventory-receipt-kind"
+                  checked={receiptKind === 'manual'}
+                  onChange={() => {
+                    setReceiptKind('manual');
+                    setSelectedPoId('');
+                  }}
+                />
+                <span className="font-medium">{ti('manualReceipt')}</span>
+              </label>
+            </div>
+          ) : null}
           <Select
             label={ti('warehouse')}
             value={warehouseId}
@@ -1541,7 +2129,7 @@ export default function InventoryPage() {
             dir="ltr"
           />
           <Input
-            label={ti('barcode')}
+            label={ti('supplierBarcode')}
             value={itemBarcode}
             onChange={(e) => setItemBarcode(e.target.value)}
             dir="ltr"
@@ -1604,6 +2192,23 @@ export default function InventoryPage() {
             onChange={(e) => setItemMinStock(e.target.value)}
             dir="ltr"
           />
+          <div className="space-y-2">
+            <ImageSourceField
+              label={ti('itemPhoto')}
+              value={itemImageUrl}
+              onChange={setItemImageUrl}
+              hint={ti('itemPhotoHint')}
+              uploadLabel={itemImageUrl.trim() ? ti('replacePhoto') : ti('uploadPhoto')}
+              uploadingLabel={tCommon('uploading')}
+              allowUrl={false}
+              onUploadFile={uploadInventorySkuPhoto}
+            />
+            {itemImageUrl.trim() ? (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setItemImageUrl('')}>
+                {ti('removePhoto')}
+              </Button>
+            ) : null}
+          </div>
         </div>
       </Modal>
 
@@ -1631,7 +2236,7 @@ export default function InventoryPage() {
           <Input label={tc('nameEn')} value={editNameEn} onChange={(e) => setEditNameEn(e.target.value)} />
           <Input label={tc('nameAr')} value={editNameAr} onChange={(e) => setEditNameAr(e.target.value)} />
           <Input
-            label={ti('barcode')}
+            label={ti('supplierBarcode')}
             value={editBarcode}
             onChange={(e) => setEditBarcode(e.target.value)}
             dir="ltr"
@@ -1674,15 +2279,289 @@ export default function InventoryPage() {
             onChange={(e) => setEditStandardCost(e.target.value)}
             dir="ltr"
           />
+          <div className="space-y-2">
+            <ImageSourceField
+              label={ti('itemPhoto')}
+              value={editImageUrl}
+              onChange={setEditImageUrl}
+              hint={ti('itemPhotoHint')}
+              uploadLabel={editImageUrl.trim() ? ti('replacePhoto') : ti('uploadPhoto')}
+              uploadingLabel={tCommon('uploading')}
+              allowUrl={false}
+              onUploadFile={uploadInventorySkuPhoto}
+            />
+            {editImageUrl.trim() ? (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setEditImageUrl('')}>
+                {ti('removePhoto')}
+              </Button>
+            ) : null}
+          </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(inspectKitId)}
+        onClose={() => setInspectKitId(null)}
+        title={ti('wipKitDetail')}
+      >
+        {inspectKitQuery.data ? (
+          <div className="space-y-3 text-sm">
+            <p className="font-semibold text-text-primary">
+              {inspectKitQuery.data.productionOrder?.number ?? '—'}
+            </p>
+            <p className="text-text-secondary" dir="ltr">
+              {ti('wipQr')}: {inspectKitQuery.data.qrCode}
+            </p>
+            <StatusBadge status={inspectKitQuery.data.status ?? 'READY'} />
+            <div className="flex flex-wrap gap-2">
+              {canRead ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    window.open(
+                      `${API_URL}/api/v1/inventory/wip-kits/${inspectKitQuery.data!.id}/qr-label?lang=${locale}`,
+                      '_blank',
+                    );
+                  }}
+                >
+                  {ti('wipPrintKitLabel')}
+                </Button>
+              ) : null}
+            </div>
+            <div>
+              <Select
+                label={ti('wipLocation')}
+                value={kitLocationId}
+                onChange={(e) => setKitLocationId(e.target.value)}
+                disabled={!canAdjust}
+              >
+                <option value="">{tc('select')}</option>
+                {(wipStageBinsQuery.data?.locations ?? []).map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name?.trim() || loc.code}
+                  </option>
+                ))}
+              </Select>
+              {canAdjust ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="mt-2"
+                  loading={setWipKitLocationMutation.isPending}
+                  onClick={() => {
+                    if (!inspectKitId) return;
+                    setWipKitLocationMutation.mutate({
+                      kitId: inspectKitId,
+                      locationId: kitLocationId || null,
+                    });
+                  }}
+                >
+                  {ti('wipAssignBin')}
+                </Button>
+              ) : null}
+            </div>
+            <div>
+              <p className="mb-1 font-medium">{ti('wipPieces')}</p>
+              <ul className="space-y-2 text-text-secondary">
+                {(inspectKitQuery.data.pieces ?? []).map((p, i) => (
+                  <li key={p.id} className="flex flex-wrap items-center gap-2">
+                    <span dir="ltr">
+                      {p.label ?? `Piece ${i + 1}`}
+                      {p.qrCode ? ` · ${p.qrCode}` : ''}
+                    </span>
+                    {canRead ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          window.open(
+                            `${API_URL}/api/v1/inventory/wip-pieces/${p.id}/qr-label?lang=${locale}`,
+                            '_blank',
+                          );
+                        }}
+                      >
+                        {ti('wipPrintPieceLabel')}
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {inspectKitQuery.data.materialOverageNotes ? (
+              <p className="text-amber-700">
+                {ti('wipOverageNotes')}: {inspectKitQuery.data.materialOverageNotes}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-sm text-text-secondary">…</p>
+        )}
       </Modal>
 
       <Modal
         open={Boolean(inspectLot)}
         onClose={() => setInspectLot(null)}
-        title={ti('inspectLot')}
+        title={
+          inspectLot && isFgInspectLot(inspectLot)
+            ? tl('finishedGoodsInspect')
+            : ti('inspectLot')
+        }
       >
-        {inspectLot ? (
+        {inspectLot && isFgInspectLot(inspectLot) ? (
+          <div className="space-y-4 text-sm">
+            <div className="flex items-start gap-3">
+              <InventoryItemThumb
+                src={inspectLot.inventoryItem.product?.imageUrl}
+                alt={localizedName(locale, inspectLot.inventoryItem)}
+                size={64}
+              />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="font-semibold text-text-primary">
+                  {localizedName(locale, inspectLot.inventoryItem)}
+                </p>
+                {inspectLot.projectName ? (
+                  <p className="text-text-secondary">{inspectLot.projectName}</p>
+                ) : null}
+                {!inspectLot.deliveryStatus ? (
+                  <span className="inline-flex rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    {tl('waitingForTruck')}
+                  </span>
+                ) : (
+                  <StatusBadge status={inspectLot.deliveryStatus} />
+                )}
+              </div>
+              <span className="font-semibold tabular-nums text-text-primary" dir="ltr">
+                {Number(inspectLot.quantity)}
+              </span>
+            </div>
+            <div className="grid gap-2 rounded-lg border border-border bg-surface-secondary p-3">
+              <p>
+                <span className="text-text-tertiary">{ti('salesOrder')}: </span>
+                {inspectLot.salesOrderNumber ?? '—'}
+              </p>
+              <p>
+                <span className="text-text-tertiary">{ti('productionOrder')}: </span>
+                {inspectLot.productionOrderNumber ?? inspectLot.productionOrder?.number ?? '—'}
+              </p>
+              <p>
+                <span className="text-text-tertiary">{ti('dealer')}: </span>
+                {locale === 'ar'
+                  ? inspectLot.dealerNameAr ?? inspectLot.dealerNameEn ?? '—'
+                  : inspectLot.dealerNameEn ?? inspectLot.dealerNameAr ?? '—'}
+              </p>
+              <p>
+                <span className="text-text-tertiary">{ti('delivery')}: </span>
+                {inspectLot.deliveryNumber ?? '—'}
+                {inspectLot.deliveryDate ? (
+                  <span className="text-text-secondary"> · {inspectLot.deliveryDate.slice(0, 10)}</span>
+                ) : null}
+              </p>
+              <p>
+                <span className="text-text-tertiary">{ti('daysWaiting')}: </span>
+                {inspectLot.daysWaiting ?? 0}
+              </p>
+              <p>
+                <span className="text-text-tertiary">{tl('qcPassed')}: </span>
+                {String(inspectLot.qcStatus ?? 'PASS')
+                  .toUpperCase()
+                  .includes('FAIL')
+                  ? tl('qcFailed')
+                  : tl('qcPassed')}
+              </p>
+              <p>
+                <span className="text-text-tertiary">{tl('packagingComplete')}: </span>
+                {inspectLot.packagingComplete !== false ? tl('packagingComplete') : '—'}
+              </p>
+              <p>
+                <span className="text-text-tertiary">{tl('finishedAt')}: </span>
+                {new Date(
+                  inspectLot.finishedAt ?? inspectLot.producedAt,
+                ).toLocaleString(locale)}
+              </p>
+              <p>
+                <span className="text-text-tertiary">{ti('warehouse')}: </span>
+                {localizedName(locale, inspectLot.warehouse)}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {inspectLot.salesOrder?.id ? (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => {
+                    setInspectLot(null);
+                    router.push(`/sales-orders/${inspectLot.salesOrder!.id}`);
+                  }}
+                >
+                  {tl('viewOrder')}
+                </Button>
+              ) : null}
+              {inspectLot.salesOrder?.deliveries?.[0]?.id ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const deliveryId = inspectLot.salesOrder!.deliveries![0]!.id;
+                    setInspectLot(null);
+                    router.push(`/deliveries/${deliveryId}`);
+                  }}
+                >
+                  {tl('viewDelivery')}
+                </Button>
+              ) : null}
+              {canTransfer ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setTransferItemId(inspectLot.inventoryItem.id);
+                    setFromWarehouseId(inspectLot.warehouse.id);
+                    setTransferQty(String(inspectLot.quantity));
+                    setTransferNotes('');
+                    setInspectLot(null);
+                    setTransferOpen(true);
+                  }}
+                >
+                  {ti('newTransfer')}
+                </Button>
+              ) : null}
+              {canCount ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setCountWarehouseId(inspectLot.warehouse.id);
+                    setCountLines([
+                      { itemId: inspectLot.inventoryItem.id, qty: String(inspectLot.quantity) },
+                    ]);
+                    setCountNotes('');
+                    setInspectLot(null);
+                    setCountOpen(true);
+                  }}
+                >
+                  {ti('newCount')}
+                </Button>
+              ) : null}
+              {canRead ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    window.open(
+                      `${API_URL}/api/v1/inventory/items/${inspectLot.inventoryItem.id}/label`,
+                      '_blank',
+                    );
+                  }}
+                >
+                  {ti('labelPdf')}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : inspectLot ? (
           <div className="space-y-2 text-sm">
             <p className="font-semibold">{localizedName(locale, inspectLot.inventoryItem)}</p>
             <p>

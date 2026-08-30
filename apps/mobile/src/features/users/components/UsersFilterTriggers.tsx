@@ -11,13 +11,10 @@ type Props = {
   departmentLabel: string | null;
   onOpenDepartment: () => void;
   onClearDepartment?: () => void;
-  statusLabel: string;
-  statusActive: boolean;
-  onOpenStatus: () => void;
-  showRole?: boolean;
-  roleLabel: string | null;
-  onOpenRole?: () => void;
-  onClearRole?: () => void;
+  /** Combined status + role filter. */
+  filterSummary: string | null;
+  filterActiveCount: number;
+  onOpenFilter: () => void;
   showStaffType?: boolean;
   staffTypeLabel?: string | null;
   onOpenStaffType?: () => void;
@@ -25,20 +22,16 @@ type Props = {
 };
 
 /**
- * Floor filter triggers under search — department / status / role.
+ * Floor filter triggers under search — department / combined filters / staff type.
  */
 export function UsersFilterTriggers({
   showDepartment = false,
   departmentLabel,
   onOpenDepartment,
   onClearDepartment,
-  statusLabel,
-  statusActive,
-  onOpenStatus,
-  showRole = false,
-  roleLabel,
-  onOpenRole,
-  onClearRole,
+  filterSummary,
+  filterActiveCount,
+  onOpenFilter,
   showStaffType = false,
   staffTypeLabel = null,
   onOpenStaffType,
@@ -67,24 +60,14 @@ export function UsersFilterTriggers({
         />
       ) : null}
       <FloorTrigger
-        flex={1}
+        flex={1.2}
         icon="options-outline"
-        label={statusLabel}
-        fallbackKey="users.filterStatus"
-        active={statusActive}
-        onPress={onOpenStatus}
+        label={filterSummary}
+        fallbackKey="users.filterTitle"
+        active={filterActiveCount > 0}
+        badge={filterActiveCount > 0 ? filterActiveCount : undefined}
+        onPress={onOpenFilter}
       />
-      {showRole && onOpenRole ? (
-        <FloorTrigger
-          flex={1}
-          icon="shield-outline"
-          label={roleLabel}
-          fallbackKey="users.filterRole"
-          active={Boolean(roleLabel)}
-          onPress={onOpenRole}
-          onClear={roleLabel && onClearRole ? onClearRole : undefined}
-        />
-      ) : null}
       {showStaffType && onOpenStaffType ? (
         <FloorTrigger
           flex={1}
@@ -106,6 +89,7 @@ function FloorTrigger({
   label,
   fallbackKey,
   active,
+  badge,
   onPress,
   onClear,
 }: {
@@ -114,6 +98,7 @@ function FloorTrigger({
   label: string | null;
   fallbackKey: string;
   active: boolean;
+  badge?: number;
   onPress: () => void;
   onClear?: () => void;
 }) {
@@ -165,6 +150,27 @@ function FloorTrigger({
         >
           {text}
         </AppText>
+        {badge != null ? (
+          <View
+            style={{
+              minWidth: 20,
+              height: 20,
+              borderRadius: 10,
+              paddingHorizontal: 6,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.brand,
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight="semibold"
+              style={{ color: colors.onBrand, fontSize: 11, lineHeight: 14 }}
+            >
+              {badge}
+            </AppText>
+          </View>
+        ) : null}
       </AnimatedPressable>
       {onClear ? (
         <AnimatedPressable

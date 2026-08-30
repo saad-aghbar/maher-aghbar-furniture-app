@@ -229,6 +229,10 @@ YES
 FACTORY LIFECYCLE:
 88/88
 
+PAST-SAFE: QC pass/rework completion today cannot create a downstream
+allocation before `resolveSchedulingFloor`.
+See [scheduling-past-floor-closure-report.md](./scheduling-past-floor-closure-report.md).
+
 EXACT REMAINING QC-SCHEDULING GAPS:
 Partial QC qty not in domain; QC still skips `TasksService.complete`
 photo/time-entry rules; `completeRework` is request-status only; inventory

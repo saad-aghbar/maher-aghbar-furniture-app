@@ -67,13 +67,14 @@ describe('selectInvoiceCard', () => {
     expect(selectInvoiceCard(baseInv, 'ar').dealerName).toBe('تجار أحمد');
   });
 
-  it('surfaces outstanding first and order refs', () => {
+  it('surfaces amount due first and order refs', () => {
     const card = selectInvoiceCard(baseInv, 'en');
     expect(card.outstanding).toBe(40);
+    expect(card.amountDue).toBe(40);
     expect(card.total).toBe(100);
     expect(card.factoryOrderNumber).toBe('SO-9');
     expect(card.dealerOrderNumber).toBe('D-22');
-    expect(card.outstandingLabel).toContain('40');
+    expect(card.amountDueLabel).toContain('40');
   });
 
   it('marks overdue when past due with balance', () => {

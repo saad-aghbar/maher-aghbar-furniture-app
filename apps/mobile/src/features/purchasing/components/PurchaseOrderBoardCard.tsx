@@ -16,7 +16,14 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const warehouse = humanizeWarehouseLabel(order.warehouseLabel, t) ?? '—';
+  const phaseLabel = order.phaseLabelKey
+    ? (() => {
+        const translated = t(order.phaseLabelKey);
+        return translated !== order.phaseLabelKey ? translated : null;
+      })()
+    : null;
+  const progressPct = Math.round((order.progress || 0) * 100);
+  const overdue = order.attentionReason === 'OVERDUE_ETA';
 
   return (
     <AnimatedPressable
@@ -64,7 +71,25 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
           backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <StatusBadge status={order.status} dot />
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          {phaseLabel ? (
+            <AppText
+              variant="caption"
+              weight="semibold"
+              style={{
+                color: overdue ? colors.error : colors.brand,
+                textAlign: isRTL ? 'right' : 'left',
+                fontSize: 11,
+              }}
+              numberOfLines={1}
+            >
+              {phaseLabel}
+              {overdue ? ` · ${t('mobile.purchasing.overdueEta')}` : ''}
+            </AppText>
+          ) : (
+            <StatusBadge status={order.status} dot />
+          )}
+        </View>
         <AppText variant="caption" color="brand" weight="semibold">
           {t('common.details')}
         </AppText>
@@ -114,11 +139,18 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
             valueLtr
             isRTL={isRTL}
           />
-          <View
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-            style={{ height: 1, backgroundColor: colors.border }}
-          />
+          {progressPct > 0 || order.phaseLabelKey ? (
+            <>
+              <Divider compact />
+              <MetaRow
+                label={t('mobile.purchasing.progressReceived', { pct: String(progressPct) })}
+                value={`${progressPct}%`}
+                valueLtr
+                isRTL={isRTL}
+              />
+            </>
+          ) : null}
+          <Divider compact />
           <MetaRow
             label={t('catalog.warehouseShort')}
             value={warehouse}

@@ -5,6 +5,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
+import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
@@ -16,7 +17,13 @@ type Props = {
   onClose: () => void;
   statuses: readonly string[];
   status: string;
-  onApply: (status: string) => void;
+  dateFrom?: string;
+  dateTo?: string;
+  onApply: (next: {
+    status: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) => void;
 };
 
 export function PurchasingStatusFilterSheet({
@@ -24,19 +31,27 @@ export function PurchasingStatusFilterSheet({
   onClose,
   statuses,
   status,
+  dateFrom = '',
+  dateTo = '',
   onApply,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const reduce = useReducedMotion();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.62), 520);
+  const sheetHeight = Math.min(Math.round(height * 0.72), 600);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [draft, setDraft] = useState(status);
+  const [draftFrom, setDraftFrom] = useState(dateFrom);
+  const [draftTo, setDraftTo] = useState(dateTo);
 
   useEffect(() => {
-    if (open) setDraft(status);
-  }, [open, status]);
+    if (open) {
+      setDraft(status);
+      setDraftFrom(dateFrom);
+      setDraftTo(dateTo);
+    }
+  }, [open, status, dateFrom, dateTo]);
 
   const statusLabel = (s: string) => {
     if (s === 'ALL') return t('common.all');
@@ -175,6 +190,45 @@ export function PurchasingStatusFilterSheet({
 
         <View
           style={{
+            borderRadius: theme.radius.xl,
+            borderWidth: 1,
+            borderColor: colors.borderStrong,
+            backgroundColor: colors.surfaceSecondary,
+            padding: theme.spacing.md,
+            gap: theme.spacing.sm,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              gap: theme.spacing.sm,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <TextField
+                label={t('mobile.purchasing.dateFrom')}
+                value={draftFrom}
+                onChangeText={setDraftFrom}
+                placeholder="YYYY-MM-DD"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <TextField
+                label={t('mobile.purchasing.dateTo')}
+                value={draftTo}
+                onChangeText={setDraftTo}
+                placeholder="YYYY-MM-DD"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View
+          style={{
             borderTopWidth: StyleSheet.hairlineWidth,
             borderTopColor: colors.border,
             paddingTop: theme.spacing.sm,
@@ -187,6 +241,8 @@ export function PurchasingStatusFilterSheet({
             onPress={() => {
               void haptics.selection();
               setDraft('ALL');
+              setDraftFrom('');
+              setDraftTo('');
             }}
             style={{ flex: 1, borderRadius: theme.radius.xl }}
           />
@@ -194,7 +250,11 @@ export function PurchasingStatusFilterSheet({
             label={t('mobile.purchasing.filterApply')}
             onPress={() => {
               void haptics.confirmLight();
-              onApply(draft);
+              onApply({
+                status: draft,
+                dateFrom: draftFrom.trim() || undefined,
+                dateTo: draftTo.trim() || undefined,
+              });
               onClose();
             }}
             style={{ flex: 1.35, borderRadius: theme.radius.xl }}

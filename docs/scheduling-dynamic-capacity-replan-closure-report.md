@@ -220,6 +220,13 @@ Working-minute and overlap tests were not weakened.
   backward work) is **out of scope**. Automatic calendar-change behavior
   must not become a 100% utilization optimizer.
 
+## PAST-SAFE
+
+Opening a historical day does not pull current unfinished work into that
+capacity. `REPLAN_EMPLOYEE` generate is floored at `resolveSchedulingFloor`.
+See [scheduling-past-floor-closure-report.md](./scheduling-past-floor-closure-report.md).
+
+
 ---
 
 ## Worker / resource hooks

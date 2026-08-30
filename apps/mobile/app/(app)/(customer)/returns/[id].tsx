@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, type Href } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
 import { ReturnDetailScreen } from '@/features/returns/ReturnDetailScreen';
 import { PermissionGate } from '@/navigation/PermissionGate';
@@ -8,7 +8,11 @@ export default function DealerReturnDetailRoute() {
   const { user } = useAuth();
   return (
     <PermissionGate user={user} require="sales-order.read" mode="all">
-      <ReturnDetailScreen returnId={String(id ?? '')} />
+      <ReturnDetailScreen
+        returnId={String(id ?? '')}
+        dealerFacing
+        backFallback={'/(app)/(customer)/returns' as Href}
+      />
     </PermissionGate>
   );
 }

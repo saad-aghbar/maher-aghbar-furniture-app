@@ -88,6 +88,24 @@ describe('selectPurchaseCard', () => {
       'Raw Materials',
     );
   });
+
+  it('passes presentation phase fields when present', () => {
+    const withPhase: PurchaseOrder = {
+      ...po,
+      presentation: {
+        phase: 'ORDERED',
+        labelKey: 'purchasing.phaseOrdered',
+        progress: 0.25,
+        attentionReason: 'OVERDUE_ETA',
+        primaryAction: 'RECEIVE',
+      },
+    };
+    const card = selectPurchaseCard(withPhase, 'en');
+    expect(card.phaseLabelKey).toBe('purchasing.phaseOrdered');
+    expect(card.progress).toBe(0.25);
+    expect(card.attentionReason).toBe('OVERDUE_ETA');
+    expect(card.primaryAction).toBe('RECEIVE');
+  });
 });
 
 describe('purchaseLineSummary / humanizeWarehouseLabel', () => {

@@ -1,9 +1,11 @@
 'use client';
 
 import { PageHeader } from '@/components/admin/page-header';
+import { ConfirmDialog } from '@/components/admin/confirm-dialog';
+import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
 import { DeliveryLocationMapLazy } from '@/components/delivery-location-map-lazy';
 import { Link } from '@/i18n/navigation';
-import { apiFetch, apiUpload, apiUploadFromUrl, ApiClientError } from '@/lib/api-client';
+import { apiFetch } from '@/lib/api-client';
 import { DELIVERY_STATUSES } from '@/lib/status-options';
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
@@ -14,7 +16,6 @@ import {
   Input,
   Modal,
   MotionSection,
-  PhotoAttachField,
   Select,
   Skeleton,
   StatusBadge,
@@ -26,8 +27,8 @@ import {
   TableRow,
 } from '@maher/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { useCallback, useEffect, useState } from 'react';
 
 interface DeliveryItem {
   id: string;
@@ -46,6 +47,7 @@ interface DeliveryDetail {
   recipientName?: string | null;
   failureReason?: string | null;
   signatureData?: string | null;
+  customerConfirmedAt?: string | null;
   customer?: {
     name: string;
     phone?: string | null;
@@ -66,52 +68,109 @@ interface DeliveryDetail {
   items?: DeliveryItem[];
 }
 
+type LoadSheetPiece = {
+  id: string;
+  pieceIndex: number;
+  label: string;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
+  loadedAt: string | null;
+  loadedById?: string | null;
+};
+
+type LoadSheetProduct = {
+  inventoryLotId: string;
+  productNameEn: string;
+  productNameAr: string;
+  productNameHe?: string | null;
+  sku: string;
+  imageUrl?: string | null;
+  lotQuantity: number;
+  warehouse?: {
+    id: string;
+    code: string;
+    nameEn: string;
+    nameAr?: string;
+    nameHe?: string | null;
+  } | null;
+  productionOrder?: { id: string; number: string } | null;
+  pieces: LoadSheetPiece[];
+};
+
+type LoadSheet = {
+  id: string;
+  number: string;
+  status: string;
+  loadProgress: { loaded: number; total: number };
+  allLoaded: boolean;
+  canDepart: boolean;
+  products: LoadSheetProduct[];
+};
+
 const STATUS_FLOW = ['PLANNED', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
 
 function nextStatus(current: string): string | null {
+  // Commercial DELIVERED is dealer confirm-receipt only — staff may only advance to truck departed.
+  if (current === 'OUT_FOR_DELIVERY' || current === 'DELIVERED') return null;
   const i = STATUS_FLOW.indexOf(current as (typeof STATUS_FLOW)[number]);
   if (i < 0 || i >= STATUS_FLOW.length - 1) return null;
-  return STATUS_FLOW[i + 1]!;
+  const next = STATUS_FLOW[i + 1]!;
+  if (next === 'DELIVERED') return null;
+  return next;
 }
 
-function canvasPoint(
-  canvas: HTMLCanvasElement,
-  clientX: number,
-  clientY: number,
-): { x: number; y: number } {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  return {
-    x: (clientX - rect.left) * scaleX,
-    y: (clientY - rect.top) * scaleY,
-  };
+function advanceActionLabel(
+  next: string,
+  tStatus: (key: string) => string,
+  tc: (key: string, values?: Record<string, string>) => string,
+  tl: (key: string) => string,
+): string {
+  if (next === 'OUT_FOR_DELIVERY') return tl('markTruckDeparted');
+  return tc('advanceTo', { status: tStatus(next) });
+}
+
+function pieceLabel(piece: LoadSheetPiece, locale: string): string {
+  if (locale === 'ar') return piece.nameAr || piece.label;
+  if (locale === 'he') return piece.nameHe || piece.label;
+  return piece.nameEn || piece.label;
+}
+
+function productName(product: LoadSheetProduct, locale: string): string {
+  if (locale === 'ar') return product.productNameAr || product.productNameEn;
+  if (locale === 'he') return product.productNameHe || product.productNameEn;
+  return product.productNameEn || product.productNameAr;
 }
 
 export default function DeliveryDetailPage({ params }: { params: { id: string } }) {
+  const locale = useLocale();
   const tc = useTranslations('catalog');
   const tSales = useTranslations('sales');
   const tCommon = useTranslations('common');
   const tStatus = useTranslations('statuses');
+  const tl = useTranslations('lifecycle');
+  const ti = useTranslations('inventory');
   const queryClient = useQueryClient();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const drawingRef = useRef(false);
 
   const [banner, setBanner] = useState<string | null>(null);
-  const [podOpen, setPodOpen] = useState(false);
   const [failOpen, setFailOpen] = useState(false);
+  const [departOpen, setDepartOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [recipientName, setRecipientName] = useState('');
   const [failureReason, setFailureReason] = useState('');
   const [driverId, setDriverId] = useState('');
-  const [podPhotoDocId, setPodPhotoDocId] = useState<string | undefined>();
-  const [podPhotoBusy, setPodPhotoBusy] = useState(false);
   const [pinLat, setPinLat] = useState<number | null>(null);
   const [pinLng, setPinLng] = useState<number | null>(null);
+  const [busyPieceId, setBusyPieceId] = useState<string | null>(null);
 
   const detailQuery = useQuery({
     queryKey: ['delivery', params.id],
     queryFn: () => apiFetch<DeliveryDetail>(`/api/v1/deliveries/${params.id}`),
+  });
+
+  const loadSheetQuery = useQuery({
+    queryKey: ['delivery-load-sheet', params.id],
+    queryFn: () => apiFetch<LoadSheet>(`/api/v1/deliveries/${params.id}/load-sheet`),
+    enabled: Boolean(params.id),
   });
 
   const resolveCoords = useCallback((d: DeliveryDetail) => {
@@ -174,12 +233,19 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
       ),
   });
 
+  const invalidateDelivery = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['delivery', params.id] });
+    await queryClient.invalidateQueries({ queryKey: ['delivery-load-sheet', params.id] });
+    await queryClient.invalidateQueries({ queryKey: ['deliveries'] });
+    await queryClient.invalidateQueries({ queryKey: ['inventory'] });
+    await queryClient.invalidateQueries({ queryKey: ['inventory-finished-lots'] });
+    await queryClient.invalidateQueries({ queryKey: ['production-orders'] });
+    await queryClient.invalidateQueries({ queryKey: ['production-order'] });
+  };
+
   const statusMutation = useMutation({
     mutationFn: (args: {
       status: string;
-      recipientName?: string;
-      signatureData?: string;
-      photoDocumentId?: string;
       driverId?: string;
       failureReason?: string;
       notes?: string;
@@ -190,65 +256,39 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
       }),
     onSuccess: async () => {
       setFormError(null);
-      setPodOpen(false);
       setFailOpen(false);
       setBanner(tc('deliveryStatusUpdated'));
-      await queryClient.invalidateQueries({ queryKey: ['delivery', params.id] });
-      await queryClient.invalidateQueries({ queryKey: ['deliveries'] });
+      await invalidateDelivery();
     },
     onError: (err) => setFormError(mutationErrorMessage(err)),
   });
 
-  const clearSignature = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }, []);
+  const pieceMutation = useMutation({
+    mutationFn: (args: { pieceId: string; loaded: boolean }) =>
+      apiFetch<LoadSheet>(
+        `/api/v1/deliveries/${params.id}/load-pieces/${args.pieceId}/${args.loaded ? 'check' : 'uncheck'}`,
+        { method: 'POST' },
+      ),
+    onMutate: (args) => setBusyPieceId(args.pieceId),
+    onSuccess: (sheet) => {
+      queryClient.setQueryData(['delivery-load-sheet', params.id], sheet);
+      setFormError(null);
+    },
+    onError: (err) => setFormError(mutationErrorMessage(err)),
+    onSettled: () => setBusyPieceId(null),
+  });
 
-  const startDraw = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    drawingRef.current = true;
-    const { x, y } = canvasPoint(canvas, clientX, clientY);
-    ctx.strokeStyle = '#111';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-
-  const moveDraw = (clientX: number, clientY: number) => {
-    if (!drawingRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-    const { x, y } = canvasPoint(canvas, clientX, clientY);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const endDraw = () => {
-    drawingRef.current = false;
-  };
-
-  async function completeWithPod() {
-    if (!recipientName.trim()) {
-      setFormError(tc('recipientNameRequired'));
-      return;
-    }
-    const canvas = canvasRef.current;
-    const signatureData = canvas?.toDataURL('image/png');
-    statusMutation.mutate({
-      status: 'DELIVERED',
-      recipientName: recipientName.trim(),
-      signatureData,
-      photoDocumentId: podPhotoDocId,
-    });
-  }
+  const departMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<LoadSheet>(`/api/v1/deliveries/${params.id}/depart`, { method: 'POST' }),
+    onSuccess: async () => {
+      setDepartOpen(false);
+      setFormError(null);
+      setBanner(ti('loadSheetDeparted'));
+      await invalidateDelivery();
+    },
+    onError: (err) => setFormError(mutationErrorMessage(err)),
+  });
 
   if (detailQuery.isLoading) {
     return (
@@ -273,9 +313,19 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
   const items = delivery.items ?? [];
   const next = nextStatus(delivery.status);
   const terminal = ['DELIVERED', 'CANCELLED', 'FAILED'].includes(delivery.status);
+  const departed = delivery.status === 'OUT_FOR_DELIVERY' || delivery.status === 'DELIVERED';
   const driverName = delivery.driver
     ? [delivery.driver.firstName, delivery.driver.lastName].filter(Boolean).join(' ')
     : '—';
+  const sheet = loadSheetQuery.data;
+  const missing =
+    sheet && sheet.loadProgress.total > 0
+      ? sheet.loadProgress.total - sheet.loadProgress.loaded
+      : 0;
+  const canShowDepartCta =
+    !departed &&
+    (delivery.status === 'PLANNED' || delivery.status === 'READY') &&
+    Boolean(sheet);
 
   return (
     <div className="space-y-6">
@@ -287,7 +337,7 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       <MotionSection className="maher-form-section space-y-6" as="div">
-      {formError && !podOpen && !failOpen ? <Alert variant="error">{formError}</Alert> : null}
+      {formError && !failOpen && !departOpen ? <Alert variant="error">{formError}</Alert> : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge status={delivery.status} />
@@ -307,6 +357,158 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
           <span className="text-sm text-text-secondary" dir="ltr">
             {tSales('dealerOrderNumber')}: {delivery.salesOrder.externalOrderNumber}
           </span>
+        ) : null}
+      </div>
+
+      {delivery.status === 'OUT_FOR_DELIVERY' ? (
+        <div className="space-y-1 rounded-lg border border-brand/30 bg-brand/5 px-4 py-3">
+          <p className="font-semibold text-text-primary">{tl('shipped')}</p>
+          <p className="text-sm text-text-secondary">{tl('shippedHero')}</p>
+          <p className="text-sm font-medium text-brand">{tl('shippedAwaitingConfirm')}</p>
+        </div>
+      ) : null}
+
+      {delivery.status === 'DELIVERED' ? (
+        <div className="space-y-1 rounded-lg border border-emerald-300/40 bg-emerald-50 px-4 py-3 dark:bg-emerald-950/20">
+          <p className="font-semibold text-text-primary">{tl('tabs.delivered')}</p>
+          <p className="text-sm text-text-secondary">{tl('deliveryConfirmedByDealer')}</p>
+          {delivery.customerConfirmedAt ? (
+            <p className="text-sm text-text-secondary" dir="ltr">
+              {tl('deliveredOn', {
+                date: new Date(delivery.customerConfirmedAt).toLocaleDateString(locale, {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                }),
+              })}
+            </p>
+          ) : null}
+          {delivery.recipientName ? (
+            <p className="text-xs text-text-tertiary">
+              {tc('recipient')}: {delivery.recipientName}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="space-y-3 rounded-xl border border-[var(--maher-border)] bg-[var(--maher-surface)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-text-primary">{ti('loadSheetTitle')}</h2>
+            <p className="text-sm text-text-secondary">{ti('loadSheetHint')}</p>
+          </div>
+          {sheet ? (
+            <div className="text-end">
+              <p className="text-sm font-medium text-text-primary" dir="ltr">
+                {ti('loadSheetProgress', {
+                  loaded: sheet.loadProgress.loaded,
+                  total: sheet.loadProgress.total,
+                })}
+              </p>
+              {sheet.allLoaded && !departed ? (
+                <p className="text-xs font-medium text-brand">{ti('loadSheetReadyToDepart')}</p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {loadSheetQuery.isLoading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : loadSheetQuery.isError ? (
+          <ErrorState
+            title={ti('loadSheetTitle')}
+            onRetry={() => loadSheetQuery.refetch()}
+            retryLabel={tCommon('retry')}
+          />
+        ) : !sheet || sheet.products.length === 0 ? (
+          <EmptyState title={ti('loadSheetNoPackages')} />
+        ) : (
+          <div className="space-y-4">
+            {sheet.products.map((product) => (
+              <div key={product.inventoryLotId} className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <InventoryItemThumb
+                    src={product.imageUrl}
+                    alt={productName(product, locale)}
+                    size={40}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-text-primary">
+                      {productName(product, locale)}
+                    </p>
+                    <p className="text-xs text-text-tertiary" dir="ltr">
+                      {product.sku}
+                      {product.productionOrder?.number
+                        ? ` · ${product.productionOrder.number}`
+                        : ''}
+                      {product.warehouse
+                        ? ` · ${product.warehouse.code}`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-1">
+                  {product.pieces.map((piece) => {
+                    const checked = Boolean(piece.loadedAt);
+                    return (
+                      <li key={piece.id}>
+                        <button
+                          type="button"
+                          disabled={departed || busyPieceId === piece.id}
+                          onClick={() =>
+                            pieceMutation.mutate({
+                              pieceId: piece.id,
+                              loaded: !checked,
+                            })
+                          }
+                          className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-start text-sm transition ${
+                            checked
+                              ? 'border-brand/40 bg-brand/5'
+                              : 'border-[var(--maher-border)] hover:border-brand/50'
+                          } ${departed ? 'cursor-default opacity-80' : ''}`}
+                        >
+                          <span
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] ${
+                              checked
+                                ? 'border-brand bg-brand text-white'
+                                : 'border-[var(--maher-border)] text-transparent'
+                            }`}
+                            aria-hidden
+                          >
+                            ✓
+                          </span>
+                          <span className="min-w-0 flex-1 text-text-primary">
+                            {pieceLabel(piece, locale)}
+                          </span>
+                          <span className="text-[11px] text-text-tertiary">
+                            {checked ? ti('loadSheetOnTruck') : ti('loadSheetTapToCheck')}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {canShowDepartCta ? (
+          <div className="sticky bottom-0 z-10 -mx-4 mt-2 space-y-2 border-t border-[var(--maher-border)] bg-[var(--maher-surface)]/95 px-4 py-3 backdrop-blur supports-[padding:max(0px)]:pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:-mx-0 sm:rounded-b-xl">
+            {missing > 0 ? (
+              <p className="text-sm text-amber-800 dark:text-amber-300">
+                {ti('loadSheetMissing', { count: missing })}
+              </p>
+            ) : null}
+            <Button
+              disabled={!sheet?.canDepart || missing > 0}
+              loading={departMutation.isPending}
+              onClick={() => setDepartOpen(true)}
+              className="w-full sm:w-auto"
+            >
+              {ti('loadSheetConfirmDepart')}
+            </Button>
+          </div>
         ) : null}
       </div>
 
@@ -401,29 +603,17 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
 
       {!terminal ? (
         <div className="flex flex-wrap gap-2">
-          {next === 'DELIVERED' ? (
-            <Button
-              onClick={() => {
-                setRecipientName(delivery.recipientName ?? '');
-                setPodPhotoDocId(undefined);
-                setFormError(null);
-                setPodOpen(true);
-                setTimeout(clearSignature, 50);
-              }}
-            >
-              {tc('completePod')}
-            </Button>
-          ) : next ? (
+          {next && next !== 'OUT_FOR_DELIVERY' && next !== 'DELIVERED' ? (
             <Button
               loading={statusMutation.isPending}
               onClick={() =>
                 statusMutation.mutate({
                   status: next,
-                  driverId: next === 'OUT_FOR_DELIVERY' ? driverId || undefined : undefined,
+                  driverId: undefined,
                 })
               }
             >
-              {tc('advanceTo', { status: tStatus(next as never) })}
+              {advanceActionLabel(next, tStatus, tc, tl)}
             </Button>
           ) : null}
           {delivery.status !== 'FAILED' ? (
@@ -431,7 +621,7 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
               {tc('markFailed')}
             </Button>
           ) : null}
-          {next === 'OUT_FOR_DELIVERY' || delivery.status === 'READY' ? (
+          {delivery.status === 'READY' || delivery.status === 'PLANNED' ? (
             <Select
               label={tc('defaultDriver')}
               value={driverId}
@@ -475,96 +665,16 @@ export default function DeliveryDetailPage({ params }: { params: { id: string } 
         )}
       </div>
 
-      <Modal
-        open={podOpen}
-        onClose={() => setPodOpen(false)}
-        title={tc('podTitle', { number: delivery.number })}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setPodOpen(false)}>
-              {tCommon('cancel')}
-            </Button>
-            <Button loading={statusMutation.isPending} onClick={() => void completeWithPod()}>
-              {tc('markDelivered')}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          {formError ? <Alert variant="error">{formError}</Alert> : null}
-          <Input
-            label={`${tc('recipientName')} *`}
-            value={recipientName}
-            onChange={(e) => setRecipientName(e.target.value)}
-          />
-          <div>
-            <p className="mb-1 text-sm font-medium">{tc('signature')}</p>
-            <canvas
-              ref={canvasRef}
-              width={420}
-              height={140}
-              className="w-full touch-none rounded border border-[var(--maher-border)] bg-white"
-              onMouseDown={(e) => startDraw(e.clientX, e.clientY)}
-              onMouseMove={(e) => moveDraw(e.clientX, e.clientY)}
-              onMouseUp={endDraw}
-              onMouseLeave={endDraw}
-              onTouchStart={(e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                if (touch) startDraw(touch.clientX, touch.clientY);
-              }}
-              onTouchMove={(e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                if (touch) moveDraw(touch.clientX, touch.clientY);
-              }}
-              onTouchEnd={endDraw}
-              onTouchCancel={endDraw}
-            />
-            <Button size="sm" variant="ghost" className="mt-1" onClick={clearSignature}>
-              {tc('clearSignature')}
-            </Button>
-          </div>
-          <PhotoAttachField
-            label={tc('photoOptional')}
-            hint={tCommon('photoUrlHint')}
-            accept="image/*"
-            uploadLabel={tCommon('uploadFromDevice')}
-            uploadingLabel={tCommon('uploading')}
-            attachUrlLabel={tCommon('attachFromUrl')}
-            disabled={podPhotoBusy || statusMutation.isPending}
-            onUploadFile={async (file) => {
-              setPodPhotoBusy(true);
-              try {
-                const form = new FormData();
-                form.append('file', file);
-                const json = await apiUpload<{ document: { id: string } }>(
-                  '/api/v1/uploads?category=POD',
-                  form,
-                );
-                setPodPhotoDocId(json.document.id);
-              } finally {
-                setPodPhotoBusy(false);
-              }
-            }}
-            onAttachUrl={async (url) => {
-              setPodPhotoBusy(true);
-              try {
-                const json = await apiUploadFromUrl<{ document: { id: string } }>(
-                  '/api/v1/uploads/from-url?category=POD',
-                  { url },
-                );
-                setPodPhotoDocId(json.document.id);
-              } finally {
-                setPodPhotoBusy(false);
-              }
-            }}
-          />
-          {podPhotoDocId ? (
-            <p className="text-xs text-text-tertiary">{tCommon('saved')}</p>
-          ) : null}
-        </div>
-      </Modal>
+      <ConfirmDialog
+        open={departOpen}
+        onClose={() => setDepartOpen(false)}
+        title={ti('loadSheetConfirmDepartTitle')}
+        description={ti('loadSheetConfirmDepartBody')}
+        confirmLabel={ti('loadSheetConfirmDepart')}
+        loading={departMutation.isPending}
+        error={formError}
+        onConfirm={() => departMutation.mutate()}
+      />
 
       <Modal
         open={failOpen}

@@ -7,6 +7,11 @@ import {
   validateWorkflowGraph,
   type WorkflowValidationIssue,
 } from './workflow-graph-validator';
+import {
+  executionKindForStageCode,
+  validateTerminalChain,
+} from './terminal-chain';
+import { validateOpeningChain } from './opening-chain';
 
 export type Applicability = 'INHERIT' | 'REQUIRED' | 'OPTIONAL' | 'EXCLUDED';
 
@@ -22,6 +27,7 @@ export type CompilerStageDef = {
   responsibleDepartment?: string | null;
   schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED' | null;
   resourceSlots?: number | null;
+  executionKind?: 'PRODUCTION' | 'QUALITY' | 'LOGISTICS' | null;
 };
 
 export type CompilerNode = {
@@ -43,6 +49,7 @@ export type CompilerNode = {
   schedulingResourceMode?: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED' | null;
   resourceSlots?: number | null;
   outputQtyPerUnit?: number | null;
+  expectedPieceCount?: number | null;
   outputNameAr?: string | null;
   outputNameEn?: string | null;
   outputNameHe?: string | null;
@@ -96,7 +103,9 @@ export type CompiledNode = {
   consumesSemiFinished: boolean;
   schedulingResourceMode: 'WORKER_CONSTRAINED' | 'RESOURCE_CONSTRAINED';
   resourceSlots: number;
+  executionKind: 'PRODUCTION' | 'QUALITY' | 'LOGISTICS';
   outputQtyPerUnit: number | null;
+  expectedPieceCount: number | null;
   outputNameAr: string | null;
   outputNameEn: string | null;
   outputNameHe: string | null;
@@ -153,6 +162,11 @@ export function compileWorkflow(input: {
   orderOverrides?: CompilerOrderOverride[];
   /** product stage estimate minutes by stageDefinitionId */
   productEstimateMinutes?: Record<string, number | null | undefined>;
+  /**
+   * STRICT by default. Topology unit tests may set false;
+   * publish/snapshot paths must leave this true (or omit).
+   */
+  enforceTerminalChain?: boolean;
 }): CompiledProductionWorkflow {
   const productByNode = new Map<string, CompilerProductOverride>();
   const productByStage = new Map<string, CompilerProductOverride>();
@@ -220,7 +234,11 @@ export function compileWorkflow(input: {
         node.stage.schedulingResourceMode ??
         'WORKER_CONSTRAINED',
       resourceSlots: node.resourceSlots ?? node.stage.resourceSlots ?? 1,
+      executionKind:
+        node.stage.executionKind ??
+        executionKindForStageCode(node.stage.code),
       outputQtyPerUnit: node.outputQtyPerUnit ?? null,
+      expectedPieceCount: node.expectedPieceCount ?? null,
       outputNameAr: node.outputNameAr ?? null,
       outputNameEn: node.outputNameEn ?? null,
       outputNameHe: node.outputNameHe ?? null,
@@ -375,6 +393,23 @@ export function compileWorkflow(input: {
     toNodeId: e.toNodeKey,
   }));
   const validation = validateWorkflowGraph(validationNodes, validationEdges);
+  const issues: WorkflowValidationIssue[] = [...validation.issues];
+
+  if (input.enforceTerminalChain !== false) {
+    const chainNodes = included.map((n) => ({
+      id: n.nodeKey,
+      nodeKey: n.nodeKey,
+      stageCode: n.stageCode,
+      isRequired: n.isRequired,
+      isSkipped: n.isSkipped,
+    }));
+    const chainEdges = reducedEdges.map((e) => ({
+      fromNodeId: e.fromNodeKey,
+      toNodeId: e.toNodeKey,
+    }));
+    issues.push(...validateTerminalChain(chainNodes, chainEdges));
+    issues.push(...validateOpeningChain(chainNodes, chainEdges));
+  }
 
   return {
     included,
@@ -385,7 +420,7 @@ export function compileWorkflow(input: {
     dependencyMap,
     downstreamMap,
     topologicalOrder,
-    issues: validation.issues,
+    issues,
   };
 }
 

@@ -4,9 +4,14 @@ import { PurchasingService } from './purchasing.service';
 import { LowStockPrWebhookController } from './low-stock-pr.webhook.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { SchedulingModule } from '../scheduling/scheduling.module';
 
 @Module({
-  imports: [NotificationsModule, forwardRef(() => InventoryModule)],
+  imports: [
+    NotificationsModule,
+    forwardRef(() => InventoryModule),
+    forwardRef(() => SchedulingModule),
+  ],
   controllers: [PurchasingController, LowStockPrWebhookController],
   providers: [PurchasingService],
   exports: [PurchasingService],

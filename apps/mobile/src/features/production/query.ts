@@ -8,15 +8,18 @@ import {
 import {
   assignTask,
   blockProductionTask,
+  ensureProductionPlanTasks,
   getProductionOrder,
   getProductionSummary,
   listAssignableWorkers,
   listProductionOrders,
   pauseProductionTask,
+  startProductionOrder,
   unblockTask,
   updateProductionOrder,
   updateProductionTaskNotes,
   getProductionOrderMaterials,
+  getProductionOrderMaterialUsage,
   returnProductionUnusedMaterial,
   type ProductionListBucket,
   type ProductionPriority,
@@ -82,10 +85,15 @@ export function useAssignableWorkersQuery(
   enabled: boolean,
   q?: string,
   stageDefinitionId?: string,
+  opts?: {
+    taskId?: string;
+    plannedStart?: string;
+    plannedCompletion?: string;
+  },
 ) {
   return useQuery({
-    queryKey: queryKeys.production.workers(q, stageDefinitionId),
-    queryFn: () => listAssignableWorkers(q, stageDefinitionId),
+    queryKey: queryKeys.production.workers(q, stageDefinitionId, opts),
+    queryFn: () => listAssignableWorkers(q, stageDefinitionId, opts),
     enabled,
     staleTime: 60_000,
   });
@@ -111,15 +119,35 @@ export function useAssignTaskMutation(orderId: string) {
       taskId: string;
       employeeId: string;
       priority?: ProductionPriority | string;
+      plannedStart?: string;
       plannedCompletion?: string;
       estimatedMinutes?: number;
+      overrideConflict?: boolean;
     }) =>
       assignTask(args.taskId, {
         employeeId: args.employeeId,
         priority: args.priority,
+        plannedStart: args.plannedStart,
         plannedCompletion: args.plannedCompletion,
         estimatedMinutes: args.estimatedMinutes,
+        overrideConflict: args.overrideConflict,
       }),
+    onSuccess: () => invalidateProduction(qc, orderId),
+  });
+}
+
+export function useStartProductionMutation(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => startProductionOrder(orderId),
+    onSuccess: () => invalidateProduction(qc, orderId),
+  });
+}
+
+export function useEnsurePlanTasksMutation(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => ensureProductionPlanTasks(orderId),
     onSuccess: () => invalidateProduction(qc, orderId),
   });
 }
@@ -165,6 +193,15 @@ export function useProductionMaterialsQuery(orderId: string | undefined, enabled
   return useQuery({
     queryKey: [...queryKeys.production.detail(orderId ?? ''), 'materials'] as const,
     queryFn: () => getProductionOrderMaterials(orderId!),
+    enabled: Boolean(orderId) && enabled,
+    staleTime: 10_000,
+  });
+}
+
+export function useProductionMaterialUsageQuery(orderId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: [...queryKeys.production.detail(orderId ?? ''), 'material-usage'] as const,
+    queryFn: () => getProductionOrderMaterialUsage(orderId!),
     enabled: Boolean(orderId) && enabled,
     staleTime: 10_000,
   });

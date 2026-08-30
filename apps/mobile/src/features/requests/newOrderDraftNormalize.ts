@@ -1,6 +1,7 @@
 import type { RequestPriority } from '@/api/modules/requests';
 import type { NewOrderStep } from './newOrderSteps';
 import { migrateDraftStep } from './newOrderSteps';
+import { parseMapCoord } from '@/components/maps/mapCoords';
 import {
   emptyDimensionFields,
   migrateLegacyDimensionsNotes,
@@ -113,8 +114,8 @@ export function normalizeLocalDraft(
     endCustomerName: String(parsed.endCustomerName ?? ''),
     endCustomerPhone: String(parsed.endCustomerPhone ?? ''),
     deliveryNotes: String(parsed.deliveryNotes ?? ''),
-    deliveryLat: parsed.deliveryLat,
-    deliveryLng: parsed.deliveryLng,
+    deliveryLat: parseMapCoord(parsed.deliveryLat) ?? undefined,
+    deliveryLng: parseMapCoord(parsed.deliveryLng) ?? undefined,
     requiredDeliveryDate: String(parsed.requiredDeliveryDate ?? ''),
     serverDraftId: parsed.serverDraftId,
     serverDraftNumber: parsed.serverDraftNumber,

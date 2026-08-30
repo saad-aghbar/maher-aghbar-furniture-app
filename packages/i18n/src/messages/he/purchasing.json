@@ -1,0 +1,8 @@
+{
+  "phaseDraft": "טיוטה",
+  "phaseOrdered": "הוזמן",
+  "phasePartial": "התקבל חלקית",
+  "phaseReceived": "התקבל",
+  "phaseClosed": "סגור",
+  "phaseCancelled": "בוטל"
+}

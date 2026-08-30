@@ -14,6 +14,9 @@ describe('mapNotificationLinkToHref', () => {
     expect(mapNotificationLinkToHref('/account/statement', 'customer')).toBe(
       '/(app)/(customer)/account/statement',
     );
+    expect(mapNotificationLinkToHref('/quotations/q-1', 'customer')).toBe(
+      '/(app)/(customer)/quotations/q-1',
+    );
   });
 
   it('never sends customer surface to admin paths', () => {

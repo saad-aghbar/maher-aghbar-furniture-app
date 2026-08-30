@@ -1,6 +1,15 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 import type { AuthUser } from '@maher/types';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -13,6 +22,36 @@ class ReasonDto {
   reason?: string;
 }
 
+class CancelSalesOrderDto {
+  @IsString()
+  reasonCode!: string;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+class ConfirmCommercialLineDto {
+  @IsUUID()
+  lineId!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  unitPrice!: number;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
+class ConfirmCommercialPricesDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ConfirmCommercialLineDto)
+  lines!: ConfirmCommercialLineDto[];
+}
+
 @ApiTags('sales-orders')
 @Controller('sales-orders')
 export class SalesOrdersController {
@@ -22,6 +61,12 @@ export class SalesOrdersController {
   @Get()
   list(@Query() query: ListSalesOrdersDto, @CurrentUser() user: AuthUser) {
     return this.salesOrders.list(query, user);
+  }
+
+  @RequirePermissions('sales-order.read')
+  @Get(':id/cancel-impact')
+  cancelImpact(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.salesOrders.getCancelImpact(id, user);
   }
 
   @RequirePermissions('sales-order.read')
@@ -41,6 +86,16 @@ export class SalesOrdersController {
   }
 
   @RequirePermissions('sales-order.update')
+  @Post(':id/confirm-commercial-prices')
+  confirmCommercialPrices(
+    @Param('id') id: string,
+    @Body() dto: ConfirmCommercialPricesDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesOrders.confirmCommercialPrices(id, dto.lines, user);
+  }
+
+  @RequirePermissions('sales-order.update')
   @Post(':id/confirm')
   confirm(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesOrders.confirm(id, user.id);
@@ -54,7 +109,14 @@ export class SalesOrdersController {
 
   @RequirePermissions('sales-order.update')
   @Post(':id/cancel')
-  cancel(@Param('id') id: string, @Body() body: ReasonDto, @CurrentUser() user: AuthUser) {
-    return this.salesOrders.cancel(id, user.id, body.reason);
+  cancel(
+    @Param('id') id: string,
+    @Body() body: CancelSalesOrderDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesOrders.cancel(id, user.id, {
+      reasonCode: body.reasonCode,
+      reason: body.reason,
+    });
   }
 }

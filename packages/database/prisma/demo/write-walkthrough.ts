@@ -6,9 +6,11 @@ import { demoAsOf } from './clock';
 export const FLAGSHIP_PROJECT_NAMES = [
   'Abdoun lounge set',
   'Sweifieh sectional',
+  'Nile blank production start',
   'Abdali hotel banquettes',
   'Cedar Italian velvet recliner',
-  'Diwan wingback foam gate',
+  'Diwan wingback frame gate',
+  'Noor banquettes 4 of 6 frames',
   'Jabal contract dining',
   'Oasis club armchair QC',
   'Nile loveseat recovered',
@@ -59,12 +61,28 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
     orderBy: { orderDate: 'asc' },
   });
 
+  const quoteRows = await prisma.quotation.findMany({
+    where: { request: { projectName: { in: [...FLAGSHIP_PROJECT_NAMES] } } },
+    select: {
+      number: true,
+      version: true,
+      status: true,
+      acceptedAt: true,
+      acceptedBy: { select: { username: true } },
+      request: { select: { projectName: true, number: true } },
+      salesOrders: { select: { number: true, status: true } },
+    },
+    orderBy: [{ number: 'asc' }, { version: 'asc' }],
+  });
+
   const lines: string[] = [
     '# Father demo walkthrough',
     '',
     `**As of:** ${asOf} (Asia/Amman) · password \`123\``,
     '',
     'Use these **real seeded numbers** after `pnpm demo:reset`. Logins: `admin` (factory), `nile` / `oasis` / `balqis` (dealers), `carpenter` / `inspector` (floor).',
+    '',
+    '**Physical inventory storyline (factory truth):** Inventory → Semi-finished shows Sweifieh / Noor (4 of 6) frames as lots tied to POs. Finished shows Balqis banquettes waiting for truck (days waiting / RESERVED). Nile delivered has FIN receipt + departure issue (0 left in factory). Oasis QC hold has no deliverable FIN. Diwan has **0** SEMI while WIP_NOT_READY. Worker finish on materials opens Confirm materials (scan is identify-only). Item report PDF includes usage / return / scrap when seeded (Sweifieh carpentry).',
     '',
     '## Scenarios',
     '',
@@ -73,19 +91,23 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
   const byName = new Map(rows.map((r) => [r.projectName ?? '', r]));
   const scenarioText: Record<string, string> = {
     'Abdoun lounge set':
-      '**Delivered commercial history.** Admin: sales order → production snapshot → QC pass → delivery → paid invoice. Dealer `nile`: Schedule tab shows Delivered on the actual day. Worker: completed tasks.',
+      '**Delivered commercial history.** Admin: sales order → production snapshot → QC pass → delivery → paid invoice. Dealer `nile`: Schedule tab shows Delivered on the actual day. Worker: completed tasks. **Inventory:** historical FIN receipt then `DELIVERY_ISSUE` when the truck left — no finished lot left in factory.',
     'Sweifieh sectional':
-      '**Live production.** Oasis L-sectional mid-flow (parallel foam template). Admin scheduling + worker tasks. Dealer sees committed/suggested dates, not carpentry dates.',
+      '**Live production + hybrid material usage.** Oasis L-sectional mid-flow (carpentry done → SEMI frames exist). Admin scheduling + worker tasks. Dealer sees committed/suggested dates, not carpentry dates. **Inventory:** SEMI lots for this PO; carpentry task has seeded expected/actual usage (equal + return/scrap on a second line).',
+    'Nile blank production start':
+      '**Just entered production — empty floor.** Sales order and PO are in production, but nothing has started: first stage READY, **0%** progress, no material issues, no WIP kits, no usage. Use Admin Orders → In production → this SO, then Production hub Materials / WIP / Tasks to see what is still missing and walk production setup yourself.',
     'Abdali hotel banquettes':
-      '**Ready for delivery.** Balqis hospitality qty 6. Admin deliveries planned; dealer Schedule calendar uses the planned logistics day, not production completion.',
+      '**Ready for delivery + FIN waiting for truck.** Balqis hospitality qty 6. Admin deliveries planned; dealer Schedule calendar uses the planned logistics day, not production completion. **Inventory:** FIN lots RESERVED in finished warehouse until truck goes OUT_FOR_DELIVERY.',
     'Cedar Italian velvet recliner':
-      '**Material at-risk.** Waiting for inbound Italian velvet PO. Admin may-be-late / materials. Dealer has no committed date yet — Requested / Expected · not confirmed. Factory workers and capacity stay hidden. No started floor tasks.',
-    'Diwan wingback foam gate':
-      '**WIP at-risk.** Frame done; foam/upholstery gated. Scheduling NEEDS_REVIEW with WIP_NOT_READY.',
+      '**Material at-risk.** Waiting for inbound Italian velvet PO. Admin may-be-late / materials. Dealer has no committed date yet — Requested / Expected · not confirmed. Factory workers and capacity stay hidden. No started floor tasks. **No FIN** — truthful material wait only.\n\n**Warehouse scan (identify only).** Inventory → Scan → `MAT-ITAL-VEL`. Photo + 0 on hand + inbound fabric purchase PO (24 m, sequential `PORD-…`). Stop before Confirm receive — or `pnpm demo:reset` after a mutation demo.',
+    'Diwan wingback frame gate':
+      '**WIP at-risk.** Materials prepped; carpentry frames (SEMI lots) not produced yet. Scheduling NEEDS_REVIEW with WIP_NOT_READY — matches missing SEMI, not a status-only flag. **Inventory:** 0 SEMI lots for this PO.',
+    'Noor banquettes 4 of 6 frames':
+      '**Partial quantity.** Order qty 6; carpentry completedQty 4; SEMI lot qty 4. Remaining 2 frames still open — status never claims 6 physical frames.',
     'Jabal contract dining':
       '**Committed date vs capacity.** Approved plan cannot meet the committed delivery. Late chip from canonical classifier. Dealer calendar stays on the committed day. A past factory earliest-available date is not shown as current expected — copy is Delayed · Schedule being updated.',
     'Oasis club armchair QC':
-      '**Current rework.** Inspection failed; rework awaiting stage; PO on hold. Must not appear delivered.',
+      '**Current rework.** Inspection failed; rework awaiting stage; PO on hold. Must not appear delivered. **Inventory:** no deliverable FIN for this PO.',
     'Nile loveseat recovered':
       '**Historical rework.** Fail → completed rework → later pass → delivered. Partial payment.',
     'Zaatar ottoman scuff':
@@ -93,7 +115,7 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
     'Qasr suite dining':
       '**Schedule awaiting approval.** Proposed plan — dealer Schedule shows Requested / Expected · not confirmed, not a fake confirmed date.',
     'Noor club chair hold':
-      '**Draft sales order.** Quote sent; SO still DRAFT — no production yet.',
+      '**Dealer accept still pending.** Quote is SENT. Noor has not accepted — **اعتماد** (internal Approve) already happened at the factory; **قبول** (dealer Accept) has not. **No sales order** and no production.',
     'Rawnaq dining six':
       '**Confirmed, not started.** READY_FOR_PRODUCTION with no started floor tasks.',
   };
@@ -139,11 +161,55 @@ export async function writeFatherWalkthrough(prisma: PrismaClient): Promise<stri
         );
       }
     } else {
-      lines.push('- _Not found after reset — re-run `pnpm demo:reset`._');
+      const quote = quoteRows.find((q) => q.request?.projectName === name);
+      if (quote) {
+        lines.push(`- Quotation: **${quote.number}** v${quote.version} (${quote.status})`);
+        if (quote.request?.number) lines.push(`- RFQ: **${quote.request.number}**`);
+        if (quote.acceptedBy?.username) {
+          lines.push(`- Accepted by dealer \`${quote.acceptedBy.username}\``);
+        }
+        const linkedSo = quote.salesOrders[0];
+        lines.push(
+          linkedSo
+            ? `- Sales order: **${linkedSo.number}** (${linkedSo.status})`
+            : '- Sales order: **none** — dealer has not accepted (قبول) yet.',
+        );
+      } else {
+        lines.push('- _Not found after reset — re-run `pnpm demo:reset`._');
+      }
     }
     lines.push('');
     n += 1;
   }
+
+  lines.push('## Commercial quotations (اعتماد vs قبول)');
+  lines.push('');
+  lines.push(
+    'Internal **Approve** (AR **اعتماد**) is a send gate only — it never writes `ACCEPTED`, never creates a sales order, and never starts production. Dealer **Accept** (AR **قبول**) is the only commercial acceptance. Admin/Sales have no Accept button and `quotation.accept` is dealer-only. Quotations live under **Orders** / Account Places / portal `/quotations` — **Schedule / الجدول is unchanged**.',
+  );
+  lines.push('');
+  const noorQuote = quoteRows.find((q) => q.request?.projectName === 'Noor club chair hold');
+  if (noorQuote) {
+    lines.push(
+      `- **Noor** quote **${noorQuote.number}** v${noorQuote.version} is \`${noorQuote.status}\`${noorQuote.salesOrders[0] ? ` with SO ${noorQuote.salesOrders[0].number}` : ' with **no sales order**'}. Log in as \`noor\` to Accept.`,
+    );
+  }
+  const oasisAccepted = await prisma.quotation.findFirst({
+    where: { status: 'ACCEPTED', request: { projectName: 'Oasis revised quote accepted' } },
+    select: {
+      number: true,
+      version: true,
+      acceptedBy: { select: { username: true } },
+      parentQuotation: { select: { number: true, version: true, status: true } },
+      salesOrders: { select: { number: true, status: true } },
+    },
+  });
+  if (oasisAccepted) {
+    lines.push(
+      `- **Oasis** revised quote **${oasisAccepted.number}** v${oasisAccepted.version} ACCEPTED by \`${oasisAccepted.acceptedBy?.username ?? '—'}\`; v1 ${oasisAccepted.parentQuotation?.status ?? 'CANCELLED'}; SO ${oasisAccepted.salesOrders[0]?.number ?? '—'} (${oasisAccepted.salesOrders[0]?.status ?? 'none'}).`,
+    );
+  }
+  lines.push('');
 
   lines.push('## Dealer Schedule');
   lines.push('');

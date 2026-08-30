@@ -58,6 +58,9 @@ export type ProductionCardModel = {
   progressLabel: string | null;
   isLate: boolean;
   deliveryLabel: string | null;
+  /** First readiness reason (attention / blocked board). */
+  readinessReason: string | null;
+  boardBucket: string | null;
   /** Explicitly never expose a stages list on cards */
   showStages: false;
 };
@@ -86,8 +89,10 @@ export type ProductionTaskRow = {
   elapsedMinutes: number;
   estimatedMinutes: number | null;
   timingStatus: string | null;
-  /** Scheduler / assign planned completion, when the backend sent one. */
+  plannedStart: string | null;
   plannedCompletion: string | null;
+  stageCode: string | null;
+  dependsOnCodes: string[];
 };
 
 export type ProductionDetailModel = ProductionCardModel & {
@@ -137,6 +142,7 @@ export function selectProductionCard(
   item: ProductionOrderListItem,
   locale: string,
 ): ProductionCardModel {
+  const firstReason = item.readiness?.reasons?.[0];
   return {
     id: item.id,
     number: item.number,
@@ -150,6 +156,14 @@ export function selectProductionCard(
     isLate: Boolean(item.isLate),
     deliveryLabel: item.requiredDeliveryDate
       ? formatDate(asLocale(locale), item.requiredDeliveryDate)
+      : null,
+    readinessReason:
+      firstReason?.message ||
+      firstReason?.stageName ||
+      firstReason?.code ||
+      null,
+    boardBucket: item.readiness?.boardBucket
+      ? String(item.readiness.boardBucket)
       : null,
     showStages: false,
   };
@@ -219,6 +233,16 @@ export function selectProductionDetail(
   locale: string,
 ): ProductionDetailModel {
   const card = selectProductionCard(order, locale);
+  const dependsByCode = new Map<string, string[]>();
+  for (const stage of order.stages ?? []) {
+    const code = stage.code ?? stage.stageDefinition?.code;
+    if (!code) continue;
+    const deps =
+      stage.dependsOnCodes ??
+      stage.stageDefinition?.dependsOnCodes ??
+      [];
+    dependsByCode.set(code, deps.filter(Boolean));
+  }
   const tasks = (order.tasks ?? []).map((task) => {
     const openBlockers = (task.blockers ?? []).filter((b) => !b.resolvedAt);
     const assignee = task.assignedEmployee
@@ -233,6 +257,7 @@ export function selectProductionDetail(
           0,
       ),
     );
+    const stageCode = task.stageDefinition?.code ?? null;
     return {
       id: task.id,
       name: taskDisplayName(task, locale),
@@ -254,7 +279,11 @@ export function selectProductionDetail(
       elapsedMinutes,
       estimatedMinutes: task.timing?.estimatedMinutes ?? task.estimatedMinutes ?? null,
       timingStatus: task.timing?.status ?? null,
-      plannedCompletion: task.plannedCompletion ?? task.timing?.plannedCompletion ?? null,
+      plannedStart: task.plannedStart ?? null,
+      plannedCompletion:
+        task.plannedCompletion ?? task.timing?.plannedCompletion ?? null,
+      stageCode,
+      dependsOnCodes: stageCode ? dependsByCode.get(stageCode) ?? [] : [],
     };
   });
 

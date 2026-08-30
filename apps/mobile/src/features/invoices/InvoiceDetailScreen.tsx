@@ -10,15 +10,18 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
+import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { openInvoicePdf } from './api';
 import { openPaymentPdf } from '@/api/modules/payments';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
+import { ApplyCreditSheet } from './components/ApplyCreditSheet';
 import { InvoiceBalanceBoard } from './components/InvoiceBalanceBoard';
 import { InvoiceDetailHero } from './components/InvoiceDetailHero';
 import { InvoiceJofotaraBoard } from './components/InvoiceJofotaraBoard';
@@ -57,8 +60,11 @@ export function InvoiceDetailScreen({
   const { showToast } = useToast();
   const canRead = can(user, 'invoice.read');
   const canPay = can(user, 'payment.record');
+  /** Dealers never edit finance from the handset. */
+  const isDealer = Boolean(user?.customerId);
 
   const [payOpen, setPayOpen] = useState(false);
+  const [creditOpen, setCreditOpen] = useState(false);
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
   const query = useInvoiceQuery(invoiceId, canRead);
@@ -103,12 +109,19 @@ export function InvoiceDetailScreen({
     );
   }
 
-  const showPay = canPay && model.outstanding > 0 && model.status !== 'CANCELLED';
+  const showPay =
+    canPay && !isDealer && model.outstanding > 0 && model.status !== 'CANCELLED';
+  const showApplyCredit =
+    canPay &&
+    !isDealer &&
+    model.outstanding > 0 &&
+    model.availableCredit > 0 &&
+    model.status !== 'CANCELLED';
   const contentPad = theme.spacing.lg;
   const tabBarInset = theme.spacing[TAB_BAR_SIDE_INSET_KEY];
-  const stickyBottom = SURFACE_TAB_BAR_CLEARANCE;
-  const dockH = showPay ? 56 : 52;
-  const stickyPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE + dockH;
+  const stickyPad =
+    stickyCtaBottomInset(insets.bottom, theme.spacing.md) +
+    (showPay || showApplyCredit ? 108 : 72);
 
   const onPdf = () => {
     void (async () => {
@@ -178,19 +191,16 @@ export function InvoiceDetailScreen({
         <InvoiceJofotaraBoard model={model} />
       </ScrollView>
 
-      <View
-        pointerEvents="box-none"
-        style={{
-          position: 'absolute',
-          left: tabBarInset,
-          right: tabBarInset,
-          bottom: stickyBottom,
-          zIndex: 30,
-        }}
+      <FloatingActionDock
+        floating
+        style={{ paddingHorizontal: tabBarInset, zIndex: 30 }}
       >
         <InvoiceStickyActions
           pdfLabel={t('accounting.downloadPdf')}
           payLabel={showPay ? t('accounting.recordPayment') : undefined}
+          applyCreditLabel={
+            showApplyCredit ? t('accounting.applyCredit') : undefined
+          }
           onPdf={onPdf}
           onPay={
             showPay
@@ -199,8 +209,15 @@ export function InvoiceDetailScreen({
                 }
               : undefined
           }
+          onApplyCredit={
+            showApplyCredit
+              ? () => {
+                  setCreditOpen(true);
+                }
+              : undefined
+          }
         />
-      </View>
+      </FloatingActionDock>
 
       {showPay ? (
         <RecordPaymentSheet
@@ -209,6 +226,16 @@ export function InvoiceDetailScreen({
           invoiceId={model.id}
           customerId={model.customerId}
           defaultAmount={model.outstanding}
+        />
+      ) : null}
+      {showApplyCredit ? (
+        <ApplyCreditSheet
+          open={creditOpen}
+          onClose={() => setCreditOpen(false)}
+          invoiceId={model.id}
+          customerId={model.customerId}
+          remaining={model.outstanding}
+          availableCredit={model.availableCredit}
         />
       ) : null}
       {pdfDownloadSheet}

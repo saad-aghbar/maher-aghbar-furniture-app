@@ -12,6 +12,8 @@ export type HomeFocus = {
 
 /**
  * Single most useful next action for Home — not a dashboard list.
+ * Note: Signature management desk uses server attention cards instead.
+ * These deep-links are only for living / atelier compositions.
  */
 export function pickHomeFocus(data: AdminHomePayload): HomeFocus | null {
   const candidates: HomeFocus[] = [
@@ -20,7 +22,7 @@ export function pickHomeFocus(data: AdminHomePayload): HomeFocus | null {
       count: data.delayedOrders,
       titleKey: 'mobile.adminHome.queue.late.title',
       actionKey: 'mobile.adminHome.queue.late.action',
-      href: '/(app)/(admin)/(tabs)/orders',
+      href: '/(app)/(admin)/(tabs)/orders?focus=needs_attention' as Href,
       kind: 'blocker',
     },
     {
@@ -28,7 +30,7 @@ export function pickHomeFocus(data: AdminHomePayload): HomeFocus | null {
       count: data.urgentTasksCount,
       titleKey: 'mobile.adminHome.queue.tasks.title',
       actionKey: 'mobile.adminHome.queue.tasks.action',
-      href: '/(app)/(admin)/(tabs)/production',
+      href: '/(app)/(admin)/(tabs)/production?bucket=blocked' as Href,
       kind: 'blocker',
     },
     {
@@ -52,7 +54,7 @@ export function pickHomeFocus(data: AdminHomePayload): HomeFocus | null {
       count: data.ordersNearingDelivery,
       titleKey: 'mobile.adminHome.queue.near.title',
       actionKey: 'mobile.adminHome.queue.near.action',
-      href: '/(app)/(admin)/(tabs)/orders',
+      href: '/(app)/(admin)/(tabs)/orders?focus=ready_to_ship' as Href,
       kind: 'flow',
     },
   ];

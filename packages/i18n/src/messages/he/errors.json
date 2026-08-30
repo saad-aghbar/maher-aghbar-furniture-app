@@ -60,6 +60,8 @@
   "FABRIC_LOCKED": "שדות הבד נעולים כי הייצור התחיל.",
 
   "STAGE_LOCKED": "השלב נעול עד להשלמת הדרישות הקודמות.",
+  "LOCKED_ANCHOR_STAGE": "הכנת חומרים, בדיקה, אריזה ומשלוח לא ניתנים למחיקה.",
+  "LOCKED_ANCHOR_NAME": "לא ניתן לשנות את השם של הכנת חומרים, בדיקה, אריזה ומשלוח.",
   "ASSIGN_LOCKED": "לא ניתן לשנות שיוך משימה במצב הנוכחי.",
   "PHOTOS_REQUIRED": "נדרשות תמונות לפני השלמת המשימה.",
 
@@ -125,10 +127,26 @@
   "SETUP_OUTPUT_QTY_INVALID": "כמות התפוקה ליחידה חייבת להיות גדולה מאפס.",
   "SETUP_CONSUME_INPUTS_REQUIRED": "בחרו אילו תפוקות חצי מוגמרות השלב הזה משתמש.",
   "SETUP_CONSUME_OUTPUT_MISSING": "הקלט שנבחר אינו תפוקה שמורה במוצר זה.",
+  "SETUP_CONSUME_OUTPUT_ALREADY_CLAIMED": "החלק החצי מוגמר הזה כבר נלקח בשלב אחר.",
   "SETUP_EXCLUDED_REQUIRED_PRODUCER": "לא ניתן להחריג שלב ייצור חובה.",
+  "SETUP_MATERIAL_STAGE_UNKNOWN": "יש למפות חומרים לשלב תהליך אמיתי.",
+  "SETUP_MATERIAL_SKU_UNKNOWN": "יש למפות רק מק\"טי מלאי אמיתיים לשלבים.",
+  "SETUP_MATERIAL_QTY_INVALID": "כמות החומר ליחידה חייבת להיות גדולה מאפס.",
+  "SETUP_MATERIAL_QTY_OVER_BOM": "כמויות החומרים בשלבים חורגות מסך ה-BOM עבור מק\"ט אחד או יותר.",
+  "SETUP_MATERIAL_DUPLICATE": "לא ניתן למפות את אותו מק\"ט פעמיים באותו שלב.",
+  "SETUP_MATERIAL_SKU_UNMAPPED": "מק\"ט ב-BOM אינו ממופה לשלב.",
   "SETUP_DEFAULT_WAREHOUSE_SEMI": "הגדירו מחסן ברירת מחדל לחצי מוגמר.",
   "SETUP_DEFAULT_WAREHOUSE_FINISHED": "הגדירו מחסן ברירת מחדל למוצרים גמורים.",
   "SETUP_DEFAULT_WAREHOUSE_RAW": "הגדירו מחסן ברירת מחדל לחומרי גלם.",
   "SETUP_QC_FLAG_REQUIRED": "שלבי מוצר מוגמר צריכים לרוץ אחרי בדיקת איכות.",
-  "SETUP_STAGES_INCOMPLETE": "הגדירו לפחות שלב ייצור אחד."
+  "SETUP_STAGES_INCOMPLETE": "הגדירו לפחות שלב ייצור אחד.",
+  "SETUP_FINISHED_ONLY_PACKAGING": "רק שלב האריזה יכול לייצר מוצר מוגמר.",
+  "SETUP_FINISHED_MULTIPLE": "רק אריזה מייצרת את המוצר המוגמר.",
+  "SETUP_PACK_PIECES_INVALID": "אריזה דורשת לפחות חבילה אחת ליחידת מוצר.",
+  "SETUP_PACK_LABELS_REQUIRED": "תנו שם לכל חבילת משלוח באריזה (למשל A, רגליים, 3).",
+  "SETUP_INSPECTION_MUST_NOT_PRODUCE": "בדיקה מאשרת איכות בלבד ואינה יוצרת מלאי.",
+  "SETUP_DELIVERY_MUST_NOT_PRODUCE": "מסירה מסמנת חבילות על המשאית ואינה יוצרת מלאי.",
+  "SETUP_PACKAGING_MUST_PRODUCE_FINISHED": "אריזה חייבת לייצר את המוצר המוגמר עם חבילות משלוח.",
+  "SETUP_PACKAGING_MUST_CONSUME_SEMI": "אריזה חייבת לקחת את הקיט החצי-מוגמר ממעלה הזרם.",
+  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "בדיקה חייבת לקחת את הקיט החצי-מוגמר לאישור."
 }

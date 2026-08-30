@@ -6,6 +6,7 @@ import {
   Boxes,
   CalendarDays,
   Factory,
+  FileBarChart2,
   GitBranch,
   LayoutDashboard,
   MessageSquare,
@@ -98,6 +99,17 @@ export const navItems: NavItem[] = [
     key: 'invoices',
     icon: Banknote,
     anyPermissions: ['invoice.read'],
+  },
+  {
+    href: '/reports',
+    key: 'reports',
+    icon: FileBarChart2,
+    anyPermissions: [
+      'report.sales.read',
+      'report.production.read',
+      'report.inventory.read',
+      'report.financial.read',
+    ],
   },
   {
     href: '/employees',

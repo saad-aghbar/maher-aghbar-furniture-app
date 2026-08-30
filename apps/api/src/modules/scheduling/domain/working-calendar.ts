@@ -271,6 +271,27 @@ export class WorkingCalendar {
     return overlapWorkingMinutes(start, end, this.intervalsForLocalYmd(ymd));
   }
 
+  localYmd(date: Date): string {
+    const p = getLocalParts(date, this.timezone);
+    return localDateKey(p.year, p.month, p.day);
+  }
+
+  /**
+   * Factory-local YMDs where `[start, end)` overlaps working intervals.
+   * Empty working days inside a wall-clock span are omitted.
+   */
+  occupiedLocalYmds(start: Date, end: Date, fromYmd?: string, toYmd?: string): string[] {
+    if (!(end.getTime() > start.getTime())) return [];
+    const startKey = this.localYmd(start);
+    const endKey = this.localYmd(new Date(end.getTime() - 1));
+    const lo = fromYmd && fromYmd > startKey ? fromYmd : startKey;
+    const hi = toYmd && toYmd < endKey ? toYmd : endKey;
+    if (lo > hi) return [];
+    return eachYmdInclusive(lo, hi).filter(
+      (ymd) => this.overlapWorkingMinutesOnLocalDay(start, end, ymd) > 0,
+    );
+  }
+
   /** Working intervals for the local calendar day of `day`. */
   intervalsForLocalDay(day: Date): WorkingInterval[] {
     const p = getLocalParts(day, this.timezone);

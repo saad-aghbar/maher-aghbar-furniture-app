@@ -116,6 +116,23 @@ export const ADMIN_OVERFLOW_MODULES: AdminOverflowModule[] = [
     tone: 'paper',
   },
   {
+    key: 'reports',
+    labelKey: 'mobile.adminHome.navReports',
+    hintKey: 'mobile.adminHome.navReportsHint',
+    icon: 'stats-chart-outline',
+    href: '/(app)/(admin)/reports',
+    permissions: [
+      'report.sales.read',
+      'report.production.read',
+      'report.financial.read',
+      'report.inventory.read',
+    ],
+    mode: 'any',
+    span: 'full',
+    tone: 'ink',
+    surfaces: ['more', 'home'],
+  },
+  {
     key: 'users',
     labelKey: 'mobile.adminHome.navUsers',
     hintKey: 'mobile.adminHome.navUsersHint',

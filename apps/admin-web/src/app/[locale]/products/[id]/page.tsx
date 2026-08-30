@@ -2,6 +2,7 @@
 
 import { PageHeader } from '@/components/admin/page-header';
 import { BomMaterialPicker, type PickedMaterial } from '@/components/admin/bom-material-picker';
+import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
 import { ProductWorkflowTimes } from '@/components/workflow/product-workflow-times';
 import { ProductProductionSetup } from '@/components/catalog/product-production-setup';
 import { apiFetch, apiUpload, API_URL, ApiClientError } from '@/lib/api-client';
@@ -68,6 +69,7 @@ interface BomLine {
   nameEn?: string;
   nameAr?: string;
   materialId?: string | null;
+  imageUrl?: string | null;
 }
 
 type BomEditLine = {
@@ -76,6 +78,7 @@ type BomEditLine = {
   category: string;
   nameEn?: string;
   nameAr?: string;
+  imageUrl?: string | null;
 };
 
 interface ProductDetail {
@@ -315,6 +318,7 @@ export default function ProductDetailPage() {
           category: l.category ?? '',
           nameEn: l.nameEn,
           nameAr: l.nameAr,
+          imageUrl: 'imageUrl' in l ? l.imageUrl ?? null : null,
         })),
     );
   }, [data]);
@@ -1392,7 +1396,13 @@ export default function ProductDetailPage() {
                   key={`${line.sku}-${index}`}
                   className="bom-line-card grid gap-3 sm:grid-cols-[minmax(0,2fr)_100px_100px_100px_auto] sm:items-end"
                 >
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <InventoryItemThumb
+                      src={line.imageUrl ?? apiLine?.imageUrl}
+                      alt={displayName}
+                      size={40}
+                    />
+                    <div className="min-w-0">
                     <p className="mb-1 text-xs text-text-secondary">{t('material')}</p>
                     <p className="truncate text-sm font-semibold text-text-primary">{displayName}</p>
                     <p className="truncate text-xs text-text-secondary" dir="ltr">
@@ -1410,6 +1420,7 @@ export default function ProductDetailPage() {
                       <RefreshCw className="bom-change-btn__icon" aria-hidden />
                       {t('changeMaterial')}
                     </button>
+                    </div>
                   </div>
                   <Input
                     label={t('qty')}
@@ -1480,6 +1491,7 @@ export default function ProductDetailPage() {
             category: mat.category ?? '',
             nameEn: mat.nameEn,
             nameAr: mat.nameAr,
+            imageUrl: mat.imageUrl ?? null,
           };
           if (pickerReplaceIndex == null) {
             setBomLines((prev) => [...prev, next]);

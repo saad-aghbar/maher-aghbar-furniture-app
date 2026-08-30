@@ -20,10 +20,11 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Min,
   MinLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import type { AuthUser } from '@maher/types';
+import { isLockedAnchorStageCode, type AuthUser } from '@maher/types';
 import { RequireAnyPermissions, RequirePermissions } from '../../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { WorkflowVersionService } from './workflow-version.service';
@@ -32,6 +33,7 @@ import { WorkflowSnapshotService } from './workflow-snapshot.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { Prisma } from '@maher/database';
 import {
+  lockedAnchorNameChanged,
   nextLibrarySortOrder,
   pickStagePatch,
   resolveGeneratedCode,
@@ -116,6 +118,7 @@ export class AddNodeDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() consumesRawMaterials?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() consumesSemiFinished?: boolean;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() outputQtyPerUnit?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) expectedPieceCount?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() outputNameAr?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() outputNameEn?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() outputNameHe?: string;
@@ -140,6 +143,7 @@ export class UpdateNodeDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() consumesRawMaterials?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() consumesSemiFinished?: boolean;
   @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsNumber() outputQtyPerUnit?: number;
+  @ApiPropertyOptional() @IsOptional() @Type(() => Number) @IsInt() @Min(1) expectedPieceCount?: number;
   @ApiPropertyOptional() @IsOptional() @IsString() outputNameAr?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() outputNameEn?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() outputNameHe?: string;
@@ -280,6 +284,26 @@ export class WorkflowController {
   @RequirePermissions('production.workflow.manage')
   validate(@Param('versionId') versionId: string) {
     return this.versions.validateVersion(versionId);
+  }
+
+  @Post('production-workflows/:id/versions/:versionId/ensure-terminal-chain')
+  @RequirePermissions('production.workflow.manage')
+  ensureTerminalChain(
+    @Param('versionId') versionId: string,
+    @Body() dto: PublishDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.versions.applyTerminalChainAppend(versionId, user.id, dto.expectedRevision);
+  }
+
+  @Post('production-workflows/:id/versions/:versionId/ensure-opening-chain')
+  @RequirePermissions('production.workflow.manage')
+  ensureOpeningChain(
+    @Param('versionId') versionId: string,
+    @Body() dto: PublishDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.versions.applyOpeningChainAppend(versionId, user.id, dto.expectedRevision);
   }
 
   @Post('production-workflows/:id/versions/:versionId/publish')
@@ -463,15 +487,29 @@ export class WorkflowController {
   }
 
   @Patch('production-stage-library/:id')
-  @RequirePermissions('production.workflow.stage.manage')
+  @RequireAnyPermissions('production.workflow.stage.manage', 'production.workflow.manage')
   async updateStage(
     @Param('id') id: string,
     @Body() dto: UpdateStageDto,
     @CurrentUser() user: AuthUser,
   ) {
+    const existing = await this.prisma.productionStageDefinition.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Stage not found.' });
+    }
+    const dtoRecord = dto as unknown as Record<string, unknown>;
+    if (isLockedAnchorStageCode(existing.code) && lockedAnchorNameChanged(existing, dtoRecord)) {
+      throw new BadRequestException({
+        code: 'LOCKED_ANCHOR_NAME',
+        message:
+          'The name of Material Prep, Inspection, Packaging, and Delivery cannot be changed.',
+      });
+    }
     const row = await this.prisma.productionStageDefinition.update({
       where: { id },
-      data: pickStagePatch(dto as unknown as Record<string, unknown>) as Prisma.ProductionStageDefinitionUpdateInput,
+      data: pickStagePatch(dtoRecord, {
+        omitNames: isLockedAnchorStageCode(existing.code),
+      }) as Prisma.ProductionStageDefinitionUpdateInput,
     });
     await this.prisma.auditEvent.create({
       data: {
@@ -486,33 +524,9 @@ export class WorkflowController {
   }
 
   @Delete('production-stage-library/:id')
-  @RequirePermissions('production.workflow.stage.manage')
+  @RequireAnyPermissions('production.workflow.stage.manage', 'production.workflow.manage')
   async archiveStage(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const inUse =
-      (await this.prisma.productionStageInstance.count({ where: { stageDefinitionId: id } })) +
-      (await this.prisma.productionWorkflowNode.count({ where: { stageDefinitionId: id } })) +
-      (await this.prisma.productionOrderWorkflowSnapshotNode.count({
-        where: { stageDefinitionId: id },
-      }));
-    if (inUse > 0) {
-      const row = await this.prisma.productionStageDefinition.update({
-        where: { id },
-        data: { isActive: false },
-      });
-      await this.prisma.auditEvent.create({
-        data: {
-          userId: user.id,
-          action: 'stage.archived',
-          entityType: 'ProductionStageDefinition',
-          entityId: id,
-        },
-      });
-      return row;
-    }
-    throw new BadRequestException({
-      code: 'WORKFLOW_STAGE_IN_USE',
-      message: 'Stage is not referenced; deactivate via isActive instead of hard delete.',
-    });
+    return this.versions.deleteStageDefinition(id, user.id);
   }
 
   @Get('products/:productId/workflow-configuration')

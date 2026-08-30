@@ -176,19 +176,29 @@ export default function QualityDetailPage({ params }: { params: { id: string } }
   const pending = !inspection.result;
   const resultOptions = statusOptions(tStatus, QUALITY_RESULTS);
   const itemResultOptions = statusOptions(tStatus, CHECKLIST_ITEM_RESULTS);
+  const productionBackHref = inspection.productionOrderId
+    ? `/production/${inspection.productionOrderId}`
+    : '/quality';
 
   return (
     <div className="space-y-6">
       <PageHeader
-        backHref="/production"
+        backHref={productionBackHref}
         title={inspection.number}
         description={inspection.stageCode ?? tNav('quality')}
         actions={
           <>
             {inspection.result ? <StatusBadge status={inspection.result} /> : null}
+            {inspection.productionOrderId ? (
+              <Link href={`/production/${inspection.productionOrderId}`}>
+                <Button variant="ghost" size="sm">
+                  {tp('factoryOrderNumber')}
+                </Button>
+              </Link>
+            ) : null}
             <Link href="/quality">
               <Button variant="ghost" size="sm">
-                {tCommon('back')}
+                {tNav('quality')}
               </Button>
             </Link>
           </>

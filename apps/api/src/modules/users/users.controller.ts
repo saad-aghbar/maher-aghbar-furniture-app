@@ -84,6 +84,11 @@ class ListUsersDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   staffTypeId?: string;
+
+  /** Filter users who have this stage as an active worker skill. */
+  @IsOptional()
+  @IsUUID()
+  stageDefinitionId?: string;
 }
 
 class CreateUserDto {
@@ -341,6 +346,16 @@ export class UsersController {
         ? { department: { code: query.departmentCode } }
         : {}),
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+      ...(query.stageDefinitionId
+        ? {
+            workerSkills: {
+              some: {
+                stageDefinitionId: query.stageDefinitionId,
+                isActive: true,
+              },
+            },
+          }
+        : {}),
     };
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.user.count({ where }),

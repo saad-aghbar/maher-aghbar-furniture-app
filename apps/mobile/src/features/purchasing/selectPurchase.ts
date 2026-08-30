@@ -5,6 +5,7 @@ import { translatePlural } from '@/i18n/translate';
 import type {
   NamedRef,
   PurchaseOrder,
+  PurchaseOrderPresentation,
   PurchaseRequest,
   SupplierInvoice,
 } from './api';
@@ -18,6 +19,10 @@ export type PurchaseCardModel = {
   expectedLabel: string | null;
   lineCount: number;
   warehouseLabel: string | null;
+  phaseLabelKey: string | null;
+  progress: number;
+  attentionReason: string | null;
+  primaryAction: string | null;
 };
 
 export type PurchaseRequestCardModel = {
@@ -58,72 +63,30 @@ function moneyLabel(locale: string, value: number): string {
   return formatNumber(asLocale(locale), value, { maximumFractionDigits: 2 });
 }
 
-/** Field label: Warehouse when there is one (or none), Warehouses when several. */
-export function warehouseFieldCount(warehouse: NamedRef | null | undefined): number {
-  return warehouse ? 1 : 0;
-}
+const PHASE_FALLBACKS: Record<string, string> = {
+  DRAFT: 'purchasing.phaseDraft',
+  ORDERED: 'purchasing.phaseOrdered',
+  PARTIALLY_RECEIVED: 'purchasing.phasePartial',
+  RECEIVED: 'purchasing.phaseReceived',
+  CLOSED: 'purchasing.phaseClosed',
+  CANCELLED: 'purchasing.phaseCancelled',
+};
 
-function qtyDisplay(quantity: number | string | null | undefined): string {
-  if (quantity == null || quantity === '') return '—';
-  const raw = typeof quantity === 'string' ? quantity.trim() : String(quantity);
-  const n = Number(raw);
-  if (Number.isFinite(n) && Math.abs(n - Math.round(n)) < 1e-6) return String(Math.round(n));
-  return raw;
-}
-
-function resolvedPlural(
-  locale: Locale,
-  baseKey: string,
-  count: number,
-  qtyText: string,
+export function resolvePhaseLabel(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  presentation?: PurchaseOrderPresentation | null,
 ): string | null {
-  const label = translatePlural(locale, baseKey, count, { n: qtyText });
-  if (label === baseKey || label === pickPluralKey(baseKey, count)) return null;
-  return label;
-}
-
-/**
- * Qty + unit copy. `block` always pluralizes (24 blocks). Unknown units stay
- * honest to the backend code, e.g. `24 m`.
- */
-export function purchaseLineQtyLabel(
-  locale: string,
-  quantity: number | string | null | undefined,
-  unit?: string | null,
-): string {
-  const qtyText = qtyDisplay(quantity);
-  const unitKey = unit?.trim() || 'pcs';
-  const n = Number(quantity);
-  const count = Number.isFinite(n) ? n : 0;
-  const typed = asLocale(locale);
-  const catalogUnit = unitKey.toLowerCase().replace(/[^a-z0-9_]/g, '');
-  if (catalogUnit === 'block') {
-    return (
-      resolvedPlural(typed, 'mobile.purchasing.qtyBlock', count, qtyText) ??
-      resolvedPlural(typed, 'catalog.qtyWithUnit.block', count, qtyText) ??
-      (count === 1 ? `${qtyText} block` : `${qtyText} blocks`)
-    );
+  if (!presentation) return null;
+  const key = presentation.labelKey || PHASE_FALLBACKS[presentation.phase];
+  if (!key) return presentation.phase || null;
+  const translated = t(key);
+  if (translated !== key) return translated;
+  const fallbackKey = PHASE_FALLBACKS[presentation.phase];
+  if (fallbackKey) {
+    const fb = t(fallbackKey);
+    if (fb !== fallbackKey) return fb;
   }
-  if (!catalogUnit) return `${qtyText} ${unitKey}`;
-  return (
-    resolvedPlural(typed, `catalog.qtyWithUnit.${catalogUnit}`, count, qtyText) ??
-    `${qtyText} ${unitKey}`
-  );
-}
-
-/**
- * Materials-list calc: `16 × ₪22.00 = ₪408.32`.
- * Quantity stays a count (no invented unit); money uses ILS + two decimals.
- */
-export function formatSupplierInvoiceLineMath(
-  locale: string,
-  quantity: number | string,
-  unitPrice: number | string,
-  lineTotal: number | string,
-): string {
-  const typed = asLocale(locale);
-  const qty = formatNumber(typed, toNum(quantity), { maximumFractionDigits: 2 });
-  return `${qty} × ${formatCurrency(typed, toNum(unitPrice))} = ${formatCurrency(typed, toNum(lineTotal))}`;
+  return presentation.phase;
 }
 
 export function localizedNamed(
@@ -160,6 +123,7 @@ export function selectPurchaseCard(
 ): PurchaseCardModel {
   const typed = asLocale(locale);
   const total = toNum(po.total);
+  const presentation = po.presentation;
   return {
     id: po.id,
     number: po.number,
@@ -171,6 +135,10 @@ export function selectPurchaseCard(
       : null,
     lineCount: po.lines?.length ?? 0,
     warehouseLabel: warehouseName?.trim() || null,
+    phaseLabelKey: presentation?.labelKey ?? null,
+    progress: Number(presentation?.progress) || 0,
+    attentionReason: presentation?.attentionReason ?? null,
+    primaryAction: presentation?.primaryAction ?? null,
   };
 }
 
@@ -346,6 +314,27 @@ export type DraftMaterialLine = {
   quantity: string;
   unitCost: string;
 };
+
+/** Merge draft lines by inventoryItemId, summing quantities. Keeps first line's cost/meta. */
+export function mergeDraftLinesByItem(
+  existing: DraftMaterialLine[],
+  incoming: DraftMaterialLine[],
+): DraftMaterialLine[] {
+  const byId = new Map<string, DraftMaterialLine>();
+  for (const line of [...existing, ...incoming]) {
+    const prev = byId.get(line.inventoryItemId);
+    if (!prev) {
+      byId.set(line.inventoryItemId, { ...line });
+      continue;
+    }
+    const qty = Number(prev.quantity) + Number(line.quantity);
+    byId.set(line.inventoryItemId, {
+      ...prev,
+      quantity: String(Number.isFinite(qty) ? qty : prev.quantity),
+    });
+  }
+  return [...byId.values()];
+}
 
 export function lineTotal(qty: string, unitCost: string): number {
   const q = Number(qty);

@@ -2,6 +2,7 @@ import { View } from 'react-native';
 import { SkeletonShimmer } from '@/motion';
 import { useTheme } from '@/theme';
 
+/** Management-desk skeleton — never flash zero tiles. */
 export function AdminHomeSkeleton() {
   const { theme } = useTheme();
 
@@ -11,17 +12,24 @@ export function AdminHomeSkeleton() {
       accessibilityRole="progressbar"
       style={{ gap: theme.spacing.lg }}
     >
-      <SkeletonShimmer height={22} width="36%" />
-      <SkeletonShimmer height={72} width="88%" />
-      <SkeletonShimmer height={18} width="62%" />
-      <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
-        <SkeletonShimmer height={52} width="100%" />
-        <SkeletonShimmer height={52} width="100%" />
-        <SkeletonShimmer height={52} width="92%" />
-        <SkeletonShimmer height={52} width="100%" />
+      <SkeletonShimmer height={48} width="100%" />
+      <SkeletonShimmer height={14} width="28%" />
+      <SkeletonShimmer height={96} width="100%" />
+      <SkeletonShimmer height={96} width="94%" />
+      <SkeletonShimmer height={14} width="22%" />
+      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+        <SkeletonShimmer height={72} width={112} />
+        <SkeletonShimmer height={72} width={112} />
+        <SkeletonShimmer height={72} width={112} />
       </View>
-      <SkeletonShimmer height={88} width="94%" />
-      <SkeletonShimmer height={88} width="94%" style={{ alignSelf: 'flex-end' }} />
+      <SkeletonShimmer height={14} width="34%" />
+      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+        <SkeletonShimmer height={64} width={108} />
+        <SkeletonShimmer height={64} width={108} />
+        <SkeletonShimmer height={64} width={108} />
+      </View>
+      <SkeletonShimmer height={88} width="100%" />
+      <SkeletonShimmer height={88} width="100%" />
     </View>
   );
 }

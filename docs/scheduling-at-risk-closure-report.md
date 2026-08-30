@@ -183,3 +183,10 @@ in this report from the dump; live rows were not updated.
 
 Y and N are greater than zero. Remaining May be late orders are unique,
 current, incomplete, and actionable.
+
+## PAST-SAFE
+
+Resolve one / resolve-all call `generateForProductionOrder` with the canonical
+scheduling floor as `ctx.now`. Unfinished work is not recreated in the past.
+See [scheduling-past-floor-closure-report.md](./scheduling-past-floor-closure-report.md).
+

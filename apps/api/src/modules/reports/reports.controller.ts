@@ -38,6 +38,17 @@ export class ReportsController {
     return this.reports.adminHome(user);
   }
 
+  /**
+   * Piece 12 management desk aggregate.
+   * Chosen path: GET /api/v1/reports/management-summary
+   * (plan also allowed /management/summary — reports route reuses existing module wiring)
+   */
+  @Get('management-summary')
+  @RequirePermissions('report.sales.read')
+  managementSummary(@CurrentUser() user: AuthUser) {
+    return this.reports.managementSummary(user);
+  }
+
   @Get('dealer-home')
   @RequirePermissions('sales-order.read')
   dealerHome(@CurrentUser() user: AuthUser) {

@@ -2,6 +2,7 @@ import { bomReservationNeeds } from '../../../../common/helpers/inventory-reserv
 import { detectConflicts } from '../conflict-detector';
 import {
   applyMaterialNotBefore,
+  applyStageOrOrderMaterialFloors,
   assessMaterialReadiness,
   coverDeficit,
   inventorySkuKey,
@@ -136,6 +137,115 @@ describe('applyMaterialNotBefore', () => {
     const ready = amman(2026, 8, 20);
     const applied = applyMaterialNotBefore(stages, ready, []);
     expect(applied.orderMaterialReadyAt?.getTime()).toBe(ready.getTime());
+  });
+});
+
+describe('applyStageOrOrderMaterialFloors', () => {
+  const carpentry: PlannerStageInput = {
+    code: 'CARPENTRY',
+    stageDefinitionId: 'stg-carp',
+    dependsOnCodes: ['MATERIAL_PREP'],
+    estimatedMinutes: 60,
+    departmentCode: null,
+  };
+  const foam: PlannerStageInput = {
+    code: 'FOAM',
+    stageDefinitionId: 'stg-foam',
+    dependsOnCodes: ['CARPENTRY'],
+    estimatedMinutes: 40,
+    departmentCode: null,
+  };
+  const upholstery: PlannerStageInput = {
+    code: 'UPHOLSTERY',
+    stageDefinitionId: 'stg-uph',
+    dependsOnCodes: ['FOAM'],
+    estimatedMinutes: 90,
+    departmentCode: null,
+  };
+  const cedarStages = [carpentry, foam, upholstery];
+  const velvetAt = amman(2026, 8, 18);
+
+  it('falls back to order-wide floor when snapshot has no maps', () => {
+    const applied = applyStageOrOrderMaterialFloors({
+      stages: cedarStages,
+      frozenInputs: [],
+      orderQty: 1,
+      inventory: {},
+      orderWideReadyAt: velvetAt,
+      consumingStageCodes: ['MATERIAL_PREP', 'CARPENTRY', 'FOAM', 'UPHOLSTERY'],
+    });
+    expect(applied.usedStageMaps).toBe(false);
+    expect(applied.stages.find((s) => s.code === 'CARPENTRY')?.notBefore?.getTime()).toBe(
+      velvetAt.getTime(),
+    );
+    expect(applied.stages.find((s) => s.code === 'UPHOLSTERY')?.notBefore?.getTime()).toBe(
+      velvetAt.getTime(),
+    );
+  });
+
+  it('Cedar: wood/foam in stock, velvet dated — carpentry free, upholstery waits', () => {
+    const inventory = {
+      [inventorySkuKey('MAT-BEECH')]: { available: 40, reserved: 0, incoming: [] },
+      [inventorySkuKey('MAT-FOAM-HD')]: { available: 10, reserved: 0, incoming: [] },
+      [inventorySkuKey('MAT-ITAL-VEL')]: {
+        available: 0,
+        reserved: 0,
+        incoming: [{ qty: 24, readyAt: velvetAt }],
+      },
+      [inventorySkuKey('MAT-LEA-BRN')]: { available: 20, reserved: 0, incoming: [] },
+    };
+    const applied = applyStageOrOrderMaterialFloors({
+      stages: cedarStages,
+      frozenInputs: [
+        { stageCode: 'CARPENTRY', sku: 'MAT-BEECH', qtyPerUnit: 14 },
+        { stageCode: 'FOAM', sku: 'MAT-FOAM-HD', qtyPerUnit: 3 },
+        { stageCode: 'UPHOLSTERY', sku: 'MAT-ITAL-VEL', qtyPerUnit: 8 },
+        { stageCode: 'UPHOLSTERY', sku: 'MAT-LEA-BRN', qtyPerUnit: 12 },
+      ],
+      orderQty: 1,
+      inventory,
+      orderWideReadyAt: velvetAt,
+      consumingStageCodes: ['CARPENTRY', 'FOAM', 'UPHOLSTERY'],
+    });
+    expect(applied.usedStageMaps).toBe(true);
+    expect(applied.unknownRequired).toBe(false);
+    expect(applied.stages.find((s) => s.code === 'CARPENTRY')?.notBefore).toBeUndefined();
+    expect(applied.stages.find((s) => s.code === 'FOAM')?.notBefore).toBeUndefined();
+    expect(applied.stages.find((s) => s.code === 'UPHOLSTERY')?.notBefore?.getTime()).toBe(
+      velvetAt.getTime(),
+    );
+  });
+
+  it('marks unknown when a required mapped SKU has no dated cover', () => {
+    const applied = applyStageOrOrderMaterialFloors({
+      stages: cedarStages,
+      frozenInputs: [
+        { stageCode: 'UPHOLSTERY', sku: 'MAT-ITAL-VEL', qtyPerUnit: 8, required: true },
+      ],
+      orderQty: 1,
+      inventory: { [inventorySkuKey('MAT-ITAL-VEL')]: { available: 0, reserved: 0, incoming: [] } },
+      orderWideReadyAt: null,
+      consumingStageCodes: ['UPHOLSTERY'],
+    });
+    expect(applied.usedStageMaps).toBe(true);
+    expect(applied.unknownRequired).toBe(true);
+  });
+
+  it('ignores skipped-stage frozen inputs', () => {
+    const applied = applyStageOrOrderMaterialFloors({
+      stages: cedarStages,
+      frozenInputs: [
+        { stageCode: 'UPHOLSTERY', sku: 'MAT-ITAL-VEL', qtyPerUnit: 8, skipped: true },
+      ],
+      orderQty: 1,
+      inventory: {},
+      orderWideReadyAt: velvetAt,
+      consumingStageCodes: ['CARPENTRY'],
+    });
+    expect(applied.usedStageMaps).toBe(false);
+    expect(applied.stages.find((s) => s.code === 'CARPENTRY')?.notBefore?.getTime()).toBe(
+      velvetAt.getTime(),
+    );
   });
 });
 

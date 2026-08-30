@@ -74,7 +74,7 @@ export function EditInventoryItemSheet({
     open,
   );
 
-  const showPhoto = materialGroup === 'accessories';
+  const showPhoto = true;
 
   useEffect(() => {
     if (!open || !item) return;
@@ -199,10 +199,14 @@ export function EditInventoryItemSheet({
             />
           ) : null}
           <CodeField
-            label={t('mobile.inventory.barcode')}
+            label={t('mobile.inventory.supplierBarcode')}
             value={barcode}
             onChangeText={setBarcode}
-            placeholder={t('mobile.scan.enterOrScan')}
+            placeholder={t('mobile.inventory.scanSupplierBarcodeHint')}
+            scanTitle={t('mobile.inventory.scanSupplierBarcode')}
+            scanHint={t('mobile.inventory.scanSupplierBarcodeHint')}
+            scanAccessibilityLabel={t('mobile.inventory.scanSupplierBarcode')}
+            scanIcon="barcode-outline"
           />
           <TextField
             label={t('mobile.inventory.color')}

@@ -22,6 +22,9 @@ type ConfirmationSheetProps = {
   /** Optional reason field (hold / cancel). */
   reasonLabel?: string;
   reasonPlaceholder?: string;
+  /** When true with reasonLabel, confirm stays disabled until reason is non-empty. */
+  reasonRequired?: boolean;
+  reasonRequiredMessage?: string;
 };
 
 export function ConfirmationSheet({
@@ -36,15 +39,32 @@ export function ConfirmationSheet({
   overlay = false,
   reasonLabel,
   reasonPlaceholder,
+  reasonRequired = false,
+  reasonRequiredMessage,
 }: ConfirmationSheetProps) {
   const { theme } = useTheme();
   const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState(false);
   const withReason = Boolean(reasonLabel);
+  const trimmed = reason.trim();
+  const missingRequired = reasonRequired && withReason && !trimmed;
   const pill = { borderRadius: theme.radius.xl } as const;
 
   useEffect(() => {
-    if (!open) setReason('');
+    if (!open) {
+      setReason('');
+      setReasonError(false);
+    }
   }, [open]);
+
+  const handleConfirm = () => {
+    if (missingRequired) {
+      setReasonError(true);
+      return;
+    }
+    onConfirm(withReason ? trimmed || undefined : undefined);
+    onClose();
+  };
 
   return (
     <BottomSheet
@@ -70,14 +90,24 @@ export function ConfirmationSheet({
         </AppText>
 
         {withReason ? (
-          <TextField
-            label={reasonLabel}
-            value={reason}
-            onChangeText={setReason}
-            placeholder={reasonPlaceholder}
-            multiline
-            growMinHeight={72}
-          />
+          <View style={{ gap: theme.spacing.xs }}>
+            <TextField
+              label={reasonLabel}
+              value={reason}
+              onChangeText={(next) => {
+                setReason(next);
+                if (reasonError && next.trim()) setReasonError(false);
+              }}
+              placeholder={reasonPlaceholder}
+              multiline
+              growMinHeight={72}
+            />
+            {reasonError && reasonRequiredMessage ? (
+              <AppText variant="caption" color="error">
+                {reasonRequiredMessage}
+              </AppText>
+            ) : null}
+          </View>
         ) : null}
 
         <View style={{ gap: theme.spacing.md }}>
@@ -85,19 +115,15 @@ export function ConfirmationSheet({
             <DestructiveButton
               label={confirmLabel}
               style={pill}
-              onPress={() => {
-                onConfirm(withReason ? reason.trim() || undefined : undefined);
-                onClose();
-              }}
+              onPress={handleConfirm}
+              disabled={missingRequired}
             />
           ) : (
             <PrimaryButton
               label={confirmLabel}
               style={pill}
-              onPress={() => {
-                onConfirm(withReason ? reason.trim() || undefined : undefined);
-                onClose();
-              }}
+              onPress={handleConfirm}
+              disabled={missingRequired}
             />
           )}
           <SecondaryButton label={cancelLabel} style={pill} onPress={onClose} />

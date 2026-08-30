@@ -15,6 +15,7 @@ import {
   type CustomerAddress,
 } from '@/api/modules/customers';
 import {
+  discardRequestDraft,
   getRequest,
   submitRequest,
   updateRequest,
@@ -27,6 +28,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { DestructiveButton } from '@/components/buttons/DestructiveButton';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
@@ -36,6 +38,8 @@ import { LockedTextField } from '@/components/forms/LockedTextField';
 import { PhoneField } from '@/components/forms/PhoneField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { LocationMapPicker } from '@/components/maps/LocationMapPicker';
+import { parseMapCoord } from '@/components/maps/mapCoords';
+import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
 import { FormShake, haptics, ListItemEnter } from '@/motion';
 import { DEALER_TAB_BAR_CLEARANCE, SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
@@ -179,13 +183,19 @@ export function EditRequestScreen({
   const policy = detail?.editPolicy;
   const item = detail?.items?.[0];
   const isDraft = detail?.status === 'DRAFT';
+  const isNeedsInfo = detail?.status === 'NEEDS_INFORMATION';
+  const canSubmit = Boolean(isDraft || isNeedsInfo);
   const addressCustomerId = user?.customerId ?? detail?.customer?.id ?? null;
   const canReadAddresses = Boolean(addressCustomerId && can(user, 'customer.read'));
   const canSaveAddresses = Boolean(addressCustomerId && can(user, 'address.manage'));
-  const stickyPad = stickyBottom + (isDraft && canUpdate ? 180 : 120);
+  const stickyPad =
+    stickyBottom +
+    (canSubmit && canUpdate ? 180 : 120) +
+    (isDraft && canUpdate ? 56 : 0);
 
   const [shake, setShake] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -227,8 +237,8 @@ export function EditRequestScreen({
     setEndCustomerName(detail.endCustomerName ?? '');
     setEndCustomerPhone(detail.endCustomerPhone ?? '');
     setDeliveryAddress(detail.deliveryAddress ?? '');
-    setDeliveryLat(detail.deliveryLat ?? undefined);
-    setDeliveryLng(detail.deliveryLng ?? undefined);
+    setDeliveryLat(parseMapCoord(detail.deliveryLat) ?? undefined);
+    setDeliveryLng(parseMapCoord(detail.deliveryLng) ?? undefined);
     setRequiredDeliveryDate(toDeliveryYmd(detail.requiredDeliveryDate) ?? '');
     setOrderNotes(detail.notes ?? '');
     setFabric(item?.fabricType ?? item?.fabric ?? '');
@@ -630,8 +640,8 @@ export function EditRequestScreen({
     }
   };
 
-  const submitDraft = async () => {
-    if (!canUpdate || !detail || !isDraft || busy || uploading) return;
+  const submitOrder = async () => {
+    if (!canUpdate || !detail || !canSubmit || busy || uploading) return;
     setBusy(true);
     setError(null);
     try {
@@ -648,15 +658,28 @@ export function EditRequestScreen({
       showToast({
         variant: 'success',
         message: toastCopy(
-          t('mobile.requestEdit.submittedTitle'),
-          t('mobile.requestEdit.submittedBody', { number: submitted.number }),
+          t(
+            isNeedsInfo
+              ? 'mobile.requestEdit.resubmittedTitle'
+              : 'mobile.requestEdit.submittedTitle',
+          ),
+          t(
+            isNeedsInfo
+              ? 'mobile.requestEdit.resubmittedBody'
+              : 'mobile.requestEdit.submittedBody',
+            { number: submitted.number },
+          ),
         ),
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.requests.all }),
         queryClient.invalidateQueries({ queryKey: queryKeys.salesOrders.all }),
       ]);
-      router.replace('/(app)/(customer)/(tabs)/orders' as never);
+      router.replace(
+        isAdmin
+          ? ('/(app)/(admin)/(tabs)/orders' as never)
+          : ('/(app)/(customer)/(tabs)/orders' as never),
+      );
     } catch (err) {
       if (
         isApiError(err) &&
@@ -671,6 +694,36 @@ export function EditRequestScreen({
       void haptics.error();
     } finally {
       setBusy(false);
+    }
+  };
+
+  const discardDraft = async () => {
+    if (!canUpdate || !detail || !isDraft || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await discardRequestDraft(detail.id);
+      void haptics.confirmMedium();
+      showToast({
+        variant: 'success',
+        message: toastCopy(
+          t('mobile.requestEdit.discardedTitle'),
+          t('mobile.requestEdit.discardedBody'),
+        ),
+      });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.requests.all });
+      router.replace(
+        isAdmin
+          ? ('/(app)/(admin)/(tabs)/orders' as never)
+          : ('/(app)/(customer)/(tabs)/orders' as never),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('mobile.requestEdit.discardFailed'));
+      setShake((n) => n + 1);
+      void haptics.error();
+    } finally {
+      setBusy(false);
+      setDiscardOpen(false);
     }
   };
 
@@ -754,6 +807,28 @@ export function EditRequestScreen({
                 marginTop: theme.spacing.md,
               }}
             >
+              {isNeedsInfo ? (
+                <ListItemEnter index={nextIndex()}>
+                  <OrderBoardCard
+                    accent={colors.warning}
+                    style={{ backgroundColor: colors.warningSoft }}
+                  >
+                    <OrderSectionHeader
+                      icon="alert-circle-outline"
+                      label={t('mobile.requestEdit.needsInfoReason')}
+                      accent={colors.warning}
+                    />
+                    <AppText variant="label" weight="semibold">
+                      {t('mobile.requestEdit.needsInfoBanner')}
+                    </AppText>
+                    <AppText variant="body" style={{ lineHeight: 22 }}>
+                      {detail.informationRequestReason?.trim() ||
+                        t('mobile.requestEdit.needsInfoReasonFallback')}
+                    </AppText>
+                  </OrderBoardCard>
+                </ListItemEnter>
+              ) : null}
+
               {!isAdmin ? (
                 <ListItemEnter index={nextIndex()}>
                   <OrderBoardCard
@@ -764,7 +839,11 @@ export function EditRequestScreen({
                   >
                     <OrderSectionHeader
                       icon="time-outline"
-                      label={t('mobile.requestEdit.editWindow')}
+                      label={
+                        orderLocked
+                          ? t('mobile.requestEdit.editingLocked')
+                          : t('mobile.requestEdit.editableUntil')
+                      }
                       accent={orderLocked ? colors.error : colors.warning}
                     />
                     <AppText variant="title" weight={titleWeight}>
@@ -781,7 +860,11 @@ export function EditRequestScreen({
                       <AppText variant="caption" color="error">
                         {orderReason}
                       </AppText>
-                    ) : null}
+                    ) : (
+                      <AppText variant="caption" color="muted">
+                        {t('mobile.requestEdit.editWindowHint')}
+                      </AppText>
+                    )}
                   </OrderBoardCard>
                 </ListItemEnter>
               ) : null}
@@ -1063,12 +1146,25 @@ export function EditRequestScreen({
                 />
               </View>
             </View>
-            {isDraft && canUpdate && !orderLocked ? (
+            {canSubmit && canUpdate && !orderLocked ? (
               <View style={{ marginTop: theme.spacing.sm }}>
                 <PrimaryButton
-                  label={t('mobile.requestEdit.submit')}
-                  onPress={() => void submitDraft()}
+                  label={
+                    isNeedsInfo
+                      ? t('mobile.requestEdit.resubmit')
+                      : t('mobile.requestEdit.submit')
+                  }
+                  onPress={() => void submitOrder()}
                   loading={busy}
+                  disabled={busy || uploading}
+                />
+              </View>
+            ) : null}
+            {isDraft && canUpdate && !orderLocked ? (
+              <View style={{ marginTop: theme.spacing.sm }}>
+                <DestructiveButton
+                  label={t('mobile.requestEdit.discardDraft')}
+                  onPress={() => setDiscardOpen(true)}
                   disabled={busy || uploading}
                 />
               </View>
@@ -1076,6 +1172,17 @@ export function EditRequestScreen({
           </View>
         </View>
       </View>
+
+      <ConfirmationSheet
+        open={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        title={t('mobile.requestEdit.discardDraft')}
+        message={t('mobile.requestEdit.discardDraftConfirm')}
+        confirmLabel={t('mobile.requestEdit.discardDraft')}
+        cancelLabel={t('mobile.requestEdit.back')}
+        destructive
+        onConfirm={() => void discardDraft()}
+      />
 
       <SavedAddressPickerSheet
         open={addressSheetOpen}

@@ -22,9 +22,15 @@ export function isIntentionalLateKind(kind: StoryKind): boolean {
 
 /** Current floor stage must not look started for these kinds. */
 export function isDemoStageInProgress(kind: StoryKind): boolean {
-  return !['not_started', 'proposed', 'waiting_materials', 'at_risk_material', 'at_risk_wip', 'draft'].includes(
-    kind,
-  );
+  return ![
+    'not_started',
+    'proposed',
+    'waiting_materials',
+    'at_risk_material',
+    'at_risk_wip',
+    'fresh_production',
+    'draft',
+  ].includes(kind);
 }
 
 export function atOrBefore(date: Date, cap: Date): Date {

@@ -155,10 +155,80 @@ export class SuppliersController {
   async get(@Param('id') id: string) {
     const row = await this.prisma.supplier.findFirst({
       where: { id, archivedAt: null },
-      include: { contacts: true, purchaseOrders: { take: 20, orderBy: { createdAt: 'desc' } } },
+      include: {
+        contacts: true,
+        purchaseOrders: {
+          where: { archivedAt: null },
+          take: 20,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            lines: { select: { id: true, description: true, quantity: true, unitPrice: true } },
+            goodsReceipts: {
+              orderBy: { receiptDate: 'desc' },
+              take: 5,
+              include: {
+                lines: {
+                  select: {
+                    inventoryItemId: true,
+                    receivedQty: true,
+                    rejectedQty: true,
+                    unitCost: true,
+                    inventoryItem: { select: { sku: true, nameEn: true, nameAr: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
     if (!row) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Supplier not found.' });
-    return row;
+
+    // Last / previous purchase prices derived from GRN history (not PO quote alone).
+    const purchaseHistory: Array<{
+      receiptNumber: string;
+      receiptDate: Date | null;
+      purchaseOrderNumber: string;
+      sku: string | null;
+      nameEn: string | null;
+      unitCost: number | null;
+      acceptedQty: number;
+    }> = [];
+    for (const po of row.purchaseOrders) {
+      for (const grn of po.goodsReceipts) {
+        for (const line of grn.lines) {
+          const accepted = Number(line.receivedQty) - Number(line.rejectedQty ?? 0);
+          if (!(accepted > 0)) continue;
+          purchaseHistory.push({
+            receiptNumber: grn.number,
+            receiptDate: grn.receiptDate ?? null,
+            purchaseOrderNumber: po.number,
+            sku: line.inventoryItem?.sku ?? null,
+            nameEn: line.inventoryItem?.nameEn ?? null,
+            unitCost: line.unitCost != null ? Number(line.unitCost) : null,
+            acceptedQty: accepted,
+          });
+        }
+      }
+    }
+    purchaseHistory.sort((a, b) => {
+      const ta = a.receiptDate ? new Date(a.receiptDate).getTime() : 0;
+      const tb = b.receiptDate ? new Date(b.receiptDate).getTime() : 0;
+      return tb - ta;
+    });
+
+    const openStatuses = new Set(['DRAFT', 'APPROVED', 'SENT', 'PARTIALLY_RECEIVED']);
+    const openPurchaseOrders = row.purchaseOrders.filter((po) => openStatuses.has(po.status));
+    const recentPurchaseOrders = row.purchaseOrders.slice(0, 10);
+
+    return {
+      ...row,
+      openPurchaseOrders,
+      recentPurchaseOrders,
+      lastPurchase: purchaseHistory[0] ?? null,
+      previousPurchases: purchaseHistory.slice(1, 6),
+      purchaseHistory: purchaseHistory.slice(0, 20),
+    };
   }
 
   @Patch(':id')

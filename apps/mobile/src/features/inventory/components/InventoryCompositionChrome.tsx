@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { ToastClearance } from '@/components/feedback/Toast';
@@ -18,6 +18,7 @@ import {
   InventoryLifecycleTabs,
   type InventoryLifecycle,
 } from './InventoryLifecycleTabs';
+import { InventoryFilterButton } from './InventoryFilterButton';
 
 type Props = {
   title: string;
@@ -40,8 +41,16 @@ type Props = {
   warehouseLabel?: string;
   onCreateWarehouse?: () => void;
   canCreateWarehouse?: boolean;
+  scanLabel?: string;
+  onScan?: () => void;
+  canScan?: boolean;
+  /** Orders-style top-right filter (Finished / Semi items). */
+  onOpenFilters?: () => void;
+  filterActiveCount?: number;
   children?: ReactNode;
 };
+
+const TOOL_WELL = 40;
 
 /** Floor chrome — stays mounted across section switches (no full-page fade). */
 export function InventoryCompositionChrome({
@@ -65,35 +74,58 @@ export function InventoryCompositionChrome({
   warehouseLabel,
   onCreateWarehouse,
   canCreateWarehouse,
+  scanLabel,
+  onScan,
+  canScan,
+  onOpenFilters,
+  filterActiveCount = 0,
   children,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { theme, colors } = useTheme();
-  const syncVisible = lifecycle === 'materials' && section === 'items' && canSync && onSync;
+  const onMaterialsItems = lifecycle === 'materials' && section === 'items';
+  const syncVisible = onMaterialsItems && Boolean(canSync && onSync);
   const createVisible = Boolean(canCreate && onCreate && createLabel);
-  const warehouseVisible = Boolean(
-    canCreateWarehouse && onCreateWarehouse && warehouseLabel,
-  );
+  const warehouseVisible =
+    onMaterialsItems && Boolean(canCreateWarehouse && onCreateWarehouse && warehouseLabel);
+  const scanVisible = Boolean(canScan && onScan && scanLabel);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const rowDir = isRTL ? 'row-reverse' : 'row';
+  const showFilter = Boolean(onOpenFilters);
+  const lifecycleEyebrow =
+    lifecycle === 'semiFinished'
+      ? t('mobile.inventory.pulseEyebrowSemi')
+      : lifecycle === 'finished'
+        ? t('mobile.inventory.pulseEyebrowFinished')
+        : t('mobile.inventory.pulseEyebrow');
 
   return (
     <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}>
       <ToastClearance />
       <View
         style={{
-          flexDirection: rowDirection(isRTL),
+          flexDirection: rowDir,
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: theme.spacing.md,
         }}
       >
-        <View style={{ flex: 1, gap: theme.spacing.xs }}>
+        <View style={{ flex: 1, gap: theme.spacing.xs, minWidth: 0 }}>
           <AppText
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
-            style={{ color: colors.brand }}
+            style={{
+              letterSpacing: locale === 'ar' ? 0 : 1.4,
+              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              color:
+                lifecycle === 'semiFinished'
+                  ? colors.info
+                  : lifecycle === 'finished'
+                    ? colors.success
+                    : colors.brand,
+            }}
           >
-            {t('mobile.inventory.pulseEyebrow')}
+            {lifecycleEyebrow}
           </AppText>
           <AppText variant="title" weight={titleWeight}>
             {title}
@@ -108,35 +140,9 @@ export function InventoryCompositionChrome({
             </AppText>
           ) : null}
         </View>
-
-        <View
-          style={{
-            flexDirection: rowDirection(isRTL),
-            flexWrap: 'wrap',
-            gap: theme.spacing.sm,
-            justifyContent: 'flex-end',
-            maxWidth: '46%',
-          }}
-        >
-          {warehouseVisible ? (
-            <FloorActionButton
-              label={warehouseLabel!}
-              accessibilityLabel={warehouseLabel!}
-              icon="business-outline"
-              tone="soft"
-              onPress={() => onCreateWarehouse?.()}
-            />
-          ) : null}
-          {createVisible ? (
-            <FloorActionButton
-              label={createLabel!}
-              accessibilityLabel={createLabel!}
-              icon="add"
-              tone="solid"
-              onPress={() => onCreate?.()}
-            />
-          ) : null}
-        </View>
+        {showFilter ? (
+          <InventoryFilterButton onPress={onOpenFilters!} activeCount={filterActiveCount} />
+        ) : null}
       </View>
 
       <InventoryLifecycleTabs active={lifecycle} onChange={onLifecycleChange} />
@@ -145,44 +151,95 @@ export function InventoryCompositionChrome({
       {showSearch && setSearchInput ? (
         <View style={{ gap: theme.spacing.sm }}>
           <Divider compact />
-          <SearchActionRow
-            trailing={
-              <View
-                style={{
-                  flexDirection: rowDirection(isRTL),
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <FloorIconButton
-                  icon="qr-code-outline"
-                  accessibilityLabel={t('mobile.inventory.scanBarcode')}
-                  onPress={() => {
-                    if (section === 'items' && canCreate) onCreate?.();
-                  }}
-                />
-                <FloorIconButton
-                  icon="sync-outline"
-                  accessibilityLabel={
-                    syncVisible
-                      ? t('mobile.inventory.syncFromMaterials')
-                      : t('mobile.inventory.sync')
-                  }
-                  loading={syncing}
-                  onPress={() => {
-                    if (syncVisible) onSync?.();
-                    else onRefresh?.();
-                  }}
-                />
-              </View>
-            }
+          <View
+            style={{
+              flexDirection: rowDir,
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+            }}
           >
-            <InventorySearchField
-              value={searchInput}
-              onChangeText={setSearchInput}
-              placeholder={searchPlaceholder}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <TextField
+                value={searchInput}
+                onChangeText={setSearchInput}
+                placeholder={searchPlaceholder}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+            </View>
+            {scanVisible ? (
+              <FloorActionButton
+                label={scanLabel!}
+                accessibilityLabel={scanLabel!}
+                icon="qr-code-outline"
+                tone="soft"
+                iconOnly
+                onPress={() => onScan?.()}
+              />
+            ) : null}
+            {syncVisible ? (
+              <FloorActionButton
+                label={t('mobile.inventory.sync')}
+                accessibilityLabel={t('mobile.inventory.syncFromMaterials')}
+                icon="sync-outline"
+                tone="soft"
+                iconOnly
+                loading={syncing}
+                onPress={() => onSync?.()}
+              />
+            ) : null}
+          </View>
+        </View>
+      ) : scanVisible ? (
+        <View
+          style={{
+            flexDirection: rowDir,
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <FloorActionButton
+            label={scanLabel!}
+            accessibilityLabel={scanLabel!}
+            icon="qr-code-outline"
+            tone="soft"
+            iconOnly
+            onPress={() => onScan?.()}
+          />
+        </View>
+      ) : null}
+
+      {createVisible || warehouseVisible ? (
+        <View
+          style={{
+            flexDirection: rowDir,
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+          }}
+        >
+          {createVisible ? (
+            <FloorActionButton
+              label={createLabel!}
+              accessibilityLabel={createLabel!}
+              icon="add"
+              tone="solid"
+              style={{ flex: 1, minWidth: 0 }}
+              onPress={() => onCreate?.()}
             />
-          </SearchActionRow>
+          ) : null}
+          {warehouseVisible ? (
+            <FloorActionButton
+              label={warehouseLabel!}
+              accessibilityLabel={warehouseLabel!}
+              icon="business-outline"
+              tone="soft"
+              style={{ flex: 1, minWidth: 0 }}
+              onPress={() => onCreateWarehouse?.()}
+            />
+          ) : null}
         </View>
       ) : null}
       {children}
@@ -240,6 +297,8 @@ function FloorActionButton({
   icon,
   tone,
   loading,
+  iconOnly,
+  style,
   onPress,
 }: {
   label: string;
@@ -247,6 +306,8 @@ function FloorActionButton({
   icon: keyof typeof Ionicons.glyphMap;
   tone: 'soft' | 'solid';
   loading?: boolean;
+  iconOnly?: boolean;
+  style?: ViewStyle;
   onPress: () => void;
 }) {
   const { locale, isRTL } = useLocale();
@@ -264,18 +325,22 @@ function FloorActionButton({
         onPress();
       }}
       style={{
-        minHeight: 40,
-        paddingHorizontal: theme.spacing.md,
-        paddingVertical: theme.spacing.sm,
+        minHeight: TOOL_WELL,
+        minWidth: iconOnly ? TOOL_WELL : undefined,
+        height: iconOnly ? TOOL_WELL : undefined,
+        paddingHorizontal: iconOnly ? 0 : theme.spacing.md,
+        paddingVertical: iconOnly ? 0 : theme.spacing.sm,
         borderRadius: theme.radius.xl,
         borderWidth: 1,
         borderColor: solid ? colors.brand : colors.borderStrong,
         backgroundColor: solid ? colors.brand : colors.surface,
         flexDirection: rowDirection(isRTL),
         alignItems: 'center',
+        justifyContent: 'center',
         gap: theme.spacing.xs,
         overflow: 'hidden',
         ...theme.elevation.card,
+        ...style,
       }}
     >
       {loading ? (
@@ -284,17 +349,19 @@ function FloorActionButton({
         <>
           <Ionicons
             name={icon}
-            size={15}
+            size={iconOnly ? 18 : 15}
             color={solid ? colors.onBrand : colors.brand}
           />
-          <AppText
-            variant="caption"
-            weight={locale === 'ar' ? 'medium' : 'semibold'}
-            style={{ color: solid ? colors.onBrand : colors.brand }}
-            numberOfLines={1}
-          >
-            {label}
-          </AppText>
+          {iconOnly ? null : (
+            <AppText
+              variant="caption"
+              weight={locale === 'ar' ? 'medium' : 'semibold'}
+              style={{ color: solid ? colors.onBrand : colors.brand, flexShrink: 1 }}
+              numberOfLines={1}
+            >
+              {label}
+            </AppText>
+          )}
         </>
       )}
     </AnimatedPressable>

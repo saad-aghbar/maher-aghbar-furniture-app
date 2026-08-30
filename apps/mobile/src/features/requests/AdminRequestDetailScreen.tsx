@@ -11,9 +11,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
-import { localizedName, statusLabel } from '@maher/i18n';
+import { localizedName } from '@maher/i18n';
+import { manufacturingComplexityDisplayKey } from '@maher/types';
 import { isApiError } from '@/api/errors';
 import { createQuotation } from '@/api/modules/quotations';
+import { quotationLinesFromRequestItems } from './quotationLinesFromRequest';
 import {
   closeRequest,
   getRequest,
@@ -60,7 +62,8 @@ import {
   rfqIncompleteGaps,
   rfqStageFromData,
   type RfqWorkspaceStage,
-} from '@/features/requests/rfqWorkspaceStage';
+} from '@/features/requests/components/RfqStageRail';
+import type { RequestItem } from './types';
 
 type Props = {
   requestId: string;
@@ -95,6 +98,49 @@ function itemSpecs(item: {
     item.fabricColor ?? item.color,
   ].filter(Boolean);
   return parts.length ? parts.join(' / ') : '—';
+}
+
+function complexityLabel(
+  code: string | null | undefined,
+  t: (k: string) => string,
+): string | null {
+  if (!code) return null;
+  const key = manufacturingComplexityDisplayKey(code);
+  return t(`mobile.orders.lineKind.${key}`);
+}
+
+function collectIncompleteWarnings(
+  detail: {
+    items?: RequestItem[] | null;
+    documents?: { id: string }[] | null;
+    deliveryAddress?: string | null;
+    endCustomerName?: string | null;
+  },
+  t: (k: string) => string,
+): string[] {
+  const warnings: string[] = [];
+  const items = detail.items ?? [];
+  if (items.length === 0) {
+    warnings.push(t('mobile.adminRequest.incompleteNoItems'));
+  }
+  if ((detail.documents?.length ?? 0) === 0) {
+    warnings.push(t('mobile.adminRequest.incompleteNoAttachments'));
+  }
+  if (
+    items.some((i) => {
+      const c = (i.manufacturingComplexity ?? '').toUpperCase();
+      return c === 'CUSTOM' || c === 'MODIFIED' || !i.productId;
+    })
+  ) {
+    warnings.push(t('mobile.adminRequest.incompleteCustomLines'));
+  }
+  if (!detail.deliveryAddress?.trim()) {
+    warnings.push(t('mobile.adminRequest.incompleteDelivery'));
+  }
+  if (!detail.endCustomerName?.trim()) {
+    warnings.push(t('mobile.adminRequest.incompleteCustomer'));
+  }
+  return warnings;
 }
 
 function MetaCell({
@@ -277,8 +323,13 @@ export function AdminRequestDetailScreen({
           return markRequestUnderReview(requestId);
         case 'ready':
           return markRequestReadyForQuotation(requestId);
-        case 'needsInfo':
-          return markRequestNeedsInformation(requestId, args.notes);
+        case 'needsInfo': {
+          const reason = args.notes?.trim();
+          if (!reason) {
+            throw new Error(t('mobile.adminRequest.reasonRequired'));
+          }
+          return markRequestNeedsInformation(requestId, reason);
+        }
         case 'close':
           return closeRequest(requestId);
       }
@@ -307,18 +358,7 @@ export function AdminRequestDetailScreen({
         requestId: detail.id,
         deliveryTerms: detail.deliveryAddress ?? undefined,
         customerNotes: detail.notes ?? undefined,
-        lines: (detail.items ?? []).map((item) => ({
-          description: item.productName,
-          quantity: Number(item.quantity) || 0,
-          unitPrice: 0,
-          unit: item.unit ?? 'pcs',
-          productId: item.productId ?? undefined,
-          material: item.material ?? undefined,
-          fabric: item.fabricType ?? item.fabric ?? undefined,
-          color: item.fabricColor ?? item.color ?? undefined,
-          notes: item.notes ?? item.description ?? undefined,
-          taxRate: 0.16,
-        })),
+        lines: quotationLinesFromRequestItems(detail.items ?? []),
       });
     },
     onSuccess: async (quote) => {
@@ -487,23 +527,12 @@ export function AdminRequestDetailScreen({
   const canQuote = ['READY_FOR_QUOTATION', 'UNDER_REVIEW', 'SUBMITTED'].includes(status);
   const canSubmit = status === 'DRAFT' || status === 'NEEDS_INFORMATION';
   const isDraft = status === 'DRAFT';
+  const isNeedsInfo = status === 'NEEDS_INFORMATION';
   const workflowBusy = workflowMutation.isPending || quoteMutation.isPending;
   const hasQuote = Boolean(activeQuotationId) || (detail.quotations?.length ?? 0) > 0;
   const hasOrder = Boolean(linkedSalesOrder);
   const quoteId = activeQuotationId ?? detail.quotations?.[0]?.id ?? null;
-  const stage =
-    pickedStage ??
-    rfqStageFromData({ hasQuote, hasOrder, status: detail.status });
-
-  const statusPhrase = isRfqWaitingForReview(status)
-    ? t('mobile.adminRequest.waitingForReview')
-    : statusLabel(locale, status);
-  const currentPhaseLabel =
-    status === 'QUOTED' || (hasQuote && !hasOrder)
-      ? t('mobile.adminRequest.path.quotation')
-      : statusPhrase;
-  const incompleteGaps = rfqIncompleteGaps(detail);
-  const needsInfoAsk = status === 'NEEDS_INFORMATION' ? detail.internalNotes?.trim() : '';
+  const incompleteWarnings = collectIncompleteWarnings(detail, t);
 
   const stageBadgeStatus =
     stage === 'order' && linkedSalesOrder
@@ -586,14 +615,40 @@ export function AdminRequestDetailScreen({
           }}
         />
 
-        <OrderBoardCard>
-          <AppText variant="caption" color="muted">
-            {t('mobile.adminRequest.currentPhase')}
-          </AppText>
-          <AppText variant="title" weight={titleWeight}>
-            {currentPhaseLabel}
-          </AppText>
-        </OrderBoardCard>
+        {stage === 'request' ? (
+          <View
+            style={{
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceSecondary,
+              padding: theme.spacing.md,
+              gap: 4,
+            }}
+          >
+            <AppText variant="caption" color="muted">
+              {t('mobile.adminRequest.phaseEyebrow')}
+            </AppText>
+            <AppText variant="label" weight="semibold">
+              {status === 'NEEDS_INFORMATION'
+                ? t('mobile.orders.presentation.needsInformation')
+                : status === 'SUBMITTED' || status === 'UNDER_REVIEW'
+                  ? t('mobile.orders.presentation.waitingForReview')
+                  : status === 'READY_FOR_QUOTATION' || status === 'QUOTED'
+                    ? t('mobile.orders.presentation.quotation')
+                    : linkedSalesOrder
+                      ? t('mobile.orders.orderAcceptedSetup')
+                      : t(`mobile.orders.presentation.${status === 'DRAFT' ? 'draft' : 'waitingForReview'}`)}
+            </AppText>
+            {linkedSalesOrder ? (
+              <AppText variant="caption" color="secondary">
+                {t('mobile.adminRequest.acceptedToPreparing', {
+                  number: linkedSalesOrder.number,
+                })}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
 
         {stage === 'request' && galleryUris.length > 0 ? (
           <View style={{ marginHorizontal: -theme.spacing.lg }}>
@@ -744,6 +799,46 @@ export function AdminRequestDetailScreen({
 
         {stage === 'request' ? (
           <>
+        {isNeedsInfo && detail.informationRequestReason?.trim() ? (
+          <ListItemEnter index={nextIndex()}>
+            <OrderBoardCard
+              accent={colors.warning}
+              style={{ backgroundColor: colors.warningSoft }}
+            >
+              <OrderSectionHeader
+                icon="alert-circle-outline"
+                label={t('mobile.adminRequest.needsInfo')}
+                accent={colors.warning}
+              />
+              <AppText variant="body" style={{ lineHeight: 22 }}>
+                {detail.informationRequestReason.trim()}
+              </AppText>
+            </OrderBoardCard>
+          </ListItemEnter>
+        ) : null}
+
+        {incompleteWarnings.length > 0 ? (
+          <ListItemEnter index={nextIndex()}>
+            <OrderBoardCard
+              accent={colors.warning}
+              style={{ backgroundColor: colors.warningSoft }}
+            >
+              <OrderSectionHeader
+                icon="warning-outline"
+                label={t('mobile.adminRequest.incompleteWarning')}
+                accent={colors.warning}
+              />
+              <View style={{ gap: theme.spacing.xs }}>
+                {incompleteWarnings.map((w) => (
+                  <AppText key={w} variant="caption" color="secondary">
+                    • {w}
+                  </AppText>
+                ))}
+              </View>
+            </OrderBoardCard>
+          </ListItemEnter>
+        ) : null}
+
         <ListItemEnter index={nextIndex()}>
           <OrderBoardCard accent={colors.brand}>
             <OrderSectionHeader
@@ -787,75 +882,13 @@ export function AdminRequestDetailScreen({
               copyable
             />
 
-            <View
-              style={{
-                marginTop: theme.spacing.xs,
-                paddingTop: theme.spacing.md,
-                borderTopWidth: 1,
-                borderTopColor: colors.border,
-                gap: theme.spacing.sm,
-              }}
-            >
-              <SecondaryButton
-                label={t('mobile.adminRequest.save')}
-                onPress={() => saveMutation.mutate()}
-                loading={saveMutation.isPending}
-                disabled={!canUpdate}
-                style={{ alignSelf: 'stretch', width: '100%' }}
-              />
-              {canSubmit ? (
-                <SecondaryButton
-                  label={t('mobile.adminRequest.submit')}
-                  onPress={() => workflowMutation.mutate({ kind: 'submit' })}
-                  loading={workflowBusy}
-                  disabled={!canUpdate}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {canUnderReview ? (
-                <SecondaryButton
-                  label={t('mobile.adminRequest.underReview')}
-                  onPress={() => workflowMutation.mutate({ kind: 'underReview' })}
-                  loading={workflowBusy}
-                  disabled={!canUpdate}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {canReady ? (
-                <SecondaryButton
-                  label={t('mobile.adminRequest.readyForQuote')}
-                  onPress={() => workflowMutation.mutate({ kind: 'ready' })}
-                  loading={workflowBusy}
-                  disabled={!canUpdate}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {canNeedsInfo ? (
-                <TertiaryButton
-                  label={t('mobile.adminRequest.needsInfo')}
-                  disabled={!canUpdate || workflowBusy}
-                  onPress={() => setConfirm('needsInfo')}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {canClose ? (
-                <DestructiveButton
-                  label={t('mobile.adminRequest.closeRfq')}
-                  disabled={!canUpdate || workflowBusy}
-                  onPress={() => setConfirm('close')}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {detail.customer?.id && canQuote && canCreateQuote ? (
-                <PrimaryButton
-                  label={t('mobile.adminRequest.createQuotation')}
-                  onPress={() => quoteMutation.mutate()}
-                  loading={quoteMutation.isPending}
-                  disabled={!canCreateQuote}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-            </View>
+            <SecondaryButton
+              label={t('mobile.adminRequest.save')}
+              onPress={() => saveMutation.mutate()}
+              loading={saveMutation.isPending}
+              disabled={!canUpdate}
+              style={{ alignSelf: 'stretch', width: '100%' }}
+            />
           </OrderBoardCard>
         </ListItemEnter>
 
@@ -957,7 +990,9 @@ export function AdminRequestDetailScreen({
               </AppText>
             ) : (
               <View style={{ gap: theme.spacing.sm }}>
-                {(detail.items ?? []).map((item, index) => (
+                {(detail.items ?? []).map((item, index) => {
+                  const complexity = complexityLabel(item.manufacturingComplexity, t);
+                  return (
                   <View
                     key={item.id ?? `${item.productName}-${index}`}
                     style={{
@@ -987,22 +1022,53 @@ export function AdminRequestDetailScreen({
                       </AppText>
                       <View
                         style={{
-                          paddingHorizontal: theme.spacing.sm,
-                          paddingVertical: 4,
-                          borderRadius: theme.radius.md,
-                          backgroundColor: colors.brandSoft,
-                          borderWidth: 1,
-                          borderColor: colors.brand,
+                          flexDirection: isRTL ? 'row-reverse' : 'row',
+                          flexWrap: 'wrap',
+                          gap: theme.spacing.xs,
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          maxWidth: '48%',
                         }}
                       >
-                        <AppText
-                          variant="caption"
-                          weight="semibold"
-                          style={{ color: colors.brand }}
-                          dir="ltr"
+                        {complexity ? (
+                          <View
+                            style={{
+                              paddingHorizontal: theme.spacing.sm,
+                              paddingVertical: 4,
+                              borderRadius: theme.radius.md,
+                              backgroundColor: colors.warningSoft,
+                              borderWidth: 1,
+                              borderColor: colors.warning,
+                            }}
+                          >
+                            <AppText
+                              variant="caption"
+                              weight="semibold"
+                              style={{ color: colors.warning }}
+                            >
+                              {complexity}
+                            </AppText>
+                          </View>
+                        ) : null}
+                        <View
+                          style={{
+                            paddingHorizontal: theme.spacing.sm,
+                            paddingVertical: 4,
+                            borderRadius: theme.radius.md,
+                            backgroundColor: colors.brandSoft,
+                            borderWidth: 1,
+                            borderColor: colors.brand,
+                          }}
                         >
-                          ×{String(item.quantity)}
-                        </AppText>
+                          <AppText
+                            variant="caption"
+                            weight="semibold"
+                            style={{ color: colors.brand }}
+                            dir="ltr"
+                          >
+                            ×{String(item.quantity)}
+                          </AppText>
+                        </View>
                       </View>
                     </View>
                     {(item.notes || item.description) ? (
@@ -1034,7 +1100,8 @@ export function AdminRequestDetailScreen({
                       </View>
                     ) : null}
                   </View>
-                ))}
+                  );
+                })}
               </View>
             )}
           </OrderBoardCard>
@@ -1116,6 +1183,70 @@ export function AdminRequestDetailScreen({
                 ))}
               </View>
             )}
+          </OrderBoardCard>
+        </ListItemEnter>
+
+        <ListItemEnter index={nextIndex()}>
+          <OrderBoardCard accent={colors.info}>
+            <OrderSectionHeader
+              icon="checkmark-done-outline"
+              label={t('mobile.adminRequest.factoryReview')}
+              accent={colors.info}
+            />
+            <View style={{ gap: theme.spacing.sm }}>
+              {canSubmit ? (
+                <SecondaryButton
+                  label={t('mobile.adminRequest.submit')}
+                  onPress={() => workflowMutation.mutate({ kind: 'submit' })}
+                  loading={workflowBusy}
+                  disabled={!canUpdate}
+                  style={{ alignSelf: 'stretch', width: '100%' }}
+                />
+              ) : null}
+              {canUnderReview ? (
+                <SecondaryButton
+                  label={t('mobile.adminRequest.underReview')}
+                  onPress={() => workflowMutation.mutate({ kind: 'underReview' })}
+                  loading={workflowBusy}
+                  disabled={!canUpdate}
+                  style={{ alignSelf: 'stretch', width: '100%' }}
+                />
+              ) : null}
+              {canReady ? (
+                <SecondaryButton
+                  label={t('mobile.adminRequest.readyForQuote')}
+                  onPress={() => workflowMutation.mutate({ kind: 'ready' })}
+                  loading={workflowBusy}
+                  disabled={!canUpdate}
+                  style={{ alignSelf: 'stretch', width: '100%' }}
+                />
+              ) : null}
+              {canNeedsInfo ? (
+                <TertiaryButton
+                  label={t('mobile.adminRequest.needsInfo')}
+                  disabled={!canUpdate || workflowBusy}
+                  onPress={() => setConfirm('needsInfo')}
+                  style={{ alignSelf: 'stretch', width: '100%' }}
+                />
+              ) : null}
+              {canClose ? (
+                <DestructiveButton
+                  label={t('mobile.adminRequest.closeRfq')}
+                  disabled={!canUpdate || workflowBusy}
+                  onPress={() => setConfirm('close')}
+                  style={{ alignSelf: 'stretch', width: '100%' }}
+                />
+              ) : null}
+              {detail.customer?.id && canQuote && canCreateQuote ? (
+                <PrimaryButton
+                  label={t('mobile.adminRequest.createQuotation')}
+                  onPress={() => quoteMutation.mutate()}
+                  loading={quoteMutation.isPending}
+                  disabled={!canCreateQuote}
+                  style={{ alignSelf: 'stretch', width: '100%' }}
+                />
+              ) : null}
+            </View>
           </OrderBoardCard>
         </ListItemEnter>
 
@@ -1205,6 +1336,8 @@ export function AdminRequestDetailScreen({
         cancelLabel={t('mobile.adminRequest.cancel')}
         reasonLabel={t('mobile.adminRequest.notes')}
         reasonPlaceholder={t('mobile.adminRequest.notesPlaceholder')}
+        reasonRequired
+        reasonRequiredMessage={t('mobile.adminRequest.reasonRequired')}
         onConfirm={(notes) =>
           workflowMutation.mutate({ kind: 'needsInfo', notes })
         }

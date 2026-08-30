@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
@@ -14,6 +15,10 @@ type CodeFieldProps = Omit<TextFieldProps, 'onChangeText' | 'containerStyle'> & 
   containerStyle?: StyleProp<ViewStyle>;
   scanTitle?: string;
   scanHint?: string;
+  /** Overrides the camera button a11y label (`mobile.scan.openCamera`). */
+  scanAccessibilityLabel?: string;
+  /** Camera button glyph. Default is QR; use `barcode-outline` for supplier barcodes. */
+  scanIcon?: ComponentProps<typeof Ionicons>['name'];
 };
 
 /**
@@ -26,6 +31,8 @@ export function CodeField({
   onScanned,
   scanTitle,
   scanHint,
+  scanAccessibilityLabel,
+  scanIcon = 'qr-code-outline',
   label,
   error,
   containerStyle,
@@ -70,7 +77,7 @@ export function CodeField({
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t('mobile.scan.openCamera')}
+          accessibilityLabel={scanAccessibilityLabel ?? t('mobile.scan.openCamera')}
           onPress={() => void openCamera()}
           style={{
             minWidth: theme.sizes.touch.min,
@@ -84,7 +91,7 @@ export function CodeField({
             borderColor: colors.brand,
           }}
         >
-          <Ionicons name="qr-code-outline" size={22} color={colors.brand} />
+          <Ionicons name={scanIcon} size={22} color={colors.brand} />
         </Pressable>
       </View>
       {error ? (

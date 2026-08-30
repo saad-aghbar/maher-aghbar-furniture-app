@@ -12,6 +12,7 @@ import { apiFetch, apiUpload, apiUploadFromUrl, API_URL } from '@/lib/api-client
 import { mutationErrorMessage } from '@/hooks/use-api-mutation';
 import {
   Alert,
+  Badge,
   Button,
   Card,
   ErrorState,
@@ -30,6 +31,7 @@ import {
   MotionSection,
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
+import { manufacturingComplexityDisplayKey } from '@maher/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
@@ -44,6 +46,7 @@ interface RequestItem {
   fabric?: string | null;
   color?: string | null;
   notes?: string | null;
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
 }
 
 interface RequestDetail {
@@ -58,6 +61,8 @@ interface RequestDetail {
   notes?: string | null;
   internalNotes?: string | null;
   priority?: string;
+  presentationKey?: string;
+  informationRequestReason?: string | null;
   customer?: {
     id: string;
     name: string;
@@ -194,13 +199,12 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
           customerNotes: data.notes ?? undefined,
           lines: data.items.map((item) => ({
             description: item.productName,
-            quantity: Number(item.quantity),
+            quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
             unitPrice: 0,
             unit: 'pcs',
-            material: item.material ?? undefined,
-            fabric: item.fabric ?? undefined,
-            color: item.color ?? undefined,
-            notes: item.notes ?? item.description ?? undefined,
+            ...(item.material ? { material: item.material } : {}),
+            ...(item.fabric ? { fabric: item.fabric } : {}),
+            ...(item.color ? { color: item.color } : {}),
             taxRate: 0.16,
           })),
         }),
@@ -254,6 +258,29 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
   const canNeedsInfo = ['SUBMITTED', 'UNDER_REVIEW'].includes(data.status);
   const canClose = !['CLOSED', 'CANCELLED', 'QUOTED'].includes(data.status);
   const canQuote = ['READY_FOR_QUOTATION', 'UNDER_REVIEW', 'SUBMITTED'].includes(data.status);
+  const isFactoryReview = ['SUBMITTED', 'UNDER_REVIEW', 'NEEDS_INFORMATION'].includes(data.status);
+  const presentationKey = data.presentationKey;
+
+  function lineComplexityLabel(code?: string | null) {
+    if (!code) return null;
+    const key = manufacturingComplexityDisplayKey(code);
+    if (key === 'standard') return tc('lineKindStandard');
+    if (key === 'customized') return tc('lineKindCustomized');
+    return tc('lineKindCustom');
+  }
+
+  function statusPresentationLabel() {
+    switch (presentationKey) {
+      case 'waitingForReview':
+        return tc('waitingForReview');
+      case 'needsInformation':
+        return tc('needsInformation');
+      case 'draft':
+        return tStatus('DRAFT');
+      default:
+        return undefined;
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -261,18 +288,30 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
         backHref="/orders"
         title={data.number}
         description={
-          data.customer
-            ? localizedName(locale, data.customer)
-            : (data.contactName ?? undefined)
+          [
+            isFactoryReview ? tc('factoryReview') : null,
+            data.customer
+              ? localizedName(locale, data.customer)
+              : (data.contactName ?? undefined),
+          ]
+            .filter(Boolean)
+            .join(' · ') || undefined
         }
         actions={
           <div className="flex flex-wrap gap-2">
-            <StatusBadge status={data.status} />
+            <StatusBadge status={data.status} label={statusPresentationLabel()} />
           </div>
         }
       />
       {message ? <Alert variant="success">{message}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
+
+      {data.informationRequestReason ? (
+        <Alert variant="warning">
+          <p className="font-medium">{tc('informationRequestReason')}</p>
+          <p className="mt-1 text-sm">{data.informationRequestReason}</p>
+        </Alert>
+      ) : null}
 
       <div className="maher-stagger space-y-6">
       <MotionSection className="maher-form-section" as="div">
@@ -384,16 +423,36 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
               </TableRow>
             </TableHead>
             <TableBody>
-              {data.items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{item.productName}</TableCell>
-                  <TableNumericCell>{String(item.quantity)}</TableNumericCell>
-                  <TableCell>{item.notes || item.description || '—'}</TableCell>
-                  <TableCell>
-                    {[item.material, item.fabric, item.color].filter(Boolean).join(' / ') || '—'}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {data.items.map((item) => {
+                const complexity = lineComplexityLabel(item.manufacturingComplexity);
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{item.productName}</span>
+                        {complexity ? (
+                          <Badge
+                            variant={
+                              item.manufacturingComplexity === 'CUSTOM'
+                                ? 'warning'
+                                : item.manufacturingComplexity === 'MODIFIED'
+                                  ? 'info'
+                                  : 'default'
+                            }
+                          >
+                            {complexity}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableNumericCell>{String(item.quantity)}</TableNumericCell>
+                    <TableCell>{item.notes || item.description || '—'}</TableCell>
+                    <TableCell>
+                      {[item.material, item.fabric, item.color].filter(Boolean).join(' / ') || '—'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}
@@ -459,15 +518,24 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
       <ConfirmDialog
         open={needsInfoOpen}
         title={tc('needsInformation')}
-        description={tc('needsInformationConfirm')}
+        description={tc('informationRequestReasonHint')}
         confirmLabel={tc('needsInformation')}
         withReason
-        reasonLabel={tc('notes')}
+        reasonRequired
+        reasonLabel={tc('informationRequestReason')}
         loading={workflowMutation.isPending}
         error={error}
-        onConfirm={(notes) =>
-          workflowMutation.mutate({ path: 'needs-information', body: { notes } })
-        }
+        onConfirm={(reason) => {
+          if (!reason?.trim()) {
+            setError(tc('informationRequestReasonRequired'));
+            return;
+          }
+          setError(null);
+          workflowMutation.mutate({
+            path: 'needs-information',
+            body: { reason: reason.trim() },
+          });
+        }}
         onClose={() => setNeedsInfoOpen(false)}
       />
 

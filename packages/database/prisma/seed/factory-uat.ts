@@ -13,7 +13,7 @@ const UAT_PARALLEL_WORKFLOW_CODE = 'UAT_PARALLEL';
  * on inventory (no silent under-issue) instead of being hidden by a HARD edge.
  */
 async function ensureUatParallelWorkflow(prisma: PrismaClient) {
-  const codes = ['MATERIAL_PREP', 'CARPENTRY', 'FOAM', 'UPHOLSTERY', 'INSPECTION', 'PACKAGING'];
+  const codes = ['MATERIAL_PREP', 'CARPENTRY', 'FOAM', 'UPHOLSTERY', 'INSPECTION', 'PACKAGING', 'DELIVERY'];
   const stages = await prisma.productionStageDefinition.findMany({
     where: { code: { in: codes } },
   });
@@ -86,6 +86,35 @@ async function ensureUatParallelWorkflow(prisma: PrismaClient) {
     }
   }
 
+  
+  // Migrate older UAT_PARALLEL graphs that ended at PACKAGING.
+  {
+    const deliveryStage = byCode.get('DELIVERY');
+    if (deliveryStage) {
+      const hasDelivery = await prisma.productionWorkflowNode.findFirst({
+        where: { workflowVersionId: version.id, stageDefinitionId: deliveryStage.id },
+      });
+      if (!hasDelivery) {
+        const maxSort = await prisma.productionWorkflowNode.aggregate({
+          where: { workflowVersionId: version.id },
+          _max: { sortOrder: true },
+        });
+        await prisma.productionWorkflowNode.create({
+          data: {
+            workflowVersionId: version.id,
+            stageDefinitionId: deliveryStage.id,
+            nodeKey: 'DELIVERY',
+            sortOrder: (maxSort._max.sortOrder ?? 0) + 1,
+            isRequiredByDefault: true,
+            canBeSkipped: false,
+            requiresPhotosOverride: false,
+          },
+        });
+      }
+    }
+  }
+
+  // ensure DELIVERY terminal
   const graphNodes = await prisma.productionWorkflowNode.findMany({
     where: { workflowVersionId: version.id },
     include: { stageDefinition: true },
@@ -97,6 +126,7 @@ async function ensureUatParallelWorkflow(prisma: PrismaClient) {
     ['CARPENTRY', 'UPHOLSTERY'],
     ['UPHOLSTERY', 'INSPECTION'],
     ['INSPECTION', 'PACKAGING'],
+    ['PACKAGING', 'DELIVERY'],
     // Foam is parallel (not a predecessor of upholstery) but must join the single terminal.
     ['FOAM', 'PACKAGING'],
   ];

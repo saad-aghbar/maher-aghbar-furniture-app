@@ -12,6 +12,23 @@ export function successorsOf(edges: EdgeLike[], nodeId: string): string[] {
   return edges.filter((e) => e.fromNodeId === nodeId).map((e) => e.toNodeId);
 }
 
+/** True if `toId` is reachable from `fromId` following directed edges. */
+export function isReachableFrom(edges: EdgeLike[], fromId: string, toId: string): boolean {
+  if (fromId === toId) return true;
+  const seen = new Set<string>();
+  const stack = [fromId];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const next of successorsOf(edges, cur)) {
+      if (next === toId) return true;
+      if (!seen.has(next)) stack.push(next);
+    }
+  }
+  return false;
+}
+
 /**
  * True if adding edges from each p in preds → target, and from target → each s in succs,
  * would introduce a cycle in the graph.
@@ -118,6 +135,27 @@ export function editConnectionPatches(
   return { targetRunsAfter: preds, successorUpdates: updates };
 }
 
+/**
+ * After edit drops former outs, close the gap for any successor left with zero preds:
+ * adopt the edited node's new runsAfter (splice), unless the edit still leads into them.
+ */
+export function reattachOrphanedSuccessorPatches(
+  targetId: string,
+  newRunsAfterIds: string[],
+  newLeadsIntoIds: string[],
+  successorUpdates: Array<{ nodeId: string; runsAfterNodeIds: string[] }>,
+): Array<{ nodeId: string; runsAfterNodeIds: string[] }> {
+  const leadSet = new Set(newLeadsIntoIds);
+  return successorUpdates.map((u) => {
+    if (leadSet.has(u.nodeId)) {
+      if (u.runsAfterNodeIds.includes(targetId)) return u;
+      return { nodeId: u.nodeId, runsAfterNodeIds: [...u.runsAfterNodeIds, targetId] };
+    }
+    if (u.runsAfterNodeIds.length > 0) return u;
+    return { nodeId: u.nodeId, runsAfterNodeIds: [...newRunsAfterIds] };
+  });
+}
+
 export function resolveSortOrderForInsert(
   sortedSortOrders: Array<{ id: string; sortOrder: number }>,
   preds: string[],
@@ -168,10 +206,10 @@ export function resolveSinkId(nodes: NodeSortLike[], edges: EdgeLike[]): string 
 }
 
 /**
- * Empty Leads into:
- * - first/only node, or editing the current sink → stay terminal
- * - runsAfter includes current sink → become the new sink
- * - otherwise auto-wire to the current sink
+ * Empty Leads into for production authoring:
+ * - explicit leadsInto wins
+ * - otherwise insertBeforeNodeId (Inspection) when provided
+ * - never auto-wire to Delivery / Packaging sink
  */
 export function resolveLeadsIntoForSave(args: {
   nodes: NodeSortLike[];
@@ -180,22 +218,84 @@ export function resolveLeadsIntoForSave(args: {
   targetId: string;
   runsAfterIds: string[];
   leadsIntoIds: string[];
+  /** When leadsInto is empty, wire here (Inspection). Never falls back to Delivery. */
+  insertBeforeNodeId?: string | null;
 }): string[] {
-  const { nodes, edges, targetId, runsAfterIds, leadsIntoIds } = args;
+  const { targetId, runsAfterIds, leadsIntoIds, insertBeforeNodeId } = args;
   if (leadsIntoIds.length > 0) return [...leadsIntoIds];
-  if (nodes.length === 0) return [];
 
-  const sinkId = resolveSinkId(nodes, edges);
-  if (!sinkId) return [];
+  if (insertBeforeNodeId && insertBeforeNodeId !== targetId && !runsAfterIds.includes(insertBeforeNodeId)) {
+    return [insertBeforeNodeId];
+  }
 
-  if (targetId === sinkId) return [];
-  if (runsAfterIds.includes(sinkId)) return [];
-
-  return [sinkId];
+  return [];
 }
 
 /**
- * Wire every non-sink terminal into `sinkId` by adding them as predecessors of the sink.
+ * Drop Packaging / Delivery / Inspection from a predecessor list before PATCHing Inspection.
+ * Corrupt graphs sometimes retain finishing nodes as Inspection preds → TERMINAL_CHAIN_LOCKED.
+ */
+export function sanitizeInspectionPredecessorIds(
+  predIds: string[],
+  codeForId: (id: string) => string,
+): string[] {
+  return predIds.filter((id) => {
+    const code = codeForId(id);
+    return code !== 'PACKAGING' && code !== 'DELIVERY' && code !== 'INSPECTION';
+  });
+}
+
+/**
+ * Keep only Inspection preds that are not ancestors of another pred.
+ * Drops Prep/Carpentry when Foam/Upholstery already cover the path into Inspection.
+ */
+export function frontierPredecessors(edges: EdgeLike[], predIds: string[]): string[] {
+  const unique = [...new Set(predIds)];
+  return unique.filter(
+    (p) => !unique.some((q) => q !== p && isReachableFrom(edges, p, q)),
+  );
+}
+
+/**
+ * For every node, drop predecessor P when another predecessor Q is reachable from P.
+ * Removes spider-web A→C edges when A→B→C already exists.
+ */
+export function reduceRedundantPredecessorPatches(
+  nodeIds: string[],
+  edges: EdgeLike[],
+): Array<{ nodeId: string; runsAfterNodeIds: string[] }> {
+  const patches: Array<{ nodeId: string; runsAfterNodeIds: string[] }> = [];
+  for (const nodeId of nodeIds) {
+    const preds = predecessorsOf(edges, nodeId);
+    if (preds.length < 2) continue;
+    const reduced = frontierPredecessors(edges, preds).sort();
+    const current = [...preds].sort();
+    if (
+      reduced.length === current.length &&
+      reduced.every((id, i) => id === current[i])
+    ) {
+      continue;
+    }
+    patches.push({ nodeId, runsAfterNodeIds: reduced });
+  }
+  return patches;
+}
+
+/**
+ * @deprecated Dead at runtime. Inspection preds come from canonicalizeWorkflowGraph frontier REPLACE.
+ * Returns [] so accidental imports cannot invent edges.
+ */
+export function ensureInspectionFeedPatches(
+  _nodes: Array<NodeSortLike & { stageCode?: string }>,
+  _edges: EdgeLike[],
+  _inspectionId: string,
+  _skipDeadEndCodes: ReadonlySet<string> = new Set(['PACKAGING', 'DELIVERY', 'INSPECTION']),
+): Array<{ nodeId: string; runsAfterNodeIds: string[] }> {
+  return [];
+}
+
+/**
+ * @deprecated Delivery sink heal is wrong for production authoring.
  */
 export function ensureSingleSinkPatches(
   nodes: NodeSortLike[],
@@ -233,6 +333,7 @@ export function validRunsAfterCandidates(
   runsAfterIds: string[],
   leadsIntoIds: string[],
   replaceTarget = false,
+  excludeNodeIds?: ReadonlySet<string>,
 ): string[] {
   const selected = new Set(runsAfterIds);
   const leadSet = new Set(leadsIntoIds);
@@ -241,8 +342,11 @@ export function validRunsAfterCandidates(
   return nodes
     .map((n) => n.id)
     .filter((id) => id !== targetId)
+    .filter((id) => !excludeNodeIds?.has(id))
     .filter((id) => {
       if (selected.has(id)) return true;
+      // Editing: never offer stages downstream of the target as "After".
+      if (replaceTarget && isReachableFrom(edges, targetId, id)) return false;
       // Mutual exclusion except sink (picking sink clears leadsInto).
       if (leadSet.has(id) && id !== sinkId) return false;
 
@@ -265,6 +369,29 @@ export function validRunsAfterCandidates(
 }
 
 /**
+ * Parallel siblings must not be ancestors or descendants of the target (or locked).
+ * Already-selected ids stay visible so the user can deselect.
+ */
+export function validParallelSiblingCandidates(
+  edges: EdgeLike[],
+  targetId: string | null,
+  candidateIds: string[],
+  selectedIds: string[] = [],
+  excludeNodeIds?: ReadonlySet<string>,
+): string[] {
+  const selected = new Set(selectedIds);
+  return candidateIds.filter((id) => {
+    if (id === targetId) return false;
+    if (excludeNodeIds?.has(id)) return false;
+    if (selected.has(id)) return true;
+    if (!targetId) return true;
+    if (isReachableFrom(edges, targetId, id)) return false;
+    if (isReachableFrom(edges, id, targetId)) return false;
+    return true;
+  });
+}
+
+/**
  * Candidate successors that won't create a cycle with the current runs-after selection.
  */
 export function validLeadsIntoCandidates(
@@ -274,6 +401,7 @@ export function validLeadsIntoCandidates(
   runsAfterIds: string[],
   leadsIntoIds: string[],
   replaceTarget = false,
+  excludeNodeIds?: ReadonlySet<string>,
 ): string[] {
   const predSet = new Set(runsAfterIds);
   const selected = new Set(leadsIntoIds);
@@ -281,6 +409,7 @@ export function validLeadsIntoCandidates(
   return nodes
     .map((n) => n.id)
     .filter((id) => id !== targetId && !predSet.has(id))
+    .filter((id) => !excludeNodeIds?.has(id))
     .filter((id) => {
       if (selected.has(id)) return true;
       return !wouldCreateCycle(

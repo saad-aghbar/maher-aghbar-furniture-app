@@ -62,6 +62,36 @@ export class SchedulingController {
     return this.scheduling.deleteException(date, user.id);
   }
 
+  @RequirePermissions('schedule.manage')
+  @Post('sync')
+  syncFactorySchedule(@CurrentUser() user: AuthUser) {
+    return this.scheduling.enqueueManualSync(user.id);
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('optimize/preview')
+  previewCapacityOptimize(@CurrentUser() user: AuthUser) {
+    return this.scheduling.enqueueCapacityOptimize(user.id, false);
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('optimize/apply')
+  applyCapacityOptimize(@CurrentUser() user: AuthUser) {
+    return this.scheduling.enqueueCapacityOptimize(user.id, true);
+  }
+
+  @RequirePermissions('schedule.read')
+  @Get('replan-runs/latest')
+  getLatestManualSyncRun() {
+    return this.scheduling.getLatestManualSyncRun();
+  }
+
+  @RequirePermissions('schedule.read')
+  @Get('replan-runs/latest-optimize')
+  getLatestCapacityOptimizeRun() {
+    return this.scheduling.getLatestCapacityOptimizeRun();
+  }
+
   @RequirePermissions('schedule.read')
   @Get('replan-runs/:id')
   getReplanRun(@Param('id') id: string) {

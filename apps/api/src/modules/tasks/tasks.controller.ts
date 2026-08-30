@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '@maher/types';
 import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
@@ -38,8 +38,8 @@ export class TasksController {
 
   @RequirePermissions('production-order.assign')
   @Post(':id/assign')
-  assign(@Param('id') id: string, @Body() dto: AssignTaskDto) {
-    return this.tasks.assign(id, dto);
+  assign(@Param('id') id: string, @Body() dto: AssignTaskDto, @CurrentUser() user: AuthUser) {
+    return this.tasks.assign(id, dto, user.permissions);
   }
 
   @RequireAnyPermissions('production-task.update-own', 'production-task.update-any')
@@ -94,6 +94,43 @@ export class TasksController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tasks.updateNotes(id, dto.notes, user.id, user.permissions, dto.idempotencyKey);
+  }
+
+  @RequirePermissions('production.material-usage.record')
+  @Get(':id/material-usage')
+  materialUsage(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.tasks.listMaterialUsage(id, user.id, user.permissions);
+  }
+
+  @RequirePermissions('production.material-usage.record')
+  @Post(':id/material-usage/identify')
+  identifyMaterial(
+    @Param('id') id: string,
+    @Body() body: { code?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.identifyMaterialUsage(id, user.id, user.permissions, body?.code ?? '');
+  }
+
+  @RequirePermissions('production.material-usage.record')
+  @Put(':id/material-usage')
+  saveMaterialUsage(
+    @Param('id') id: string,
+    @Body() body: { lines: Array<{
+      inventoryItemId: string;
+      actualQty: number;
+      returnedQty?: number;
+      scrapQty?: number;
+      scrapReason?: string | null;
+      reasonNotes?: string | null;
+      isExtra?: boolean;
+      sku?: string;
+      issueWarehouseId?: string | null;
+      returnWarehouseId?: string | null;
+    }> },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.saveMaterialUsage(id, user.id, user.permissions, body.lines ?? []);
   }
 
   @RequirePermissions('production-task.complete')

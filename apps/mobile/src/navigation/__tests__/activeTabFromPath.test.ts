@@ -19,11 +19,10 @@ describe('activeTabFromPath', () => {
     expect(activeTabFromPath('admin', '/(app)/(admin)/invoices')).toBe('more');
     expect(activeTabFromPath('admin', '/(app)/(admin)/reports')).toBe('more');
     expect(activeTabFromPath('admin', '/notifications')).toBe('more');
-    expect(activeTabFromPath('admin', '/search')).toBe('more');
     expect(activeTabFromPath('admin', '/(app)/(admin)/more/account')).toBe('more');
     expect(activeTabFromPath('admin', '/more/account')).toBe('more');
-    expect(activeTabFromPath('admin', '/(app)/(admin)/scheduling')).toBe('more');
-    expect(activeTabFromPath('admin', '/scheduling')).toBe('more');
+    // /search redirects to home; path mapping may still treat it as more if visited briefly
+    expect(activeTabFromPath('admin', '/search')).toBe('more');
   });
 
   it('maps primary tabs correctly when groups are stripped', () => {
@@ -45,5 +44,12 @@ describe('activeTabFromPath', () => {
     expect(activeTabFromPath('customer', '/schedule')).toBe('account');
     expect(activeTabFromPath('customer', '/(app)/(customer)/(tabs)/schedule')).toBe('account');
     expect(activeTabFromPath('customer', '/(app)/(customer)/account/calendar')).toBe('account');
+  });
+
+  it('maps dealer quotations onto Orders, never Schedule', () => {
+    expect(activeTabFromPath('customer', '/quotations')).toBe('orders');
+    expect(activeTabFromPath('customer', '/(app)/(customer)/quotations')).toBe('orders');
+    expect(activeTabFromPath('customer', '/(app)/(customer)/quotations/q-1')).toBe('orders');
+    expect(activeTabFromPath('customer', '/schedule')).toBe('account');
   });
 });

@@ -19,6 +19,8 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
+import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { BackButton } from '@/components/BackButton';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
@@ -95,9 +97,11 @@ export function ProductDetailScreen({
 
   const showOrderCta = isDealer && (canCreate || Boolean(forceState));
   /** Persistent tab bar + FAB never unmount — footer must clear them. */
-  const footerClearance = isDealer
-    ? DEALER_TAB_BAR_CLEARANCE + theme.spacing.sm
-    : Math.max(insets.bottom, theme.spacing.md);
+  const footerClearance = stickyCtaBottomInset(
+    insets.bottom,
+    theme.spacing.sm,
+    isDealer ? DEALER_TAB_BAR_CLEARANCE : undefined,
+  );
   const footerInnerH = 118;
   const scrollBottomPad = showOrderCta
     ? footerInnerH + footerClearance + theme.spacing.lg
@@ -554,17 +558,9 @@ export function ProductDetailScreen({
       </ScrollView>
 
       {showOrderCta ? (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            paddingHorizontal: theme.spacing.lg,
-            paddingBottom: footerClearance,
-            backgroundColor: 'transparent',
-          }}
+        <FloatingActionDock
+          floating
+          tabClearance={isDealer ? DEALER_TAB_BAR_CLEARANCE : undefined}
         >
           {/* Floating glass dock — shadow outside overflow clip */}
           <View
@@ -687,7 +683,7 @@ export function ProductDetailScreen({
               </View>
             </View>
           </View>
-        </View>
+        </FloatingActionDock>
       ) : null}
     </AppScreen>
   );

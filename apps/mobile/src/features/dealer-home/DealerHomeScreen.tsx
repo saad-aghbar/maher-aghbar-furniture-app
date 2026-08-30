@@ -4,14 +4,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { can } from '@maher/permissions';
+import { classifyDealerLifecycle } from '@maher/types';
 import { useAuth } from '@/auth/AuthProvider';
 import { queryKeys } from '@/api/queryKeys';
+import { getOwnDeliveries } from '@/api/modules/scheduling';
+import { listSalesOrders } from '@/api/modules/sales-orders';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { listBrowseProducts } from '@/features/catalog/api';
+import { deliveryStatusFromCustomerStatus } from '@/features/sales-orders/stageCounts';
 import { DealerHero } from '@/features/dealer-ui';
 import { Divider } from '@/components/layout/Divider';
 import { useLocale } from '@/i18n';
@@ -19,15 +23,12 @@ import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { DealerHomeHeader } from './components/DealerHomeHeader';
 import { DealerHomeMetrics } from './components/DealerHomeMetrics';
+import { DealerHomeDestinations } from './components/DealerHomeDestinations';
 import { DealerHomeSkeleton } from './components/DealerHomeSkeleton';
 import { FeaturedCollections } from './components/FeaturedCollections';
 import { collectionsFromProducts } from './collectionsFromProducts';
 import { pickShowcaseImages } from './pickShowcaseImages';
 import { useDealerHomeQuery } from './query';
-import {
-  mapDealerHomeInvoices,
-  outstandingBalanceNumber,
-} from './selectDealerHome';
 import type { DealerHomePayload } from './api';
 import type { DealerHomeCollection } from './dealerHomeImagery';
 
@@ -45,7 +46,7 @@ export function DealerHomeScreen({
   fixtureCollections,
 }: DealerHomeScreenProps = {}) {
   const { user } = useAuth();
-  const { t, tPlural, formatCurrency, formatDate, locale } = useLocale();
+  const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
@@ -54,8 +55,6 @@ export function DealerHomeScreen({
 
   const allowed = Boolean(user?.customerId && can(user, 'sales-order.read'));
   const canBrowseCatalog = can(user, 'catalog.read') || Boolean(forceState);
-  const canStatement = can(user, 'statement.read');
-  const canInvoices = can(user, 'invoice.read');
 
   const query = useDealerHomeQuery(allowed && !forceState);
   const refreshing = query.isRefetching && !query.isLoading;
@@ -66,6 +65,41 @@ export function DealerHomeScreen({
     enabled: canBrowseCatalog && !forceState,
     staleTime: 60_000,
   });
+
+  const lifecycleOrdersQuery = useQuery({
+    queryKey: queryKeys.salesOrders.list({ page: 1, pageSize: 100, dealerHome: true }),
+    queryFn: () => listSalesOrders({ page: 1, pageSize: 100 }),
+    enabled: allowed && !forceState,
+    staleTime: 30_000,
+  });
+
+  const ownDeliveriesQuery = useQuery({
+    queryKey: queryKeys.scheduling.ownDeliveries(),
+    queryFn: () => getOwnDeliveries(),
+    enabled: allowed && !forceState,
+    staleTime: 30_000,
+  });
+
+  const lifecycleCounts = useMemo(() => {
+    const deliveryBySo = new Map<string, string>();
+    for (const row of ownDeliveriesQuery.data?.data ?? []) {
+      const status = deliveryStatusFromCustomerStatus(row.customerStatus);
+      if (status) deliveryBySo.set(row.salesOrderId, status);
+    }
+    const counts = { inProduction: 0, ready: 0, shipped: 0, delivered: 0 };
+    for (const order of lifecycleOrdersQuery.data?.data ?? []) {
+      const tab = classifyDealerLifecycle({
+        salesOrderStatus: order.status,
+        deliveryStatus: deliveryBySo.get(order.id) ?? null,
+        productionStarted: order.status === 'IN_PRODUCTION' || order.status === 'READY_FOR_DELIVERY',
+      });
+      if (tab === 'inProduction') counts.inProduction += 1;
+      else if (tab === 'ready') counts.ready += 1;
+      else if (tab === 'shipped') counts.shipped += 1;
+      else if (tab === 'delivered') counts.delivered += 1;
+    }
+    return counts;
+  }, [lifecycleOrdersQuery.data, ownDeliveriesQuery.data]);
 
   const [showcaseUris, setShowcaseUris] = useState<string[]>([]);
   useEffect(() => {
@@ -151,70 +185,45 @@ export function DealerHomeScreen({
     );
   }
 
-  const invoices = mapDealerHomeInvoices(data.recentInvoices);
-  const latestInvoice = invoices[0];
-  const balance = outstandingBalanceNumber(data);
-
   const goCatalog = () => router.push('/(app)/(customer)/(tabs)/catalog' as Href);
-  const goOrders = () => router.push('/(app)/(customer)/(tabs)/orders' as Href);
-  const goStatement = () => router.push('/(app)/(customer)/account/statement' as Href);
-  const goInvoices = () => router.push('/(app)/(customer)/invoices' as Href);
-  const goInvoice = (id: string) =>
-    router.push(`/(app)/(customer)/invoices/${id}` as Href);
+  const goOrdersChip = (chip: 'production' | 'ready' | 'shipped' | 'delivered') =>
+    router.push(`/(app)/(customer)/(tabs)/orders?chip=${chip}` as Href);
 
   const metricCards = [
     {
-      id: 'active',
-      title: t('mobile.dealerHome.activeOrders'),
-      value: String(data.activeOrders),
+      id: 'production',
+      title: t('lifecycle.tabs.inProduction'),
+      value: String(lifecycleCounts.inProduction),
       actionLabel: t('mobile.dealerHome.viewAll'),
-      onPress: goOrders,
-      icon: 'bag-handle-outline' as const,
+      onPress: () => goOrdersChip('production'),
+      icon: 'construct-outline' as const,
     },
     {
-      id: 'near',
-      title: t('mobile.dealerHome.nearDelivery'),
-      value: String(data.ordersNearingDelivery),
+      id: 'ready',
+      title: t('lifecycle.readyForDelivery'),
+      value: String(lifecycleCounts.ready),
       actionLabel: t('mobile.dealerHome.viewAll'),
-      onPress: goOrders,
-      icon: 'paper-plane-outline' as const,
+      onPress: () => goOrdersChip('ready'),
+      icon: 'cube-outline' as const,
     },
     {
-      id: 'balance',
-      title: t('mobile.dealerHome.outstandingBalance'),
-      value: formatCurrency(balance),
+      id: 'shipped',
+      title: t('lifecycle.shipped'),
+      value: String(lifecycleCounts.shipped),
       actionLabel:
-        balance === 0
-          ? t('mobile.dealerHome.paidUp')
-          : data.balanceDueInDays != null
-            ? data.balanceDueInDays >= 0
-              ? tPlural('mobile.dealerHome.dueInDays', data.balanceDueInDays)
-              : tPlural('mobile.dealerHome.overdueDays', Math.abs(data.balanceDueInDays))
-            : canStatement
-              ? t('mobile.dealerHome.viewStatement')
-              : t('mobile.dealerHome.viewAll'),
-      onPress: canStatement ? goStatement : goOrders,
-      icon: 'wallet-outline' as const,
+        lifecycleCounts.shipped > 0
+          ? t('lifecycle.confirmWhenReceived')
+          : t('mobile.dealerHome.viewAll'),
+      onPress: () => goOrdersChip('shipped'),
+      icon: 'bus-outline' as const,
     },
     {
-      id: 'invoice',
-      title: t('mobile.dealerHome.latestInvoice'),
-      value: latestInvoice
-        ? latestInvoice.number
-        : t('mobile.dealerHome.noLatestInvoice'),
-      actionLabel: latestInvoice
-        ? `${formatCurrency(latestInvoice.outstandingAmount || latestInvoice.total)}${
-            latestInvoice.issuedAt ? ` · ${formatDate(latestInvoice.issuedAt)}` : ''
-          }`
-        : canInvoices
-          ? t('mobile.dealerHome.viewInvoices')
-          : t('mobile.dealerHome.viewAll'),
-      onPress: latestInvoice
-        ? () => goInvoice(latestInvoice.id)
-        : canInvoices
-          ? goInvoices
-          : goOrders,
-      icon: 'receipt-outline' as const,
+      id: 'delivered',
+      title: t('lifecycle.tabs.delivered'),
+      value: String(lifecycleCounts.delivered),
+      actionLabel: t('mobile.dealerHome.viewAll'),
+      onPress: () => goOrdersChip('delivered'),
+      icon: 'checkmark-done-outline' as const,
     },
   ];
 
@@ -226,10 +235,12 @@ export function DealerHomeScreen({
         scrollEventThrottle: 16,
         refreshControl: forceState ? undefined : (
           <RefreshControl
-            refreshing={refreshing || showcaseQuery.isRefetching}
+            refreshing={refreshing || showcaseQuery.isRefetching || lifecycleOrdersQuery.isRefetching}
             onRefresh={() => {
               void query.refetch();
               if (canBrowseCatalog) void showcaseQuery.refetch();
+              void lifecycleOrdersQuery.refetch();
+              void ownDeliveriesQuery.refetch();
             }}
             tintColor={colors.brand}
           />
@@ -249,6 +260,7 @@ export function DealerHomeScreen({
 
       <View style={{ gap: theme.spacing.lg }}>
         <DealerHomeMetrics cards={metricCards} />
+        <DealerHomeDestinations />
         {canBrowseCatalog ? (
           <>
             <Divider compact />

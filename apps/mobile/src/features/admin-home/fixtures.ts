@@ -1,4 +1,8 @@
-import type { AdminHomePayload } from './api';
+import type { AdminHomePayload, ManagementSummaryPayload, MgmtTile } from './api';
+
+function tile(key: string, count: number, href: string, filter = ''): MgmtTile {
+  return { key, count, href, filter };
+}
 
 /** Deterministic fixture for gallery / screenshot states. */
 export const adminHomeSuccessFixture: AdminHomePayload = {
@@ -114,4 +118,172 @@ export const adminHomeEmptyFixture: AdminHomePayload = {
   recentOrders: [],
   floorSpotlight: null,
   recentActivity: [],
+};
+
+/** Piece 12 management desk success fixture. */
+export const managementSummarySuccessFixture: ManagementSummaryPayload = {
+  attention: [
+    {
+      id: 'att-1',
+      title: 'SO-1258',
+      why: 'Past committed delivery — needs reschedule or expedite',
+      actionLabel: 'Open order',
+      priority: 'critical',
+      href: '/sales-orders/so1',
+      filter: '',
+    },
+    {
+      id: 'att-2',
+      title: 'QI-884',
+      why: 'Quality fail waiting for rework disposition',
+      actionLabel: 'Open quality',
+      priority: 'high',
+      href: '/quality?filter=waiting',
+      filter: 'waiting',
+    },
+    {
+      id: 'att-3',
+      title: 'RET-12',
+      why: 'Approved return still waiting pickup',
+      actionLabel: 'Open return',
+      priority: 'normal',
+      href: '/returns?physical=WAITING_RETURN',
+      filter: 'WAITING_RETURN',
+    },
+  ],
+  today: {
+    productionStarting: tile('productionStarting', 4, '/production?bucket=ready_to_start', 'ready_to_start'),
+    productionDue: tile('productionDue', 6, '/production?bucket=on_floor', 'on_floor'),
+    qualityWaiting: tile('qualityWaiting', 2, '/quality?filter=waiting', 'waiting'),
+    finishedToday: tile('finishedToday', 3, '/inventory?lifecycle=finished', 'finished'),
+    leavingToday: tile('leavingToday', 2, '/inventory?lifecycle=finished&scope=leavingToday', 'leavingToday'),
+    receivingToday: tile('receivingToday', 1, '/purchasing', 'receiving'),
+  },
+  factoryFlow: [
+    { key: 'prepare', label: 'Prepare', count: 5, href: '/orders', filter: 'prepare' },
+    { key: 'ready_factory', label: 'Ready', count: 4, href: '/production?bucket=ready_to_start', filter: 'ready_to_start' },
+    { key: 'in_production', label: 'In production', count: 18, href: '/production?bucket=on_floor', filter: 'on_floor' },
+    { key: 'quality_rework', label: 'Quality', count: 2, href: '/quality?filter=waiting', filter: 'waiting' },
+    { key: 'packaging', label: 'Packaging', count: 3, href: '/production?bucket=inspection_packaging', filter: 'inspection_packaging' },
+    { key: 'finished', label: 'Finished', count: 7, href: '/inventory?lifecycle=finished', filter: 'finished' },
+  ],
+  production: {
+    activeOrders: tile('activeOrders', 18, '/production?bucket=on_floor', 'on_floor'),
+    tasksCompletedToday: tile('tasksCompletedToday', 11, '/production', ''),
+    blocked: tile('blocked', 2, '/production?bucket=blocked', 'blocked'),
+    dueToday: tile('dueToday', 6, '/production?bucket=on_floor', 'due'),
+    events: [
+      { at: '2026-08-05T08:10:00.000Z', label: 'Upholstery started on SO-1258', href: '/sales-orders/so1' },
+      { at: '2026-08-05T09:40:00.000Z', label: 'QC passed SO-1260', href: '/sales-orders/so2' },
+    ],
+  },
+  blocked: [
+    {
+      id: 'blk-1',
+      title: 'SO-1258',
+      why: 'Waiting material — foam shortage',
+      href: '/production?bucket=blocked',
+      filter: 'blocked',
+    },
+  ],
+  workers: { workingToday: 12, assigned: 10, unassigned: 2, conflicts: 0 },
+  late: { overdue: tile('overdue', 7, '/orders?focus=late', 'late'), atRiskLimited: true },
+  outbound: {
+    finishedWaiting: tile('finishedWaiting', 5, '/inventory?lifecycle=finished&scope=inWarehouse', 'inWarehouse'),
+    leavingToday: tile('leavingToday', 2, '/inventory?lifecycle=finished&scope=leavingToday', 'leavingToday'),
+    overduePickup: tile('overduePickup', 1, '/inventory?lifecycle=finished&scope=overdue', 'overdue'),
+    shippedAwaitingDealer: tile('shippedAwaitingDealer', 3, '/deliveries?section=shipped', 'shipped'),
+  },
+  materials: {
+    needsPurchasing: tile('needsPurchasing', 4, '/purchasing', 'needs'),
+    blockingProduction: tile('blockingProduction', 2, '/purchasing', 'blocking'),
+    arrivingToday: tile('arrivingToday', 1, '/purchasing', 'arriving'),
+    lateSupplierPos: tile('lateSupplierPos', 1, '/purchasing', 'late'),
+  },
+  inventory: {
+    rawShortages: tile('rawShortages', 3, '/inventory', 'shortages'),
+    semiHandoff: tile('semiHandoff', 2, '/inventory?lifecycle=semiFinished', 'semi'),
+    finishedWaiting: tile('finishedWaiting', 5, '/inventory?lifecycle=finished', 'finished'),
+    correctionsAttention: tile('correctionsAttention', 0, '/inventory', 'corrections'),
+  },
+  quality: {
+    waitingInspection: tile('waitingInspection', 2, '/quality?filter=waiting', 'waiting'),
+    failRework: tile('failRework', 1, '/quality?filter=rework', 'rework'),
+    readyReinspection: tile('readyReinspection', 0, '/quality?filter=reinspection', 'reinspection'),
+    passedToday: tile('passedToday', 4, '/quality?filter=passed', 'passed'),
+  },
+  exceptions: {
+    returnsOpen: tile('returnsOpen', 1, '/returns', 'open'),
+    waitingReturn: tile('waitingReturn', 1, '/returns?physical=WAITING_RETURN', 'WAITING_RETURN'),
+    waitingInspection: tile('waitingInspection', 0, '/returns', 'inspect'),
+    cancelDisposition: tile('cancelDisposition', 0, '/orders', 'cancel'),
+    inventoryCorrections: tile('inventoryCorrections', 0, '/inventory', 'corrections'),
+  },
+  finance: {
+    receivable: 32650,
+    overdue: 8200,
+    accountCredit: 1500,
+    paymentsThisMonth: 12400,
+    openInvoices: tile('openInvoices', 8, '/invoices', 'open'),
+    topOverdue: [
+      { customerId: 'c1', name: 'Ahmed Traders', amount: 4200, href: '/customers/c1' },
+    ],
+  },
+  manufacturing: {
+    finalCostOrders: 6,
+    finalCostTotal: 48000,
+    incompleteCosting: 2,
+    grossMfgDifference: null,
+  },
+  activity: [
+    { at: '2026-08-05T09:30:00.000Z', label: 'SO-1258 status updated', href: '/sales-orders/so1' },
+    { at: '2026-08-05T10:05:00.000Z', label: 'PO-441 received materials', href: '/purchasing' },
+    { at: '2026-08-05T11:20:00.000Z', label: 'Invoice INV-902 issued', href: '/invoices' },
+  ],
+  generatedAt: '2026-08-05T12:00:00.000Z',
+};
+
+export const managementSummaryEmptyFixture: ManagementSummaryPayload = {
+  ...managementSummarySuccessFixture,
+  attention: [],
+  today: {
+    productionStarting: tile('productionStarting', 0, '/production', ''),
+    productionDue: tile('productionDue', 0, '/production', ''),
+    qualityWaiting: tile('qualityWaiting', 0, '/quality', ''),
+    finishedToday: tile('finishedToday', 0, '/inventory', ''),
+    leavingToday: tile('leavingToday', 0, '/inventory', ''),
+    receivingToday: tile('receivingToday', 0, '/purchasing', ''),
+  },
+  factoryFlow: managementSummarySuccessFixture.factoryFlow.map((p) => ({ ...p, count: 0 })),
+  production: {
+    ...managementSummarySuccessFixture.production,
+    activeOrders: tile('activeOrders', 0, '/production', ''),
+    tasksCompletedToday: tile('tasksCompletedToday', 0, '/production', ''),
+    blocked: tile('blocked', 0, '/production', ''),
+    dueToday: tile('dueToday', 0, '/production', ''),
+    events: [],
+  },
+  blocked: [],
+  outbound: {
+    finishedWaiting: tile('finishedWaiting', 0, '/inventory', ''),
+    leavingToday: tile('leavingToday', 0, '/inventory', ''),
+    overduePickup: tile('overduePickup', 0, '/inventory', ''),
+    shippedAwaitingDealer: tile('shippedAwaitingDealer', 0, '/deliveries', ''),
+  },
+  materials: {
+    needsPurchasing: tile('needsPurchasing', 0, '/purchasing', ''),
+    blockingProduction: tile('blockingProduction', 0, '/purchasing', ''),
+    arrivingToday: tile('arrivingToday', 0, '/purchasing', ''),
+    lateSupplierPos: tile('lateSupplierPos', 0, '/purchasing', ''),
+  },
+  activity: [],
+  finance: {
+    ...managementSummarySuccessFixture.finance!,
+    receivable: 0,
+    overdue: 0,
+    accountCredit: 0,
+    paymentsThisMonth: 0,
+    openInvoices: tile('openInvoices', 0, '/invoices', ''),
+    topOverdue: [],
+  },
 };

@@ -35,11 +35,16 @@ type Props = {
   onStageFocusChange: (next: OrdersStageFocus) => void;
 };
 
-type JourneyKey = OrdersStageKey | 'all';
-
-function stageTint(colors: ThemeColors, key: JourneyKey) {
-  if (key === 'production') {
-    return { tint: colors.brandActive, soft: colors.brandSoft };
+function stageTint(colors: ThemeColors, key: OrdersStageKey): { tint: string; soft: string } {
+  switch (key) {
+    case 'pending':
+      return { tint: colors.brand, soft: colors.brandSoft };
+    case 'production':
+      return { tint: colors.info, soft: colors.infoSoft };
+    case 'ready':
+      return { tint: colors.success, soft: colors.successSoft };
+    default:
+      return { tint: colors.brand, soft: colors.brandSoft };
   }
   return { tint: colors.brand, soft: colors.brandSoft };
 }

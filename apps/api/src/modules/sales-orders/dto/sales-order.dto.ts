@@ -51,6 +51,11 @@ export class ListSalesOrdersDto extends PaginationDto {
 }
 
 export class UpdateSalesOrderDto {
+  @ApiPropertyOptional({ description: 'Factory / system sales-order number (draft only)' })
+  @IsOptional()
+  @IsString()
+  number?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -75,6 +80,21 @@ export class UpdateSalesOrderDto {
   @IsOptional()
   @IsString()
   deliveryAddress?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  endCustomerName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  endCustomerPhone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  endCustomerFax?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

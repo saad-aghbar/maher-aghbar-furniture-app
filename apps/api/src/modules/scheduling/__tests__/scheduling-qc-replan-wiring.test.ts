@@ -133,6 +133,15 @@ function makeQuality() {
     enqueueTargetedReplan: jest.fn().mockResolvedValue(undefined),
     generateForProductionOrder: jest.fn().mockResolvedValue(undefined),
   } as any;
+  const floor = {
+    getFloorContextForOrder: jest.fn(),
+    buildTimeline: jest.fn(),
+    listEligibleReworkStages: jest.fn(),
+    qualityAttentionCards: jest.fn(),
+  } as any;
+  const notifications = {
+    notifyAdminUsers: jest.fn().mockResolvedValue({ ok: true, count: 0 }),
+  } as any;
   const controller = new QualityController(
     prisma,
     sequences,
@@ -140,6 +149,8 @@ function makeQuality() {
     productionInventory,
     rework,
     scheduling,
+    floor,
+    notifications,
   );
   return { controller, prisma, tx, scheduling, pipeline, productionInventory, sequences };
 }

@@ -1,3 +1,8 @@
+/**
+ * @deprecated Do not use for authoring commits. Prefer @maher/workflow-domain.
+ * Still imported by drawers for predecessorsOf/successorsOf helpers and unit tests.
+ * Inspection/sink heal helpers below are dead at runtime (return empty / domain no longer uses them).
+ */
 export type EdgeLike = { fromNodeId: string; toNodeId: string };
 
 /** Incoming predecessor ids for a node. */
@@ -8,6 +13,23 @@ export function predecessorsOf(edges: EdgeLike[], nodeId: string): string[] {
 /** Outgoing successor ids for a node. */
 export function successorsOf(edges: EdgeLike[], nodeId: string): string[] {
   return edges.filter((e) => e.fromNodeId === nodeId).map((e) => e.toNodeId);
+}
+
+/** True if `toId` is reachable from `fromId` following directed edges. */
+export function isReachableFrom(edges: EdgeLike[], fromId: string, toId: string): boolean {
+  if (fromId === toId) return true;
+  const seen = new Set<string>();
+  const stack = [fromId];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const next of successorsOf(edges, cur)) {
+      if (next === toId) return true;
+      if (!seen.has(next)) stack.push(next);
+    }
+  }
+  return false;
 }
 
 /**
@@ -165,10 +187,10 @@ export function resolveSinkId(nodes: NodeSortLike[], edges: EdgeLike[]): string 
 }
 
 /**
- * Empty Leads into:
- * - first/only node, or editing the current sink → stay terminal
- * - runsAfter includes current sink → become the new sink
- * - otherwise auto-wire to the current sink
+ * Empty Leads into for production authoring:
+ * - explicit leadsInto wins
+ * - otherwise insertBeforeNodeId (Inspection) when provided
+ * - never auto-wire to Delivery / Packaging sink
  */
 export function resolveLeadsIntoForSave(args: {
   nodes: NodeSortLike[];
@@ -176,18 +198,64 @@ export function resolveLeadsIntoForSave(args: {
   targetId: string;
   runsAfterIds: string[];
   leadsIntoIds: string[];
+  insertBeforeNodeId?: string | null;
 }): string[] {
-  const { nodes, edges, targetId, runsAfterIds, leadsIntoIds } = args;
+  const { targetId, runsAfterIds, leadsIntoIds, insertBeforeNodeId } = args;
   if (leadsIntoIds.length > 0) return [...leadsIntoIds];
-  if (nodes.length === 0) return [];
 
-  const sinkId = resolveSinkId(nodes, edges);
-  if (!sinkId) return [];
+  if (insertBeforeNodeId && insertBeforeNodeId !== targetId && !runsAfterIds.includes(insertBeforeNodeId)) {
+    return [insertBeforeNodeId];
+  }
 
-  if (targetId === sinkId) return [];
-  if (runsAfterIds.includes(sinkId)) return [];
+  return [];
+}
 
-  return [sinkId];
+/**
+ * Wire production dead-ends into Inspection (never Packaging/Delivery).
+ */
+/**
+ * Drop Packaging / Delivery / Inspection from a predecessor list before PATCHing Inspection.
+ */
+export function sanitizeInspectionPredecessorIds(
+  predIds: string[],
+  codeForId: (id: string) => string,
+): string[] {
+  return predIds.filter((id) => {
+    const code = codeForId(id);
+    return code !== 'PACKAGING' && code !== 'DELIVERY' && code !== 'INSPECTION';
+  });
+}
+
+/**
+ * @deprecated Dead at runtime. Inspection preds come from @maher/workflow-domain frontier REPLACE.
+ */
+export function ensureInspectionFeedPatches(
+  _nodes: Array<NodeSortLike & { stageCode?: string }>,
+  _edges: EdgeLike[],
+  _inspectionId: string,
+  _skipDeadEndCodes: ReadonlySet<string> = new Set(['PACKAGING', 'DELIVERY', 'INSPECTION']),
+): Array<{ nodeId: string; runsAfterNodeIds: string[] }> {
+  return [];
+}
+
+export function ensureSingleSinkPatches(
+  nodes: NodeSortLike[],
+  edges: EdgeLike[],
+  sinkId: string,
+): Array<{ nodeId: string; runsAfterNodeIds: string[] }> {
+  const ids = nodes.map((n) => n.id);
+  if (!ids.includes(sinkId)) return [];
+
+  const deadEnds = findTerminals(edges, ids).filter((id) => id !== sinkId);
+  if (deadEnds.length === 0) return [];
+
+  const currentPreds = predecessorsOf(edges, sinkId);
+  const nextPreds = [...currentPreds];
+  for (const d of deadEnds) {
+    if (!nextPreds.includes(d)) nextPreds.push(d);
+  }
+  if (nextPreds.length === currentPreds.length) return [];
+  return [{ nodeId: sinkId, runsAfterNodeIds: nextPreds }];
 }
 
 export function validRunsAfterCandidates(
@@ -197,6 +265,7 @@ export function validRunsAfterCandidates(
   runsAfterIds: string[],
   leadsIntoIds: string[],
   replaceTarget = false,
+  excludeNodeIds?: ReadonlySet<string>,
 ): string[] {
   const selected = new Set(runsAfterIds);
   const leadSet = new Set(leadsIntoIds);
@@ -205,6 +274,7 @@ export function validRunsAfterCandidates(
   return nodes
     .map((n) => n.id)
     .filter((id) => id !== targetId)
+    .filter((id) => !excludeNodeIds?.has(id))
     .filter((id) => {
       if (selected.has(id)) return true;
       if (leadSet.has(id) && id !== sinkId) return false;
@@ -228,6 +298,7 @@ export function validLeadsIntoCandidates(
   runsAfterIds: string[],
   leadsIntoIds: string[],
   replaceTarget = false,
+  excludeNodeIds?: ReadonlySet<string>,
 ): string[] {
   const predSet = new Set(runsAfterIds);
   const selected = new Set(leadsIntoIds);
@@ -235,6 +306,7 @@ export function validLeadsIntoCandidates(
   return nodes
     .map((n) => n.id)
     .filter((id) => id !== targetId && !predSet.has(id))
+    .filter((id) => !excludeNodeIds?.has(id))
     .filter((id) => {
       if (selected.has(id)) return true;
       return !wouldCreateCycle(edges, targetId, runsAfterIds, [...leadsIntoIds, id], replaceTarget);

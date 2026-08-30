@@ -2,6 +2,8 @@ import { useEffect, useMemo } from 'react';
 import { View, useWindowDimensions } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
+import { classifyDealerLifecycle } from '@maher/types';
 import Animated, {
   FadeInDown,
   interpolate,
@@ -12,6 +14,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { can, type Permission } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
+import { queryKeys } from '@/api/queryKeys';
+import { getOwnDeliveries } from '@/api/modules/scheduling';
+import { listSalesOrders } from '@/api/modules/sales-orders';
+import { deliveryStatusFromCustomerStatus } from '@/features/sales-orders/stageCounts';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
@@ -22,13 +28,23 @@ type PlaceTileDef = {
   icon: keyof typeof Ionicons.glyphMap;
   labelKey: string;
   hintKey: string;
-  href: Href;
+  href: Href | ((ctx: { shippedAwaiting: number }) => Href);
   permission: Permission;
   wide?: boolean;
   tone?: 'paper' | 'ink';
+  badgeCount?: (ctx: { shippedAwaiting: number }) => number | undefined;
+  badgeLabelKey?: string;
 };
 
 const PLACES: PlaceTileDef[] = [
+  {
+    key: 'quotations',
+    icon: 'document-text-outline',
+    labelKey: 'mobile.dealerQuotations.title',
+    hintKey: 'mobile.dealerAccount.placeQuotationsHint',
+    href: '/(app)/(customer)/quotations' as Href,
+    permission: 'quotation.read',
+  },
   {
     key: 'invoices',
     icon: 'receipt-outline',
@@ -37,6 +53,7 @@ const PLACES: PlaceTileDef[] = [
     href: '/(app)/(customer)/invoices' as Href,
     permission: 'invoice.read',
   },
+  // Statement + Deliveries share a row so awaiting-receipt badge sits beside Statement.
   {
     key: 'statement',
     icon: 'wallet-outline',
@@ -44,6 +61,35 @@ const PLACES: PlaceTileDef[] = [
     hintKey: 'mobile.dealerAccount.placeStatementHint',
     href: '/(app)/(customer)/account/statement' as Href,
     permission: 'statement.read',
+  },
+  {
+    key: 'deliveries',
+    icon: 'car-outline',
+    labelKey: 'mobile.dealerAccount.placeDeliveriesTitle',
+    hintKey: 'mobile.dealerAccount.placeDeliveriesHint',
+    href: ({ shippedAwaiting }) =>
+      (shippedAwaiting > 0
+        ? '/(app)/(customer)/(tabs)/orders?chip=shipped'
+        : '/(app)/(customer)/(tabs)/orders?chip=delivered') as Href,
+    permission: 'sales-order.read',
+    badgeCount: ({ shippedAwaiting }) => (shippedAwaiting > 0 ? shippedAwaiting : undefined),
+    badgeLabelKey: 'mobile.dealerAccount.deliveriesAwaitingBadge',
+  },
+  {
+    key: 'payments',
+    icon: 'card-outline',
+    labelKey: 'mobile.account.paymentsTitle',
+    hintKey: 'mobile.dealerAccount.placePaymentsHint',
+    href: '/(app)/(customer)/account/payments' as Href,
+    permission: 'payment.read',
+  },
+  {
+    key: 'returns',
+    icon: 'return-down-back-outline',
+    labelKey: 'mobile.returns.title',
+    hintKey: 'mobile.dealerAccount.placeReturnsHint',
+    href: '/(app)/(customer)/returns' as Href,
+    permission: 'sales-order.read',
   },
   {
     key: 'calendar',
@@ -54,14 +100,6 @@ const PLACES: PlaceTileDef[] = [
     permission: 'schedule.read.own',
     wide: true,
     tone: 'ink',
-  },
-  {
-    key: 'returns',
-    icon: 'return-down-back-outline',
-    labelKey: 'mobile.returns.title',
-    hintKey: 'mobile.dealerAccount.placeReturnsHint',
-    href: '/(app)/(customer)/returns' as Href,
-    permission: 'sales-order.read',
   },
   {
     key: 'notifications',
@@ -90,6 +128,38 @@ export function DealerPlacesDock() {
   const places = useMemo(
     () => PLACES.filter((p) => can(user, p.permission)),
     [user],
+  );
+
+  const deliveriesBadgeQuery = useQuery({
+    queryKey: queryKeys.salesOrders.list({ page: 1, pageSize: 100, dealerPlaces: true }),
+    queryFn: async () => {
+      const [ordersRes, deliveriesRes] = await Promise.all([
+        listSalesOrders({ page: 1, pageSize: 100 }),
+        getOwnDeliveries(),
+      ]);
+      const deliveryBySo = new Map<string, string>();
+      for (const row of deliveriesRes.data ?? []) {
+        const status = deliveryStatusFromCustomerStatus(row.customerStatus);
+        if (status) deliveryBySo.set(row.salesOrderId, status);
+      }
+      let shippedAwaiting = 0;
+      for (const order of ordersRes.data ?? []) {
+        const tab = classifyDealerLifecycle({
+          salesOrderStatus: order.status,
+          deliveryStatus: deliveryBySo.get(order.id) ?? null,
+          productionStarted: order.status === 'IN_PRODUCTION' || order.status === 'READY_FOR_DELIVERY',
+        });
+        if (tab === 'shipped') shippedAwaiting += 1;
+      }
+      return { shippedAwaiting };
+    },
+    enabled: Boolean(user?.customerId) && can(user, 'sales-order.read'),
+    staleTime: 30_000,
+  });
+
+  const badgeCtx = useMemo(
+    () => ({ shippedAwaiting: deliveriesBadgeQuery.data?.shippedAwaiting ?? 0 }),
+    [deliveriesBadgeQuery.data?.shippedAwaiting],
   );
 
   const Shell = reduce ? View : Animated.View;
@@ -134,9 +204,17 @@ export function DealerPlacesDock() {
             place={place}
             index={index}
             width={place.wide ? fullW : halfW}
+            badgeCount={place.badgeCount?.(badgeCtx)}
+            badgeLabel={
+              place.badgeLabelKey && place.badgeCount?.(badgeCtx)
+                ? t(place.badgeLabelKey, { count: place.badgeCount(badgeCtx)! })
+                : undefined
+            }
             onPress={() => {
               void haptics.confirmLight();
-              router.push(place.href);
+              const href =
+                typeof place.href === 'function' ? place.href(badgeCtx) : place.href;
+              router.push(href);
             }}
           />
         ))}
@@ -149,11 +227,15 @@ function PlaceTile({
   place,
   index,
   width,
+  badgeCount,
+  badgeLabel,
   onPress,
 }: {
   place: PlaceTileDef;
   index: number;
   width: number;
+  badgeCount?: number;
+  badgeLabel?: string;
   onPress: () => void;
 }) {
   const { t, isRTL, locale } = useLocale();
@@ -191,7 +273,9 @@ function PlaceTile({
       <AnimatedPressable
         variant="card"
         accessibilityRole="button"
-        accessibilityLabel={t(place.labelKey)}
+        accessibilityLabel={
+          badgeLabel ? `${t(place.labelKey)}. ${badgeLabel}` : t(place.labelKey)
+        }
         onPress={onPress}
         style={{
           minHeight: 112,
@@ -210,6 +294,7 @@ function PlaceTile({
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: theme.spacing.xs,
           }}
         >
           <View
@@ -226,11 +311,38 @@ function PlaceTile({
           >
             <Ionicons name={place.icon} size={20} color={iconTint} />
           </View>
-          <Ionicons
-            name={isRTL ? 'arrow-back' : 'arrow-forward'}
-            size={16}
-            color={muted}
-          />
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              gap: theme.spacing.xs,
+            }}
+          >
+            {badgeCount && badgeCount > 0 ? (
+              <View
+                accessibilityLabel={badgeLabel ?? String(badgeCount)}
+                style={{
+                  borderRadius: 999,
+                  backgroundColor: colors.warning,
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                }}
+              >
+                <AppText
+                  variant="caption"
+                  weight="semibold"
+                  style={{ color: colors.onBrand, fontSize: 10 }}
+                >
+                  {badgeLabel ?? String(badgeCount)}
+                </AppText>
+              </View>
+            ) : null}
+            <Ionicons
+              name={isRTL ? 'arrow-back' : 'arrow-forward'}
+              size={16}
+              color={muted}
+            />
+          </View>
         </View>
         <View style={{ gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
           <AppText variant="label" weight={titleWeight} numberOfLines={1} style={{ color: fg }}>

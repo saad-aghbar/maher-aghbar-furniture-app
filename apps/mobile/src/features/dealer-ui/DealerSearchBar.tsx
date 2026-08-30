@@ -81,6 +81,7 @@ export function DealerSearchBar({
           autoCapitalize={autoCapitalize}
           autoCorrect={autoCorrect}
           returnKeyType={returnKeyType}
+          blurOnSubmit={false}
           style={{
             flex: 1,
             minWidth: 0,

@@ -7,7 +7,6 @@ import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import {
-  acceptQuotation,
   approveQuotation,
   getQuotation,
   openQuotationPdf,
@@ -67,7 +66,7 @@ type Props = {
   }) => void;
 };
 
-type ConfirmKind = 'revise' | 'reject' | 'accept' | null;
+type ConfirmKind = 'revise' | 'reject' | null;
 
 const REVISE_STATUSES = new Set([
   'APPROVED',
@@ -189,7 +188,6 @@ export function AdminQuotationDetailScreen({
   const canUpdate = can(user, 'quotation.update');
   const canApprove = can(user, 'quotation.approve');
   const canSend = can(user, 'quotation.send');
-  const canAccept = can(user, 'quotation.accept');
   const canReject = can(user, 'quotation.reject');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
@@ -312,28 +310,6 @@ export function AdminQuotationDetailScreen({
     onError: (err) => actionError(err, t('mobile.adminQuotation.actionFailed')),
   });
 
-  const acceptMutation = useMutation({
-    mutationFn: () => acceptQuotation(quotationId),
-    onSuccess: (accepted) => {
-      void haptics.confirmMedium();
-      showToast({ variant: 'success', message: t('mobile.adminQuotation.accepted') });
-      setConfirm(null);
-      invalidate();
-      const so = accepted.salesOrders?.[0];
-      if (so && onAccepted) {
-        onAccepted(so);
-        return;
-      }
-      if (so) {
-        router.replace(`/(app)/(admin)/orders/${so.id}` as never);
-      }
-    },
-    onError: (err) => {
-      setConfirm(null);
-      actionError(err, t('mobile.adminQuotation.actionFailed'));
-    },
-  });
-
   const rejectMutation = useMutation({
     mutationFn: () => rejectQuotation(quotationId),
     onSuccess: () => {
@@ -372,7 +348,6 @@ export function AdminQuotationDetailScreen({
     submitMutation.isPending ||
     approveMutation.isPending ||
     sendMutation.isPending ||
-    acceptMutation.isPending ||
     rejectMutation.isPending ||
     reviseMutation.isPending;
 
@@ -470,9 +445,8 @@ export function AdminQuotationDetailScreen({
   const showSubmit = canUpdate && status === 'DRAFT';
   const showApprove = canApprove && status === 'INTERNAL_REVIEW';
   const showSend = canSend && status === 'APPROVED';
-  const showAcceptBtn = canAccept && status === 'SENT';
   const showRejectBtn =
-    canReject && ['INTERNAL_REVIEW', 'SENT', 'APPROVED'].includes(status);
+    canReject && ['INTERNAL_REVIEW', 'APPROVED'].includes(status);
   const linkedSalesOrder = detail.salesOrders?.[0];
   const paymentTermsShown = isDraft && canUpdate ? null : presentableText(detail.paymentTerms);
   const deliveryTermsShown = isDraft && canUpdate ? null : presentableText(detail.deliveryTerms);
@@ -494,7 +468,7 @@ export function AdminQuotationDetailScreen({
             }}
           >
             <AppText variant="caption" color="secondary">
-              {t('mobile.adminQuotation.pendingApproval')}: {detail.pendingApproverRole}
+              {t('mobile.adminQuotation.pendingApproval')}
             </AppText>
           </View>
         ) : null}
@@ -600,46 +574,6 @@ export function AdminQuotationDetailScreen({
               </View>
             ) : null}
 
-            {(detail.approvalChain?.length ?? 0) > 0 ? (
-              <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
-                <AppText variant="caption" color="muted">
-                  {t('mobile.adminQuotation.approvalChain')}
-                </AppText>
-                <View
-                  style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    flexWrap: 'wrap',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  {detail.approvalChain!.map((role) => {
-                    const done = detail.completedApprovalSteps?.includes(role);
-                    return (
-                      <View
-                        key={role}
-                        style={{
-                          flexDirection: isRTL ? 'row-reverse' : 'row',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        <AppText
-                          variant="label"
-                          weight="medium"
-                          style={{ color: done ? colors.success : colors.textSecondary }}
-                        >
-                          {done ? '✓' : '○'}
-                        </AppText>
-                        <AppText variant="label" weight="medium" numberOfLines={1}>
-                          {role}
-                        </AppText>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
-
             {(detail.subtotal != null || taxValue > 0) && (
               <View
                 style={{
@@ -731,13 +665,7 @@ export function AdminQuotationDetailScreen({
               ) : null}
               {showApprove ? (
                 <PrimaryButton
-                  label={
-                    detail.pendingApproverRole
-                      ? t('mobile.adminQuotation.approveAs', {
-                          role: detail.pendingApproverRole,
-                        })
-                      : t('mobile.adminQuotation.approve')
-                  }
+                  label={t('mobile.adminQuotation.approve')}
                   onPress={() => approveMutation.mutate()}
                   loading={approveMutation.isPending}
                   disabled={workflowBusy}
@@ -749,14 +677,6 @@ export function AdminQuotationDetailScreen({
                   label={t('mobile.adminQuotation.send')}
                   onPress={() => sendMutation.mutate()}
                   loading={sendMutation.isPending}
-                  disabled={workflowBusy}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {showAcceptBtn ? (
-                <PrimaryButton
-                  label={t('mobile.adminQuotation.accept')}
-                  onPress={() => setConfirm('accept')}
                   disabled={workflowBusy}
                   style={{ alignSelf: 'stretch', width: '100%' }}
                 />
@@ -966,15 +886,6 @@ export function AdminQuotationDetailScreen({
         cancelLabel={t('mobile.adminQuotation.cancel')}
         destructive
         onConfirm={() => rejectMutation.mutate()}
-      />
-      <ConfirmationSheet
-        open={confirm === 'accept'}
-        onClose={() => setConfirm(null)}
-        title={t('mobile.adminQuotation.accept')}
-        message={t('mobile.adminQuotation.acceptConfirm')}
-        confirmLabel={t('mobile.adminQuotation.accept')}
-        cancelLabel={t('mobile.adminQuotation.cancel')}
-        onConfirm={() => acceptMutation.mutate()}
       />
     </>
   );

@@ -1,15 +1,28 @@
 'use client';
 
+import { OrderLifecycleStepper } from '@/components/order-lifecycle-stepper';
 import { BackButton } from '@/components/back-button';
 import { DealerOrderDetails } from '@/components/dealer-order-details';
 import { ProductionScheduleCard } from '@/components/production-schedule-card';
 import { DealerOrderWorkflowGraph } from '@/components/dealer-order-workflow-graph';
 import { apiFetch, API_URL } from '@/lib/api-client';
-import { Card, MotionSection, Skeleton, StatusBadge, cn, Ltr } from '@maher/ui';
-import { useQuery } from '@tanstack/react-query';
-import { Armchair } from 'lucide-react';
-import { useLocale, useTranslations } from 'next-intl';
-import { useMemo } from 'react';
+import {
+  isConfirmReceiptVisible,
+  mapConfirmReceiptErrorCode,
+} from '@/lib/dealer-order-ui';
+import {
+  Button,
+  Card,
+  Ltr,
+  Modal,
+  MotionSection,
+  Skeleton,
+  StatusBadge,
+} from '@maher/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Armchair, Truck } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
 
 interface CustomerRequestItem {
   id: string;
@@ -108,15 +121,36 @@ function mediaSrc(url: string | null | undefined): string | null {
 }
 
 export default function OrderTrackingPage({ params }: { params: { id: string } }) {
-  const locale = useLocale();
   const t = useTranslations('sales');
   const tCommon = useTranslations('common');
   const tc = useTranslations('catalog');
-  const td = useTranslations('production.dealerDelivery');
+  const tl = useTranslations('lifecycle');
+  const [confirmDeliveryId, setConfirmDeliveryId] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['order', params.id],
     queryFn: () => apiFetch<OrderDetail>(`/api/v1/sales-orders/${params.id}`),
+  });
+
+  const queryClient = useQueryClient();
+  const confirmReceiptMutation = useMutation({
+    mutationFn: (deliveryId: string) =>
+      apiFetch(`/api/v1/deliveries/${deliveryId}/confirm-receipt`, { method: 'POST' }),
+    onSuccess: async () => {
+      setConfirmDeliveryId(null);
+      setConfirmError(null);
+      await queryClient.invalidateQueries({ queryKey: ['order', params.id] });
+      await queryClient.invalidateQueries({ queryKey: ['customer-own-deliveries'] });
+      await queryClient.invalidateQueries({ queryKey: ['customer-orders'] });
+    },
+    onError: (err: unknown) => {
+      const code =
+        err && typeof err === 'object' && 'body' in err
+          ? (err as { body?: { code?: string } }).body?.code
+          : undefined;
+      setConfirmError(tl(mapConfirmReceiptErrorCode(code)));
+    },
   });
 
   const docs = data?.customerRequest?.documents ?? [];
@@ -196,10 +230,28 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
   const items = req?.items?.length ? req.items : data.orderedItems ?? [];
   const pos = data.productionOrders ?? [];
   const progress = data.progressPercent ?? null;
+  const deliveries = data.deliveries ?? [];
+  const outForDelivery = deliveries.filter((d) => isConfirmReceiptVisible(d.status));
+  const confirmDelivery = outForDelivery.find((d) => d.id === confirmDeliveryId);
+  const primaryDeliveryStatus =
+    deliveries.find((d) => d.status === 'OUT_FOR_DELIVERY')?.status ??
+    deliveries.find((d) => d.status === 'DELIVERED')?.status ??
+    deliveries[0]?.status ??
+    null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <BackButton fallbackHref="/orders" />
+
+      <OrderLifecycleStepper
+        salesOrderStatus={data.status}
+        deliveryStatus={primaryDeliveryStatus}
+        productionOrders={pos.map((po) => ({
+          status: po.status,
+          currentStageCode: po.currentStageCode,
+          progressPercent: po.progressPercent,
+        }))}
+      />
 
       <MotionSection className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
         <div className="relative bg-[var(--maher-surface-muted)]">
@@ -258,12 +310,46 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
           </div>
           {(data.requiredDeliveryDate || req?.requiredDeliveryDate) && (
             <p className="text-sm text-text-secondary">
-              {td('requested')}:{' '}
+              {tl('timelineReady')}:{' '}
               <Ltr>{(data.requiredDeliveryDate ?? req?.requiredDeliveryDate)?.slice(0, 10)}</Ltr>
             </p>
           )}
         </div>
       </MotionSection>
+
+      {outForDelivery.length > 0 ? (
+        <MotionSection delayMs={50}>
+          <div className="overflow-hidden rounded-2xl border border-[var(--maher-warning)]/35 bg-[var(--maher-warning-soft)] shadow-sm">
+            <div className="flex flex-wrap items-start gap-4 p-4 sm:p-5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--maher-warning)]/15 text-[var(--maher-warning)]">
+                <Truck className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-2">
+                <div>
+                  <h2 className="text-lg font-semibold text-text-primary">{tl('shipped')}</h2>
+                  <p className="mt-1 text-sm text-text-secondary">{tl('shippedHero')}</p>
+                  <p className="text-xs text-text-tertiary">{tl('shippedAwaitingConfirm')}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {outForDelivery.map((d) => (
+                    <Button
+                      key={d.id}
+                      size="sm"
+                      onClick={() => {
+                        setConfirmError(null);
+                        setConfirmDeliveryId(d.id);
+                      }}
+                      disabled={confirmReceiptMutation.isPending}
+                    >
+                      {tl('confirmReceived')}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </MotionSection>
+      ) : null}
 
       <MotionSection delayMs={60}>
         <DealerOrderDetails
@@ -433,11 +519,11 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
 
       <MotionSection delayMs={180}>
       <Card title={t('deliveryStatus')} className="maher-form-section">
-        {(data.deliveries ?? []).length === 0 ? (
+        {deliveries.length === 0 ? (
           <p className="text-sm text-text-secondary">{tCommon('none')}</p>
         ) : (
           <ul className="maher-stagger space-y-3">
-            {data.deliveries!.map((d) => (
+            {deliveries.map((d) => (
               <li key={d.id} className="maher-list-card rounded-lg border border-border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium">
@@ -445,12 +531,84 @@ export default function OrderTrackingPage({ params }: { params: { id: string } }
                   </p>
                   <StatusBadge status={d.status} />
                 </div>
+                {d.deliveryDate ? (
+                  <p className="mt-1 text-xs text-text-secondary">
+                    {d.status === 'DELIVERED' ? tl('deliveredOn', { date: d.deliveryDate.slice(0, 10) }) : tl('shippedOn', { date: d.deliveryDate.slice(0, 10) })}
+                  </p>
+                ) : null}
+                {d.status === 'DELIVERED' ? (
+                  <p className="mt-1 text-xs text-success">{tl('receiptConfirmed')}</p>
+                ) : null}
               </li>
             ))}
           </ul>
         )}
       </Card>
       </MotionSection>
+
+      <Modal
+        open={Boolean(confirmDeliveryId)}
+        onClose={() => {
+          if (confirmReceiptMutation.isPending) return;
+          setConfirmDeliveryId(null);
+          setConfirmError(null);
+        }}
+        title={tl('confirmReceiptTitle')}
+        description={tl('confirmReceiptBody')}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setConfirmDeliveryId(null);
+                setConfirmError(null);
+              }}
+              disabled={confirmReceiptMutation.isPending}
+            >
+              {tCommon('cancel')}
+            </Button>
+            <Button
+              onClick={() => {
+                if (confirmDeliveryId) confirmReceiptMutation.mutate(confirmDeliveryId);
+              }}
+              disabled={confirmReceiptMutation.isPending}
+            >
+              {tl('confirmReceived')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex gap-3 rounded-xl border border-border bg-[var(--maher-surface-muted)] p-3">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface">
+              {heroImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={heroImage} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <Armchair className="h-6 w-6 text-text-tertiary" aria-hidden />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-text-tertiary">
+                <Ltr>{data.number}</Ltr>
+              </p>
+              <p className="font-semibold text-text-primary">{data.title || data.number}</p>
+              {items[0]?.quantity != null ? (
+                <p className="mt-1 text-xs text-text-secondary">×{String(items[0].quantity)}</p>
+              ) : null}
+              {confirmDelivery ? (
+                <p className="mt-1 text-xs text-text-secondary">
+                  <Ltr>{confirmDelivery.number}</Ltr>
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {confirmError ? <p className="text-sm text-danger">{confirmError}</p> : null}
+          {confirmReceiptMutation.isSuccess ? (
+            <p className="text-sm text-success">{tl('confirmReceiptSuccess')}</p>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   );
 }

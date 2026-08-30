@@ -91,6 +91,38 @@ export function assessWipLotsReady(
   return true;
 }
 
+/** Kit statuses that count as available for a consuming stage. */
+export type WipKitReadinessRow = {
+  stageInstanceId: string | null;
+  status: string;
+  nextSnapshotNodeIds?: unknown;
+};
+
+export function assessWipKitsReady(
+  nodes: Array<WipSnapshotNode & { id?: string; stageInstanceId?: string | null }>,
+  kits: WipKitReadinessRow[],
+): boolean {
+  const consumers = nodes.filter((n) => n.consumesSemiFinished && !n.isSkipped);
+  if (!consumers.length) return true;
+
+  const producers = nodes.filter(
+    (n) => !n.isSkipped && n.inventoryTracking === 'PRODUCES_SEMI_FINISHED',
+  );
+  if (!producers.length) return true;
+
+  for (const producer of producers) {
+    const stageInstanceId = producer.stageInstanceId;
+    if (!stageInstanceId) continue;
+    const kit = kits.find((k) => k.stageInstanceId === stageInstanceId);
+    if (!kit) continue; // lot-based path may still apply
+    if (kit.status === 'OPEN' || kit.status === 'CANCELLED') return false;
+    if (kit.status !== 'READY' && kit.status !== 'CLAIMED' && kit.status !== 'CONSUMED') {
+      return false;
+    }
+  }
+  return true;
+}
+
 export type ApplyWipDepsResult = {
   stages: PlannerStageInput[];
   unknownWip: boolean;

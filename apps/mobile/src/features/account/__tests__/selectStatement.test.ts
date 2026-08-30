@@ -25,9 +25,24 @@ describe('selectStatementSummary', () => {
   it('formats outstanding and empty state', () => {
     const summary = selectStatementSummary(emptyStmt);
     expect(summary.outstandingLabel).toBe('250.50 ILS');
+    expect(summary.amountDueLabel).toBe('250.50 ILS');
+    expect(summary.availableCreditLabel).toBe('0.00 ILS');
     expect(summary.isEmpty).toBe(true);
     expect(summary.customerLabel).toBe('Acme');
     expect(summary.paidRatio).toBeCloseTo(0.7495, 3);
+  });
+
+  it('prefers amountDue and availableCredit from API', () => {
+    const summary = selectStatementSummary({
+      ...emptyStmt,
+      amountDue: 1200,
+      availableCredit: 350.25,
+      openingBalance: '50',
+    });
+    expect(summary.amountDue).toBe(1200);
+    expect(summary.availableCredit).toBe(350.25);
+    expect(summary.hasOpening).toBe(true);
+    expect(summary.openingLabel).toBe('50.00 ILS');
   });
 
   it('counts entries and payments', () => {

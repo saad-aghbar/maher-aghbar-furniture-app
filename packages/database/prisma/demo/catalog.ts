@@ -1,6 +1,5 @@
 import {
   InventoryItemClass,
-  InventoryTracking,
   Prisma,
   PrismaClient,
   type InventoryCategory,
@@ -8,6 +7,7 @@ import {
 } from '@prisma/client';
 import { money } from '../seed/util';
 import { assignRandomProductPhotos } from '../seed/productPhotoPool';
+import { materialPhotoUrl } from './material-photo-pool';
 import {
   measurementsToPrisma,
   standardMeasurementsForProduct,
@@ -16,6 +16,7 @@ import { seedProductEstimates } from '../seed/product-estimates';
 import { STANDARD_FURNITURE_WORKFLOW_CODE } from '../seed/workflow';
 import { createRng } from '../seed/util';
 import type { DealerRef } from './people';
+import { ensureFurnitureInventoryRecipes } from './inventory-lifecycle';
 import {
   WF_ARMCHAIR,
   WF_OTTOMAN,
@@ -499,43 +500,6 @@ const COLORS = [
   { code: 'CLR-TEAK', nameEn: 'Teak', nameAr: 'تيك', hex: '#B8860B' },
 ];
 
-async function upsertOutput(
-  prisma: PrismaClient,
-  args: {
-    productId: string;
-    nodeId: string;
-    stageDefinitionId: string;
-    itemClass: InventoryItemClass;
-    tracking: InventoryTracking;
-    consumesRaw: boolean;
-    consumesSemi: boolean;
-    nameEn: string;
-    nameAr: string;
-    nameHe: string;
-    inventoryItemId: string | null;
-    warehouseId: string | null;
-  },
-) {
-  await prisma.productStageInventoryOutput.create({
-    data: {
-      productId: args.productId,
-      workflowNodeId: args.nodeId,
-      stageDefinitionId: args.stageDefinitionId,
-      itemClass: args.itemClass,
-      inventoryTracking: args.tracking,
-      consumesRawMaterials: args.consumesRaw,
-      consumesSemiFinished: args.consumesSemi,
-      outputNameEn: args.nameEn,
-      outputNameAr: args.nameAr,
-      outputNameHe: args.nameHe,
-      outputQtyPerUnit: 1,
-      unit: 'pcs',
-      defaultWarehouseId: args.warehouseId,
-      inventoryItemId: args.inventoryItemId,
-    },
-  });
-}
-
 export async function seedDemoCatalog(prisma: PrismaClient, dealers: DealerRef[]) {
   const rng = createRng(20260816);
   const catByCode: Record<string, string> = {};
@@ -585,6 +549,8 @@ export async function seedDemoCatalog(prisma: PrismaClient, dealers: DealerRef[]
         reorderQty: m.reorder,
         isPurchasable: true,
         materialId: material.id,
+        imageUrl: materialPhotoUrl(m.sku),
+        qrCode: m.sku,
       },
     });
     materials.push({
@@ -663,95 +629,89 @@ export async function seedDemoCatalog(prisma: PrismaClient, dealers: DealerRef[]
   const estimates = await seedProductEstimates(prisma, products);
   console.log(`  estimates: ${estimates.profiles} profiles · ${estimates.estimates} stage rows`);
 
-  const sofa = products.find((p) => p.sku === 'SOF-3S-STD');
-  const standard = wfByCode.get(STANDARD_FURNITURE_WORKFLOW_CODE);
-  if (sofa && standard?.activeVersionId) {
-    const nodes = await prisma.productionWorkflowNode.findMany({
-      where: { workflowVersionId: standard.activeVersionId },
-      include: { stageDefinition: true },
-    });
-    const byCode = new Map(nodes.map((n) => [n.stageDefinition.code, n]));
-    const semiWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'SEMI' } });
-    const finWh = await prisma.warehouse.findUniqueOrThrow({ where: { code: 'FIN' } });
-    const carpentry = byCode.get('CARPENTRY');
-    const packaging = byCode.get('PACKAGING');
-    const materialPrep = byCode.get('MATERIAL_PREP');
-    if (materialPrep) {
-      await upsertOutput(prisma, {
-        productId: sofa.id,
-        nodeId: materialPrep.id,
-        stageDefinitionId: materialPrep.stageDefinitionId,
-        itemClass: InventoryItemClass.RAW_MATERIAL,
-        tracking: InventoryTracking.NONE,
-        consumesRaw: true,
-        consumesSemi: false,
-        nameEn: 'Materials',
-        nameAr: 'مواد',
-        nameHe: 'חומרים',
-        inventoryItemId: null,
-        warehouseId: null,
-      });
-    }
-    if (carpentry) {
-      const frame = await prisma.inventoryItem.create({
-        data: {
-          sku: 'SOF-3S-STD-FRAME',
-          nameEn: '3-Seater Sofa Standard Frame',
-          nameAr: 'هيكل كنبة ثلاثية قياسية',
-          nameHe: 'שלדת ספה סטנדרטית',
-          category: 'SEMI_FINISHED',
-          itemClass: InventoryItemClass.SEMI_FINISHED_GOOD,
-          unit: 'pcs',
-          isPurchasable: false,
-          productId: sofa.id,
-        },
-      });
-      await upsertOutput(prisma, {
-        productId: sofa.id,
-        nodeId: carpentry.id,
-        stageDefinitionId: carpentry.stageDefinitionId,
-        itemClass: InventoryItemClass.SEMI_FINISHED_GOOD,
-        tracking: InventoryTracking.PRODUCES_SEMI_FINISHED,
-        consumesRaw: false,
-        consumesSemi: false,
-        nameEn: frame.nameEn,
-        nameAr: frame.nameAr,
-        nameHe: frame.nameHe ?? 'שלדת ספה סטנדרטית',
-        inventoryItemId: frame.id,
-        warehouseId: semiWh.id,
-      });
-    }
-    if (packaging) {
-      const fg = await prisma.inventoryItem.create({
-        data: {
-          sku: 'SOF-3S-STD-FG',
-          nameEn: '3-Seater Sofa Standard FG',
-          nameAr: 'كنبة ثلاثية قياسية جاهزة',
-          nameHe: 'ספה סטנדרטית מוגמרת',
-          category: 'FINISHED',
-          itemClass: InventoryItemClass.FINISHED_GOOD,
-          unit: 'pcs',
-          isPurchasable: false,
-          productId: sofa.id,
-        },
-      });
-      await upsertOutput(prisma, {
-        productId: sofa.id,
-        nodeId: packaging.id,
-        stageDefinitionId: packaging.stageDefinitionId,
-        itemClass: InventoryItemClass.FINISHED_GOOD,
-        tracking: InventoryTracking.PRODUCES_FINISHED,
-        consumesRaw: false,
-        consumesSemi: true,
-        nameEn: fg.nameEn,
-        nameAr: fg.nameAr,
-        nameHe: fg.nameHe ?? 'ספה סטנדרטית מוגמרת',
-        inventoryItemId: fg.id,
-        warehouseId: finWh.id,
-      });
-    }
-  }
+  await ensureFurnitureInventoryRecipes(prisma, products);
+
+  await seedStageMaterialMaps(prisma, products);
 
   console.log(`  catalog: ${products.length} products · ${materials.length} raw SKUs`);
   return { products, materials };
+}
+
+function stageCodeForRawSku(sku: string, codes: Set<string>): string | null {
+  const has = (code: string) => (codes.has(code) ? code : null);
+  if (sku.startsWith('MAT-FOAM') || sku === 'MAT-DACRON') {
+    return has('FOAM') ?? has('UPHOLSTERY');
+  }
+  if (
+    sku.startsWith('MAT-VEL') ||
+    sku.startsWith('MAT-LIN') ||
+    sku.startsWith('MAT-BOU') ||
+    sku.startsWith('MAT-LEA') ||
+    sku.startsWith('MAT-CHE') ||
+    sku === 'MAT-ITAL-VEL' ||
+    sku === 'MAT-ZIP' ||
+    sku === 'MAT-BUTTON' ||
+    sku === 'MAT-THREAD' ||
+    sku === 'MAT-SPRAY-ADH'
+  ) {
+    return has('UPHOLSTERY');
+  }
+  if (sku === 'MAT-LACQ' || sku.startsWith('MAT-STAIN') || sku === 'MAT-PRIMER' || sku === 'MAT-WHT-PAINT') {
+    return has('PAINTING') ?? has('CARPENTRY');
+  }
+  if (sku.startsWith('MAT-FOIL') || sku === 'MAT-CARTON' || sku === 'MAT-CORNER' || sku === 'MAT-STRAP') {
+    return has('PACKAGING');
+  }
+  if (sku.startsWith('MAT-HW') || sku === 'MAT-SPRING' || sku === 'MAT-MECH-RECL' || sku === 'MAT-CASTER') {
+    return has('ASSEMBLY') ?? has('CARPENTRY');
+  }
+  if (sku === 'MAT-GLUE' || sku.startsWith('MAT-BEECH') || sku.startsWith('MAT-OAK') || sku.startsWith('MAT-PLY') || sku.startsWith('MAT-MDF') || sku.startsWith('MAT-WALNUT') || sku.startsWith('MAT-PINE') || sku.startsWith('MAT-TEAK') || sku.startsWith('MAT-BIRCH') || sku === 'MAT-EDGE' || sku === 'MAT-DOWEL') {
+    return has('CARPENTRY');
+  }
+  return has('CARPENTRY');
+}
+
+async function seedStageMaterialMaps(prisma: PrismaClient, products: ProductRef[]) {
+  const items = await prisma.inventoryItem.findMany({
+    where: { archivedAt: null },
+    select: { id: true, sku: true, unit: true },
+  });
+  const itemBySku = new Map(items.map((i) => [i.sku, i]));
+  const workflows = await prisma.productionWorkflow.findMany({
+    where: { archivedAt: null },
+    select: { code: true, activeVersionId: true },
+  });
+  const wfByCode = new Map(workflows.map((w) => [w.code, w]));
+  let count = 0;
+  for (const product of products) {
+    const wf = wfByCode.get(product.workflowCode);
+    if (!wf?.activeVersionId) continue;
+    const nodes = await prisma.productionWorkflowNode.findMany({
+      where: { workflowVersionId: wf.activeVersionId },
+      include: { stageDefinition: { select: { code: true, id: true } } },
+    });
+    const nodeByCode = new Map(nodes.map((n) => [n.stageDefinition.code, n]));
+    const codes = new Set(nodeByCode.keys());
+    await prisma.productStageMaterialInput.deleteMany({ where: { productId: product.id } });
+    for (const line of product.bom) {
+      const item = itemBySku.get(line.sku);
+      if (!item) continue;
+      const stageCode = stageCodeForRawSku(line.sku, codes);
+      const node = stageCode ? nodeByCode.get(stageCode) : undefined;
+      if (!node) continue;
+      await prisma.productStageMaterialInput.create({
+        data: {
+          productId: product.id,
+          workflowNodeId: node.id,
+          stageDefinitionId: node.stageDefinitionId,
+          inventoryItemId: item.id,
+          qtyPerUnit: line.qty,
+          unit: item.unit,
+          required: true,
+        },
+      });
+      count += 1;
+    }
+  }
+  console.log(`  stage-material maps: ${count} SKU→stage rows`);
 }

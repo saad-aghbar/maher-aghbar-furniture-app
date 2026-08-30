@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { Href } from 'expo-router';
-import { Image, ScrollView, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Image, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -24,16 +23,26 @@ import { haptics } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { ReturnPhotoGallery } from './components/ReturnPhotoGallery';
-import { useResolveReturnMutation, useReturnQuery, useSetReturnFateMutation } from './query';
+import { useResolveReturnMutation, useReturnQuery } from './query';
 import {
-  RETURN_FATE_OPTIONS,
-  returnFateLabelKey,
+  returnLifecycleBadgeStatus,
+  returnNextActionKey,
+  returnPhysicalLabelKey,
   selectReturnCard,
 } from './selectReturn';
 
-type Props = { returnId: string };
+type Props = {
+  returnId: string;
+  /** Dealer surface: human lifecycle, need-info note, no admin resolve actions. */
+  dealerFacing?: boolean;
+  backFallback?: Href;
+};
 
-export function ReturnDetailScreen({ returnId }: Props) {
+export function ReturnDetailScreen({
+  returnId,
+  dealerFacing = false,
+  backFallback,
+}: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -41,9 +50,13 @@ export function ReturnDetailScreen({ returnId }: Props) {
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const canRead = can(user, 'sales-order.read');
-  const canResolve = can(user, 'sales-order.update');
+  const canResolve = !dealerFacing && can(user, 'sales-order.update');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const backFallback = '/(app)/(admin)/returns' as Href;
+  const resolvedBack =
+    backFallback ??
+    ((dealerFacing
+      ? '/(app)/(customer)/returns'
+      : '/(app)/(admin)/returns') as Href);
 
   const [confirm, setConfirm] = useState<'APPROVED' | 'REJECTED' | null>(null);
   const [dispositionOpen, setDispositionOpen] = useState(false);
@@ -58,7 +71,7 @@ export function ReturnDetailScreen({ returnId }: Props) {
 
   if (!canRead) {
     return (
-      <AppScreen backFallback={backFallback}>
+      <AppScreen backFallback={resolvedBack}>
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -66,7 +79,7 @@ export function ReturnDetailScreen({ returnId }: Props) {
 
   if (query.isError && !query.data) {
     return (
-      <AppScreen backFallback={backFallback}>
+      <AppScreen backFallback={resolvedBack}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.returns.errorTitle')}
@@ -81,22 +94,55 @@ export function ReturnDetailScreen({ returnId }: Props) {
   const row = query.data;
   if (!row) {
     return (
-      <AppScreen backFallback={backFallback}>
-        <AppText>{t('mobile.returns.loading')}</AppText>
+      <AppScreen backFallback={resolvedBack}>
+        {showOfflineBanner ? <OfflineBanner /> : null}
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: theme.spacing.md,
+            paddingVertical: theme.spacing['3xl'],
+          }}
+        >
+          <ActivityIndicator color={colors.brand} />
+          <AppText variant="caption" color="muted">
+            {t('mobile.returns.loading')}
+          </AppText>
+        </View>
       </AppScreen>
     );
   }
 
   const card = selectReturnCard(row, locale);
+  const lifecycleLabel = (() => {
+    const v = t(card.lifecycleLabelKey);
+    return v === card.lifecycleLabelKey
+      ? card.lifecyclePhase.replace(/_/g, ' ')
+      : v;
+  })();
   const reasonLabel = (() => {
     const fromCatalog = t(card.reasonLabelKey);
     if (fromCatalog && fromCatalog !== card.reasonLabelKey) return fromCatalog;
     return t(`mobile.returns.reasons.${card.reason}`);
   })();
   const productUri = resolveOrderMediaUri(card.productImageUrl);
+  const badgeStatus = returnLifecycleBadgeStatus(card.lifecyclePhase);
+  const badgeLabel = lifecycleLabel;
+  const nextAction = t(
+    returnNextActionKey(card.lifecyclePhase, {
+      dealerFacing,
+      needsInfo: card.needsInfo,
+    }),
+  );
+  const physicalRaw = t(returnPhysicalLabelKey(card.physicalStatus));
+  const physicalLabel =
+    physicalRaw === returnPhysicalLabelKey(card.physicalStatus)
+      ? card.physicalStatus.replace(/_/g, ' ')
+      : physicalRaw;
 
   return (
-    <AppScreen backFallback={backFallback}>
+    <AppScreen backFallback={resolvedBack}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
         style={{ flex: 1 }}
@@ -129,15 +175,7 @@ export function ReturnDetailScreen({ returnId }: Props) {
               borderBottomColor: colors.border,
             }}
           >
-            <StatusBadge
-              status={card.approvalStatus}
-              label={
-                card.beingResolved
-                  ? label('mobile.returns.beingResolved', 'Being resolved')
-                  : undefined
-              }
-              dot
-            />
+            <StatusBadge status={badgeStatus} label={badgeLabel} dot />
             <AppText
               variant="caption"
               color="muted"
@@ -193,63 +231,102 @@ export function ReturnDetailScreen({ returnId }: Props) {
               >
                 {card.productDesc}
               </AppText>
-              <AppText
-                variant="caption"
-                color="secondary"
-                numberOfLines={1}
-                style={{ textAlign: isRTL ? 'right' : 'left' }}
-              >
-                {card.dealerName}
-              </AppText>
+              {!dealerFacing ? (
+                <AppText
+                  variant="caption"
+                  color="secondary"
+                  numberOfLines={1}
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {card.dealerName}
+                </AppText>
+              ) : (
+                <AppText
+                  variant="caption"
+                  color="secondary"
+                  numberOfLines={1}
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {lifecycleLabel}
+                </AppText>
+              )}
             </View>
           </View>
         </View>
 
-        {canResolve && card.beingResolved ? (
-          <FloorBoard>
-            <View
+        {dealerFacing && card.needsInfo && card.needInfoNote ? (
+          <View
+            style={{
+              borderRadius: theme.radius.xl,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
+              backgroundColor: colors.surfaceSecondary,
+              padding: theme.spacing.lg,
+              gap: theme.spacing.sm,
+              ...orderBoardShadow(colorScheme),
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight="semibold"
               style={{
-                paddingHorizontal: theme.spacing.md,
-                paddingTop: theme.spacing.md,
-                paddingBottom: theme.spacing.sm,
+                color: colors.brand,
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                letterSpacing: 0.5,
+                fontSize: 11,
+                textAlign: isRTL ? 'right' : 'left',
               }}
             >
-              <AppText
-                variant="caption"
-                weight="semibold"
-                style={{
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                  letterSpacing: 0.55,
-                  fontSize: 11,
-                  color: colors.brand,
-                  textAlign: isRTL ? 'right' : 'left',
-                }}
-              >
-                {label('mobile.returns.nextAction', 'Next action')}
-              </AppText>
-            </View>
-            <View
+              {t('mobile.returns.needInfoTitle')}
+            </AppText>
+            <AppText
+              variant="body"
               style={{
-                paddingHorizontal: theme.spacing.md,
-                paddingBottom: theme.spacing.md,
+                textAlign: isRTL ? 'right' : 'left',
+                lineHeight: 22,
+                color: colors.textPrimary,
               }}
             >
-              <PrimaryButton
-                label={label(
-                  'mobile.returns.receiveDisposition',
-                  'Receive / set disposition',
-                )}
-                onPress={() => setDispositionOpen(true)}
-                loading={fateMutation.isPending}
-                style={{
-                  borderRadius: theme.radius.xl,
-                  alignSelf: 'stretch',
-                  width: '100%',
-                }}
-              />
-            </View>
-          </FloorBoard>
+              {card.needInfoNote}
+            </AppText>
+          </View>
         ) : null}
+
+        <View
+          style={{
+            borderRadius: theme.radius.xl,
+            borderWidth: 1,
+            borderColor: colors.brand,
+            backgroundColor: colors.brandSoft,
+            padding: theme.spacing.lg,
+            gap: theme.spacing.sm,
+            ...orderBoardShadow(colorScheme),
+          }}
+        >
+          <AppText
+            variant="caption"
+            weight="semibold"
+            style={{
+              color: colors.brand,
+              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: 0.5,
+              fontSize: 11,
+              textAlign: isRTL ? 'right' : 'left',
+            }}
+          >
+            {label('mobile.returns.nextAction', 'Next action')}
+          </AppText>
+          <AppText
+            variant="body"
+            weight={titleWeight}
+            style={{
+              textAlign: isRTL ? 'right' : 'left',
+              color: colors.textPrimary,
+            }}
+          >
+            {nextAction}
+          </AppText>
+        </View>
 
         {productUri ? (
           <View
@@ -325,6 +402,16 @@ export function ReturnDetailScreen({ returnId }: Props) {
               ltr
               isRTL={isRTL}
             />
+            <FactChip
+              label={label('mobile.returns.physicalState', 'Physical')}
+              value={physicalLabel}
+              isRTL={isRTL}
+            />
+            <FactChip
+              label={label('mobile.returns.resolutionState', 'Resolution')}
+              value={lifecycleLabel}
+              isRTL={isRTL}
+            />
             {card.salesOrderNumber ? (
               <FactChip
                 label={label('mobile.returns.order', 'Order')}
@@ -335,7 +422,11 @@ export function ReturnDetailScreen({ returnId }: Props) {
             ) : null}
             {card.dealerOrderNumber ? (
               <FactChip
-                label={label('sales.dealerOrderNumber', 'Dealer order #')}
+                label={
+                  dealerFacing
+                    ? t('mobile.dealerAccount.yourOrderNumber')
+                    : label('sales.dealerOrderNumber', 'Dealer order #')
+                }
                 value={card.dealerOrderNumber}
                 ltr
                 isRTL={isRTL}
@@ -415,68 +506,44 @@ export function ReturnDetailScreen({ returnId }: Props) {
         ) : null}
       </ScrollView>
 
-      <ConfirmationSheet
-        open={Boolean(confirm)}
-        onClose={() => setConfirm(null)}
-        title={
-          confirm === 'APPROVED'
-            ? t('mobile.returns.approve')
-            : t('mobile.returns.reject')
-        }
-        message={
-          confirm === 'APPROVED'
-            ? t('mobile.returns.approveConfirm')
-            : t('mobile.returns.rejectConfirm')
-        }
-        confirmLabel={t('mobile.returns.confirm')}
-        cancelLabel={t('mobile.returns.cancel')}
-        destructive={confirm === 'REJECTED'}
-        onConfirm={() => {
-          if (!confirm) return;
-          resolveMutation.mutate(confirm, {
-            onSuccess: () => {
-              void haptics.confirmMedium();
-              showToast({ variant: 'success', message: t('mobile.returns.resolveSuccess') });
-            },
-            onError: () => {
-              void haptics.error();
-              showToast({ variant: 'error', message: t('mobile.returns.resolveFailed') });
-            },
-          });
-        }}
-      />
-
-      <ActionSheet
-        open={dispositionOpen}
-        onClose={() => setDispositionOpen(false)}
-        title={label('mobile.returns.dispositionTitle', 'Set disposition')}
-        cancelLabel={t('mobile.returns.cancel')}
-        actions={RETURN_FATE_OPTIONS.map((fate) => {
-          const key = returnFateLabelKey(fate);
-          const translated = t(key);
-          return {
-            label: translated === key ? fate.replace(/_/g, ' ') : translated,
-            onPress: () => {
-              fateMutation.mutate(fate, {
-                onSuccess: () => {
-                  void haptics.confirmMedium();
-                  showToast({
-                    variant: 'success',
-                    message: t('inventory.fateApplied'),
-                  });
-                },
-                onError: () => {
-                  void haptics.error();
-                  showToast({
-                    variant: 'error',
-                    message: t('mobile.returns.resolveFailed'),
-                  });
-                },
-              });
-            },
-          };
-        })}
-      />
+      {canResolve ? (
+        <ConfirmationSheet
+          open={Boolean(confirm)}
+          onClose={() => setConfirm(null)}
+          title={
+            confirm === 'APPROVED'
+              ? t('mobile.returns.approve')
+              : t('mobile.returns.reject')
+          }
+          message={
+            confirm === 'APPROVED'
+              ? t('mobile.returns.approveConfirm')
+              : t('mobile.returns.rejectConfirm')
+          }
+          confirmLabel={t('mobile.returns.confirm')}
+          cancelLabel={t('mobile.returns.cancel')}
+          destructive={confirm === 'REJECTED'}
+          onConfirm={() => {
+            if (!confirm) return;
+            resolveMutation.mutate(confirm, {
+              onSuccess: () => {
+                void haptics.confirmMedium();
+                showToast({
+                  variant: 'success',
+                  message: t('mobile.returns.resolveSuccess'),
+                });
+              },
+              onError: () => {
+                void haptics.error();
+                showToast({
+                  variant: 'error',
+                  message: t('mobile.returns.resolveFailed'),
+                });
+              },
+            });
+          }}
+        />
+      ) : null}
     </AppScreen>
   );
 }

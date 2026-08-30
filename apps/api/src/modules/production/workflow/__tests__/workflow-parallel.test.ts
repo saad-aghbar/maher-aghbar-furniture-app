@@ -26,6 +26,7 @@ function node(id: string, code: string, opts?: Partial<CompilerNode>): CompilerN
 describe('parallel + merge readiness topology', () => {
   it('Foam and Painting both depend on Carpentry; Upholstery waits for both', () => {
     const compiled = compileWorkflow({
+      enforceTerminalChain: false,
       nodes: [
         node('c', 'CARPENTRY'),
         node('f', 'FOAM'),
@@ -48,6 +49,7 @@ describe('parallel + merge readiness topology', () => {
 
   it('skipping optional painting leaves Foam → Upholstery', () => {
     const compiled = compileWorkflow({
+      enforceTerminalChain: false,
       nodes: [
         node('c', 'CARPENTRY'),
         node('f', 'FOAM'),
@@ -73,6 +75,7 @@ describe('parallel + merge readiness topology', () => {
 describe('snapshot versioning semantics (compile isolation)', () => {
   it('v1 compile stays A→B→C independent of a later v2 topology', () => {
     const v1 = compileWorkflow({
+      enforceTerminalChain: false,
       nodes: [node('a', 'A'), node('b', 'B'), node('c', 'C')],
       edges: [
         { fromNodeId: 'a', toNodeId: 'b' },
@@ -80,6 +83,7 @@ describe('snapshot versioning semantics (compile isolation)', () => {
       ],
     });
     const v2 = compileWorkflow({
+      enforceTerminalChain: false,
       nodes: [node('a', 'A'), node('b', 'B'), node('d', 'D'), node('c', 'C')],
       edges: [
         { fromNodeId: 'a', toNodeId: 'b' },

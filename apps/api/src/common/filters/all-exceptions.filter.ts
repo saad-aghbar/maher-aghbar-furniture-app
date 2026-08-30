@@ -18,6 +18,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let code = 'INTERNAL_ERROR';
     let message = 'An unexpected error occurred.';
     let fieldErrors: Record<string, string[]> = {};
+    let runId: string | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -37,6 +38,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         if (obj.fieldErrors && typeof obj.fieldErrors === 'object') {
           fieldErrors = obj.fieldErrors as Record<string, string[]>;
         }
+        if (typeof obj.runId === 'string' && obj.runId.length > 0) {
+          runId = obj.runId;
+        }
       }
     }
 
@@ -51,6 +55,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message,
         fieldErrors,
         requestId: request.requestId ?? null,
+        ...(runId ? { runId } : {}),
       },
     });
   }

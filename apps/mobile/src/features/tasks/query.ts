@@ -107,6 +107,8 @@ export function useCompleteTaskMutation(taskId: string) {
       notes?: string;
       photoDocumentIds?: string[];
       idempotencyKey?: string;
+      confirmedPackageLabels?: string[];
+      packagingProblem?: boolean;
     }) => completeTask(taskId, body ?? {}),
     onSuccess: () => invalidateTaskQueries(qc, taskId),
   });

@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { Image, ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Defs, LinearGradient as SvgGradient, Rect, Stop } from 'react-native-svg';
 import Animated, {
   Easing,
   interpolate,
@@ -92,22 +91,7 @@ function UpcomingQueueTicket({ task, index }: TicketProps) {
               accessibilityIgnoresInvertColors
             />
           ) : (
-            <View style={{ flex: 1 }}>
-              <Svg width="100%" height="100%" preserveAspectRatio="none">
-                <Defs>
-                  <SvgGradient id={`queueTicketFallback-${task.id}`} x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0%" stopColor="#2C2724" stopOpacity="1" />
-                    <Stop offset="100%" stopColor={CHARCOAL} stopOpacity="1" />
-                  </SvgGradient>
-                </Defs>
-                <Rect
-                  x="0"
-                  y="0"
-                  width="100%"
-                  height="100%"
-                  fill={`url(#queueTicketFallback-${task.id})`}
-                />
-              </Svg>
+            <View style={{ flex: 1, backgroundColor: CHARCOAL }}>
               <View
                 pointerEvents="none"
                 style={{
@@ -135,22 +119,9 @@ function UpcomingQueueTicket({ task, index }: TicketProps) {
             pointerEvents="none"
             style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
           >
-            <Svg width="100%" height="100%" preserveAspectRatio="none">
-              <Defs>
-                <SvgGradient id={`queueTicketScrim-${task.id}`} x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0%" stopColor={CHARCOAL} stopOpacity="0" />
-                  <Stop offset="55%" stopColor={CHARCOAL} stopOpacity="0.15" />
-                  <Stop offset="100%" stopColor={CHARCOAL} stopOpacity="0.72" />
-                </SvgGradient>
-              </Defs>
-              <Rect
-                x="0"
-                y="0"
-                width="100%"
-                height="100%"
-                fill={`url(#queueTicketScrim-${task.id})`}
-              />
-            </Svg>
+            <View style={{ flex: 1 }} />
+            <View style={{ height: '45%', backgroundColor: 'rgba(20,18,16,0.15)' }} />
+            <View style={{ height: '28%', backgroundColor: 'rgba(20,18,16,0.72)' }} />
           </View>
 
           <View

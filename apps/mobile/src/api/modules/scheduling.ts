@@ -541,6 +541,8 @@ export type ScheduleOrderCard = {
   priority?: string | null;
   plannedStart?: string | null;
   plannedEnd?: string | null;
+  /** Factory-local YMDs with working-minute overlap. Gaps inside min–max are omitted. */
+  occupiedDates?: string[] | null;
   status?: string | null;
   promiseState?: string | null;
   materialRisk?: boolean | null;
@@ -634,17 +636,41 @@ export async function deleteCalendarException(dateYmd: string): Promise<Calendar
 export type ReplanRunStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
 
 export type ReplanRunResult = {
-  capacityDelta?: 'increase' | 'decrease' | 'none';
+  capacityDelta?: 'increase' | 'decrease' | 'none' | 'sync' | 'optimize';
+  mode?: 'preview' | 'apply';
+  outcome?: 'UP_TO_DATE' | 'CHANGED' | 'PARTIAL' | 'FAILED';
+  scannedOrders?: number;
+  alreadyValid?: number;
+  generated?: number;
   considered?: number;
   candidateOrders?: number;
   replannedOrders?: number;
+  replanned?: number;
+  pastDueRescheduled?: number;
   moved?: number;
+  wouldMove?: number;
   movedEarlier?: number;
   movedLater?: number;
   unchanged?: number;
   recoveredAtRisk?: number;
   atRiskResolved?: number;
+  atRiskRecovered?: number;
   stillNeedsAttention?: number;
+  blocked?: number;
+  blockedItems?: Array<{ productionOrderId: string; number: string; blockerKind?: string | null }>;
+  emptyDays?: Array<{ ymd: string; cause?: string | null; causeKey?: string | null }>;
+  previewMoves?: Array<{
+    productionOrderId: string;
+    number?: string | null;
+    daysEarlier?: number;
+    daysFinishedBeforeDelivery?: number | null;
+  }>;
+  manualAttention?: number;
+  manualAttentionItems?: Array<{ productionOrderId: string; number: string }>;
+  conflictsResolved?: number;
+  remainingConflicts?: number;
+  newConflictCount?: number;
+  newConflictsIntroduced?: number;
   pinnedIssueCount?: number;
   pinnedIssues?: Array<{ productionOrderId: string; allocationId: string; orderNumber: string; ymd: string }>;
   failures?: Array<{ productionOrderId: string; message: string }>;
@@ -662,6 +688,41 @@ export async function getReplanRun(id: string): Promise<ReplanRun> {
   return apiGet<ReplanRun>(`/scheduling/replan-runs/${encodeURIComponent(id)}`, {
     timeoutMs: 15_000,
   });
+}
+
+export type ManualSyncEnqueueResult = {
+  replanQueued: boolean;
+  replanJobId: string;
+  alreadyInProgress: boolean;
+  status?: ReplanRunStatus | string;
+};
+
+/** Admin factory reconciliation — repair only stale/invalid/unscheduled/at-risk work. */
+export async function postFactorySync(): Promise<ManualSyncEnqueueResult> {
+  return apiPost<ManualSyncEnqueueResult>('/scheduling/sync', {}, { timeoutMs: 30_000 });
+}
+
+export async function getLatestManualSyncRun(): Promise<ReplanRun | null> {
+  const run = await apiGet<ReplanRun | null>('/scheduling/replan-runs/latest', {
+    timeoutMs: 15_000,
+  });
+  return run ?? null;
+}
+
+/** Admin capacity optimize — fill idle days without changing dealer dates. */
+export async function postCapacityOptimizePreview(): Promise<ManualSyncEnqueueResult> {
+  return apiPost<ManualSyncEnqueueResult>('/scheduling/optimize/preview', {}, { timeoutMs: 30_000 });
+}
+
+export async function postCapacityOptimizeApply(): Promise<ManualSyncEnqueueResult> {
+  return apiPost<ManualSyncEnqueueResult>('/scheduling/optimize/apply', {}, { timeoutMs: 30_000 });
+}
+
+export async function getLatestCapacityOptimizeRun(): Promise<ReplanRun | null> {
+  const run = await apiGet<ReplanRun | null>('/scheduling/replan-runs/latest-optimize', {
+    timeoutMs: 15_000,
+  });
+  return run ?? null;
 }
 
 export type QuantityScalingMode =

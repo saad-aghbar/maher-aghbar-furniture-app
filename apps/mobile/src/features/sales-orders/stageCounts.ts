@@ -1,42 +1,94 @@
+import { classifyDealerLifecycle, type DealerLifecycleTab } from '@maher/types';
 import type { StatusChipKey } from './components/OrdersFilterChips';
 
-export type OrdersStageKey = 'pending' | 'production' | 'ready';
+export type OrdersStageKey = 'pending' | 'production' | 'ready' | 'shipped';
 
 export type OrdersStageFocus = OrdersStageKey | 'all';
 
-export type OrderClassifyResult = OrdersStageKey | 'delivered' | 'drafts';
+export type OrderClassifyResult =
+  | OrdersStageKey
+  | 'delivered'
+  | 'drafts'
+  | 'waiting'
+  | 'needsInformation';
 
-const PENDING = new Set([
-  'CONFIRMED',
-  'WAITING_FOR_PAYMENT',
-  'WAITING_FOR_MATERIALS',
-  'ON_HOLD',
-  'READY_FOR_PRODUCTION',
-  'PENDING',
-  'PENDING_APPROVAL',
+const RFQ_ONLY_STATUSES = new Set([
   'SUBMITTED',
-  'OPEN',
+  'UNDER_REVIEW',
+  'NEEDS_INFORMATION',
+  'READY_FOR_QUOTATION',
+  'QUOTED',
 ]);
-
-const PRODUCTION = new Set(['IN_PRODUCTION', 'IN_PROGRESS', 'QUALITY_CHECK']);
-
-const READY = new Set(['READY_FOR_DELIVERY', 'READY', 'OUT_FOR_DELIVERY']);
-
-const DONE = new Set(['DELIVERED', 'COMPLETED', 'INVOICED', 'CANCELLED', 'VOID']);
 
 export type StageCountable = {
   status: string;
   deliveryDate?: string | null;
+  deliveryStatus?: string | null;
+  productionStarted?: boolean;
+  /** Hub rows: rfq vs sales order */
+  kind?: 'rfq' | 'order' | string | null;
 };
 
+/** Map own-deliveries customerStatus to deliveryStatus for lifecycle classification. */
+export function deliveryStatusFromCustomerStatus(
+  customerStatus?: string | null,
+): string | null {
+  if (!customerStatus) return null;
+  const s = customerStatus.toUpperCase();
+  if (s === 'OUT_FOR_DELIVERY') return 'OUT_FOR_DELIVERY';
+  if (s === 'DELIVERED') return 'DELIVERED';
+  if (s === 'READY_FOR_DELIVERY') return 'READY';
+  if (s === 'PLANNED' || s === 'CONFIRMED_ON_TRACK') return 'PLANNED';
+  return null;
+}
+
+function isRfqRow(item: StageCountable): boolean {
+  if (item.kind === 'rfq') return true;
+  if (item.kind === 'order') return false;
+  // DRAFT is shared with SalesOrder — only treat as RFQ when explicitly tagged.
+  return RFQ_ONLY_STATUSES.has(item.status.toUpperCase());
+}
+
+function lifecycleToChip(lifecycle: DealerLifecycleTab): OrderClassifyResult {
+  switch (lifecycle) {
+    case 'draft':
+      return 'drafts';
+    case 'waiting':
+      return 'waiting';
+    case 'needsInformation':
+      return 'needsInformation';
+    case 'pending':
+      return 'pending';
+    case 'inProduction':
+      return 'production';
+    case 'ready':
+      return 'ready';
+    case 'shipped':
+      return 'shipped';
+    case 'delivered':
+      return 'delivered';
+    default:
+      return 'pending';
+  }
+}
+
 export function classifyOrderStage(item: StageCountable): OrderClassifyResult {
-  const status = item.status.toUpperCase();
-  if (status === 'DRAFT') return 'drafts';
-  if (READY.has(status)) return 'ready';
-  if (PRODUCTION.has(status)) return 'production';
-  if (PENDING.has(status)) return 'pending';
-  if (DONE.has(status)) return 'delivered';
-  return 'pending';
+  if (isRfqRow(item)) {
+    return lifecycleToChip(
+      classifyDealerLifecycle({
+        requestStatus: item.status,
+        isDraft: item.status.toUpperCase() === 'DRAFT',
+      }),
+    );
+  }
+  return lifecycleToChip(
+    classifyDealerLifecycle({
+      salesOrderStatus: item.status,
+      deliveryStatus: item.deliveryStatus,
+      productionStarted: item.productionStarted,
+      productionSetupRequired: item.status.toUpperCase() === 'DRAFT',
+    }),
+  );
 }
 
 export function countOrderStages(items: StageCountable[]): Record<OrdersStageKey, number> {
@@ -44,18 +96,27 @@ export function countOrderStages(items: StageCountable[]): Record<OrdersStageKey
     pending: 0,
     production: 0,
     ready: 0,
+    shipped: 0,
   };
   for (const item of items) {
     const stage = classifyOrderStage(item);
-    if (stage === 'delivered' || stage === 'drafts') continue;
-    counts[stage] += 1;
+    if (
+      stage === 'delivered' ||
+      stage === 'drafts' ||
+      stage === 'waiting' ||
+      stage === 'needsInformation'
+    ) {
+      continue;
+    }
+    if (stage in counts) counts[stage as OrdersStageKey] += 1;
   }
   return counts;
 }
 
-/** Dealer focus rail buckets — includes drafts, delivered + total. */
 export type DealerFocusCounts = Record<OrdersStageKey, number> & {
   drafts: number;
+  waiting: number;
+  needsInformation: number;
   delivered: number;
   total: number;
 };
@@ -63,20 +124,22 @@ export type DealerFocusCounts = Record<OrdersStageKey, number> & {
 export function countDealerFocusBuckets(items: StageCountable[]): DealerFocusCounts {
   const counts: DealerFocusCounts = {
     drafts: 0,
+    waiting: 0,
+    needsInformation: 0,
     pending: 0,
     production: 0,
     ready: 0,
+    shipped: 0,
     delivered: 0,
     total: items.length,
   };
   for (const item of items) {
     const stage = classifyOrderStage(item);
-    counts[stage] += 1;
+    if (stage in counts) counts[stage as keyof DealerFocusCounts] += 1;
   }
   return counts;
 }
 
-/** Client-side lane/spine filter — keeps full counts + avoids refetch thrash. */
 export function matchesStageFocus(item: StageCountable, focus: OrdersStageFocus): boolean {
   if (focus === 'all') return true;
   return classifyOrderStage(item) === focus;
@@ -90,7 +153,6 @@ export function filterByStageFocus<T extends StageCountable>(
   return items.filter((item) => matchesStageFocus(item, focus));
 }
 
-/** Toggle: tap active stage again → all. */
 export function toggleStageFocus(
   current: OrdersStageFocus,
   next: OrdersStageKey,
@@ -98,23 +160,22 @@ export function toggleStageFocus(
   return current === next ? 'all' : next;
 }
 
-/** Empty journey cells show 0, never a dash. */
-export { honestJourneyCount as formatJourneyCount } from './honestJourneyCount';
-
-/** Map spine tap → status filter (same vocabulary as ON THE LINE). */
 export function stageKeyToChip(stage: OrdersStageKey): StatusChipKey {
   return stage;
 }
 
-/** Map status filter → spine focus (delivered/drafts clear the lane). */
 export function chipToStageFocus(chip: StatusChipKey): OrdersStageFocus {
-  if (chip === 'pending' || chip === 'production' || chip === 'ready') {
+  if (
+    chip === 'pending' ||
+    chip === 'production' ||
+    chip === 'ready' ||
+    chip === 'shipped'
+  ) {
     return chip;
   }
   return 'all';
 }
 
-/** Same classification as ON THE LINE — filter status and spine stay aligned. */
 export function matchesStatusChip(item: StageCountable, chip: StatusChipKey): boolean {
   if (chip === 'all') return true;
   return classifyOrderStage(item) === chip;

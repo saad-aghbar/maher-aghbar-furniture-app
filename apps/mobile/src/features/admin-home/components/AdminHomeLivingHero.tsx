@@ -5,14 +5,12 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   Easing,
   FadeIn,
-  FadeInDown,
   interpolate,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
   withRepeat,
   withSequence,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { BrandMark } from '@/components/BrandMark';
@@ -20,7 +18,7 @@ import { AppText } from '@/components/AppText';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
-import { CountUp, haptics, useReducedMotion } from '@/motion';
+import { CountUp, haptics, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { useAtelierScrollY } from '../AtelierScrollContext';
 
@@ -82,8 +80,14 @@ export function AdminHomeLivingHero({
       -1,
       false,
     );
-    stamp.value = withDelay(40, withSpring(1, { damping: 24, stiffness: 140 }));
-    whisper.value = withDelay(380, withSpring(1, { damping: 26, stiffness: 120 }));
+    stamp.value = withDelay(
+      40,
+      withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) }),
+    );
+    whisper.value = withDelay(
+      280,
+      withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) }),
+    );
     if (showAttention && attention > 0) {
       pulse.value = withRepeat(
         withSequence(
@@ -134,16 +138,15 @@ export function AdminHomeLivingHero({
   const stampStyle = useAnimatedStyle(() => ({
     opacity: stamp.value,
     transform: [
-      { scale: interpolate(stamp.value, [0, 1], [1.08, 1]) },
-      { rotate: `${interpolate(stamp.value, [0, 1], [-4, 0])}deg` },
+      { scale: interpolate(stamp.value, [0, 1], [1.02, 1]) },
+      { rotate: `${interpolate(stamp.value, [0, 1], [-1.5, 0])}deg` },
     ],
   }));
 
   const whisperStyle = useAnimatedStyle(() => ({
     opacity: whisper.value,
     transform: [
-      { translateY: interpolate(whisper.value, [0, 1], [8, 0]) },
-      { scale: interpolate(whisper.value, [0, 1], [0.98, 1]) },
+      { translateY: interpolate(whisper.value, [0, 1], [4, 0]) },
     ],
   }));
 
@@ -165,8 +168,8 @@ export function AdminHomeLivingHero({
     <Animated.View
       style={[
         {
-          // Match simulator rhythm: room under the welcome, no minHeight empty band.
-          marginBottom: theme.spacing['2xl'],
+          // Tight under welcome so search sits close to the tagline.
+          marginBottom: theme.spacing.sm,
           marginHorizontal: -theme.spacing.lg,
         },
         heroParallax,
@@ -307,7 +310,7 @@ export function AdminHomeLivingHero({
             </AppText>
           </Animated.View>
 
-          <Animated.View entering={reduce ? undefined : FadeInDown.delay(160).duration(420).damping(22)}>
+          <Animated.View entering={reduce ? undefined : softFadeDown(60)}>
             <AppText
               variant="largeTitle"
               style={{
@@ -322,7 +325,7 @@ export function AdminHomeLivingHero({
             </AppText>
           </Animated.View>
 
-          <Animated.View entering={reduce ? undefined : FadeInDown.delay(220).duration(420).damping(22)}>
+          <Animated.View entering={reduce ? undefined : softFadeDown(100)}>
             <AppText
               variant="largeTitle"
               numberOfLines={2}
@@ -339,7 +342,7 @@ export function AdminHomeLivingHero({
           </Animated.View>
 
           <Animated.View
-            entering={reduce ? undefined : FadeInDown.delay(300).duration(420).damping(22)}
+            entering={reduce ? undefined : softFadeDown(140)}
             style={{ marginTop: theme.spacing.xs }}
           >
             <AppText

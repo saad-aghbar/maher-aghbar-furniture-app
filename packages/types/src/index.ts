@@ -61,6 +61,11 @@ export interface AuthUser {
   rolesDetailed?: AuthRoleDetail[];
   /** Permission codes from `@maher/permissions` (e.g. `catalog.read`). */
   permissions: string[];
+  /**
+   * Active floor stage skill codes (e.g. CARPENTRY, DELIVERY).
+   * Used to switch worker surfaces (tasks vs delivery load sheet).
+   */
+  stageSkillCodes?: string[];
   preferredLanguage: Locale;
   customerId?: string;
 }
@@ -73,13 +78,15 @@ export type RfqStatus = 'OPEN' | 'SUBMITTED' | 'QUOTED' | 'CLOSED' | 'CANCELLED'
 
 export type QuotationStatus =
   | 'DRAFT'
-  | 'PENDING_APPROVAL'
+  | 'INTERNAL_REVIEW'
   | 'APPROVED'
   | 'SENT'
+  | 'VIEWED'
   | 'ACCEPTED'
-  | 'CONVERTED'
   | 'REJECTED'
-  | 'EXPIRED';
+  | 'REVISION_REQUESTED'
+  | 'EXPIRED'
+  | 'CANCELLED';
 
 export type SalesOrderStatus =
   | 'CONFIRMED'
@@ -164,3 +171,57 @@ export type {
 } from './workflow-graph';
 
 export { isWorkflowGraphAdminDTO } from './workflow-graph';
+
+export {
+  inventoryScanPayload,
+  parseWipScanCode,
+  printableScanCode,
+  WIP_KIT_QR_PREFIX,
+  WIP_PIECE_QR_PREFIX,
+  wipKitScanPayload,
+  wipPieceScanPayload,
+} from './scan-code';
+
+export {
+  OPENING_STAGE_CODE,
+  LOCKED_ANCHOR_STAGE_CODES,
+  TERMINAL_STAGE_CODES,
+  classifyDealerLifecycle,
+  dealerLifecycleLabelKey,
+  isConfirmReceiptVisible,
+  isLockedAnchorStageCode,
+  isLogisticsStage,
+  isOpeningStageCode,
+  isTerminalStageCode,
+  mapConfirmReceiptErrorCode,
+  type DealerLifecycleInput,
+  type DealerLifecycleTab,
+  type LockedAnchorStageCode,
+  type OpeningStageCode,
+  type TerminalStageCode,
+} from './dealer-lifecycle';
+
+export {
+  classifyManufacturingComplexity,
+  manufacturingComplexityDisplayKey,
+  buildOrderLineSpecSnapshot,
+  normalizeOrderMeasurements,
+  buildCatalogDiff,
+  type ManufacturingComplexityCode,
+  type CatalogDimRef,
+  type OrderLineClassifyInput,
+  type OrderLineSpecSnapshot,
+  type OrderMeasurement,
+  type CatalogDiffRow,
+} from './manufacturing-complexity';
+
+export {
+  mapOrderPresentation,
+  orderPresentationLabelKey,
+  requestStatusesForGroup,
+  appendReviewHistory,
+  type OrderPresentationKey,
+  type OrderPresentationInput,
+  type RequestStatusGroup,
+  type ReviewHistoryEntry,
+} from './order-presentation';

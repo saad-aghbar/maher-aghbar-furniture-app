@@ -60,6 +60,7 @@ export type UserListFilters = PageParams & {
   roleKind?: string;
   staffTypeId?: string;
   departmentId?: string;
+  stageDefinitionId?: string;
 };
 
 export type CreateUserInput = {

@@ -4,6 +4,7 @@ import {
   BomMaterialPicker,
   type PickedMaterial,
 } from '@/components/admin/bom-material-picker';
+import { InventoryItemThumb } from '@/components/admin/inventory-item-thumb';
 import { localizedName } from '@maher/i18n';
 import { Button, Input } from '@maher/ui';
 import { Plus, RefreshCw, Trash2 } from 'lucide-react';
@@ -20,6 +21,7 @@ export type MaterialsListRow = {
   unit: string;
   quantity: string;
   unitPrice: string;
+  imageUrl?: string | null;
 };
 
 type Props = {
@@ -92,6 +94,7 @@ export function MaterialsListEditor({ rows, onChange, variant = 'order' }: Props
       unit: mat.unit?.trim() || 'pcs',
       quantity: '1',
       unitPrice: String(Number(mat.standardCost ?? 0) || 0),
+      imageUrl: mat.imageUrl ?? null,
     };
 
     if (replaceIndex == null) {
@@ -161,7 +164,9 @@ export function MaterialsListEditor({ rows, onChange, variant = 'order' }: Props
                   removingKey === row.key ? ' maher-materials-row--out' : ''
                 }`}
               >
-                <div className="min-w-0">
+                <div className="flex min-w-0 items-start gap-3">
+                  <InventoryItemThumb src={row.imageUrl} alt={displayName} size={40} />
+                  <div className="min-w-0">
                   <p className="mb-1 text-xs text-[var(--maher-text-secondary)]">
                     {t('material')}
                   </p>
@@ -180,6 +185,7 @@ export function MaterialsListEditor({ rows, onChange, variant = 'order' }: Props
                     <RefreshCw className="bom-change-btn__icon" aria-hidden />
                     {t('changeMaterial')}
                   </button>
+                  </div>
                 </div>
 
                 <Input

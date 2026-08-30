@@ -9,7 +9,7 @@ export class LoginDto {
   @MinLength(2)
   username!: string;
 
-  @ApiProperty({ minLength: 1, example: '123' })
+  @ApiProperty({ minLength: 1, example: 'your-password' })
   @IsString()
   @MinLength(1)
   password!: string;
@@ -34,7 +34,7 @@ export class MobileLoginDto {
   @MinLength(2)
   username!: string;
 
-  @ApiProperty({ minLength: 1, example: '123' })
+  @ApiProperty({ minLength: 1, example: 'your-password' })
   @IsString()
   @MinLength(1)
   password!: string;

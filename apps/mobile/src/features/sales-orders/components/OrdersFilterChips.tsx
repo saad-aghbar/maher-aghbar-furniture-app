@@ -5,6 +5,7 @@ import Animated, {
   interpolateColor,
   useAnimatedStyle,
 } from 'react-native-reanimated';
+import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { localeRow, useLocale } from '@/i18n';
 import { useDraggablePillBar, useReducedMotion } from '@/motion';
@@ -13,22 +14,41 @@ import { useTheme } from '@/theme';
 export type StatusChipKey =
   | 'all'
   | 'drafts'
+  | 'waiting'
+  | 'needsInformation'
   | 'pending'
   | 'production'
   | 'ready'
+  | 'shipped'
   | 'delivered';
 
 type OrdersFilterChipsProps = {
   value: StatusChipKey;
   onChange: (value: StatusChipKey) => void;
+  /** Override visible chips — dealer lifecycle uses a shorter set. */
+  chips?: StatusChipKey[];
 };
+
+export const DEALER_LIFECYCLE_CHIPS: StatusChipKey[] = [
+  'all',
+  'drafts',
+  'waiting',
+  'needsInformation',
+  'production',
+  'ready',
+  'shipped',
+  'delivered',
+];
 
 const CHIPS: StatusChipKey[] = [
   'all',
   'drafts',
+  'waiting',
+  'needsInformation',
   'pending',
   'production',
   'ready',
+  'shipped',
   'delivered',
 ];
 
@@ -41,20 +61,117 @@ const CHIP_GAP = 2;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
+const FILL_LIGHT = [
+  '#F3EEE5',
+  '#EEE8E0',
+  '#EEEAE4',
+  '#F2E8E4',
+  '#E9EBE3',
+  '#F0E6DC',
+  '#E8EEEA',
+  '#EDE8E2',
+  '#F1E9E4',
+] as const;
+const BORDER_LIGHT = [
+  '#8F7A58',
+  '#7A6B52',
+  '#6E6254',
+  '#7A4538',
+  '#5A6348',
+  '#8A5A40',
+  '#4A6B58',
+  '#7A6A50',
+  '#6B5A48',
+] as const;
+const FILL_DARK = [
+  'rgba(168,144,108,0.18)',
+  'rgba(168,148,120,0.20)',
+  'rgba(181,164,140,0.20)',
+  'rgba(196,137,122,0.18)',
+  'rgba(154,170,122,0.18)',
+  'rgba(196,150,110,0.20)',
+  'rgba(122,170,148,0.18)',
+  'rgba(168,148,120,0.18)',
+  'rgba(181,150,130,0.18)',
+] as const;
+const BORDER_DARK = [
+  '#A8906C',
+  '#A89878',
+  '#B5A48C',
+  '#C4897A',
+  '#9AAA7A',
+  '#C49A72',
+  '#7AAA94',
+  '#A8906C',
+  '#B5A48C',
+] as const;
+
 type ChipLayout = { x: number; width: number };
+
+function chipIcon(chip: StatusChipKey): keyof typeof Ionicons.glyphMap {
+  switch (chip) {
+    case 'production':
+      return 'construct-outline';
+    case 'ready':
+      return 'cube-outline';
+    case 'shipped':
+      return 'car-outline';
+    case 'delivered':
+      return 'checkmark-done-outline';
+    case 'drafts':
+      return 'document-outline';
+    case 'waiting':
+      return 'hourglass-outline';
+    case 'needsInformation':
+      return 'alert-circle-outline';
+    case 'pending':
+      return 'time-outline';
+    default:
+      return 'list-outline';
+  }
+}
 
 function accentFor(
   colors: { textPrimary: string; textSecondary: string },
   focused: boolean,
 ): string {
-  return focused ? colors.textPrimary : colors.textSecondary;
+  if (!focused) return colors.textSecondary;
+  if (chip === 'drafts') return colors.brand;
+  if (chip === 'waiting') return colors.info;
+  if (chip === 'needsInformation') return colors.warning;
+  if (chip === 'pending') return colors.warning;
+  if (chip === 'production') return colors.info;
+  if (chip === 'ready') return colors.brand;
+  if (chip === 'shipped') return colors.warning;
+  if (chip === 'delivered') return colors.success;
+  return colors.brand;
 }
 
-/**
- * Status filter bar — text-hugging Fabric bubble, scrolls when labels need room.
- * Tap to select, or press-and-hold then drag to scrub.
- */
-export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
+/** Human phase labels — lifecycle-first for commercial-safe dealer chips. */
+function dealerChipLabel(
+  chip: StatusChipKey,
+  t: (key: string) => string,
+): string {
+  const lifecycleKey: Partial<Record<StatusChipKey, string>> = {
+    all: 'lifecycle.tabs.all',
+    drafts: 'lifecycle.tabs.draft',
+    waiting: 'lifecycle.tabs.waiting',
+    needsInformation: 'lifecycle.tabs.needsInformation',
+    pending: 'lifecycle.tabs.pending',
+    production: 'lifecycle.tabs.inProduction',
+    ready: 'lifecycle.readyForDelivery',
+    shipped: 'lifecycle.shipped',
+    delivered: 'lifecycle.tabs.delivered',
+  };
+  const key = lifecycleKey[chip];
+  if (key) {
+    const v = t(key);
+    if (!v.startsWith('lifecycle.')) return v;
+  }
+  return t(`mobile.orders.chips.${chip}`);
+}
+
+export function OrdersFilterChips({ value, onChange, chips = CHIPS }: OrdersFilterChipsProps) {
   const { t, isRTL, locale } = useLocale();
   const { colors, colorScheme } = useTheme();
   const reduce = useReducedMotion();
@@ -62,7 +179,7 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
   const [layouts, setLayouts] = useState<Partial<Record<StatusChipKey, ChipLayout>>>({});
   const [viewportW, setViewportW] = useState(0);
 
-  const activeIdx = Math.max(0, CHIPS.indexOf(value));
+  const activeIdx = Math.max(0, chips.indexOf(value));
   const dark = colorScheme === 'dark';
   const wood = colors.brandSoft;
   const fills = [wood, wood, wood, wood, wood, wood] as const;
@@ -76,17 +193,17 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
   ] as const;
 
   const orderedLayouts = useMemo(
-    () => CHIPS.map((chip) => layouts[chip]),
-    [layouts],
+    () => chips.map((chip) => layouts[chip]),
+    [chips, layouts],
   );
 
   const onSelectIndex = useCallback(
     (index: number) => {
-      const next = CHIPS[index];
+      const next = chips[index];
       if (!next || next === value) return;
       onChange(next);
     },
-    [onChange, value],
+    [chips, onChange, value],
   );
 
   const { pillX, pillW, dragging, hoverIndex, gesture } = useDraggablePillBar({
@@ -107,7 +224,6 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
     });
   }, []);
 
-  /** Keep the selected chip in view when the bar scrolls. */
   useEffect(() => {
     const layout = layouts[value];
     if (!layout || viewportW <= 0) return;
@@ -124,12 +240,12 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
     width: pillW.value,
     backgroundColor: interpolateColor(
       hoverIndex.value,
-      [0, 1, 2, 3, 4, 5],
+      [0, 1, 2, 3, 4, 5, 6],
       [...fills],
     ),
     borderColor: interpolateColor(
       hoverIndex.value,
-      [0, 1, 2, 3, 4, 5],
+      [0, 1, 2, 3, 4, 5, 6],
       [...borders],
     ),
   }));
@@ -194,10 +310,10 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
               ]}
             />
 
-            {CHIPS.map((chip) => {
+            {chips.map((chip) => {
               const focused = value === chip;
-              const label = t(`mobile.orders.chips.${chip}`);
-              const ink = accentFor(colors, focused);
+              const label = dealerChipLabel(chip, t);
+              const ink = accentFor(chip, colors, focused);
 
               return (
                 <Pressable
@@ -218,8 +334,11 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
                     justifyContent: 'center',
                     zIndex: 2,
                     flexShrink: 0,
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    gap: 4,
                   }}
                 >
+                  <Ionicons name={chipIcon(chip)} size={13} color={ink} />
                   <AppText
                     variant="caption"
                     weight={

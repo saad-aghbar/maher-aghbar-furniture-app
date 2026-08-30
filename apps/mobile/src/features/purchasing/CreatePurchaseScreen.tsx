@@ -11,6 +11,8 @@ import { useToast } from '@/components/feedback/Toast';
 import { DatePickerField } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
+import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { listInventoryItems, type InventoryItem } from '@/api/modules/inventory';
@@ -19,6 +21,7 @@ import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useCreatePurchaseMutation, useSuppliersQuery } from './query';
 import {
@@ -31,9 +34,12 @@ export function CreatePurchaseScreen() {
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const router = useRouter();
   const allowed = can(user, 'purchase-order.create');
+  const dockPad =
+    stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) + 88;
 
   const [supplierId, setSupplierId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
@@ -139,7 +145,9 @@ export function CreatePurchaseScreen() {
 
   return (
     <AppScreen backFallback={'/(app)/(admin)/(tabs)' as Href}>
-      <ScrollView contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE }}>
+      <ScrollView
+        contentContainerStyle={{ gap: theme.spacing.md, paddingBottom: dockPad }}
+      >
         <AppText variant="title" weight="semibold">
           {t('mobile.purchasing.newPurchase')}
         </AppText>
@@ -255,13 +263,16 @@ export function CreatePurchaseScreen() {
             {t('mobile.purchasing.grandTotal')}: {totals.total.toFixed(3)}
           </AppText>
         </SurfaceCard>
+      </ScrollView>
 
+      <FloatingActionDock floating>
         <PrimaryButton
           label={t('mobile.purchasing.submit')}
           loading={createMutation.isPending}
           onPress={submit}
+          style={{ borderRadius: theme.radius.xl }}
         />
-      </ScrollView>
+      </FloatingActionDock>
 
       <BottomSheet
         open={supplierOpen}

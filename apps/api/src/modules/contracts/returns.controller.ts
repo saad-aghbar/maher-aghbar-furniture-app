@@ -65,6 +65,31 @@ function unpackPhotoKeys(raw: string | null | undefined): string[] {
   return [trimmed];
 }
 
+const RETURN_INCLUDE = {
+  customer: true,
+  delivery: { select: { id: true, number: true, status: true } },
+  salesOrder: {
+    include: {
+      lines: {
+        orderBy: { sortOrder: 'asc' as const },
+        take: 1,
+        include: {
+          product: {
+            select: {
+              id: true,
+              sku: true,
+              nameAr: true,
+              nameEn: true,
+              nameHe: true,
+              imageUrl: true,
+            },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.ReturnRequestInclude;
+
 class CreateReturnDto {
   @IsOptional()
   @IsUUID()
@@ -73,6 +98,11 @@ class CreateReturnDto {
   @IsOptional()
   @IsUUID()
   salesOrderId?: string;
+
+  /** Optional link to the outbound delivery this return refers to. */
+  @IsOptional()
+  @IsUUID()
+  deliveryId?: string;
 
   @IsString()
   productDesc!: string;
@@ -111,20 +141,26 @@ class CreateReturnDto {
 }
 
 class ResolveReturnDto {
-  @IsIn(['APPROVED', 'REJECTED'])
-  approvalStatus!: 'APPROVED' | 'REJECTED';
+  @IsIn(['APPROVED', 'REJECTED', 'NEED_INFO'])
+  approvalStatus!: 'APPROVED' | 'REJECTED' | 'NEED_INFO';
+
+  /** On APPROVED: REPAIR or REPLACEMENT (default REPLACEMENT). Not applied as stock. */
+  @IsOptional()
+  @IsIn(['REPAIR', 'REPLACEMENT', 'CREDIT_NOTE', 'REFUND'])
+  resolution?: 'REPAIR' | 'REPLACEMENT' | 'CREDIT_NOTE' | 'REFUND';
 
   @IsOptional()
-  @IsIn(['RETURN_TO_STOCK', 'REWORK', 'DAMAGED', 'SCRAP'])
-  inventoryFate?: 'RETURN_TO_STOCK' | 'REWORK' | 'DAMAGED' | 'SCRAP';
-
-  @IsOptional()
-  @IsUUID()
-  reentryStageInstanceId?: string;
+  @IsString()
+  needInfoNote?: string;
 
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+class NeedInfoDto {
+  @IsString()
+  needInfoNote!: string;
 }
 
 class ListReturnsDto extends PaginationDto {
@@ -240,29 +276,7 @@ export class ReturnsController {
       this.prisma.returnRequest.count({ where }),
       this.prisma.returnRequest.findMany({
         where,
-        include: {
-          customer: true,
-          salesOrder: {
-            include: {
-              lines: {
-                orderBy: { sortOrder: 'asc' },
-                take: 1,
-                include: {
-                  product: {
-                    select: {
-                      id: true,
-                      sku: true,
-                      nameAr: true,
-                      nameEn: true,
-                      nameHe: true,
-                      imageUrl: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        include: RETURN_INCLUDE,
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -301,6 +315,23 @@ export class ReturnsController {
       }
     }
 
+    if (dto.deliveryId) {
+      const delivery = await this.prisma.delivery.findFirst({
+        where: {
+          id: dto.deliveryId,
+          customerId,
+          ...(dto.salesOrderId ? { salesOrderId: dto.salesOrderId } : {}),
+        },
+        select: { id: true, salesOrderId: true },
+      });
+      if (!delivery) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'deliveryId is invalid for this customer.',
+        });
+      }
+    }
+
     const number = await this.sequences.next('RET', 'RET');
     const reasonPacked = packPhotoKeys([
       ...(dto.reasonPhotoKeys ?? []),
@@ -310,11 +341,13 @@ export class ReturnsController {
       ...(dto.issuePhotoKeys ?? []),
       dto.issuePhotoKey,
     ]);
+    // Report creates 0 inventory — physicalStatus NONE, approval PENDING.
     const created = await this.prisma.returnRequest.create({
       data: {
         number,
         customerId,
         salesOrderId: dto.salesOrderId,
+        deliveryId: dto.deliveryId,
         productDesc: dto.productDesc,
         quantity: roundMoney(dto.quantity),
         reason: dto.reason,
@@ -322,30 +355,10 @@ export class ReturnsController {
         reasonPhotoKey: reasonPacked,
         issuePhotoKey: issuePacked,
         approvalStatus: 'PENDING',
+        physicalStatus: 'NONE',
+        inventoryFate: 'PENDING',
       },
-      include: {
-        customer: true,
-        salesOrder: {
-          include: {
-            lines: {
-              orderBy: { sortOrder: 'asc' },
-              take: 1,
-              include: {
-                product: {
-                  select: {
-                    id: true,
-                    sku: true,
-                    nameAr: true,
-                    nameEn: true,
-                    nameHe: true,
-                    imageUrl: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      include: RETURN_INCLUDE,
     });
     return this.enrichReturn(created);
   }
@@ -356,7 +369,7 @@ export class ReturnsController {
     const row = await this.prisma.returnRequest.findFirst({
       where: { id, ...customerScopeFilter(user) },
       include: {
-        customer: true,
+        ...RETURN_INCLUDE,
         salesOrder: {
           include: {
             lines: {
@@ -384,6 +397,10 @@ export class ReturnsController {
     return this.enrichReturn(row);
   }
 
+  /**
+   * Admin review: APPROVED / REJECTED / NEED_INFO.
+   * APPROVED sets WAITING_RETURN — does NOT quarantine stock (receive does).
+   */
   @Patch(':id/resolve')
   @RequirePermissions('sales-order.update')
   async resolve(
@@ -391,41 +408,172 @@ export class ReturnsController {
     @Body() body: ResolveReturnDto,
     @CurrentUser() user: AuthUser,
   ) {
+    const existing = await this.prisma.returnRequest.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
+    }
+
+    if (body.approvalStatus === 'NEED_INFO') {
+      return this.applyNeedInfo(existing.id, body.needInfoNote || body.notes || '', user);
+    }
+
+    if (body.approvalStatus === 'REJECTED') {
+      const updated = await this.prisma.returnRequest.update({
+        where: { id },
+        data: {
+          approvalStatus: 'REJECTED',
+          resolution: ReturnResolution.REJECTED,
+          physicalStatus: existing.physicalStatus === 'NONE' ? 'NONE' : existing.physicalStatus,
+        },
+        include: RETURN_INCLUDE,
+      });
+      await this.prisma.auditEvent.create({
+        data: {
+          userId: user.id,
+          action: 'return.reject',
+          entityType: 'ReturnRequest',
+          entityId: id,
+          newValues: { approvalStatus: 'REJECTED' },
+        },
+      });
+      await this.notifications
+        .notifyCustomerUsers(updated.customerId, {
+          templateCode: 'RETURN_REJECTED',
+          vars: { number: updated.number },
+          linkUrl: `/returns/${updated.id}`,
+        })
+        .catch(() => undefined);
+      return this.enrichReturn(updated);
+    }
+
+    // APPROVED — no quarantine; wait for physical receive.
     const resolution =
-      body.approvalStatus === 'APPROVED'
-        ? ReturnResolution.REPLACEMENT
-        : ReturnResolution.REJECTED;
+      body.resolution === 'REPAIR'
+        ? ReturnResolution.REPAIR
+        : body.resolution === 'CREDIT_NOTE'
+          ? ReturnResolution.CREDIT_NOTE
+          : body.resolution === 'REFUND'
+            ? ReturnResolution.REFUND
+            : body.resolution === 'REPLACEMENT'
+              ? ReturnResolution.REPLACEMENT
+              : ReturnResolution.REPLACEMENT;
+
     const updated = await this.prisma.returnRequest.update({
       where: { id },
       data: {
+        approvalStatus: 'APPROVED',
         resolution,
-        approvalStatus: body.approvalStatus,
-        inventoryFate: body.approvalStatus === 'APPROVED' ? 'PENDING' : undefined,
+        physicalStatus: 'WAITING_RETURN',
+        inventoryFate: 'PENDING',
+        needInfoNote: null,
+      },
+      include: RETURN_INCLUDE,
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'return.approve',
+        entityType: 'ReturnRequest',
+        entityId: id,
+        newValues: {
+          approvalStatus: 'APPROVED',
+          resolution,
+          physicalStatus: 'WAITING_RETURN',
+        },
       },
     });
-    if (body.approvalStatus === 'APPROVED') {
-      await this.inventory.quarantineReturn(
-        updated.id,
-        updated.salesOrderId,
-        Number(updated.quantity),
-        user.id,
-      );
-      if (body.inventoryFate) {
-        await this.applyReturnFate(updated.id, body.inventoryFate, user.id, {
-          stageInstanceId: body.reentryStageInstanceId,
-          notes: body.notes,
-        });
-      }
-    }
     await this.notifications
       .notifyCustomerUsers(updated.customerId, {
-        templateCode:
-          body.approvalStatus === 'APPROVED' ? 'RETURN_APPROVED' : 'RETURN_REJECTED',
+        templateCode: 'RETURN_APPROVED',
         vars: { number: updated.number },
         linkUrl: `/returns/${updated.id}`,
       })
       .catch(() => undefined);
-    return updated;
+    return this.enrichReturn(updated);
+  }
+
+  @Patch(':id/need-info')
+  @RequirePermissions('sales-order.update')
+  async needInfo(
+    @Param('id') id: string,
+    @Body() body: NeedInfoDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const existing = await this.prisma.returnRequest.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
+    }
+    return this.applyNeedInfo(id, body.needInfoNote, user);
+  }
+
+  /**
+   * Physical receive at factory → CUSTOMER_RETURN / quarantine once.
+   * Idempotent when already received.
+   */
+  @Post(':id/receive')
+  @RequirePermissions('sales-order.update')
+  async receive(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.returnRequest.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
+    }
+
+    if (existing.receivedAt || existing.physicalStatus === 'RETURNED') {
+      const row = await this.prisma.returnRequest.findUniqueOrThrow({
+        where: { id },
+        include: RETURN_INCLUDE,
+      });
+      return this.enrichReturn(row);
+    }
+
+    if (existing.approvalStatus !== 'APPROVED') {
+      throw new BadRequestException({
+        code: 'RETURN_NOT_APPROVED',
+        message: 'Return must be approved before physical receive.',
+      });
+    }
+
+    try {
+      await this.inventory.quarantineReturn(
+        existing.id,
+        existing.salesOrderId,
+        Number(existing.quantity),
+        user.id,
+      );
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw err;
+    }
+
+    const updated = await this.prisma.returnRequest.update({
+      where: { id },
+      data: {
+        receivedAt: new Date(),
+        receivedById: user.id,
+        physicalStatus: 'RETURNED',
+      },
+      include: RETURN_INCLUDE,
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'return.receive',
+        entityType: 'ReturnRequest',
+        entityId: id,
+        newValues: {
+          physicalStatus: 'RETURNED',
+          receivedAt: updated.receivedAt?.toISOString() ?? null,
+        },
+      },
+    });
+    await this.notifications
+      .notifyCustomerUsers(updated.customerId, {
+        templateCode: 'RETURN_RECEIVED',
+        vars: { number: updated.number },
+        linkUrl: `/returns/${updated.id}`,
+      })
+      .catch(() => undefined);
+    return this.enrichReturn(updated);
   }
 
   @Patch(':id/inventory-fate')
@@ -446,12 +594,170 @@ export class ReturnsController {
         message: 'Invalid inventory fate.',
       });
     }
+    const existing = await this.prisma.returnRequest.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
+    }
+    if (!existing.receivedAt && existing.physicalStatus !== 'RETURNED') {
+      throw new BadRequestException({
+        code: 'RETURN_NOT_RECEIVED',
+        message: 'Inspect / fate only after physical receive.',
+      });
+    }
     await this.applyReturnFate(id, body.inventoryFate, user.id, {
       stageInstanceId: body.reentryStageInstanceId,
       notes: body.notes,
     });
-    const row = await this.prisma.returnRequest.findUniqueOrThrow({ where: { id } });
-    return row;
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'return.fate',
+        entityType: 'ReturnRequest',
+        entityId: id,
+        newValues: { inventoryFate: body.inventoryFate },
+      },
+    });
+    const row = await this.prisma.returnRequest.findUniqueOrThrow({
+      where: { id },
+      include: RETURN_INCLUDE,
+    });
+    return this.enrichReturn(row);
+  }
+
+  /**
+   * Create a new ProductionOrder for REPLACEMENT — never mutates the original PO.
+   * Requires approved + received return with resolution REPLACEMENT (sets if missing).
+   */
+  @Post(':id/create-replacement')
+  @RequirePermissions('sales-order.update')
+  async createReplacement(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const row = await this.prisma.returnRequest.findUnique({
+      where: { id },
+      include: {
+        salesOrder: {
+          include: {
+            lines: { orderBy: { sortOrder: 'asc' }, take: 1 },
+            productionOrders: {
+              where: {
+                OR: [
+                  { notes: { contains: `REPLACEMENT — ${id}` } },
+                  { productDescription: { contains: 'REPLACEMENT —' } },
+                ],
+              },
+              take: 5,
+            },
+          },
+        },
+      },
+    });
+    if (!row) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Return not found.' });
+    }
+    if (row.approvalStatus !== 'APPROVED') {
+      throw new BadRequestException({
+        code: 'RETURN_NOT_APPROVED',
+        message: 'Return must be approved before creating a replacement PO.',
+      });
+    }
+    if (!row.receivedAt && row.physicalStatus !== 'RETURNED') {
+      throw new BadRequestException({
+        code: 'RETURN_NOT_RECEIVED',
+        message: 'Receive the return before creating a replacement production order.',
+      });
+    }
+    if (!row.salesOrderId || !row.salesOrder) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Return has no sales order to attach a replacement PO.',
+      });
+    }
+
+    const label = `REPLACEMENT — ${row.number}`;
+    const existingPo = await this.prisma.productionOrder.findFirst({
+      where: {
+        salesOrderId: row.salesOrderId,
+        OR: [
+          { notes: { contains: label } },
+          { productDescription: { contains: label } },
+          { notes: { contains: `REPLACEMENT — ${id}` } },
+        ],
+      },
+    });
+    if (existingPo) {
+      return { productionOrder: existingPo, created: false };
+    }
+
+    if (row.resolution !== ReturnResolution.REPLACEMENT) {
+      await this.prisma.returnRequest.update({
+        where: { id },
+        data: { resolution: ReturnResolution.REPLACEMENT },
+      });
+    }
+
+    const line = row.salesOrder.lines[0];
+    const poNumber = await this.sequences.next('PO', 'PO');
+    const productionOrder = await this.prisma.productionOrder.create({
+      data: {
+        number: poNumber,
+        salesOrderId: row.salesOrderId,
+        salesOrderLineId: line?.id,
+        customerId: row.customerId,
+        productId: line?.productId ?? undefined,
+        productDescription: `${label} — ${row.productDesc}`,
+        quantity: row.quantity,
+        status: 'PLANNED',
+        createdById: user.id,
+        notes: `${label}; returnId=${id}; original return ${row.number}`,
+      },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'return.replacement-po',
+        entityType: 'ReturnRequest',
+        entityId: id,
+        newValues: {
+          productionOrderId: productionOrder.id,
+          productionOrderNumber: productionOrder.number,
+        },
+      },
+    });
+    return { productionOrder, created: true };
+  }
+
+  private async applyNeedInfo(id: string, needInfoNote: string, user: AuthUser) {
+    const note = needInfoNote?.trim();
+    if (!note) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'needInfoNote is required.',
+      });
+    }
+    const updated = await this.prisma.returnRequest.update({
+      where: { id },
+      data: {
+        approvalStatus: 'NEED_INFO',
+        needInfoNote: note,
+      },
+      include: RETURN_INCLUDE,
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'return.need-info',
+        entityType: 'ReturnRequest',
+        entityId: id,
+        newValues: { approvalStatus: 'NEED_INFO', needInfoNote: note },
+      },
+    });
+    await this.notifications
+      .notifyCustomerUsers(updated.customerId, {
+        templateCode: 'RETURN_NEED_INFO',
+        vars: { number: updated.number, note },
+        linkUrl: `/returns/${updated.id}`,
+      })
+      .catch(() => undefined);
+    return this.enrichReturn(updated);
   }
 
   private async applyReturnFate(

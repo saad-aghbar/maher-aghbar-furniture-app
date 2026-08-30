@@ -35,6 +35,8 @@ export type TaskDetailViewModel = TaskCardModel & {
   attachments: TaskFile[];
   productionOrderId: string | null;
   requiresPhotos: boolean;
+  producesSemiFinished: boolean;
+  expectedPieceCount: number | null;
   openBlockers: Array<{ id: string; reason: string }>;
   canStart: boolean;
   canStop: boolean;
@@ -43,6 +45,10 @@ export type TaskDetailViewModel = TaskCardModel & {
   canReportProblem: boolean;
   canUploadPhoto: boolean;
   waitingOn: string | null;
+  /** Piece 9 — stage / quality routing. */
+  stageCode: string | null;
+  executionKind: string | null;
+  isRework: boolean;
   timing: {
     status: string;
     actualMinutes: number;
@@ -246,9 +252,18 @@ export function selectTaskDetail(
     photos: task.photos ?? [],
     attachments: task.attachments ?? [],
     productionOrderId: task.productionOrder?.id ?? null,
-    requiresPhotos: Boolean(task.stageDefinition?.requiresPhotos),
+    requiresPhotos: Boolean(
+      task.requiresPhotos ?? task.stageDefinition?.requiresPhotos,
+    ),
+    producesSemiFinished: Boolean(task.producesSemiFinished),
+    expectedPieceCount:
+      task.expectedPieceCount != null && Number(task.expectedPieceCount) > 0
+        ? Math.floor(Number(task.expectedPieceCount))
+        : task.producesSemiFinished
+          ? 1
+          : null,
     openBlockers,
-    canStart: ['NOT_STARTED', 'READY'].includes(status) && !waitingOn,
+    canStart: ['NOT_STARTED', 'READY', 'READY_FOR_INSPECTION'].includes(status) && !waitingOn,
     canStop: status === 'IN_PROGRESS',
     canResume: (status === 'PAUSED' || status === 'BLOCKED') && !waitingOn,
     // Soft problem reports do not lock the dock — only terminal / hard BLOCKED do.
@@ -256,6 +271,9 @@ export function selectTaskDetail(
     canReportProblem: !terminal,
     canUploadPhoto: !terminal,
     waitingOn,
+    stageCode: stageCode || task.stageDefinition?.code?.trim() || null,
+    executionKind: task.stageDefinition?.executionKind?.trim() || null,
+    isRework: Boolean(task.isRework),
     timing,
   };
   assertNoProgressLeak(vm);

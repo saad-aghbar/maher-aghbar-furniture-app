@@ -69,13 +69,13 @@ async function sleep(ms: number): Promise<void> {
 }
 
 async function parseJsonSafe(res: Response): Promise<unknown> {
-  if (res.status === 204) return undefined;
+  if (res.status === 204) return null;
   const text = await res.text();
-  if (!text) return undefined;
+  if (!text) return null;
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    return undefined;
+    return null;
   }
 }
 

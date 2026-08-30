@@ -16,6 +16,8 @@ import arStatuses from './messages/ar/statuses.json';
 import arCatalog from './messages/ar/catalog.json';
 import arMobile from './messages/ar/mobile.json';
 import arErrors from './messages/ar/errors.json';
+import arLifecycle from './messages/ar/lifecycle.json';
+import arPurchasing from './messages/ar/purchasing.json';
 
 import enCommon from './messages/en/common.json';
 import enAuth from './messages/en/auth.json';
@@ -32,6 +34,8 @@ import enStatuses from './messages/en/statuses.json';
 import enCatalog from './messages/en/catalog.json';
 import enMobile from './messages/en/mobile.json';
 import enErrors from './messages/en/errors.json';
+import enLifecycle from './messages/en/lifecycle.json';
+import enPurchasing from './messages/en/purchasing.json';
 
 import heCommon from './messages/he/common.json';
 import heAuth from './messages/he/auth.json';
@@ -48,6 +52,8 @@ import heStatuses from './messages/he/statuses.json';
 import heCatalog from './messages/he/catalog.json';
 import heMobile from './messages/he/mobile.json';
 import heErrors from './messages/he/errors.json';
+import heLifecycle from './messages/he/lifecycle.json';
+import hePurchasing from './messages/he/purchasing.json';
 
 export const locales = ['ar', 'en', 'he'] as const satisfies readonly Locale[];
 export const defaultLocale: Locale = 'ar';
@@ -67,7 +73,9 @@ export type MessageNamespace =
   | 'statuses'
   | 'catalog'
   | 'mobile'
-  | 'errors';
+  | 'errors'
+  | 'lifecycle'
+  | 'purchasing';
 
 export type MessageValue = string | { [key: string]: MessageValue };
 export type Messages = Record<MessageNamespace, Record<string, MessageValue>>;
@@ -89,6 +97,8 @@ const messagesByLocale: Record<Locale, Messages> = {
     catalog: arCatalog,
     mobile: arMobile,
     errors: arErrors,
+    lifecycle: arLifecycle,
+    purchasing: arPurchasing,
   },
   en: {
     common: enCommon,
@@ -106,6 +116,8 @@ const messagesByLocale: Record<Locale, Messages> = {
     catalog: enCatalog,
     mobile: enMobile,
     errors: enErrors,
+    lifecycle: enLifecycle,
+    purchasing: enPurchasing,
   },
   he: {
     common: heCommon,
@@ -123,6 +135,8 @@ const messagesByLocale: Record<Locale, Messages> = {
     catalog: heCatalog,
     mobile: heMobile,
     errors: heErrors,
+    lifecycle: heLifecycle,
+    purchasing: hePurchasing,
   },
 };
 
@@ -241,6 +255,17 @@ export function localizedBody(
   if (locale === 'ar') return row.bodyAr || row.bodyEn || row.bodyHe || fallback;
   if (locale === 'he') return row.bodyHe || row.bodyEn || row.bodyAr || fallback;
   return row.bodyEn || row.bodyAr || row.bodyHe || fallback;
+}
+
+export function lifecycleLabel(locale: string, key: string): string {
+  const typed = isValidLocale(locale) ? locale : defaultLocale;
+  const parts = key.split('.');
+  let cur: MessageValue | undefined = getMessages(typed).lifecycle;
+  for (const p of parts) {
+    if (typeof cur !== 'object' || cur === null) return key;
+    cur = (cur as Record<string, MessageValue>)[p];
+  }
+  return typeof cur === 'string' ? cur : key;
 }
 
 export function statusLabel(locale: string, status: string): string {

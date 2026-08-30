@@ -94,7 +94,14 @@ export function RolesTouchBar({ roles, value, onChange }: Props) {
 
   const colorStops = useMemo(() => {
     if (roles.length <= 1) {
-      return { input: [0], fill: [fills[0]!], border: [borders[0]!] };
+      const fill = fills[0]!;
+      const border = borders[0]!;
+      // Reanimated interpolateColor requires ≥2 stops.
+      return {
+        input: [0, 1],
+        fill: [fill, fill],
+        border: [border, border],
+      };
     }
     const input = roles.map((_, i) => i);
     const fill = roles.map((_, i) => fills[Math.min(i, fills.length - 1)]!);

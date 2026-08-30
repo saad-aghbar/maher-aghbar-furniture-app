@@ -1,6 +1,9 @@
-import { GlobalSearchScreen } from '@/features/search/GlobalSearchScreen';
+import { Redirect, type Href } from 'expo-router';
 
-/** Deep link `/(app)/search` — present global search, do not bounce to Home. */
+/**
+ * Former Search Everywhere route — search now lives inline on admin Home.
+ * Keep a redirect so deep links do not 404.
+ */
 export default function SearchRoute() {
-  return <GlobalSearchScreen />;
+  return <Redirect href={'/(app)/(admin)/(tabs)' as Href} />;
 }

@@ -130,7 +130,13 @@ describe('TasksService lifecycle (complete / duplicates / isolation)', () => {
     const service = new TasksService(
       prisma as unknown as PrismaService,
       pipeline,
-      { onStageTaskComplete: jest.fn().mockResolvedValue(undefined), assertStageInventoryReady: jest.fn().mockResolvedValue(undefined) } as any,
+      { onStageTaskComplete: jest.fn().mockResolvedValue(undefined), assertStageInventoryReady: jest.fn().mockResolvedValue(undefined), onStageQtyProgress: jest.fn().mockResolvedValue(undefined) } as any,
+      { hasUsageRows: jest.fn().mockResolvedValue(false), finalizeForTask: jest.fn().mockResolvedValue({ posted: false, reason: 'no_usage_rows' }), ensureExpectedLines: jest.fn(), recordLines: jest.fn() } as any,
+      {
+        registerFromTaskComplete: jest.fn(),
+        markConsumedForStage: jest.fn(),
+        claimRequirementsForTask: jest.fn().mockResolvedValue({ required: false, kits: [], unclaimed: [], allClaimed: true }),
+      } as any,
       invoices,
       storage,
       idempotency,

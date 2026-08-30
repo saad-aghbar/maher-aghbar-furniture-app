@@ -1,33 +1,29 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { DirectionalIcon } from '@/components/DirectionalIcon';
-import { StatusBadge } from '@/components/badges/StatusBadge';
-import {
-  alignStart,
-  extraStartPadding,
-  localeRow,
-  pinStart,
-  useLocale,
-} from '@/i18n';
-import { AnimatedPressable, haptics } from '@/motion';
+import { DeskCard, ProductThumb } from '@/components/desk';
+import { useLocale } from '@/i18n';
+import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import {
-  chipsLookLikeSameLabel,
-  humanizeOrderChip,
-  normalizeChipKey,
-} from '../humanizeOrderChip';
+  adminLifecycleAccentKey,
+  adminLifecycleHumanLabel,
+  classifyAdminOrderLifecycle,
+  type AdminOrderLifecycle,
+} from '../adminOrderLifecycle';
+import type { JourneyAttention, JourneyPrimaryCta, JourneyReadiness } from '../adminOrderJourney';
+import { dealerLifecycleCardCopy } from '../dealerLifecycleCardCopy';
 import { resolveOrderMediaUri } from './OrderCardMedia';
-import { orderBoardShadow } from './orderFloorStyle';
 
 export type OrdersProgressCardModel = {
   id: string;
   number: string;
   status: string;
+  deliveryStatus?: string | null;
   title: string;
   imageUrl: string | null;
-  progressPercent: number;
+  progressPercent: number | null;
   progressLabel?: string | null;
   deliveryDate: string | null;
   arrivedAt: string | null;
@@ -36,6 +32,19 @@ export type OrdersProgressCardModel = {
   sellerPrice?: number | null;
   kind?: 'order' | 'rfq';
   priority?: string;
+  quantity?: string | number | null;
+  lifecycle?: AdminOrderLifecycle;
+  attention?: JourneyAttention;
+  primaryCta?: JourneyPrimaryCta;
+  journeyReadiness?: JourneyReadiness;
+  actionHint?: string | null;
+  productionReadinessSummary?: {
+    canStart?: boolean;
+    needsSetup?: boolean;
+    actionHint?: string | null;
+    materialsReady?: boolean;
+    material?: { ready?: boolean; shortCount?: number } | null;
+  } | null;
 };
 
 type Props = {
@@ -43,117 +52,108 @@ type Props = {
   variant: 'admin' | 'dealer';
   onPress: () => void;
   onProgressPress?: () => void;
+  onConfirmReceipt?: () => void;
+  /** Admin tray carousel vs vertical stack density. */
+  layout?: 'tray' | 'stack';
 };
 
-const MEDIA = 80;
+const MEDIA = 112;
 
-function resolveOrderChips(
-  order: OrdersProgressCardModel,
-  locale: string,
-  t: (key: string) => string,
-) {
-  const statusLabel = humanizeOrderChip(locale, order.status);
-  const stageRaw = order.progressLabel?.trim() || '';
-  const showStage =
-    Boolean(stageRaw) && !chipsLookLikeSameLabel(stageRaw, order.status);
-  const stageKey = showStage ? normalizeChipKey(stageRaw) || order.status : '';
-  const stageLabel = showStage ? humanizeOrderChip(locale, stageRaw) : '';
-
-  return {
-    statusLabel,
-    stageKey,
-    stageLabel,
-    progressCaption: stageLabel || t('mobile.orders.progress'),
-  };
+function accentColor(
+  key: ReturnType<typeof adminLifecycleAccentKey>,
+  colors: {
+    warning: string;
+    success: string;
+    info: string;
+    brand: string;
+    textMuted: string;
+  },
+): string {
+  switch (key) {
+    case 'warning':
+      return colors.warning;
+    case 'success':
+      return colors.success;
+    case 'info':
+      return colors.info;
+    case 'brand':
+      return colors.brand;
+    default:
+      return colors.textMuted;
+  }
 }
 
 /**
- * Floor-list order card — cream board, humanized pills, directional chevron.
+ * Floor-list order card — soft elevation, accent strip, progress row.
+ * Admin path uses commercial desk anatomy (DeskCard + ProductThumb).
  */
-export function OrdersProgressCard({ order, variant, onPress, onProgressPress }: Props) {
+export function OrdersProgressCard({
+  order,
+  variant,
+  onPress,
+  onProgressPress,
+  onConfirmReceipt,
+  layout = 'stack',
+}: Props) {
   const { t, formatCurrency, formatDate, isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+
+  if (variant === 'admin') {
+    return (
+      <AdminCommercialCard
+        order={order}
+        layout={layout}
+        onPress={onPress}
+        t={t}
+        formatDate={formatDate}
+        isRTL={isRTL}
+        titleWeight={titleWeight}
+        colors={colors}
+        theme={theme}
+      />
+    );
+  }
+
   const pct = Math.max(0, Math.min(100, Math.round(order.progressPercent || 0)));
   const urgent =
     (order.priority ?? '').toUpperCase() === 'URGENT' ||
     (order.priority ?? '').toUpperCase() === 'HIGH';
   const accent = urgent ? colors.warning : colors.brand;
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const chips = resolveOrderChips(order, locale, t);
-  const idLine =
-    order.kind === 'rfq'
-      ? variant === 'dealer'
-        ? t('mobile.orders.rfqLabel')
-        : `${t('mobile.orders.unapprovedLabel')} · ${order.number}`
-      : order.number;
+  const lifecycleCopy = dealerLifecycleCardCopy(
+    {
+      status: order.status,
+      deliveryStatus: order.deliveryStatus,
+      deliveryDate: order.deliveryDate,
+      deliveredAt: order.arrivedAt,
+    },
+    t,
+    formatDate,
+  );
+  const showConfirm = Boolean(lifecycleCopy?.confirmCta && onConfirmReceipt);
 
   return (
-    <AnimatedPressable
-      variant="card"
-      accessibilityRole="button"
-      accessibilityLabel={`${order.number} ${order.title} ${pct}%`}
+    <DeskCard
+      accent={accent}
       onPress={() => {
         void haptics.selection();
         onPress();
       }}
-      style={{
-        borderRadius: theme.radius.xl,
-        borderWidth: 1,
-        borderColor: urgent ? colors.warning : colors.borderStrong,
-        backgroundColor: colors.surface,
-        overflow: 'hidden',
-        marginBottom: theme.spacing.sm,
-        ...orderBoardShadow(colorScheme),
-      }}
+      accessibilityLabel={`${order.number} ${order.title} ${pct}%`}
+      style={{ marginBottom: theme.spacing.sm }}
     >
       <View
         style={{
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          ...pinStart(isRTL),
-          width: 3,
-          backgroundColor: accent,
-          opacity: urgent ? 1 : 0.5,
-        }}
-      />
-
-      <View
-        style={{
-          flexDirection: localeRow(isRTL),
+          flexDirection: isRTL ? 'row-reverse' : 'row',
           gap: theme.spacing.md,
-          paddingTop: theme.spacing.md,
-          paddingBottom: theme.spacing.sm,
-          paddingHorizontal: theme.spacing.md,
-          ...extraStartPadding(isRTL, theme.spacing.md + 4),
           alignItems: 'flex-start',
         }}
       >
-        <View
-          style={{
-            width: MEDIA,
-            height: MEDIA,
-            borderRadius: theme.radius.lg,
-            backgroundColor: colors.surfaceSecondary,
-            overflow: 'hidden',
-            borderWidth: StyleSheet.hairlineWidth,
-            borderColor: colors.border,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {resolveOrderMediaUri(order.imageUrl) ? (
-            <Image
-              source={{ uri: resolveOrderMediaUri(order.imageUrl)! }}
-              style={{ width: MEDIA, height: MEDIA }}
-              resizeMode="cover"
-              accessibilityIgnoresInvertColors
-            />
-          ) : (
-            <Ionicons name="cube-outline" size={28} color={colors.brand} />
-          )}
-        </View>
-
+        <ProductThumb
+          uri={resolveOrderMediaUri(order.imageUrl)}
+          size={MEDIA}
+          radius={theme.radius.lg}
+        />
         <View
           style={{
             flex: 1,
@@ -162,83 +162,35 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             alignItems: alignStart(isRTL),
           }}
         >
-          {variant === 'admin' && order.dealerName ? (
-            <AppText
-              variant="caption"
-              color="muted"
-              numberOfLines={1}
-              align="start"
-              style={{
-                width: '100%',
-                letterSpacing: locale === 'ar' ? 0 : 0.4,
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                fontSize: 11,
-                lineHeight: 14,
-              }}
-            >
-              {order.dealerName}
-            </AppText>
-          ) : null}
-
-          <AppText
-            variant="label"
-            weight={titleWeight}
-            numberOfLines={2}
-            align="start"
-            style={{ width: '100%' }}
-          >
+          <AppText variant="label" weight={titleWeight} numberOfLines={2} style={{ width: '100%' }}>
             {order.title}
           </AppText>
-
           <AppText
             variant="caption"
             color="secondary"
             numberOfLines={1}
-            dir={order.kind === 'rfq' && variant === 'dealer' ? 'auto' : 'ltr'}
-            align="start"
+            dir={order.kind === 'rfq' ? 'auto' : 'ltr'}
             style={{ letterSpacing: 0.2 }}
           >
-            {idLine}
+            {order.kind === 'rfq' ? t('mobile.orders.rfqLabel') : order.number}
           </AppText>
-
-          <View
-            style={{
-              flexDirection: localeRow(isRTL),
-              flexWrap: 'wrap',
-              gap: theme.spacing.xs,
-              width: '100%',
-              marginTop: 2,
-            }}
-          >
-            <StatusBadge
-              status={order.status}
-              label={chips.statusLabel}
-              ink="board"
-              dot
-            />
-            {chips.stageLabel ? (
-              <StatusBadge
-                status={chips.stageKey || order.status}
-                label={chips.stageLabel}
-                ink="board"
-              />
-            ) : null}
-          </View>
-
-          {variant === 'dealer' && order.sellerPrice != null ? (
-            <AppText
-              variant="caption"
-              color="muted"
-              dir="ltr"
-              align="start"
-              style={{ width: '100%' }}
-            >
+          {order.sellerPrice != null ? (
+            <AppText variant="caption" color="muted" dir="ltr" style={{ width: '100%' }}>
               {formatCurrency(order.sellerPrice)}
             </AppText>
           ) : null}
-          {order.deliveryDate ? (
-            <AppText variant="caption" color="muted" align="start" style={{ width: '100%' }}>
+          {lifecycleCopy?.summary ? (
+            <AppText variant="caption" color="secondary" style={{ width: '100%' }}>
+              {lifecycleCopy.summary}
+            </AppText>
+          ) : order.deliveryDate ? (
+            <AppText variant="caption" color="muted" style={{ width: '100%' }}>
               {formatDate(order.deliveryDate)}
+            </AppText>
+          ) : null}
+          {lifecycleCopy?.lifecycleStatus ? (
+            <AppText variant="caption" weight="medium" style={{ color: colors.brand }}>
+              {lifecycleCopy.lifecycleStatus}
             </AppText>
           ) : null}
         </View>
@@ -257,57 +209,381 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
         </View>
       </View>
 
-      <View
-        style={{
-          marginHorizontal: theme.spacing.md,
-          marginBottom: theme.spacing.md,
-          paddingTop: theme.spacing.sm,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.border,
-          gap: theme.spacing.xs,
-        }}
-      >
+      {order.kind !== 'rfq' ? (
         <View
           style={{
-            flexDirection: localeRow(isRTL),
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
+            marginTop: theme.spacing.sm,
+            paddingTop: theme.spacing.sm,
+            borderTopWidth: 1,
+            borderTopColor: colors.borderMuted,
+            gap: theme.spacing.xs,
           }}
         >
-          <AppText
-            variant="caption"
-            color="secondary"
-            numberOfLines={1}
-            style={{ flex: 1 }}
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+            }}
           >
-            {chips.progressCaption}
-          </AppText>
-          <AppText
-            variant="caption"
-            weight="semibold"
-            style={{ color: accent }}
-            dir="ltr"
-          >
-            {`${pct}%`}
-          </AppText>
+            <AppText variant="caption" color="secondary" numberOfLines={1} style={{ flex: 1 }}>
+              {order.progressLabel?.trim() || t('mobile.orders.progress')}
+            </AppText>
+            <AppText variant="caption" weight="semibold" style={{ color: accent }} dir="ltr">
+              {`${pct}%`}
+            </AppText>
+          </View>
+          <WorkflowProgressHit
+            progressPercent={pct}
+            height={5}
+            accessibilityLabel={
+              onProgressPress ? t('mobile.productionFlow.openWorkflow') : undefined
+            }
+            onPress={
+              onProgressPress
+                ? () => {
+                    void haptics.selection();
+                    onProgressPress();
+                  }
+                : undefined
+            }
+          />
+          {showConfirm ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${t('lifecycle.confirmReceived')} ${order.number}`}
+              onPress={() => {
+                void haptics.selection();
+                onConfirmReceipt?.();
+              }}
+              style={{
+                marginTop: theme.spacing.sm,
+                alignSelf: isRTL ? 'flex-end' : 'flex-start',
+                paddingHorizontal: theme.spacing.md,
+                paddingVertical: theme.spacing.sm,
+                borderRadius: theme.radius.lg,
+                backgroundColor: colors.brand,
+              }}
+            >
+              <AppText variant="caption" weight="semibold" style={{ color: colors.onBrand }}>
+                {t('lifecycle.confirmWhenReceived')}
+              </AppText>
+            </Pressable>
+          ) : null}
         </View>
-        <WorkflowProgressHit
-          progressPercent={pct}
-          height={5}
-          accessibilityLabel={
-            onProgressPress ? t('mobile.productionFlow.openWorkflow') : undefined
-          }
-          onPress={
-            onProgressPress
-              ? () => {
-                  void haptics.selection();
-                  onProgressPress();
-                }
-              : undefined
-          }
-        />
-      </View>
-    </AnimatedPressable>
+      ) : null}
+    </DeskCard>
+  );
+}
+
+function AdminCommercialCard({
+  order,
+  layout,
+  onPress,
+  t,
+  formatDate,
+  isRTL,
+  titleWeight,
+  colors,
+  theme,
+}: {
+  order: OrdersProgressCardModel;
+  layout: 'tray' | 'stack';
+  onPress: () => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
+  formatDate: (value: string) => string;
+  isRTL: boolean;
+  titleWeight: 'medium' | 'semibold';
+  colors: {
+    warning: string;
+    success: string;
+    info: string;
+    brand: string;
+    textMuted: string;
+    textSecondary: string;
+    textPrimary: string;
+    borderMuted: string;
+    surfaceSecondary: string;
+  };
+  theme: { spacing: Record<string, number>; radius: { lg: number; md: number } };
+}) {
+  const isRfq = order.kind === 'rfq';
+  const life =
+    order.lifecycle ??
+    classifyAdminOrderLifecycle({
+      status: order.status,
+      deliveryStatus: order.deliveryStatus,
+      requiredDeliveryDate: order.deliveryDate,
+      isRfq,
+      productionReadinessSummary: order.productionReadinessSummary,
+      progressPercent: order.progressPercent,
+      currentStageLabel: order.progressLabel,
+    });
+  const accent = accentColor(adminLifecycleAccentKey(life), colors);
+  const lifecycleLabel = adminLifecycleHumanLabel(life, t);
+  const attentionReason = order.attention
+    ? (() => {
+        const label = t(order.attention.reasonLabelKey);
+        return label === order.attention.reasonLabelKey || label.startsWith('mobile.')
+          ? null
+          : label;
+      })()
+    : null;
+  const attentionAction = order.attention
+    ? (() => {
+        const label = t(order.attention.actionLabelKey);
+        return label === order.attention.actionLabelKey || label.startsWith('mobile.')
+          ? null
+          : label;
+      })()
+    : null;
+  const candidates = [
+    attentionReason,
+    order.actionHint?.trim(),
+    order.productionReadinessSummary?.actionHint?.trim(),
+    life === 'in_production' && order.progressLabel?.trim()
+      ? t('mobile.orders.actionHint.inStage', { stage: order.progressLabel.trim() })
+      : null,
+  ].filter(Boolean) as string[];
+  const actionHint =
+    candidates.find((h) => h.toLowerCase() !== lifecycleLabel.toLowerCase()) ?? null;
+
+  const readiness = order.journeyReadiness;
+  const setupGaps: string[] = [];
+  if (life === 'preparing') {
+    const needsSetup =
+      Boolean(order.productionReadinessSummary?.needsSetup) ||
+      readiness?.setupReady === false ||
+      readiness?.workflowReady === false;
+    const materialsIncomplete =
+      readiness?.materialsReady === false ||
+      readiness?.hasShortage === true ||
+      order.productionReadinessSummary?.materialsReady === false ||
+      order.productionReadinessSummary?.material?.ready === false;
+    const priceIncomplete = order.sellerPrice == null;
+    if (needsSetup) setupGaps.push(t('mobile.orders.journey.setupRemaining.spec'));
+    if (materialsIncomplete) {
+      setupGaps.push(t('mobile.orders.journey.setupRemaining.materials'));
+    }
+    if (priceIncomplete) setupGaps.push(t('mobile.orders.journey.setupRemaining.price'));
+  }
+
+  const qty =
+    order.quantity != null && String(order.quantity).trim() !== ''
+      ? String(order.quantity)
+      : null;
+  const soQty = qty ? `${order.number} · ${qty}` : order.number;
+  const tray = layout === 'tray';
+
+  return (
+    <DeskCard
+      accent={accent}
+      embedded
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      accessibilityLabel={`${order.number} ${order.title} ${lifecycleLabel}`}
+      style={{ marginBottom: 0 }}
+    >
+      {tray ? (
+        <View style={{ gap: theme.spacing.sm }}>
+          <ProductThumb
+            uri={resolveOrderMediaUri(order.imageUrl)}
+            aspectRatio={16 / 10}
+            radius={theme.radius.lg}
+          />
+          <View style={{ gap: 4 }}>
+            {order.dealerName ? (
+              <AppText variant="caption" color="muted" numberOfLines={1}>
+                {order.dealerName}
+              </AppText>
+            ) : null}
+            <AppText variant="label" weight={titleWeight} numberOfLines={2}>
+              {order.title}
+            </AppText>
+            <AppText variant="caption" color="secondary" numberOfLines={1} dir="ltr">
+              {isRfq ? `${t('mobile.orders.customerRequestLabel')} · ${order.number}` : soQty}
+            </AppText>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: theme.spacing.sm,
+                marginTop: 4,
+              }}
+            >
+              <AppText
+                variant="caption"
+                weight="semibold"
+                numberOfLines={2}
+                style={{ color: accent, flex: 1 }}
+              >
+                {attentionReason ?? actionHint ?? lifecycleLabel}
+              </AppText>
+              {order.deliveryDate ? (
+                <AppText variant="caption" color="muted" numberOfLines={1}>
+                  {formatDate(order.deliveryDate)}
+                </AppText>
+              ) : null}
+            </View>
+            {attentionAction ? (
+              <AppText variant="caption" color="secondary" numberOfLines={1}>
+                {attentionAction}
+              </AppText>
+            ) : null}
+            {setupGaps.length > 0 ? (
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  flexWrap: 'wrap',
+                  gap: 6,
+                  marginTop: 2,
+                }}
+              >
+                {setupGaps.map((gap) => (
+                  <View
+                    key={gap}
+                    style={{
+                      paddingHorizontal: theme.spacing.sm,
+                      paddingVertical: 3,
+                      borderRadius: theme.radius.md,
+                      backgroundColor: colors.surfaceSecondary,
+                    }}
+                  >
+                    <AppText variant="caption" color="secondary" style={{ fontSize: 10 }}>
+                      {gap}
+                    </AppText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            gap: theme.spacing.md,
+            alignItems: 'center',
+            minHeight: MEDIA,
+          }}
+        >
+          <ProductThumb
+            uri={resolveOrderMediaUri(order.imageUrl)}
+            size={MEDIA}
+            radius={theme.radius.lg}
+          />
+          <View
+            style={{
+              flex: 1,
+              minWidth: 0,
+              gap: 6,
+              justifyContent: 'center',
+              alignItems: isRTL ? 'flex-end' : 'flex-start',
+            }}
+          >
+            {order.dealerName ? (
+              <AppText variant="caption" color="muted" numberOfLines={1} style={{ width: '100%' }}>
+                {order.dealerName}
+              </AppText>
+            ) : null}
+            <AppText variant="label" weight={titleWeight} numberOfLines={2} style={{ width: '100%' }}>
+              {order.title}
+            </AppText>
+            <AppText
+              variant="caption"
+              color="secondary"
+              numberOfLines={1}
+              dir="ltr"
+              style={{ letterSpacing: 0.2, width: '100%' }}
+            >
+              {isRfq ? `${t('mobile.orders.customerRequestLabel')} · ${order.number}` : soQty}
+            </AppText>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+                marginTop: 2,
+                width: '100%',
+              }}
+            >
+              <View
+                style={{
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: 5,
+                  borderRadius: theme.radius.md,
+                  backgroundColor: colors.surfaceSecondary,
+                }}
+              >
+                <AppText variant="caption" weight="semibold" style={{ color: accent }}>
+                  {attentionReason ?? lifecycleLabel}
+                </AppText>
+              </View>
+              {order.deliveryDate ? (
+                <AppText variant="caption" color="muted">
+                  {formatDate(order.deliveryDate)}
+                </AppText>
+              ) : null}
+            </View>
+            {attentionAction ? (
+              <AppText
+                variant="caption"
+                weight="semibold"
+                color="brand"
+                numberOfLines={1}
+                style={{ width: '100%' }}
+              >
+                {attentionAction}
+              </AppText>
+            ) : actionHint && actionHint !== attentionReason ? (
+              <AppText
+                variant="caption"
+                color="secondary"
+                numberOfLines={2}
+                style={{ width: '100%' }}
+              >
+                {actionHint}
+              </AppText>
+            ) : null}
+            {setupGaps.length > 0 ? (
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  flexWrap: 'wrap',
+                  gap: 6,
+                  width: '100%',
+                }}
+              >
+                {setupGaps.map((gap) => (
+                  <View
+                    key={gap}
+                    style={{
+                      paddingHorizontal: theme.spacing.sm,
+                      paddingVertical: 3,
+                      borderRadius: theme.radius.md,
+                      backgroundColor: colors.surfaceSecondary,
+                    }}
+                  >
+                    <AppText variant="caption" color="secondary" style={{ fontSize: 10 }}>
+                      {gap}
+                    </AppText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+          <Ionicons
+            name={isRTL ? 'chevron-back' : 'chevron-forward'}
+            size={18}
+            color={colors.textMuted}
+          />
+        </View>
+      )}
+    </DeskCard>
   );
 }

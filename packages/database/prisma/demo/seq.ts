@@ -14,6 +14,7 @@ export type SeqKey =
   | 'return_request'
   | 'purchase_request'
   | 'purchase_order'
+  | 'grn'
   | 'invtx'
   | 'quality'
   | 'rework'
@@ -35,6 +36,7 @@ export function emptySeq(): SeqBag {
     return_request: 0,
     purchase_request: 0,
     purchase_order: 0,
+    grn: 0,
     invtx: 0,
     quality: 0,
     rework: 0,
@@ -55,6 +57,7 @@ const PREFIX: Record<SeqKey, string> = {
   return_request: 'RET',
   purchase_request: 'PR',
   purchase_order: 'PORD',
+  grn: 'GRN',
   invtx: 'ITX',
   quality: 'QC',
   rework: 'RW',

@@ -244,6 +244,22 @@ export class ProductionCalendarDto {
   @Min(0)
   @Max(10)
   deliveryBufferWorkingDays?: number;
+
+  @ApiPropertyOptional({ description: 'Max working days before the commercial target that optimize may pull healthy work.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(60)
+  maxProductionEarlyWorkingDays?: number;
+
+  @ApiPropertyOptional({ description: 'Occupancy reporting/heuristic ceiling for capacity optimize (not a fake cap).' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  targetFactoryUtilizationPercent?: number;
 }
 
 export class ProductionProfileDto {

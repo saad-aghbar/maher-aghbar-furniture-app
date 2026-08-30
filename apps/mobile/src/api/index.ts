@@ -63,3 +63,4 @@ export * as paymentsApi from './modules/payments';
 export * as returnsApi from './modules/returns';
 export * as searchApi from './modules/search';
 export * as schedulingApi from './modules/scheduling';
+export * as qualityApi from './modules/quality';

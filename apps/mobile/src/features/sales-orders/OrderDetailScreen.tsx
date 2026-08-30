@@ -15,8 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
-import { openInvoicePdf } from '@/api/modules/invoices';
+import { confirmDeliveryReceipt } from '@/api/modules/deliveries';
+import { queryKeys } from '@/api/queryKeys';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { mapConfirmReceiptErrorCode } from '@maher/types';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
+import { openInvoicePdf } from '@/api/modules/invoices';
 import {
   listCustomerAddresses,
   type CustomerAddress,
@@ -26,7 +30,6 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { DestructiveButton } from '@/components/buttons/DestructiveButton';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
@@ -34,9 +37,12 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { DatePickerField } from '@/components/calendar';
+import { InfoRow } from '@/components/forms/InfoRow';
 import { LockedTextField } from '@/components/forms/LockedTextField';
 import { CopyNotesButton } from '@/components/forms/CopyNotesButton';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
+import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
@@ -64,13 +70,22 @@ import {
   ManufacturingCostEditor,
   type CostBreakdownEdit,
 } from './components/ManufacturingCostEditor';
+import { ManufacturingCostCard } from './components/ManufacturingCostCard';
+import { ManufacturingCostBreakdownSheet } from './components/ManufacturingCostBreakdownSheet';
 import {
   OrderBoardCard,
   OrderSectionHeader,
 } from './components/OrderBoardCard';
 import { LinkedTablePanel } from './components/LinkedTablePanel';
 import { OrderDetailSkeleton } from './components/OrderDetailSkeleton';
-import { orderBoardShadow } from './components/orderFloorStyle';
+import { CommercialSummaryPanel } from './components/CommercialSummaryPanel';
+import { DeskCard } from '@/components/desk';
+import {
+  adminLifecycleAccentKey,
+  adminLifecycleHumanLabel,
+  adminLifecyclePhaseHint,
+  type AdminOrderLifecycle,
+} from './adminOrderLifecycle';
 import { useSalesOrderActions, useSalesOrderQuery } from './query';
 import {
   selectOrderDetail,
@@ -86,7 +101,33 @@ import { isOwnOrderSchedule } from '@/api/modules/scheduling';
 import { useDealerDateChangeMutation, useOrderScheduleQuery } from '@/features/scheduling/query';
 import { ChangeDeliveryDateSheet } from './components/ChangeDeliveryDateSheet';
 import { OrderScheduleCard } from './components/OrderScheduleCard';
+import { ConfirmReceiptSheet } from './components/ConfirmReceiptSheet';
 import { selectChangeDateCta } from './selectSchedulePromise';
+
+function lifecycleAccent(
+  life: AdminOrderLifecycle | null,
+  colors: {
+    warning: string;
+    success: string;
+    info: string;
+    brand: string;
+    textMuted: string;
+  },
+): string {
+  if (!life) return colors.brand;
+  switch (adminLifecycleAccentKey(life)) {
+    case 'warning':
+      return colors.warning;
+    case 'success':
+      return colors.success;
+    case 'info':
+      return colors.info;
+    case 'brand':
+      return colors.brand;
+    default:
+      return colors.textMuted;
+  }
+}
 
 type OrderDetailScreenProps = {
   orderId: string;
@@ -116,10 +157,36 @@ export function OrderDetailScreen({
   const canUpdate = can(user, 'sales-order.update');
   const canInvoice = can(user, 'invoice.read');
   const canDocument = can(user, 'document.read');
+  const canReadMfgCost = can(user, 'inventory.cost.read');
 
+  const queryClient = useQueryClient();
   const query = useSalesOrderQuery(orderId, allowed && !forceState);
   const actions = useSalesOrderActions(orderId);
   const refreshing = query.isRefetching && !query.isLoading;
+  const [confirmDeliveryId, setConfirmDeliveryId] = useState<string | null>(null);
+  const [confirmReceiptError, setConfirmReceiptError] = useState<string | null>(null);
+  const confirmReceiptMutation = useMutation({
+    mutationFn: (deliveryId: string) => confirmDeliveryReceipt(deliveryId),
+    onSuccess: async () => {
+      setConfirmDeliveryId(null);
+      setConfirmReceiptError(null);
+      await query.refetch();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.salesOrders.lists() });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.scheduling.ownDeliveries() });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.reports.dealerHome() });
+      showToast({
+        variant: 'success',
+        message: t('lifecycle.confirmReceiptSuccess'),
+      });
+    },
+    onError: (err: unknown) => {
+      const code =
+        err && typeof err === 'object' && 'body' in err
+          ? (err as { body?: { code?: string } }).body?.code
+          : undefined;
+      setConfirmReceiptError(t(`lifecycle.${mapConfirmReceiptErrorCode(code)}`));
+    },
+  });
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmKind, setConfirmKind] = useState<ConfirmKind>(null);
@@ -130,10 +197,15 @@ export function OrderDetailScreen({
 
   const [editNotes, setEditNotes] = useState('');
   const [editProject, setEditProject] = useState('');
+  const [editFactoryNumber, setEditFactoryNumber] = useState('');
   const [editDealerPo, setEditDealerPo] = useState('');
   const [editDeliveryDate, setEditDeliveryDate] = useState('');
   const [editDeliveryAddress, setEditDeliveryAddress] = useState('');
+  const [editEndCustomer, setEditEndCustomer] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editFax, setEditFax] = useState('');
   const [costEdit, setCostEdit] = useState<CostBreakdownEdit>(emptyCostBreakdownEdit);
+  const [mfgCostBreakdownOpen, setMfgCostBreakdownOpen] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState<CustomerAddress[]>([]);
 
   const raw: SalesOrderDetail | undefined =
@@ -179,6 +251,15 @@ export function OrderDetailScreen({
     if (!vm) return '';
     return JSON.stringify({
       id: vm.id,
+      number: vm.number,
+      notes: vm.notes,
+      project: vm.projectName,
+      ref: vm.customerRef,
+      delivery: vm.deliveryDate,
+      address: vm.deliveryAddress,
+      endCustomer: vm.endCustomerName,
+      phone: vm.endCustomerPhone ?? vm.phone,
+      fax: vm.endCustomerFax ?? vm.fax,
       costs: vm.costMaterials,
       mfg: vm.manufacturingCost,
     });
@@ -188,9 +269,13 @@ export function OrderDetailScreen({
     if (!vm?.canEdit) return;
     setEditNotes(vm.notes ?? '');
     setEditProject(vm.projectName ?? '');
+    setEditFactoryNumber(vm.number ?? '');
     setEditDealerPo(vm.customerRef ?? '');
     setEditDeliveryDate(vm.deliveryDate?.slice(0, 10) ?? '');
     setEditDeliveryAddress(vm.deliveryAddress ?? '');
+    setEditEndCustomer(vm.endCustomerName ?? '');
+    setEditPhone(vm.endCustomerPhone ?? vm.phone ?? '');
+    setEditFax(vm.endCustomerFax ?? vm.fax ?? '');
     setCostEdit(costEditFromMaterials(vm.costMaterials));
     // Sync from server payload only — not on every local cost keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- costSyncKey captures materials
@@ -258,16 +343,14 @@ export function OrderDetailScreen({
   }));
 
   const showAdminActions = variant === 'admin' && canUpdate && !forceState && vm;
+  /** Confirm draft in the dock — Prepare production lives on the setup board above, not floated. */
   const showStickyActions = Boolean(
-    showAdminActions &&
-      (vm.isDraft || canHoldSalesOrder(vm.status) || canCancelSalesOrder(vm.status)),
+    showAdminActions && vm.isDraft && !vm.productionSetupRequired,
   );
-  /** Lift sticky bar above floating tab bar (includes home-indicator inset). */
-  const stickyBottom = surfaceTabBarStackInset(insets.bottom, theme.spacing.sm);
+  /** Lift sticky bar above floating tab bar; leave room in the scroll. */
   const hasProductionWorkflow = (vm?.productionOrders?.length ?? 0) > 0;
-  /** Extra beige clearance so dock / last boards clear the tab bar. */
   const stickyPad = showStickyActions
-    ? stickyBottom + 148
+    ? stickyCtaBottomInset(insets.bottom, theme.spacing.md) + 148
     : theme.spacing['3xl'] +
       stickyBottom +
       (variant === 'dealer' ? 56 : theme.spacing['2xl']);
@@ -317,8 +400,33 @@ export function OrderDetailScreen({
         },
       });
     }
+    if (variant === 'admin' && canUpdate && !vm.isDraft) {
+      if (canHoldSalesOrder(vm.status)) {
+        items.push({
+          label: t('mobile.orderDetail.hold'),
+          icon: 'pause-circle-outline',
+          onPress: () => setConfirmKind('hold'),
+        });
+      }
+      if (canCancelSalesOrder(vm.status)) {
+        items.push({
+          label: t('mobile.orderDetail.cancelOrder'),
+          icon: 'close-circle-outline',
+          destructive: true,
+          onPress: () => setConfirmKind('cancel'),
+        });
+      }
+    }
+    if (variant === 'admin' && canUpdate && vm.isDraft && canCancelSalesOrder(vm.status)) {
+      items.push({
+        label: t('mobile.orderDetail.cancelOrder'),
+        icon: 'close-circle-outline',
+        destructive: true,
+        onPress: () => setConfirmKind('cancel'),
+      });
+    }
     return items;
-  }, [vm, canInvoice, canDocument, t, pickPdfOptions, showToast]);
+  }, [vm, canInvoice, canDocument, canUpdate, variant, t, pickPdfOptions, showToast]);
 
   function runStatusAction(kind: ConfirmKind, reason?: string) {
     if (!kind || forceState) return;
@@ -349,11 +457,15 @@ export function OrderDetailScreen({
     const costs = costEditToPayload(costEdit);
     actions.update.mutate(
       {
+        number: editFactoryNumber.trim() || undefined,
         notes: editNotes,
         projectName: editProject,
         externalOrderNumber: editDealerPo,
         requiredDeliveryDate: editDeliveryDate || null,
         deliveryAddress: editDeliveryAddress,
+        endCustomerName: editEndCustomer,
+        endCustomerPhone: editPhone,
+        endCustomerFax: editFax,
         manufacturingCost: costs.manufacturingCost,
         costBreakdown: costs.costBreakdown,
       },
@@ -468,47 +580,73 @@ export function OrderDetailScreen({
             marginTop: theme.spacing.md,
           }}
         >
-          {vm.needsProductionSetup ? (
+          {variant === 'admin' && vm.productionSetupRequired ? (
             <ListItemEnter index={nextIndex()}>
-              <OrderBoardCard accent={colors.brand}>
-                <View
-                  style={{
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    alignItems: 'center',
-                    gap: theme.spacing.sm,
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 16,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: colors.surfaceSecondary,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                    }}
-                  >
-                    <Ionicons name="construct-outline" size={16} color={colors.brand} />
-                  </View>
-                  <AppText variant="title" weight={titleWeight} style={{ flex: 1 }}>
-                    {t('mobile.orderDetail.setupTitle')}
-                  </AppText>
-                </View>
-                <AppText variant="caption" color="secondary">
-                  {t('mobile.orderDetail.setupBody')}
-                </AppText>
-                <PrimaryButton
-                  label={t('mobile.orderDetail.prepareProduction')}
-                  onPress={() => {
-                    void haptics.selection();
-                    const href = vm.setupProductId
-                      ? (`/(app)/(admin)/products/${vm.setupProductId}/production-setup` as Href)
-                      : ('/(app)/(admin)/products' as Href);
-                    router.push(href);
-                  }}
+              <OrderBoardCard
+                accent={colors.warning}
+                style={{ backgroundColor: colors.warningSoft }}
+              >
+                <OrderSectionHeader
+                  icon="construct-outline"
+                  label={t('mobile.orders.productionSetupRequired')}
+                  accent={colors.warning}
                 />
+                <AppText variant="label" weight="semibold">
+                  {t('mobile.orders.orderAcceptedSetup')}
+                </AppText>
+                <AppText variant="caption" color="secondary">
+                  {t('mobile.orderDetail.prepareProductionHint')}
+                </AppText>
+                {canUpdate ? (
+                  <PrimaryButton
+                    label={t('mobile.orders.prepareProduction')}
+                    onPress={() =>
+                      router.push(
+                        `/(app)/(admin)/orders/${orderId}/production-setup` as Href,
+                      )
+                    }
+                    style={{ alignSelf: 'stretch', width: '100%' }}
+                  />
+                ) : null}
+              </OrderBoardCard>
+            </ListItemEnter>
+          ) : null}
+
+          {variant === 'admin' &&
+          !vm.productionSetupRequired &&
+          vm.workerAssignmentRequired ? (
+            <ListItemEnter index={nextIndex()}>
+              <OrderBoardCard
+                accent={colors.info}
+                style={{ backgroundColor: colors.brandSoft }}
+              >
+                <OrderSectionHeader
+                  icon="people-outline"
+                  label={t('mobile.production.setup.planRequired')}
+                  accent={colors.info}
+                />
+                <AppText variant="caption" color="secondary">
+                  {t('mobile.production.setup.assignWorkersAndDates')}
+                </AppText>
+                {(() => {
+                  const poId =
+                    vm.productionReadinessSummary?.primaryProductionOrderId ??
+                    vm.productionOrders[0]?.id ??
+                    null;
+                  if (!poId) return null;
+                  return (
+                    <PrimaryButton
+                      label={t('mobile.productionSetup.openPlanCta')}
+                      onPress={() => {
+                        void haptics.selection();
+                        router.push(
+                          `/(app)/(admin)/production/${poId}` as Href,
+                        );
+                      }}
+                      style={{ alignSelf: 'stretch', width: '100%' }}
+                    />
+                  );
+                })()}
               </OrderBoardCard>
             </ListItemEnter>
           ) : null}
@@ -517,7 +655,7 @@ export function OrderDetailScreen({
             <OrderBoardCard accent={colors.brand}>
               <OrderSectionHeader
                 icon="cube-outline"
-                label={t('mobile.orderDetail.title')}
+                label={t('mobile.orders.journey.identityEyebrow')}
                 accent={colors.brand}
               />
               <AppText variant="title" weight={titleWeight}>
@@ -529,7 +667,8 @@ export function OrderDetailScreen({
                 dir="ltr"
                 style={{ letterSpacing: 0.2 }}
               >
-                {itemQty > 0 ? `${vm.number} · ${itemQty}` : vm.number}
+                {vm.number}
+                {vm.totalQuantity != null ? ` · ${vm.totalQuantity}` : ''}
               </AppText>
               {vm.showCosts === false && vm.customerRef ? (
                 <AppText variant="caption" color="muted">
@@ -541,8 +680,111 @@ export function OrderDetailScreen({
                   {t('mobile.orders.dealer')}: {vm.dealerName}
                 </AppText>
               ) : null}
+              {vm.deliveryDate ? (
+                <AppText variant="caption" color="muted">
+                  {formatDate(vm.deliveryDate)}
+                </AppText>
+              ) : null}
             </OrderBoardCard>
           </ListItemEnter>
+
+          {variant === 'admin' && vm.lifecycle ? (
+            <ListItemEnter index={nextIndex()}>
+              <DeskCard accent={lifecycleAccent(vm.lifecycle, colors)}>
+                <OrderSectionHeader
+                  icon="git-branch-outline"
+                  label={t('mobile.orders.journey.phaseEyebrow')}
+                  accent={lifecycleAccent(vm.lifecycle, colors)}
+                />
+                <AppText
+                  variant="label"
+                  weight={titleWeight}
+                  style={{ color: lifecycleAccent(vm.lifecycle, colors) }}
+                >
+                  {adminLifecycleHumanLabel(vm.lifecycle, t)}
+                </AppText>
+                <AppText variant="body" color="secondary">
+                  {(() => {
+                    const attentionKey =
+                      typeof vm.actionHint === 'string' &&
+                      (vm.actionHint.startsWith('mobile.orders.attention.') ||
+                        vm.actionHint.startsWith('lifecycle.attention.'))
+                        ? vm.actionHint
+                        : null;
+                    if (attentionKey) {
+                      const why = t(attentionKey);
+                      if (why !== attentionKey) return why;
+                    }
+                    const readinessHint =
+                      vm.productionReadinessSummary?.actionHint?.trim();
+                    if (readinessHint) return readinessHint;
+                    if (
+                      vm.lifecycle === 'in_production' &&
+                      vm.progressLabel?.trim()
+                    ) {
+                      return t('mobile.orders.actionHint.inStage', {
+                        stage: vm.progressLabel.trim(),
+                      });
+                    }
+                    return adminLifecyclePhaseHint(vm.lifecycle, t);
+                  })()}
+                </AppText>
+                {vm.productionReadinessSummary?.assignment ? (
+                  <AppText variant="caption" color="muted" dir="ltr">
+                    {t('mobile.orders.workersAssigned', {
+                      assigned: String(
+                        vm.productionReadinessSummary.assignment.assigned ?? 0,
+                      ),
+                      required: String(
+                        vm.productionReadinessSummary.assignment.required ?? 0,
+                      ),
+                    })}
+                  </AppText>
+                ) : null}
+                {(() => {
+                  const poId =
+                    vm.productionReadinessSummary?.primaryProductionOrderId ??
+                    vm.productionOrders[0]?.id ??
+                    null;
+                  if (!poId) return null;
+                  const needsSetup = Boolean(
+                    vm.productionReadinessSummary?.needsSetup,
+                  );
+                  const shipReady =
+                    vm.lifecycle === 'ready_to_ship' ||
+                    vm.lifecycle === 'shipped';
+                  if (shipReady && vm.deliveries[0]?.id) {
+                    return (
+                      <PrimaryButton
+                        label={t('mobile.orders.cta.viewDelivery')}
+                        onPress={() => {
+                          void haptics.selection();
+                          router.push(
+                            `/(app)/(admin)/deliveries/${vm.deliveries[0]!.id}` as Href,
+                          );
+                        }}
+                      />
+                    );
+                  }
+                  return (
+                    <PrimaryButton
+                      label={
+                        needsSetup
+                          ? t('mobile.orders.cta.finishSetup')
+                          : t('mobile.orders.cta.openProduction')
+                      }
+                      onPress={() => {
+                        void haptics.selection();
+                        router.push(
+                          `/(app)/(admin)/production/${poId}` as Href,
+                        );
+                      }}
+                    />
+                  );
+                })()}
+              </DeskCard>
+            </ListItemEnter>
+          ) : null}
 
           {vm.showCosts ? (
             <ListItemEnter index={nextIndex()}>
@@ -553,12 +795,24 @@ export function OrderDetailScreen({
                 }}
               >
                 <OrderBoardCard style={{ flex: 1 }}>
-                  <AppText variant="caption" color="muted">
-                    {t('mobile.orderDetail.systemOrderNumber')}
-                  </AppText>
-                  <AppText variant="label" weight="semibold" dir="ltr">
-                    {vm.number}
-                  </AppText>
+                  {vm.canEdit ? (
+                    <LockedTextField
+                      label={t('mobile.orderDetail.systemOrderNumber')}
+                      value={editFactoryNumber}
+                      onChangeText={setEditFactoryNumber}
+                      locked={false}
+                      autoCapitalize="characters"
+                    />
+                  ) : (
+                    <>
+                      <AppText variant="caption" color="muted">
+                        {t('mobile.orderDetail.systemOrderNumber')}
+                      </AppText>
+                      <AppText variant="label" weight="semibold" dir="ltr">
+                        {vm.number}
+                      </AppText>
+                    </>
+                  )}
                 </OrderBoardCard>
                 <OrderBoardCard style={{ flex: 1 }}>
                   {vm.canEdit ? (
@@ -571,6 +825,7 @@ export function OrderDetailScreen({
                       value={editDealerPo}
                       onChangeText={setEditDealerPo}
                       locked={false}
+                      autoCapitalize="characters"
                     />
                   ) : (
                     <>
@@ -602,6 +857,11 @@ export function OrderDetailScreen({
                     po.progressPercent != null
                       ? `${Math.round(po.progressPercent)}%`
                       : '—',
+                  onPress: () => {
+                    router.push(
+                      `/(app)/(admin)/production/${po.id}` as Href,
+                    );
+                  },
                 }))}
               />
             </ListItemEnter>
@@ -747,11 +1007,28 @@ export function OrderDetailScreen({
                     ) : undefined
                   }
                 />
-                <FieldRow label={t('mobile.orderDetail.endCustomer')} value={vm.endCustomerName} />
-                <FieldRow label={t('mobile.orderDetail.phone')} value={vm.phone} ltr />
-                <FieldRow label={t('mobile.orderDetail.fax')} value={vm.fax} ltr />
                 {vm.canEdit ? (
                   <>
+                    <LockedTextField
+                      label={t('mobile.orderDetail.endCustomer')}
+                      value={editEndCustomer}
+                      onChangeText={setEditEndCustomer}
+                      locked={false}
+                    />
+                    <LockedTextField
+                      label={t('mobile.orderDetail.phone')}
+                      value={editPhone}
+                      onChangeText={setEditPhone}
+                      locked={false}
+                      keyboardType="phone-pad"
+                    />
+                    <LockedTextField
+                      label={t('mobile.orderDetail.fax')}
+                      value={editFax}
+                      onChangeText={setEditFax}
+                      locked={false}
+                      keyboardType="phone-pad"
+                    />
                     <DatePickerField
                       label={t('mobile.orderDetail.deliveryDate')}
                       value={editDeliveryDate}
@@ -773,6 +1050,9 @@ export function OrderDetailScreen({
                   </>
                 ) : (
                   <>
+                    <FieldRow label={t('mobile.orderDetail.endCustomer')} value={vm.endCustomerName} />
+                    <FieldRow label={t('mobile.orderDetail.phone')} value={vm.phone} ltr />
+                    <FieldRow label={t('mobile.orderDetail.fax')} value={vm.fax} ltr />
                     <FieldRow
                       label={t('mobile.orderDetail.deliveryDate')}
                       value={vm.deliveryDate ? formatDate(vm.deliveryDate) : null}
@@ -902,6 +1182,16 @@ export function OrderDetailScreen({
             </ListItemEnter>
           ) : null}
 
+          {canReadMfgCost && query.data?.manufacturingCosting ? (
+            <ListItemEnter index={nextIndex()}>
+              <ManufacturingCostCard
+                summary={query.data.manufacturingCosting}
+                formatCurrency={formatCurrency}
+                onViewBreakdown={() => setMfgCostBreakdownOpen(true)}
+              />
+            </ListItemEnter>
+          ) : null}
+
           {vm.showCosts ? (
             <ListItemEnter index={nextIndex()}>
               <ManufacturingCostEditor
@@ -928,10 +1218,14 @@ export function OrderDetailScreen({
               <OrderBoardCard accent={colors.brand}>
                 <OrderSectionHeader
                   icon="git-network-outline"
-                  label={t('mobile.orderDetail.productionJourney')}
+                  label={
+                    variant === 'dealer'
+                      ? t('mobile.orderDetail.orderProgress')
+                      : t('mobile.orderDetail.productionJourney')
+                  }
                   accent={colors.brand}
                 />
-                {vm.assignedWorkerName ? (
+                {vm.showWorker && vm.assignedWorkerName ? (
                   <AppText variant="caption" color="secondary">
                     {t('mobile.orderDetail.assignedWorker')}: {vm.assignedWorkerName}
                   </AppText>
@@ -993,6 +1287,16 @@ export function OrderDetailScreen({
             </ListItemEnter>
           ) : null}
 
+          {variant === 'admin' && raw?.commercialSummary ? (
+            <ListItemEnter index={nextIndex()}>
+              <CommercialSummaryPanel
+                orderId={orderId}
+                summary={raw.commercialSummary}
+                grossDifference={raw.commercialGrossDifference}
+              />
+            </ListItemEnter>
+          ) : null}
+
           {vm.invoices.length ? (
             <ListItemEnter index={nextIndex()}>
               <LinkedTablePanel
@@ -1019,21 +1323,66 @@ export function OrderDetailScreen({
             </ListItemEnter>
           ) : null}
 
-          {vm.showCosts ? (
+          {vm.showCosts || variant === 'dealer' ? (
             <ListItemEnter index={nextIndex()}>
               <LinkedTablePanel
                 title={t('mobile.orderDetail.deliveries')}
                 icon="car-outline"
                 empty={t('mobile.orderDetail.noLinkedDeliveries')}
-                rows={vm.deliveries.map((d) => ({
-                  id: d.id,
-                  number: d.number,
-                  status: d.status,
-                  details: d.deliveryDate
-                    ? formatDate(d.deliveryDate)
-                    : '—',
-                }))}
+                rows={(variant === 'dealer'
+                  ? vm.deliveries.filter((d) => {
+                      const s = String(d.status ?? '').toUpperCase();
+                      return s === 'OUT_FOR_DELIVERY' || s === 'DELIVERED' || s === 'SHIPPED';
+                    })
+                  : vm.deliveries
+                ).map((d) => {
+                  const s = String(d.status ?? '').toUpperCase();
+                  const dealerPhase =
+                    s === 'DELIVERED'
+                      ? t('mobile.deliveryLoad.statusDelivered')
+                      : t('mobile.deliveryLoad.statusShipped');
+                  return {
+                    id: d.id,
+                    number: d.number,
+                    status: d.status,
+                    statusLabel:
+                      variant === 'dealer'
+                        ? dealerPhase
+                        : undefined,
+                    details: d.deliveryDate
+                      ? formatDate(d.deliveryDate)
+                      : '—',
+                    onPress:
+                      variant === 'admin'
+                        ? () =>
+                            router.push(
+                              `/(app)/(admin)/deliveries/${d.id}` as Href,
+                            )
+                        : undefined,
+                  };
+                })}
               />
+              {variant === 'dealer' && vm.deliveries.some((d) => d.status === 'OUT_FOR_DELIVERY') ? (
+                <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
+                  <AppText variant="body" weight="semibold">
+                    {t('lifecycle.shipped')}
+                  </AppText>
+                  <AppText variant="caption" color="muted">
+                    {t('lifecycle.shippedHero')}
+                  </AppText>
+                  {vm.deliveries
+                    .filter((d) => d.status === 'OUT_FOR_DELIVERY')
+                    .map((d) => (
+                      <PrimaryButton
+                        key={`confirm-${d.id}`}
+                        label={t('lifecycle.confirmReceived')}
+                        onPress={() => setConfirmDeliveryId(d.id)}
+                        disabled={confirmReceiptMutation.isPending}
+                        accessibilityLabel={`${t('lifecycle.confirmReceived')} ${vm.number}`}
+                      />
+                    ))}
+                </View>
+              ) : null}
             </ListItemEnter>
           ) : null}
 
@@ -1047,6 +1396,12 @@ export function OrderDetailScreen({
                   id: r.id,
                   number: r.number,
                   status: r.status,
+                  statusLabel: r.lifecycleLabelKey
+                    ? (() => {
+                        const v = t(r.lifecycleLabelKey!);
+                        return v === r.lifecycleLabelKey ? undefined : v;
+                      })()
+                    : undefined,
                   details: r.productDesc ?? r.reason ?? '—',
                   onPress: () => {
                     const href =
@@ -1078,79 +1433,13 @@ export function OrderDetailScreen({
       </Animated.ScrollView>
 
       {showStickyActions ? (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: stickyBottom,
-            paddingHorizontal: theme.spacing.lg,
-            paddingTop: theme.spacing.sm,
-            paddingBottom: theme.spacing.md,
-          }}
-        >
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surface,
-              padding: theme.spacing.md,
-              gap: theme.spacing.sm,
-              ...orderBoardShadow(colorScheme),
-            }}
-          >
-            {vm.isDraft ? (
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                {canCancelSalesOrder(vm.status) ? (
-                  <View style={{ flex: 1 }}>
-                    <DestructiveButton
-                      label={t('mobile.orderDetail.cancelOrder')}
-                      onPress={() => setConfirmKind('cancel')}
-                    />
-                  </View>
-                ) : null}
-                <View style={{ flex: 1 }}>
-                  <PrimaryButton
-                    label={t('mobile.orderDetail.confirm')}
-                    onPress={() => setConfirmKind('confirm')}
-                    loading={actions.confirm.isPending}
-                  />
-                </View>
-              </View>
-            ) : (
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                {canHoldSalesOrder(vm.status) ? (
-                  <View style={{ flex: 1 }}>
-                    <SecondaryButton
-                      label={t('mobile.orderDetail.hold')}
-                      onPress={() => setConfirmKind('hold')}
-                    />
-                  </View>
-                ) : null}
-                {canCancelSalesOrder(vm.status) ? (
-                  <View style={{ flex: 1 }}>
-                    <DestructiveButton
-                      label={t('mobile.orderDetail.cancelOrder')}
-                      onPress={() => setConfirmKind('cancel')}
-                    />
-                  </View>
-                ) : null}
-              </View>
-            )}
-          </View>
-        </View>
+        <FloatingActionDock floating>
+          <PrimaryButton
+            label={t('mobile.orderDetail.confirm')}
+            onPress={() => setConfirmKind('confirm')}
+            loading={actions.confirm.isPending}
+          />
+        </FloatingActionDock>
       ) : null}
 
       <ActionSheet
@@ -1160,6 +1449,14 @@ export function OrderDetailScreen({
         actions={actionsSheet}
         cancelLabel={t('mobile.orderDetail.cancel')}
       />
+      {canReadMfgCost ? (
+        <ManufacturingCostBreakdownSheet
+          open={mfgCostBreakdownOpen}
+          onClose={() => setMfgCostBreakdownOpen(false)}
+          salesOrderId={orderId}
+          formatCurrency={formatCurrency}
+        />
+      ) : null}
       {pdfDownloadSheet}
 
       <ConfirmationSheet
@@ -1186,13 +1483,31 @@ export function OrderDetailScreen({
         open={confirmKind === 'cancel'}
         onClose={() => setConfirmKind(null)}
         title={t('mobile.orderDetail.cancelOrder')}
-        message={t('mobile.orderDetail.cancelDescription')}
+        message={t('mobile.orderDetail.cancelImpactDescription')}
         confirmLabel={t('mobile.orderDetail.cancelOrder')}
         cancelLabel={t('mobile.orderDetail.cancel')}
         destructive
         reasonLabel={t('mobile.orderDetail.reasonOptional')}
         reasonPlaceholder={t('mobile.orderDetail.reasonPlaceholder')}
         onConfirm={(reason) => runStatusAction('cancel', reason)}
+      />
+
+      <ConfirmReceiptSheet
+        open={Boolean(confirmDeliveryId)}
+        orderNumber={vm?.number ?? ''}
+        productTitle={vm?.title ?? ''}
+        quantity={vm?.items[0]?.quantity}
+        imageUrl={vm?.heroImageUrls?.[0] ?? null}
+        loading={confirmReceiptMutation.isPending}
+        error={confirmReceiptError}
+        onClose={() => {
+          setConfirmDeliveryId(null);
+          setConfirmReceiptError(null);
+        }}
+        onConfirm={() => {
+          setConfirmReceiptError(null);
+          if (confirmDeliveryId) confirmReceiptMutation.mutate(confirmDeliveryId);
+        }}
       />
 
       {showSchedule ? (
@@ -1285,16 +1600,7 @@ function FieldRow({
   value: string | null | undefined;
   ltr?: boolean;
 }) {
-  return (
-    <View style={{ gap: 2 }}>
-      <AppText variant="caption" color="muted">
-        {label}
-      </AppText>
-      <AppText variant="body" style={ltr ? { writingDirection: 'ltr' } : undefined}>
-        {value?.trim() ? value : '—'}
-      </AppText>
-    </View>
-  );
+  return <InfoRow label={label} value={value} ltr={ltr} />;
 }
 
 function LineItemCard({

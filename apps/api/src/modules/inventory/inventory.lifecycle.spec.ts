@@ -39,6 +39,10 @@ describe('inventory lifecycle engine', () => {
         update: jest.fn().mockResolvedValue({}),
         create: jest.fn().mockResolvedValue({}),
       },
+      inventoryLot: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
+      },
     };
     const prisma = {
       $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
@@ -197,6 +201,9 @@ describe('inventory lifecycle engine', () => {
             .mockResolvedValueOnce({ id: fromId, type })
             .mockResolvedValueOnce({ id: toId, type }),
         },
+        inventoryItem: {
+          findMany: jest.fn().mockResolvedValue([{ id: 'i', archivedAt: null, isActive: true }]),
+        },
         warehouseTransfer: { create },
       } as unknown as PrismaService;
       const service = new InventoryService(
@@ -278,5 +285,50 @@ describe('inventory lifecycle engine', () => {
     await expect(service.completeTransfer('trf-1', 'u1')).rejects.toMatchObject({
       response: { code: 'INSUFFICIENT_STOCK' },
     });
+  });
+
+  it('moves reserved finished lots when completing a transfer', async () => {
+    const { service, tx, prisma } = makeService({
+      itemClass: 'FINISHED_GOOD',
+      warehouseType: 'FINISHED_GOODS',
+      balance: { id: 'bal-1', availableQty: 3, reservedQty: 3 },
+    });
+    (tx as {
+      inventoryLot?: {
+        findMany: jest.Mock;
+        update: jest.Mock;
+      };
+    }).inventoryLot = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'lot-1',
+          quantity: 3,
+          status: 'RESERVED',
+          warehouseId: 'wh-1',
+        },
+      ]),
+      update: jest.fn().mockResolvedValue({}),
+    };
+    (prisma as unknown as {
+      warehouseTransfer: { findUniqueOrThrow: jest.Mock };
+    }).warehouseTransfer.findUniqueOrThrow.mockResolvedValue({
+      id: 'trf-1',
+      status: 'DRAFT',
+      number: 'TRF-1',
+      fromWarehouseId: 'wh-1',
+      toWarehouseId: 'wh-2',
+      lines: [{ id: 'line-1', inventoryItemId: 'item-1', quantity: 3 }],
+    });
+    (tx as { warehouseTransfer?: { update: jest.Mock } }).warehouseTransfer = {
+      update: jest.fn().mockResolvedValue({ id: 'trf-1', status: 'COMPLETED' }),
+    };
+    await expect(service.completeTransfer('trf-1', 'u1')).resolves.toMatchObject({
+      status: 'COMPLETED',
+    });
+    expect(tx.inventoryLot!.update).toHaveBeenCalledWith({
+      where: { id: 'lot-1' },
+      data: { warehouseId: 'wh-2', locationId: null },
+    });
+    expect(tx.inventoryBalance.update).toHaveBeenCalled();
   });
 });

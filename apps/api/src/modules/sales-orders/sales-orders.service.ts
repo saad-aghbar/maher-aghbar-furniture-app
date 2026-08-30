@@ -29,9 +29,26 @@ import { SchedulingService } from '../scheduling/scheduling.service';
 import { WorkflowSnapshotService } from '../production/workflow/workflow-snapshot.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ProductionInventoryService } from '../production/production-inventory.service';
+import { OrderProductionSetupService } from '../production/order-production-setup.service';
+import { ManufacturingCostService } from '../production/manufacturing-cost.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { firstImageDocument } from '../../common/helpers/document-image.util';
 import { buildSalesOrderSearchOr } from './build-sales-order-search-or';
+import { assessProductionReadiness, type ExecutableTaskInput } from '../production/production-readiness';
+import {
+  commercialLinesReady,
+  money as moneyN,
+} from '../payments/dealer-finance';
+import { roundMoney } from '../../common/helpers/money.util';
+import {
+  CANCEL_TASK_STATUSES,
+  OPEN_TASK_STATUSES,
+  cancelPhaseCurrentState,
+  formatCancellationReason,
+  normalizeCancelReasonCode,
+  resolveSalesOrderCancelPhase,
+  type CancelPhase,
+} from './sales-order-cancel-phase';
 
 function stripSalesOrderCosts<T extends object>(order: T, user?: AuthUser): T {
   if (!user?.customerId) return order;
@@ -41,6 +58,8 @@ function stripSalesOrderCosts<T extends object>(order: T, user?: AuthUser): T {
   delete copy.costBreakdown;
   delete copy.productionPrice;
   delete copy.profit;
+  delete copy.manufacturingCosting;
+  delete copy.commercialGrossDifference;
   delete copy.assignedEmployeeId;
   delete copy.assignedEmployee;
   // Floor stage is factory-only; dealers get coarse progressLabel instead.
@@ -214,6 +233,8 @@ export class SalesOrdersService {
     private readonly workflowSnapshots: WorkflowSnapshotService,
     private readonly inventory: InventoryService,
     private readonly productionInventory: ProductionInventoryService,
+    private readonly orderProductionSetup: OrderProductionSetupService,
+    private readonly manufacturingCost: ManufacturingCostService,
   ) {}
 
   /** Short-lived download URL for list thumbnails from request attachments. */
@@ -490,7 +511,25 @@ export class SalesOrdersService {
               status: true,
               currentStageCode: true,
               progressPercent: true,
+              tasks: {
+                where: {
+                  status: { not: 'CANCELLED' },
+                  isRework: false,
+                },
+                select: {
+                  id: true,
+                  assignedEmployeeId: true,
+                  stageDefinition: {
+                    select: { code: true, executionKind: true, nameEn: true },
+                  },
+                },
+              },
             },
+          },
+          deliveries: {
+            select: { id: true, status: true, deliveryDate: true },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
           },
         },
         orderBy,
@@ -559,6 +598,41 @@ export class SalesOrdersService {
               ),
             }
           : null;
+        const latestDelivery = row.deliveries?.[0] ?? null;
+        const poReadiness = !isDealer
+          ? row.productionOrders.map((po) => {
+              const readiness = assessProductionReadiness({
+                status: po.status,
+                currentStageCode: po.currentStageCode,
+                tasks: (po.tasks ?? []) as ExecutableTaskInput[],
+              });
+              return { id: po.id, number: po.number, status: po.status, readiness };
+            })
+          : [];
+        const required = poReadiness.reduce((n, po) => n + po.readiness.assignment.required, 0);
+        const assigned = poReadiness.reduce((n, po) => n + po.readiness.assignment.assigned, 0);
+        const missingCount = poReadiness.reduce(
+          (n, po) => n + po.readiness.assignment.missing.length,
+          0,
+        );
+        const needsSetup = poReadiness.some(
+          (po) =>
+            po.readiness.boardBucket === 'needs_setup' || po.readiness.assignment.missing.length > 0,
+        );
+        const canStartAll =
+          poReadiness.length > 0 && poReadiness.every((po) => po.readiness.canStart);
+        const actionHint = !isDealer
+          ? missingCount > 0
+            ? `${missingCount} worker${missingCount === 1 ? '' : 's'} still need assignment`
+            : canStartAll
+              ? 'Ready to start'
+              : poReadiness.some((po) => po.readiness.boardBucket === 'on_floor')
+                ? 'In production'
+                : poReadiness.some((po) => po.readiness.boardBucket === 'inspection_packaging')
+                  ? 'Inspection / packaging'
+                  : null
+          : null;
+
         const base = stripSalesOrderCosts(
           {
             ...row,
@@ -580,6 +654,19 @@ export class SalesOrdersService {
             sellerPrice: costs.sellerPrice,
             productionPrice: costs.productionPrice,
             profit: costs.profit,
+            deliveryStatus: latestDelivery?.status ?? null,
+            productionReadinessSummary: !isDealer
+              ? {
+                  productionOrderCount: poReadiness.length,
+                  canStart: canStartAll,
+                  needsSetup,
+                  materialsReady: poReadiness.every((po) => po.readiness.materialsReady),
+                  assignment: { required, assigned, missingCount },
+                  actionHint,
+                  primaryProductionOrderId: poReadiness[0]?.id ?? null,
+                }
+              : null,
+            productionOrders: row.productionOrders.map(({ tasks: _t, ...po }) => po),
           },
           user,
         );
@@ -705,6 +792,21 @@ export class SalesOrdersService {
               },
               orderBy: { stageDefinition: { sortOrder: 'asc' } },
             },
+            tasks: {
+              include: {
+                stageDefinition: {
+                  select: {
+                    id: true,
+                    code: true,
+                    nameEn: true,
+                    nameAr: true,
+                    nameHe: true,
+                    executionKind: true,
+                  },
+                },
+                blockers: { where: { resolvedAt: null } },
+              },
+            },
             documents: {
               where: {
                 archivedAt: null,
@@ -742,12 +844,51 @@ export class SalesOrdersService {
             id: true,
             number: true,
             approvalStatus: true,
+            physicalStatus: true,
+            needInfoNote: true,
+            inventoryFate: true,
             reason: true,
             productDesc: true,
             quantity: true,
             createdAt: true,
           },
           orderBy: { createdAt: 'desc' },
+        },
+        productionSetup: {
+          select: {
+            id: true,
+            status: true,
+            releasedAt: true,
+            lines: {
+              select: {
+                id: true,
+                salesOrderLineId: true,
+                status: true,
+                manufacturingName: true,
+                manufacturingComplexity: true,
+                catalogDimensions: true,
+                orderDimensions: true,
+                requestedFabricLabel: true,
+                factoryNotes: true,
+                packagingExpectation: true,
+                workflowId: true,
+                materialRequirements: {
+                  orderBy: { sortOrder: 'asc' },
+                  select: {
+                    id: true,
+                    sku: true,
+                    displayName: true,
+                    category: true,
+                    unit: true,
+                    expectedQty: true,
+                    source: true,
+                    inventoryItemId: true,
+                    requestedFabricLabel: true,
+                  },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -768,6 +909,13 @@ export class SalesOrdersService {
       const stages = po.stages.map((s) =>
         isDealer ? mapWorkflowStageSafe(s, photos) : mapWorkflowStageAdmin(s, photos),
       );
+      const readiness = isDealer
+        ? undefined
+        : assessProductionReadiness({
+            status: po.status,
+            currentStageCode: po.currentStageCode,
+            tasks: (po.tasks ?? []) as ExecutableTaskInput[],
+          });
       const mapped = {
         id: po.id,
         number: po.number,
@@ -777,9 +925,55 @@ export class SalesOrdersService {
         stages,
         // PO-level flat photo list stays admin-only; dealers get stage.photos instead.
         photos: isDealer ? [] : photos,
+        ...(readiness ? { readiness } : {}),
       };
       return isDealer ? mapProgressForDealer(mapped) : mapped;
     });
+
+    const productionReadinessSummary = !isDealer
+      ? (() => {
+          const withReadiness = productionOrders.filter(
+            (po): po is typeof po & { readiness: NonNullable<(typeof po)['readiness']> } =>
+              Boolean((po as { readiness?: unknown }).readiness),
+          );
+          const required = withReadiness.reduce((n, po) => n + po.readiness.assignment.required, 0);
+          const assigned = withReadiness.reduce((n, po) => n + po.readiness.assignment.assigned, 0);
+          const missing = withReadiness.flatMap((po) =>
+            po.readiness.assignment.missing.map((m) => ({
+              ...m,
+              productionOrderId: po.id,
+              productionOrderNumber: po.number,
+            })),
+          );
+          const anyCanStart = withReadiness.some((po) => po.readiness.canStart);
+          const allReady =
+            withReadiness.length > 0 && withReadiness.every((po) => po.readiness.canStart);
+          const needsSetup = withReadiness.some(
+            (po) => po.readiness.boardBucket === 'needs_setup' || po.readiness.assignment.missing.length > 0,
+          );
+          const materialsReady = withReadiness.every((po) => po.readiness.materialsReady);
+          const actionHint = needsSetup
+            ? missing.length > 0
+              ? `${missing.length} worker${missing.length === 1 ? '' : 's'} still need assignment`
+              : 'Finish production setup'
+            : allReady
+              ? 'Ready to start'
+              : anyCanStart
+                ? 'Some lines ready to start'
+                : withReadiness.some((po) => po.readiness.boardBucket === 'on_floor')
+                  ? 'In production'
+                  : null;
+          return {
+            productionOrderCount: withReadiness.length,
+            canStart: allReady,
+            needsSetup,
+            materialsReady,
+            assignment: { required, assigned, missing },
+            actionHint,
+            primaryProductionOrderId: withReadiness[0]?.id ?? null,
+          };
+        })()
+      : null;
 
     // Seller price is always per-dealer; production cost stays factory-global (hidden from portal).
     const [materialCosts, dealerPrices] = await Promise.all([
@@ -935,6 +1129,7 @@ export class SalesOrdersService {
       manufacturingCost: productionPrice,
       costBreakdown,
       productionOrders,
+      productionReadinessSummary,
       progressPercent: maxProgress(productionOrders),
       currentStage: user?.customerId ? null : resolveCurrentStage(productionOrders),
       sellerPrice: costs.sellerPrice,
@@ -946,10 +1141,193 @@ export class SalesOrdersService {
       title,
       imageUrl,
       assignedEmployee,
+      /** Piece 1: commercially accepted SO awaiting Prepare production */
+      productionSetupRequired:
+        order.status === 'DRAFT' &&
+        (!productionOrders || productionOrders.length === 0),
+      productionSetupStatus: order.productionSetup?.status ?? null,
+      workerAssignmentRequired:
+        order.productionSetup?.status === 'RELEASED' &&
+        (productionOrders?.length ?? 0) > 0,
+      productionSetup: user?.customerId
+        ? order.productionSetup
+          ? {
+              status: order.productionSetup.status,
+              releasedAt: order.productionSetup.releasedAt,
+            }
+          : null
+        : order.productionSetup,
+      manufacturingCosting: user?.customerId
+        ? null
+        : await this.manufacturingCost.summaryForSalesOrder(order.id, user),
+      commercialSummary: this.buildCommercialSummaryPayload(order),
+      commercialGrossDifference: user?.customerId
+        ? null
+        : await this.commercialVsMfgDifference(order.id, costs.sellerPrice, user),
     };
     const withProgress = user?.customerId ? mapProgressForDealer(result) : result;
 
     return stripSalesOrderCosts(withProgress, user);
+  }
+
+  private buildCommercialSummaryPayload(order: {
+    id: string;
+    number: string;
+    total: unknown;
+    lines: Array<{
+      id: string;
+      description: string;
+      quantity: unknown;
+      unitPrice: unknown;
+      lineTotal: unknown;
+      manufacturingComplexity: string | null;
+      commercialPriceStatus: string;
+      commercialPriceSource: string | null;
+      commercialPriceNote: string | null;
+    }>;
+  }) {
+    const gate = commercialLinesReady(order.lines);
+    return {
+      salesOrderId: order.id,
+      number: order.number,
+      orderTotal: moneyN(order.total as number | string),
+      commercialComplete: gate.ok,
+      commercialBlock: gate.ok ? null : gate,
+      lines: order.lines.map((l) => ({
+        id: l.id,
+        description: l.description,
+        quantity: moneyN(l.quantity as number | string),
+        unitPrice: moneyN(l.unitPrice as number | string),
+        lineTotal: moneyN(l.lineTotal as number | string),
+        manufacturingComplexity: l.manufacturingComplexity,
+        commercialPriceStatus: l.commercialPriceStatus,
+        commercialPriceSource: l.commercialPriceSource,
+        commercialPriceNote: l.commercialPriceNote,
+      })),
+    };
+  }
+
+  /** Sale vs mfg gross difference only when Piece 5 cost status is FINAL. */
+  private async commercialVsMfgDifference(
+    salesOrderId: string,
+    sellerPrice: number,
+    user?: AuthUser,
+  ) {
+    const costing = await this.manufacturingCost.summaryForSalesOrder(salesOrderId, user);
+    if (!costing || costing.status !== 'FINAL') {
+      return {
+        available: false,
+        reason: 'MANUFACTURING_COST_NOT_FINAL',
+        saleTotal: sellerPrice,
+        manufacturingCost: null,
+        grossDifference: null,
+      };
+    }
+    const mfg = Number(costing.actualTotal ?? costing.estimatedTotal ?? 0);
+    return {
+      available: true,
+      reason: null,
+      saleTotal: sellerPrice,
+      manufacturingCost: mfg,
+      grossDifference: Number(roundMoney(sellerPrice - mfg)),
+    };
+  }
+
+  /**
+   * Staff confirms / sets final commercial sale price on SO lines (MODIFIED/CUSTOM or missing).
+   * Does not rewrite issued invoice lines.
+   */
+  async confirmCommercialPrices(
+    salesOrderId: string,
+    lines: Array<{ lineId: string; unitPrice: number; note?: string }>,
+    user: AuthUser,
+  ) {
+    if (user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Dealers cannot confirm commercial prices.',
+      });
+    }
+    const so = await this.prisma.salesOrder.findFirst({
+      where: { id: salesOrderId, archivedAt: null },
+      include: {
+        lines: true,
+        invoices: {
+          where: { archivedAt: null, status: { notIn: ['CANCELLED', 'VOID'] } },
+          select: { id: true, status: true },
+        },
+      },
+    });
+    if (!so) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Sales order not found.' });
+
+    const issued = so.invoices.some((i) => i.status !== 'DRAFT');
+    if (issued) {
+      throw new BadRequestException({
+        code: 'INVOICE_ISSUED',
+        message: 'Cannot change commercial prices after an invoice has been issued.',
+      });
+    }
+
+    for (const patch of lines) {
+      const line = so.lines.find((l) => l.id === patch.lineId);
+      if (!line) {
+        throw new BadRequestException({
+          code: 'LINE_NOT_FOUND',
+          message: `Line ${patch.lineId} not on this sales order.`,
+        });
+      }
+      const unitPrice = Number(patch.unitPrice);
+      if (!(unitPrice > 0)) {
+        throw new BadRequestException({
+          code: 'COMMERCIAL_PRICE_REQUIRED',
+          message: 'Final commercial unit price must be greater than zero.',
+        });
+      }
+      const qty = Number(line.quantity);
+      const discount = Number(line.discountValue ?? 0);
+      const taxRate = Number(line.taxRate ?? 0);
+      const gross = qty * unitPrice - discount;
+      const tax = gross * (taxRate / 100);
+      const lineTotal = Number(roundMoney(gross + tax));
+
+      await this.prisma.salesOrderLine.update({
+        where: { id: line.id },
+        data: {
+          unitPrice: unitPrice as unknown as Prisma.Decimal,
+          lineTotal: lineTotal as unknown as Prisma.Decimal,
+          commercialPriceStatus: 'CONFIRMED',
+          commercialPriceSource: 'STAFF_CONFIRMED',
+          commercialPriceNote: patch.note ?? line.commercialPriceNote,
+        },
+      });
+    }
+
+    // Recompute SO totals from lines.
+    const refreshed = await this.prisma.salesOrderLine.findMany({
+      where: { salesOrderId },
+      orderBy: { sortOrder: 'asc' },
+    });
+    let subtotal = 0;
+    let taxTotal = 0;
+    for (const l of refreshed) {
+      const qty = Number(l.quantity);
+      const up = Number(l.unitPrice);
+      const disc = Number(l.discountValue ?? 0);
+      const rate = Number(l.taxRate ?? 0);
+      const gross = qty * up - disc;
+      subtotal += gross;
+      taxTotal += gross * (rate / 100);
+    }
+    await this.prisma.salesOrder.update({
+      where: { id: salesOrderId },
+      data: {
+        subtotal: Number(roundMoney(subtotal)) as unknown as Prisma.Decimal,
+        taxTotal: Number(roundMoney(taxTotal)) as unknown as Prisma.Decimal,
+        total: Number(roundMoney(subtotal + taxTotal)) as unknown as Prisma.Decimal,
+      },
+    });
+
+    return this.getById(salesOrderId, user);
   }
 
   async update(id: string, dto: UpdateSalesOrderDto, user?: AuthUser) {
@@ -983,9 +1361,73 @@ export class SalesOrdersService {
       }
     }
 
-    return this.prisma.salesOrder.update({
+    let nextNumber: string | undefined;
+    if (dto.number !== undefined) {
+      const trimmed = dto.number.trim();
+      if (!trimmed) {
+        throw new BadRequestException({
+          code: 'BAD_REQUEST',
+          message: 'Factory order number cannot be empty.',
+        });
+      }
+      if (trimmed !== order.number) {
+        const clash = await this.prisma.salesOrder.findFirst({
+          where: { number: trimmed, NOT: { id } },
+          select: { id: true },
+        });
+        if (clash) {
+          throw new BadRequestException({
+            code: 'BAD_REQUEST',
+            message: 'Factory order number is already in use.',
+          });
+        }
+        nextNumber = trimmed;
+      }
+    }
+
+    const requestId =
+      (order as { customerRequest?: { id?: string } | null }).customerRequest?.id ?? null;
+    const patchRequest =
+      requestId &&
+      (dto.endCustomerName !== undefined ||
+        dto.endCustomerPhone !== undefined ||
+        dto.endCustomerFax !== undefined ||
+        dto.projectName !== undefined ||
+        dto.externalOrderNumber !== undefined ||
+        dto.deliveryAddress !== undefined ||
+        requiredDeliveryDate !== undefined);
+
+    if (patchRequest && requestId) {
+      await this.prisma.requestForQuotation.update({
+        where: { id: requestId },
+        data: {
+          ...(dto.endCustomerName !== undefined
+            ? { endCustomerName: dto.endCustomerName }
+            : {}),
+          ...(dto.endCustomerPhone !== undefined
+            ? { endCustomerPhone: dto.endCustomerPhone }
+            : {}),
+          ...(dto.endCustomerFax !== undefined
+            ? { endCustomerFax: dto.endCustomerFax }
+            : {}),
+          ...(dto.projectName !== undefined ? { projectName: dto.projectName } : {}),
+          ...(dto.externalOrderNumber !== undefined
+            ? { externalOrderNumber: dto.externalOrderNumber }
+            : {}),
+          ...(dto.deliveryAddress !== undefined
+            ? { deliveryAddress: dto.deliveryAddress }
+            : {}),
+          ...(requiredDeliveryDate !== undefined
+            ? { requiredDeliveryDate }
+            : {}),
+        },
+      });
+    }
+
+    await this.prisma.salesOrder.update({
       where: { id },
       data: {
+        ...(nextNumber !== undefined ? { number: nextNumber } : {}),
         ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
         ...(dto.projectName !== undefined ? { projectName: dto.projectName } : {}),
         ...(dto.externalOrderNumber !== undefined
@@ -1004,21 +1446,14 @@ export class SalesOrdersService {
           ? { costBreakdown: dto.costBreakdown as Prisma.InputJsonValue }
           : {}),
       },
-      include: {
-        customer: true,
-        quotation: { select: { id: true, number: true, status: true } },
-        lines: { orderBy: { sortOrder: 'asc' } },
-        productionOrders: {
-          select: {
-            id: true,
-            number: true,
-            status: true,
-            currentStageCode: true,
-            progressPercent: true,
-          },
-        },
-      },
     });
+
+    return this.getById(id, user);
+  }
+
+  /** Piece 2: lazy-create production setup without releasing to factory. */
+  async ensureProductionSetup(salesOrderId: string, user?: AuthUser) {
+    return this.orderProductionSetup.ensureSetup(salesOrderId, user);
   }
 
   async confirm(id: string, userId: string) {
@@ -1028,6 +1463,21 @@ export class SalesOrdersService {
         code: 'BAD_REQUEST',
         message: 'Only draft sales orders can be confirmed.',
       });
+    }
+
+    const setupReleased = await this.orderProductionSetup.isReleased(id);
+    if (!setupReleased) {
+      throw new BadRequestException({
+        code: 'SETUP_INCOMPLETE',
+        message:
+          'Complete Production Setup and release before confirming. Use POST /sales-orders/:id/production-setup/release.',
+      });
+    }
+
+    // Setup already created POs on release — confirm is a no-op alias after Piece 2.
+    const existing = await this.prisma.productionOrder.count({ where: { salesOrderId: id } });
+    if (existing > 0) {
+      return this.getById(id);
     }
 
     const productionLines = order.lines.filter((l) => l.productionRequired);
@@ -1111,12 +1561,7 @@ export class SalesOrdersService {
         })
         .catch(() => undefined);
 
-      for (const productionOrder of updated.productionOrders ?? []) {
-        await this.scheduling
-          .generateForProductionOrder(productionOrder.id, userId)
-          .catch((err) => this.scheduling.markNeedsReview(productionOrder.id, userId, err).catch(() => undefined));
-      }
-
+      // Piece 2: do not auto-schedule — worker assignment is Piece 3.
       return updated;
     });
   }
@@ -1157,30 +1602,353 @@ export class SalesOrdersService {
     return updated;
   }
 
-  async cancel(id: string, userId: string, reason?: string) {
-    const order = await this.getById(id);
-    const cancellable: SalesOrderStatus[] = [
-      SalesOrderStatus.DRAFT,
-      SalesOrderStatus.CONFIRMED,
-      SalesOrderStatus.READY_FOR_PRODUCTION,
-      SalesOrderStatus.ON_HOLD,
-      SalesOrderStatus.WAITING_FOR_PAYMENT,
-      SalesOrderStatus.WAITING_FOR_MATERIALS,
-    ];
-    if (!cancellable.includes(order.status as SalesOrderStatus)) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: `Cannot cancel sales order in status ${order.status}.`,
+  /**
+   * Piece 11 — phase-aware cancel impact preview (materials, SEMI/FIN, tasks, purchasing, finance).
+   * Does not mutate. Purchase commitments are informational only (never auto-cancelled).
+   */
+  async getCancelImpact(id: string, user?: AuthUser) {
+    const order = await this.prisma.salesOrder.findFirst({
+      where: { id, archivedAt: null },
+      include: {
+        customer: { select: { id: true, name: true, nameEn: true, nameAr: true, nameHe: true } },
+        lines: {
+          orderBy: { sortOrder: 'asc' },
+          take: 3,
+          select: {
+            description: true,
+            quantity: true,
+            product: { select: { sku: true, nameEn: true, nameAr: true } },
+          },
+        },
+        deliveries: { select: { id: true, status: true } },
+        productionOrders: { select: { id: true, status: true } },
+        invoices: {
+          where: { archivedAt: null },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            total: true,
+            payments: { select: { id: true }, take: 1 },
+            allocations: { select: { id: true }, take: 1 },
+          },
+        },
+        productionSetup: {
+          include: {
+            lines: {
+              include: {
+                materialRequirements: {
+                  select: { sku: true, inventoryItemId: true, displayName: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Sales order not found.' });
+    }
+    if (user && !assertCustomerOwns(user, order.customerId)) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Cannot access this sales order.',
       });
     }
+
+    const phase = resolveSalesOrderCancelPhase({
+      status: order.status,
+      deliveryStatuses: order.deliveries.map((d) => d.status),
+    });
+    const alreadyCancelled = order.status === SalesOrderStatus.CANCELLED;
+    const canCancel = !alreadyCancelled && phase >= 1 && phase <= 4;
+    const blockReason = alreadyCancelled
+      ? 'ALREADY_CANCELLED'
+      : phase === 5
+        ? 'USE_RETURN'
+        : undefined;
+
+    const productSummary = order.lines
+      .map((l) => {
+        const name =
+          l.product?.nameEn ||
+          l.product?.nameAr ||
+          l.description;
+        const sku = l.product?.sku ? ` (${l.product.sku})` : '';
+        return `${name}${sku} × ${Number(l.quantity)}`;
+      })
+      .join('; ');
+
+    const dealerName =
+      order.customer.nameEn ||
+      order.customer.name ||
+      order.customer.nameAr ||
+      order.customer.nameHe ||
+      '';
+
+    const poIds = order.productionOrders.map((p) => p.id);
+
+    const [issueTxs, semiLots, finishedLots, taskGroups, paymentsOnCustomer] =
+      await Promise.all([
+        poIds.length
+          ? this.prisma.inventoryTransaction.findMany({
+              where: {
+                type: 'PRODUCTION_ISSUE',
+                referenceType: 'ProductionOrder',
+                referenceId: { in: poIds },
+              },
+              select: {
+                quantity: true,
+                unitCost: true,
+                inventoryItem: { select: { sku: true, nameEn: true, standardCost: true } },
+              },
+            })
+          : Promise.resolve([]),
+        this.prisma.inventoryLot.findMany({
+          where: {
+            OR: [
+              { salesOrderId: id },
+              ...(poIds.length ? [{ productionOrderId: { in: poIds } }] : []),
+            ],
+            inventoryItem: { itemClass: 'SEMI_FINISHED_GOOD' },
+            status: {
+              in: ['AVAILABLE', 'RESERVED', 'REQUIRES_REVIEW', 'PARTIALLY_CONSUMED'],
+            },
+          },
+          include: {
+            inventoryItem: { select: { sku: true } },
+            warehouse: { select: { code: true, nameEn: true } },
+          },
+        }),
+        this.prisma.inventoryLot.findMany({
+          where: {
+            salesOrderId: id,
+            inventoryItem: { itemClass: 'FINISHED_GOOD' },
+            status: { in: ['AVAILABLE', 'RESERVED', 'REQUIRES_REVIEW'] },
+          },
+          include: {
+            inventoryItem: { select: { sku: true } },
+          },
+        }),
+        poIds.length
+          ? this.prisma.productionTask.groupBy({
+              by: ['status'],
+              where: { productionOrderId: { in: poIds } },
+              _count: { _all: true },
+            })
+          : Promise.resolve([] as Array<{ status: string; _count: { _all: number } }>),
+        this.prisma.payment.count({
+          where: {
+            OR: [
+              { invoice: { salesOrderId: id } },
+              {
+                allocations: {
+                  some: { invoice: { salesOrderId: id } },
+                },
+              },
+            ],
+          },
+        }),
+      ]);
+
+    let materialsConsumedAmount = 0;
+    const materialParts: string[] = [];
+    for (const tx of issueTxs) {
+      const qty = Math.abs(Number(tx.quantity));
+      const unit =
+        tx.unitCost != null && Number(tx.unitCost) > 0
+          ? Number(tx.unitCost)
+          : tx.inventoryItem.standardCost != null
+            ? Number(tx.inventoryItem.standardCost)
+            : 0;
+      materialsConsumedAmount += qty * unit;
+      const label = tx.inventoryItem.sku || tx.inventoryItem.nameEn || 'material';
+      materialParts.push(`${label} ${qty}`);
+    }
+    materialsConsumedAmount = Number(roundMoney(materialsConsumedAmount));
+
+    const statusCount = new Map<string, number>();
+    for (const row of taskGroups) {
+      statusCount.set(row.status, row._count._all);
+    }
+    let openTasks = 0;
+    for (const s of OPEN_TASK_STATUSES) {
+      openTasks += statusCount.get(s) ?? 0;
+    }
+    const inProgressTasks = statusCount.get('IN_PROGRESS') ?? 0;
+    const completedTasksPreserved = statusCount.get('COMPLETED') ?? 0;
+
+    const demandItemIds = new Set<string>();
+    const demandSkus = new Set<string>();
+    for (const line of order.productionSetup?.lines ?? []) {
+      for (const m of line.materialRequirements) {
+        if (m.inventoryItemId) demandItemIds.add(m.inventoryItemId);
+        if (m.sku?.trim()) demandSkus.add(m.sku.trim().toUpperCase());
+      }
+    }
+
+    const purchaseCommitments: Array<{ number: string; sku: string; note: string }> = [];
+    if (demandItemIds.size || demandSkus.size) {
+      const openPos = await this.prisma.purchaseOrder.findMany({
+        where: {
+          archivedAt: null,
+          status: { in: ['DRAFT', 'APPROVED', 'SENT', 'PARTIALLY_RECEIVED'] },
+          lines: {
+            some: {
+              OR: [
+                ...(demandItemIds.size
+                  ? [{ inventoryItemId: { in: [...demandItemIds] } }]
+                  : []),
+                ...(demandSkus.size
+                  ? [
+                      {
+                        inventoryItem: {
+                          sku: { in: [...demandSkus], mode: 'insensitive' as const },
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+          },
+        },
+        include: {
+          lines: {
+            include: { inventoryItem: { select: { sku: true } } },
+          },
+        },
+        take: 40,
+      });
+      for (const po of openPos) {
+        for (const line of po.lines) {
+          const sku = line.inventoryItem?.sku?.toUpperCase() ?? '';
+          const match =
+            (line.inventoryItemId && demandItemIds.has(line.inventoryItemId)) ||
+            (sku && demandSkus.has(sku));
+          if (!match) continue;
+          purchaseCommitments.push({
+            number: po.number,
+            sku: line.inventoryItem?.sku || sku || '—',
+            note: 'Shared supplier PO — will not be auto-cancelled',
+          });
+        }
+      }
+    }
+
+    const invoiceRow = order.invoices[0] ?? null;
+    const paymentsPresent =
+      paymentsOnCustomer > 0 ||
+      Boolean(invoiceRow?.payments?.length) ||
+      Boolean(invoiceRow?.allocations?.length);
+    const financialAttention =
+      Boolean(invoiceRow) ||
+      paymentsPresent ||
+      (invoiceRow != null &&
+        ['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'].includes(invoiceRow.status));
+
+    const finDispositionRequired =
+      finishedLots.some((l) => l.status === 'AVAILABLE' || l.status === 'RESERVED') ||
+      phase === 4;
+    const semiDispositionRequired =
+      semiLots.length > 0 || phase === 3;
+
+    return {
+      phase: phase as CancelPhase,
+      canCancel,
+      ...(blockReason ? { blockReason } : {}),
+      salesOrder: {
+        id: order.id,
+        number: order.number,
+        status: order.status,
+        productSummary,
+        dealerName,
+      },
+      currentState: cancelPhaseCurrentState(phase, order.status),
+      impact: {
+        materialsConsumedAmount,
+        materialsConsumedSummary: materialParts.length
+          ? materialParts.slice(0, 8).join(', ')
+          : 'No raw materials consumed',
+        semiLots: semiLots.map((l) => ({
+          id: l.id,
+          sku: l.inventoryItem.sku,
+          qty: Number(l.quantity),
+          status: l.status,
+          warehouse: l.warehouse.code || l.warehouse.nameEn || '',
+        })),
+        finishedLots: finishedLots.map((l) => ({
+          id: l.id,
+          sku: l.inventoryItem.sku,
+          qty: Number(l.quantity),
+          status: l.status,
+        })),
+        openTasks,
+        inProgressTasks,
+        completedTasksPreserved,
+        purchaseCommitments,
+        invoice: invoiceRow
+          ? {
+              id: invoiceRow.id,
+              number: invoiceRow.number,
+              status: invoiceRow.status,
+              total: Number(invoiceRow.total),
+            }
+          : null,
+        paymentsPresent,
+        financialAttention,
+      },
+      finDispositionRequired,
+      semiDispositionRequired,
+    };
+  }
+
+  async cancel(
+    id: string,
+    userId: string,
+    opts: { reasonCode: string; reason?: string },
+  ) {
+    if (!opts?.reasonCode?.trim()) {
+      throw new BadRequestException({
+        code: 'CANCEL_REASON_REQUIRED',
+        message: 'reasonCode is required.',
+      });
+    }
+    const reasonCode = normalizeCancelReasonCode(opts.reasonCode);
+    if (!reasonCode) {
+      throw new BadRequestException({
+        code: 'CANCEL_REASON_REQUIRED',
+        message: `Invalid reasonCode. Allowed: Dealer requested, Duplicate, Spec error, Unable to manufacture, Material unavailable, Commercial agreement, Administrative error, Other.`,
+      });
+    }
+
+    const impact = await this.getCancelImpact(id);
+    if (impact.phase === 5 || impact.blockReason === 'USE_RETURN') {
+      throw new BadRequestException({
+        code: 'USE_RETURN',
+        message: 'Order is shipped or delivered. Use a Return request instead of cancel.',
+      });
+    }
+    if (!impact.canCancel) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: `Cannot cancel sales order in status ${impact.salesOrder.status}.`,
+      });
+    }
+
+    const cancellationReason = formatCancellationReason(reasonCode, opts.reason);
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const cancelled = await tx.salesOrder.update({
         where: { id },
         data: {
           status: SalesOrderStatus.CANCELLED,
-          cancellationReason: reason ?? 'Cancelled',
+          cancellationReason,
         },
       });
+
+      // Cancel open production orders (not COMPLETED). Do NOT cancel supplier PurchaseOrders.
       await tx.productionOrder.updateMany({
         where: {
           salesOrderId: id,
@@ -1188,23 +1956,68 @@ export class SalesOrdersService {
         },
         data: { status: 'CANCELLED' },
       });
+
       const cancelledPos = await tx.productionOrder.findMany({
         where: { salesOrderId: id, status: 'CANCELLED' },
         select: { id: true },
       });
+      const poIds = cancelledPos.map((row) => row.id);
+
+      // Cancel unstarted + in-progress tasks; preserve COMPLETED history.
+      if (poIds.length) {
+        const inProgress = await tx.productionTask.findMany({
+          where: {
+            productionOrderId: { in: poIds },
+            status: 'IN_PROGRESS',
+          },
+          select: { id: true },
+        });
+        await tx.productionTask.updateMany({
+          where: {
+            productionOrderId: { in: poIds },
+            status: { in: [...CANCEL_TASK_STATUSES] },
+          },
+          data: { status: 'CANCELLED' },
+        });
+        for (const task of inProgress) {
+          await tx.auditEvent.create({
+            data: {
+              userId,
+              action: 'production-task.cancel',
+              entityType: 'ProductionTask',
+              entityId: task.id,
+              newValues: {
+                reason: 'sales-order.cancel',
+                note: 'In-progress task cancelled with sales order',
+              },
+            },
+          });
+        }
+      }
+
+      // SEMI → REQUIRES_REVIEW; do not reverse consumed RAW; leave FIN AVAILABLE (disposition later).
       await this.productionInventory.onProductionOrdersCancelled({
-        productionOrderIds: cancelledPos.map((row) => row.id),
+        productionOrderIds: poIds,
         userId,
         tx,
       });
       await this.inventory.releaseForSalesOrder(id, tx);
+
       await tx.auditEvent.create({
         data: {
           userId,
           action: 'sales-order.cancel',
           entityType: 'SalesOrder',
           entityId: id,
-          newValues: { reason: reason ?? null },
+          newValues: {
+            reasonCode,
+            reason: opts.reason ?? null,
+            cancellationReason,
+            phase: impact.phase,
+            financialAttention: impact.impact.financialAttention,
+            finDispositionRequired: impact.finDispositionRequired,
+            semiDispositionRequired: impact.semiDispositionRequired,
+          },
         },
       });
       return cancelled;

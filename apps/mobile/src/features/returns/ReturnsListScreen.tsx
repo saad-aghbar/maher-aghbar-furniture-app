@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter, type Href } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { listCustomers } from '@/api/modules/customers';
@@ -33,7 +33,7 @@ import {
   type ReturnsDealerOption,
 } from './returnFilters';
 import { flattenReturns, useReturnsInfiniteQuery } from './query';
-import { selectReturnCard } from './selectReturn';
+import { returnMatchesStatusChip, selectReturnCard } from './selectReturn';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
@@ -112,17 +112,43 @@ export function ReturnsListScreen({
   const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
+  const params = useLocalSearchParams<{ chip?: string; physical?: string }>();
   const allowed = can(user, 'sales-order.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dealerSurface = !adminControls;
 
   const [chip, setChip] = useState<ReturnStatusFilter>('ALL');
+  const [physicalPhase, setPhysicalPhase] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [dealerLabel, setDealerLabel] = useState<string | null>(null);
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
   const [statusSheetOpen, setStatusSheetOpen] = useState(false);
+
+  useEffect(() => {
+    const physical = String(params.physical ?? '').trim();
+    const rawChip = String(params.chip ?? '').trim();
+    if (physical === 'WAITING_RETURN' || physical === 'RETURNED') {
+      setPhysicalPhase(physical);
+      setChip('ALL');
+      return;
+    }
+    if (rawChip === 'WAITING_RETURN' || rawChip === 'RETURNED') {
+      setPhysicalPhase(rawChip);
+      setChip('ALL');
+      return;
+    }
+    if (
+      rawChip === 'PENDING' ||
+      rawChip === 'APPROVED' ||
+      rawChip === 'REJECTED' ||
+      rawChip === 'ALL'
+    ) {
+      setPhysicalPhase(null);
+      setChip(rawChip);
+    }
+  }, [params.chip, params.physical]);
 
   useEffect(() => {
     const id = setTimeout(() => setQ(search.trim()), 300);
@@ -144,10 +170,11 @@ export function ReturnsListScreen({
   );
 
   const cards = useMemo(() => {
+    const matchChip = physicalPhase ?? chip;
     return flattenReturns(query.data)
-      .filter((r) => chip === 'ALL' || r.approvalStatus === chip)
+      .filter((r) => returnMatchesStatusChip(r, matchChip))
       .map((r) => selectReturnCard(r, locale));
-  }, [query.data, chip, locale]);
+  }, [query.data, chip, locale, physicalPhase]);
 
   const dealerOptions: ReturnsDealerOption[] = useMemo(() => {
     return (customersQuery.data?.data ?? []).map((d) => {
@@ -174,9 +201,13 @@ export function ReturnsListScreen({
 
   const searchPlaceholder = t('mobile.returns.search');
 
-  const statusLabel = isReturnStatusFilterActive(chip)
-    ? t(`mobile.returns.chips.${chip}`)
-    : t('common.filter');
+  const statusLabel = physicalPhase
+    ? physicalPhase
+    : isReturnStatusFilterActive(chip)
+      ? dealerSurface
+        ? t(`mobile.returns.dealerChips.${chip}`)
+        : t(`mobile.returns.chips.${chip}`)
+      : t('common.filter');
 
   if (!allowed) {
     return (
@@ -206,6 +237,18 @@ export function ReturnsListScreen({
           retryLabel={t('mobile.returns.retry')}
           onRetry={() => void query.refetch()}
         />
+      </AppScreen>
+    );
+  }
+
+  if (query.isLoading && !query.data) {
+    return (
+      <AppScreen>
+        <ReturnsScreenTitle backFallback={backFallback} titleWeight={titleWeight} />
+        {showOfflineBanner ? <OfflineBanner /> : null}
+        <AppText variant="caption" color="muted" align="center" style={{ marginTop: theme.spacing.xl }}>
+          {t('mobile.returns.loading')}
+        </AppText>
       </AppScreen>
     );
   }
@@ -259,7 +302,13 @@ export function ReturnsListScreen({
                   onChangeText={setSearch}
                   placeholder={searchPlaceholder}
                 />
-                <ReturnsStatusRail value={chip} onChange={setChip} />
+                <ReturnsStatusRail
+                  value={chip}
+                  onChange={(next) => {
+                    setPhysicalPhase(null);
+                    setChip(next);
+                  }}
+                />
               </View>
             ) : (
               <View
@@ -363,7 +412,10 @@ export function ReturnsListScreen({
           open={statusSheetOpen}
           onClose={() => setStatusSheetOpen(false)}
           status={chip}
-          onApply={setChip}
+          onApply={(next) => {
+            setPhysicalPhase(null);
+            setChip(next);
+          }}
         />
       ) : null}
     </AppScreen>

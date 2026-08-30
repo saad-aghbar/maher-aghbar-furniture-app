@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { DeliveriesController } from './deliveries.controller';
+import { DeliveryLoadService } from './delivery-load.service';
 
 function makeController() {
   const prisma = {
@@ -8,12 +9,17 @@ function makeController() {
     salesOrder: { findUnique: jest.fn() },
   } as any;
   const notifications = { notifyCustomerUsers: jest.fn() };
+  const loadSheet = {
+    isDriverScoped: jest.fn().mockReturnValue(false),
+  } as unknown as DeliveryLoadService;
   const ctrl = new DeliveriesController(
     prisma,
     {} as any,
     {} as any,
     notifications as any,
     {} as any,
+    { rollupProgress: jest.fn() } as any,
+    loadSheet,
   );
   return { ctrl, prisma };
 }
@@ -31,6 +37,7 @@ describe('GET /deliveries/:id isolation', () => {
         id: 'user-a',
         customerId: 'customer-a',
         permissions: ['delivery.read'],
+        roles: [],
       } as any),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
@@ -48,6 +55,7 @@ describe('GET /deliveries/:id isolation', () => {
       id: 'user-a',
       customerId: 'customer-a',
       permissions: ['delivery.read'],
+      roles: [],
     } as any)) as Record<string, unknown>;
     expect(result.id).toBe('del-a');
     expect(result.driver).toBeUndefined();

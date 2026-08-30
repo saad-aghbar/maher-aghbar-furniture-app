@@ -3,6 +3,7 @@ import { stageEstimateMinutes, type ProductStageEstimate } from '@/api/modules/s
 import type { WorkflowNode, WorkflowVersion } from '@/api/modules/workflow';
 import type { ProductionFlowStage } from '@/features/production-flow/selectProductionFlow';
 import { asLocale } from './trilingualNames';
+import { toDomainGraph } from './toDomainGraph';
 
 type NamedStageDef = {
   id: string;
@@ -51,8 +52,8 @@ function toPreviewStage(
 }
 
 /**
- * Map a workflow template version into ProductionFlowMap stages (read-only preview),
- * optionally overlaying per-product stage estimate minutes.
+ * Map a workflow template version into ProductionFlowMap stages.
+ * Uses the sole canonical domain graph (no separate heal path).
  */
 export function selectProductionFlowFromWorkflowVersion(
   version: WorkflowVersion,
@@ -61,29 +62,36 @@ export function selectProductionFlowFromWorkflowVersion(
 ): ProductionFlowStage[] {
   const loc = asLocale(locale);
   const nodes = (version.nodes ?? []).filter(hasStageDefinition);
-  const idToCode = new Map(nodes.map((n) => [n.id, n.stageDefinition.code] as const));
-
-  const dependsByCode = new Map<string, string[]>();
-  for (const edge of version.edges ?? []) {
-    const from = idToCode.get(edge.fromNodeId);
-    const to = idToCode.get(edge.toNodeId);
-    if (!from || !to) continue;
-    const list = dependsByCode.get(to) ?? [];
-    list.push(from);
-    dependsByCode.set(to, list);
-  }
+  const graph = toDomainGraph(version);
 
   return [...nodes]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((node, index) => {
-      const estimatedMinutes = estimatesByStageDefId?.get(node.stageDefinition.id) ?? null;
-      return toPreviewStage(
-        node.stageDefinition,
-        loc,
+      const stageCode = node.stageDefinition.code;
+      const isDelivery = stageCode.toUpperCase() === 'DELIVERY';
+      const estimatedMinutes = isDelivery
+        ? null
+        : (estimatesByStageDefId?.get(node.stageDefinition.id) ?? null);
+      return {
+        code: node.id,
+        name: localizedName(loc, node.stageDefinition, stageCode),
+        status: estimatedMinutes && estimatedMinutes > 0 ? 'READY' : 'PENDING',
+        progressPercent: 0,
+        dependsOnCodes: [...(graph.predecessorsByNode[node.id] ?? [])],
+        sortOrder: index,
+        stageDefinitionId: node.stageDefinition.id,
         estimatedMinutes,
-        dependsByCode.get(node.stageDefinition.code) ?? [],
-        index,
-      );
+        estimateReviewRequired: !(estimatedMinutes && estimatedMinutes > 0),
+        assignees: [],
+        actualStart: null,
+        actualEnd: null,
+        plannedEnd: null,
+        isOverdue: false,
+        blockers: [],
+        notes: null,
+        attachmentCount: 0,
+        photos: [],
+      };
     });
 }
 

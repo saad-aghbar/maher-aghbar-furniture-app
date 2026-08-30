@@ -11,6 +11,8 @@ export type LinkedTableRow = {
   id: string;
   number: string;
   status?: string | null;
+  /** Optional display label (e.g. dealer return lifecycle). */
+  statusLabel?: string | null;
   details?: string | null;
   onPress?: () => void;
 };
@@ -123,7 +125,13 @@ export function LinkedTablePanel({
                   {row.number}
                 </AppText>
                 <View style={{ flex: 1.2, minWidth: 0, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-                  {row.status ? <StatusBadge status={row.status} dot /> : (
+                  {row.status ? (
+                    <StatusBadge
+                      status={row.status}
+                      label={row.statusLabel ?? undefined}
+                      dot
+                    />
+                  ) : (
                     <AppText variant="caption" color="muted">—</AppText>
                   )}
                 </View>

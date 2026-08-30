@@ -18,7 +18,7 @@ import {
 } from '@maher/ui';
 import { localizedName } from '@maher/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GitBranch, Plus } from 'lucide-react';
+import { GitBranch, Layers, Plus } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -29,6 +29,7 @@ interface WorkflowRow {
   nameEn: string;
   nameHe?: string | null;
   status: string;
+  versions?: Array<{ id: string; versionNumber: number; status: string; revision?: number }>;
   activeVersion?: {
     id: string;
     versionNumber: number;
@@ -55,15 +56,28 @@ export default function WorkflowListPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<WorkflowRow>('/api/v1/production-workflows', {
+    mutationFn: async () => {
+      const created = await apiFetch<WorkflowRow>('/api/v1/production-workflows', {
         method: 'POST',
         body: JSON.stringify({
           nameEn: nameEn.trim(),
           nameAr: nameAr.trim(),
           nameHe: nameHe.trim() || undefined,
         }),
-      }),
+      });
+      const versionId = created.versions?.[0]?.id;
+      if (versionId) {
+        const opened = await apiFetch<{ revision: number }>(
+          `/api/v1/production-workflows/${created.id}/versions/${versionId}/ensure-opening-chain`,
+          { method: 'POST', body: JSON.stringify({}) },
+        );
+        await apiFetch(
+          `/api/v1/production-workflows/${created.id}/versions/${versionId}/ensure-terminal-chain`,
+          { method: 'POST', body: JSON.stringify({ expectedRevision: opened.revision }) },
+        );
+      }
+      return created;
+    },
     onSuccess: async () => {
       setCreateOpen(false);
       setNameEn('');
@@ -84,13 +98,19 @@ export default function WorkflowListPage() {
         description={t('workflow.simpleSubtitle')}
         tone="soft"
         actions={
-          <div className="flex gap-2">
-            <Link href="/production/workflow/stages">
-              <Button variant="ghost">{t('workflow.stageLibrary')}</Button>
-            </Link>
-            <Button leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
+          <div className="flex w-full flex-col gap-2 sm:w-56">
+            <Button
+              className="w-full"
+              leadingIcon={<Plus className="h-4 w-4" />}
+              onClick={() => setCreateOpen(true)}
+            >
               {t('workflow.newWorkflow')}
             </Button>
+            <Link href="/production/workflow/stages" className="w-full">
+              <Button className="w-full" variant="secondary" leadingIcon={<Layers className="h-4 w-4" />}>
+                {t('workflow.manageStages')}
+              </Button>
+            </Link>
           </div>
         }
       />
@@ -115,7 +135,14 @@ export default function WorkflowListPage() {
           title={t('workflow.emptyWorkflow')}
           description={t('workflow.emptyWorkflowHint')}
           action={
-            <Button onClick={() => setCreateOpen(true)}>{t('workflow.newWorkflow')}</Button>
+            <div className="flex flex-col gap-2">
+              <Button onClick={() => setCreateOpen(true)}>{t('workflow.newWorkflow')}</Button>
+              <Link href="/production/workflow/stages">
+                <Button variant="secondary" className="w-full" leadingIcon={<Layers className="h-4 w-4" />}>
+                  {t('workflow.manageStages')}
+                </Button>
+              </Link>
+            </div>
           }
         />
       ) : (
@@ -127,8 +154,12 @@ export default function WorkflowListPage() {
             const pillStatus = active?.status === 'PUBLISHED' ? 'PUBLISHED' : row.status;
             return (
               <Link key={row.id} href={`/production/workflow/${row.id}`} className="group block">
-                <Card className="h-full transition group-hover:border-brand/40 group-hover:shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
+                <Card interactive className="relative h-full overflow-hidden">
+                  <span
+                    className="pointer-events-none absolute inset-y-4 start-0 w-1 rounded-full bg-brand/70"
+                    aria-hidden
+                  />
+                  <div className="flex items-start justify-between gap-3 ps-3">
                     <div className="min-w-0">
                       <p className="truncate text-base font-semibold text-text-primary">{name}</p>
                       <p className="mt-1 text-xs text-text-secondary">
@@ -138,16 +169,20 @@ export default function WorkflowListPage() {
                         })}
                       </p>
                     </div>
-                    <GitBranch className="h-5 w-5 shrink-0 text-brand/70" aria-hidden />
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--maher-brand-soft)] text-brand">
+                      <GitBranch className="h-4 w-4" aria-hidden />
+                    </span>
                   </div>
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <div className="mt-4 flex flex-wrap items-center gap-2 ps-3">
                     <StatusBadge status={pillStatus} />
+                    <Badge variant="brand">{stageCount}</Badge>
                     {active ? (
                       <Badge variant="success">{t('workflow.activeVersion')}</Badge>
                     ) : (
                       <Badge variant="warning">{t('workflow.draftVersion')}</Badge>
                     )}
                   </div>
+                  <p className="mt-3 ps-3 text-xs text-text-tertiary">{t('workflow.terminalEndsWith')}</p>
                 </Card>
               </Link>
             );

@@ -7,6 +7,8 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { can } from '@maher/permissions';
+import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
@@ -20,7 +22,16 @@ import {
   filterSuppliersByQuery,
   type PurchasingSupplierOption,
 } from '../purchasingFilters';
+import { useSupplierDetailQuery } from '../query';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+
+/** Map raw PO statuses to purchasing phase keys — avoid flashing enums. */
+const OPEN_PO_PHASE_KEY: Record<string, string> = {
+  DRAFT: 'purchasing.phaseDraft',
+  APPROVED: 'purchasing.phaseOrdered',
+  SENT: 'purchasing.phaseOrdered',
+  PARTIALLY_RECEIVED: 'purchasing.phasePartial',
+};
 
 type Props = {
   open: boolean;
@@ -30,6 +41,8 @@ type Props = {
   onConfirm: (supplier: { id: string; name: string } | null) => void;
   /** Stack on top of another sheet (create PO / PR). */
   overlay?: boolean;
+  /** Open PO summaries keyed by supplier id (hub filter context). */
+  openOrdersBySupplier?: Map<string, Array<{ id: string; number: string; status: string }>>;
 };
 
 /**
@@ -42,13 +55,16 @@ export function PurchasingSupplierSheet({
   selectedId,
   onConfirm,
   overlay = false,
+  openOrdersBySupplier,
 }: Props) {
-  const { t, isRTL, locale } = useLocale();
+  const { user } = useAuth();
+  const { t, isRTL, locale, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const reduce = useReducedMotion();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.min(Math.round(height * 0.78), 640);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const canReadSupplier = can(user, 'supplier.read');
 
   const [query, setQuery] = useState('');
   const [draftId, setDraftId] = useState<string | null>(selectedId);
@@ -66,6 +82,20 @@ export function PurchasingSupplierSheet({
     () => filterSuppliersByQuery(suppliers, query),
     [suppliers, query],
   );
+
+  const draftOpenOrders = draftId ? openOrdersBySupplier?.get(draftId) ?? [] : [];
+  const supplierDetailQuery = useSupplierDetailQuery(
+    draftId,
+    open && Boolean(draftId) && canReadSupplier,
+  );
+  const detail = supplierDetailQuery.data;
+
+  const phaseForStatus = (status: string) => {
+    const key = OPEN_PO_PHASE_KEY[status];
+    if (!key) return null;
+    const translated = t(key);
+    return translated !== key ? translated : null;
+  };
 
   const dismiss = () => {
     setQuery('');
@@ -186,10 +216,15 @@ export function PurchasingSupplierSheet({
                 }}
               />
               {filtered.map((s, index) => {
+                const openCount = openOrdersBySupplier?.get(s.id)?.length ?? 0;
                 const row = (
                   <SupplierFloorRow
                     label={s.name}
-                    meta={s.code}
+                    meta={
+                      openCount > 0
+                        ? `${s.code ?? ''} · ${openCount} ${t('mobile.purchasing.openOrders')}`
+                        : s.code
+                    }
                     icon="business-outline"
                     active={draftId === s.id}
                     isRTL={isRTL}
@@ -241,6 +276,124 @@ export function PurchasingSupplierSheet({
             </ScrollView>
           </View>
         </Animated.View>
+
+        {draftId && detail ? (
+          <View
+            style={{
+              borderRadius: theme.radius.xl,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceSecondary,
+              padding: theme.spacing.md,
+              gap: theme.spacing.xs,
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight={titleWeight}
+              style={{
+                color: colors.brand,
+                textAlign: isRTL ? 'right' : 'left',
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                fontSize: 11,
+              }}
+            >
+              {t('mobile.purchasing.contact')}
+            </AppText>
+            {detail.phone || detail.email || detail.address ? (
+              <>
+                {detail.phone ? (
+                  <AppText variant="caption" dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                    {detail.phone}
+                  </AppText>
+                ) : null}
+                {detail.email ? (
+                  <AppText variant="caption" dir="ltr" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+                    {detail.email}
+                  </AppText>
+                ) : null}
+                {detail.address ? (
+                  <AppText
+                    variant="caption"
+                    color="muted"
+                    numberOfLines={2}
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {detail.address}
+                  </AppText>
+                ) : null}
+              </>
+            ) : (
+              <AppText variant="caption" color="muted">
+                —
+              </AppText>
+            )}
+            {detail.lastPurchase ? (
+              <AppText
+                variant="caption"
+                style={{ textAlign: isRTL ? 'right' : 'left', marginTop: 4 }}
+              >
+                {`${t('mobile.purchasing.lastPurchase')}: ${detail.lastPurchase.sku ?? '—'} · ${
+                  detail.lastPurchase.unitCost != null
+                    ? formatCurrency(detail.lastPurchase.unitCost)
+                    : '—'
+                }`}
+              </AppText>
+            ) : null}
+            {(detail.openPurchaseOrders?.length ?? 0) > 0 ? (
+              <AppText variant="caption" color="muted" dir="ltr">
+                {`${detail.openPurchaseOrders!.length} ${t('mobile.purchasing.openOrders')}`}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
+
+        {draftId && draftOpenOrders.length > 0 ? (
+          <View
+            style={{
+              borderRadius: theme.radius.xl,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceSecondary,
+              padding: theme.spacing.md,
+              gap: theme.spacing.xs,
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight={titleWeight}
+              style={{
+                color: colors.brand,
+                textAlign: isRTL ? 'right' : 'left',
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                fontSize: 11,
+              }}
+            >
+              {t('mobile.purchasing.openOrders')}
+            </AppText>
+            {draftOpenOrders.slice(0, 4).map((po) => {
+              const phase = phaseForStatus(po.status);
+              return (
+                <AppText
+                  key={po.id}
+                  variant="caption"
+                  dir="ltr"
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {phase ? `${po.number} · ${phase}` : po.number}
+                </AppText>
+              );
+            })}
+          </View>
+        ) : draftId ? (
+          <AppText
+            variant="caption"
+            color="muted"
+            style={{ textAlign: isRTL ? 'right' : 'left' }}
+          >
+            {t('mobile.purchasing.noOpenOrders')}
+          </AppText>
+        ) : null}
 
         <View style={{ gap: theme.spacing.sm, paddingTop: theme.spacing.xs }}>
           <PrimaryButton

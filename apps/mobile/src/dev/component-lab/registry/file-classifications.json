@@ -1,0 +1,6501 @@
+{
+  "app/(app)/(admin)/(tabs)/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "AdminTabsLayout"
+    ]
+  },
+  "app/(app)/(admin)/(tabs)/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-(tabs)"
+    ],
+    "notes": "route:/(tabs)",
+    "exportNames": [
+      "AdminHome"
+    ]
+  },
+  "app/(app)/(admin)/(tabs)/inventory.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-inventory"
+    ],
+    "notes": "route:/inventory",
+    "exportNames": [
+      "AdminInventory"
+    ]
+  },
+  "app/(app)/(admin)/(tabs)/more.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-more"
+    ],
+    "notes": "route:/more",
+    "exportNames": [
+      "AdminMore"
+    ]
+  },
+  "app/(app)/(admin)/(tabs)/orders.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-orders"
+    ],
+    "notes": "route:/orders",
+    "exportNames": [
+      "AdminOrders"
+    ]
+  },
+  "app/(app)/(admin)/(tabs)/production.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-production"
+    ],
+    "notes": "route:/production",
+    "exportNames": [
+      "AdminProduction"
+    ]
+  },
+  "app/(app)/(admin)/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "AdminLayout"
+    ]
+  },
+  "app/(app)/(admin)/ai-chat/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-ai-chat"
+    ],
+    "notes": "route:/ai-chat",
+    "exportNames": [
+      "AdminAiChatRoute"
+    ]
+  },
+  "app/(app)/(admin)/ai-intake/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-ai-intake-[id]"
+    ],
+    "notes": "route:/ai-intake/[id]",
+    "exportNames": [
+      "AdminAiIntakeDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/ai-intake/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-ai-intake"
+    ],
+    "notes": "route:/ai-intake",
+    "exportNames": [
+      "AdminAiIntakeListRoute"
+    ]
+  },
+  "app/(app)/(admin)/dealers/[id]/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dealers-[id]"
+    ],
+    "notes": "route:/dealers/[id]",
+    "exportNames": [
+      "AdminDealerDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/dealers/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dealers"
+    ],
+    "notes": "route:/dealers",
+    "exportNames": [
+      "AdminDealersRoute"
+    ]
+  },
+  "app/(app)/(admin)/deliveries/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-deliveries-[id]"
+    ],
+    "notes": "route:/deliveries/[id]",
+    "exportNames": [
+      "AdminDeliveryLoadRoute"
+    ]
+  },
+  "app/(app)/(admin)/inventory/[group].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-inventory-[group]"
+    ],
+    "notes": "route:/inventory/[group]",
+    "exportNames": [
+      "AdminInventoryGroupRoute"
+    ]
+  },
+  "app/(app)/(admin)/inventory/finished/[salesOrderId].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-inventory-finished-[sales-order-id]"
+    ],
+    "notes": "route:/inventory/finished/[salesOrderId]",
+    "exportNames": [
+      "AdminInventoryFinishedOrderRoute"
+    ]
+  },
+  "app/(app)/(admin)/inventory/items/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-inventory-items-[id]"
+    ],
+    "notes": "route:/inventory/items/[id]",
+    "exportNames": [
+      "AdminInventoryItemRoute"
+    ]
+  },
+  "app/(app)/(admin)/inventory/semi/[orderId].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-inventory-semi-[order-id]"
+    ],
+    "notes": "route:/inventory/semi/[orderId]",
+    "exportNames": [
+      "AdminInventorySemiOrderRoute"
+    ]
+  },
+  "app/(app)/(admin)/invoices/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-invoices-[id]"
+    ],
+    "notes": "route:/invoices/[id]",
+    "exportNames": [
+      "AdminInvoiceDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/invoices/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-invoices"
+    ],
+    "notes": "route:/invoices",
+    "exportNames": [
+      "AdminInvoicesRoute"
+    ]
+  },
+  "app/(app)/(admin)/more/account.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-more-account"
+    ],
+    "notes": "route:/more/account",
+    "exportNames": [
+      "AdminMoreAccountRoute"
+    ]
+  },
+  "app/(app)/(admin)/more/settings.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-more-settings"
+    ],
+    "notes": "route:/more/settings",
+    "exportNames": [
+      "AdminMoreSettingsRoute"
+    ]
+  },
+  "app/(app)/(admin)/orders/[id]/flow.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-orders-[id]-flow"
+    ],
+    "notes": "route:/orders/[id]/flow",
+    "exportNames": [
+      "AdminOrderFlowRoute"
+    ]
+  },
+  "app/(app)/(admin)/orders/[id]/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-orders-[id]"
+    ],
+    "notes": "route:/orders/[id]",
+    "exportNames": [
+      "AdminOrderDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/orders/[id]/production-setup/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-orders-[id]-production-setup"
+    ],
+    "notes": "route:/orders/[id]/production-setup",
+    "exportNames": [
+      "OrderProductionSetupRoute"
+    ]
+  },
+  "app/(app)/(admin)/orders/[id]/production-setup/lines/[lineId].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-orders-[id]-production-setup-lines-[line-id]"
+    ],
+    "notes": "route:/orders/[id]/production-setup/lines/[lineId]",
+    "exportNames": [
+      "OrderProductionSetupLineRoute"
+    ]
+  },
+  "app/(app)/(admin)/production/[id]/flow.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-production-[id]-flow"
+    ],
+    "notes": "route:/production/[id]/flow",
+    "exportNames": [
+      "AdminProductionFlowRoute"
+    ]
+  },
+  "app/(app)/(admin)/production/[id]/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-production-[id]"
+    ],
+    "notes": "route:/production/[id]",
+    "exportNames": [
+      "AdminProductionDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/production/[id]/setup.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-production-[id]-setup"
+    ],
+    "notes": "route:/production/[id]/setup",
+    "exportNames": [
+      "AdminProductionSetupRedirect"
+    ]
+  },
+  "app/(app)/(admin)/production/tasks/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-production-tasks-[id]"
+    ],
+    "notes": "route:/production/tasks/[id]",
+    "exportNames": [
+      "AdminProductionTaskFloorRoute"
+    ]
+  },
+  "app/(app)/(admin)/production/workflow/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-production-workflow-[id]"
+    ],
+    "notes": "route:/production/workflow/[id]",
+    "exportNames": [
+      "AdminWorkflowDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/production/workflow/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-production-workflow"
+    ],
+    "notes": "route:/production/workflow",
+    "exportNames": [
+      "AdminWorkflowListRoute"
+    ]
+  },
+  "app/(app)/(admin)/production/workflow/stages.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-production-workflow-stages"
+    ],
+    "notes": "route:/production/workflow/stages",
+    "exportNames": [
+      "AdminManageStagesRoute"
+    ]
+  },
+  "app/(app)/(admin)/products/[id]/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-products-[id]"
+    ],
+    "notes": "route:/products/[id]",
+    "exportNames": [
+      "AdminProductDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/products/[id]/production-setup.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-products-[id]-production-setup"
+    ],
+    "notes": "route:/products/[id]/production-setup",
+    "exportNames": [
+      "ProductProductionSetupRoute"
+    ]
+  },
+  "app/(app)/(admin)/products/[id]/workflow-times.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-products-[id]-workflow-times"
+    ],
+    "notes": "route:/products/[id]/workflow-times",
+    "exportNames": [
+      "ProductWorkflowTimesRoute"
+    ]
+  },
+  "app/(app)/(admin)/products/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-products"
+    ],
+    "notes": "route:/products",
+    "exportNames": [
+      "AdminProductsRoute"
+    ]
+  },
+  "app/(app)/(admin)/purchasing/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-purchasing-[id]"
+    ],
+    "notes": "route:/purchasing/[id]",
+    "exportNames": [
+      "AdminPurchaseDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/purchasing/create.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-purchasing-create"
+    ],
+    "notes": "route:/purchasing/create",
+    "exportNames": [
+      "AdminCreatePurchaseRoute"
+    ]
+  },
+  "app/(app)/(admin)/purchasing/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-purchasing"
+    ],
+    "notes": "route:/purchasing",
+    "exportNames": [
+      "AdminPurchasingRoute"
+    ]
+  },
+  "app/(app)/(admin)/purchasing/requests/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-purchasing-requests-[id]"
+    ],
+    "notes": "route:/purchasing/requests/[id]",
+    "exportNames": [
+      "AdminPurchaseRequestDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/purchasing/supplier-invoices/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-purchasing-supplier-invoices-[id]"
+    ],
+    "notes": "route:/purchasing/supplier-invoices/[id]",
+    "exportNames": [
+      "AdminSupplierInvoiceDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/quotations/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-quotations-[id]"
+    ],
+    "notes": "route:/quotations/[id]",
+    "exportNames": [
+      "AdminQuotationDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/requests/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-requests-[id]"
+    ],
+    "notes": "route:/requests/[id]",
+    "exportNames": [
+      "AdminRequestDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/returns/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-returns-[id]"
+    ],
+    "notes": "route:/returns/[id]",
+    "exportNames": [
+      "AdminReturnDetailRoute"
+    ]
+  },
+  "app/(app)/(admin)/returns/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-returns"
+    ],
+    "notes": "route:/returns",
+    "exportNames": [
+      "AdminReturnsRoute"
+    ]
+  },
+  "app/(app)/(admin)/scheduling/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-scheduling"
+    ],
+    "notes": "route:/scheduling",
+    "exportNames": [
+      "AdminSchedulingRoute"
+    ]
+  },
+  "app/(app)/(admin)/users/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-users"
+    ],
+    "notes": "route:/users",
+    "exportNames": [
+      "AdminUsersRoute"
+    ]
+  },
+  "app/(app)/(admin)/users/staff-types/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-users-staff-types-[id]"
+    ],
+    "notes": "route:/users/staff-types/[id]",
+    "exportNames": [
+      "AdminStaffTypeEditorRoute"
+    ]
+  },
+  "app/(app)/(admin)/users/staff-types/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-users-staff-types"
+    ],
+    "notes": "route:/users/staff-types",
+    "exportNames": [
+      "AdminStaffTypesRoute"
+    ]
+  },
+  "app/(app)/(admin)/users/staff-types/new.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-users-staff-types-new"
+    ],
+    "notes": "route:/users/staff-types/new",
+    "exportNames": [
+      "AdminNewStaffTypeRoute"
+    ]
+  },
+  "app/(app)/(customer)/(tabs)/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "CustomerTabsLayout"
+    ]
+  },
+  "app/(app)/(customer)/(tabs)/account.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-account"
+    ],
+    "notes": "route:/account",
+    "exportNames": [
+      "CustomerAccount"
+    ]
+  },
+  "app/(app)/(customer)/(tabs)/catalog.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-catalog"
+    ],
+    "notes": "route:/catalog",
+    "exportNames": [
+      "CustomerCatalog"
+    ]
+  },
+  "app/(app)/(customer)/(tabs)/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-(tabs)"
+    ],
+    "notes": "route:/(tabs)",
+    "exportNames": [
+      "CustomerHome"
+    ]
+  },
+  "app/(app)/(customer)/(tabs)/new-order.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-new-order"
+    ],
+    "notes": "route:/new-order",
+    "exportNames": [
+      "CustomerNewOrder"
+    ]
+  },
+  "app/(app)/(customer)/(tabs)/orders.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-orders"
+    ],
+    "notes": "route:/orders",
+    "exportNames": [
+      "CustomerOrders"
+    ]
+  },
+  "app/(app)/(customer)/(tabs)/schedule.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-schedule"
+    ],
+    "notes": "route:/schedule",
+    "exportNames": [
+      "CustomerScheduleTab"
+    ]
+  },
+  "app/(app)/(customer)/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "CustomerLayout"
+    ]
+  },
+  "app/(app)/(customer)/account/calendar.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-account-calendar"
+    ],
+    "notes": "route:/account/calendar",
+    "exportNames": [
+      "CustomerDeliveryCalendarRoute"
+    ]
+  },
+  "app/(app)/(customer)/account/payments.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-account-payments"
+    ],
+    "notes": "route:/account/payments",
+    "exportNames": [
+      "CustomerPaymentsRoute"
+    ]
+  },
+  "app/(app)/(customer)/account/security.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-account-security"
+    ],
+    "notes": "route:/account/security",
+    "exportNames": [
+      "CustomerAccountSecurityRoute"
+    ]
+  },
+  "app/(app)/(customer)/account/statement.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-account-statement"
+    ],
+    "notes": "route:/account/statement",
+    "exportNames": [
+      "CustomerStatementRoute"
+    ]
+  },
+  "app/(app)/(customer)/ai-chat/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-ai-chat"
+    ],
+    "notes": "route:/ai-chat",
+    "exportNames": [
+      "CustomerAiChatRoute"
+    ]
+  },
+  "app/(app)/(customer)/catalog/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-catalog-[id]"
+    ],
+    "notes": "route:/catalog/[id]",
+    "exportNames": [
+      "CustomerProductDetailRoute"
+    ]
+  },
+  "app/(app)/(customer)/invoices/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-invoices-[id]"
+    ],
+    "notes": "route:/invoices/[id]",
+    "exportNames": [
+      "DealerInvoiceDetailRoute"
+    ]
+  },
+  "app/(app)/(customer)/invoices/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-invoices"
+    ],
+    "notes": "route:/invoices",
+    "exportNames": [
+      "DealerInvoicesRoute"
+    ]
+  },
+  "app/(app)/(customer)/orders/[id]/flow.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-orders-[id]-flow"
+    ],
+    "notes": "route:/orders/[id]/flow",
+    "exportNames": [
+      "DealerOrderFlowRoute"
+    ]
+  },
+  "app/(app)/(customer)/orders/[id]/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-orders-[id]"
+    ],
+    "notes": "route:/orders/[id]",
+    "exportNames": [
+      "CustomerOrderDetailRoute"
+    ]
+  },
+  "app/(app)/(customer)/quotations/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-quotations-[id]"
+    ],
+    "notes": "route:/quotations/[id]",
+    "exportNames": [
+      "DealerQuotationDetailRoute"
+    ]
+  },
+  "app/(app)/(customer)/quotations/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-quotations"
+    ],
+    "notes": "route:/quotations",
+    "exportNames": [
+      "DealerQuotationsRoute"
+    ]
+  },
+  "app/(app)/(customer)/requests/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-requests-[id]"
+    ],
+    "notes": "route:/requests/[id]",
+    "exportNames": [
+      "CustomerRequestDetailRoute"
+    ]
+  },
+  "app/(app)/(customer)/returns/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-returns-[id]"
+    ],
+    "notes": "route:/returns/[id]",
+    "exportNames": [
+      "DealerReturnDetailRoute"
+    ]
+  },
+  "app/(app)/(customer)/returns/create.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-returns-create"
+    ],
+    "notes": "route:/returns/create",
+    "exportNames": [
+      "DealerCreateReturnRoute"
+    ]
+  },
+  "app/(app)/(customer)/returns/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-returns"
+    ],
+    "notes": "route:/returns",
+    "exportNames": [
+      "DealerReturnsRoute"
+    ]
+  },
+  "app/(app)/(employee)/(tabs)/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "EmployeeTabsLayout"
+    ]
+  },
+  "app/(app)/(employee)/(tabs)/completed.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-completed"
+    ],
+    "notes": "route:/completed",
+    "exportNames": [
+      "EmployeeCompletedTasks"
+    ]
+  },
+  "app/(app)/(employee)/(tabs)/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-(tabs)"
+    ],
+    "notes": "route:/(tabs)",
+    "exportNames": [
+      "EmployeeHome"
+    ]
+  },
+  "app/(app)/(employee)/(tabs)/notifications.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-notifications"
+    ],
+    "notes": "route:/notifications",
+    "exportNames": [
+      "EmployeeNotifications"
+    ]
+  },
+  "app/(app)/(employee)/(tabs)/profile.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-profile"
+    ],
+    "notes": "route:/profile",
+    "exportNames": [
+      "EmployeeProfile"
+    ]
+  },
+  "app/(app)/(employee)/(tabs)/tasks.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-tasks"
+    ],
+    "notes": "route:/tasks",
+    "exportNames": [
+      "EmployeeTasks"
+    ]
+  },
+  "app/(app)/(employee)/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "EmployeeLayout"
+    ]
+  },
+  "app/(app)/(employee)/deliveries/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-deliveries-[id]"
+    ],
+    "notes": "route:/deliveries/[id]",
+    "exportNames": [
+      "EmployeeDeliveryLoadRoute"
+    ]
+  },
+  "app/(app)/(employee)/tasks/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-tasks-[id]"
+    ],
+    "notes": "route:/tasks/[id]",
+    "exportNames": [
+      "EmployeeTaskDetailRoute"
+    ]
+  },
+  "app/(app)/_forbidden.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--forbidden"
+    ],
+    "notes": "route:/_forbidden",
+    "exportNames": [
+      "ForbiddenScreen"
+    ]
+  },
+  "app/(app)/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "AppLayout"
+    ]
+  },
+  "app/(app)/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-(app)"
+    ],
+    "notes": "route:/(app)",
+    "exportNames": [
+      "AppIndexRedirect"
+    ]
+  },
+  "app/(app)/notifications/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-notifications"
+    ],
+    "notes": "route:/notifications",
+    "exportNames": [
+      "SharedNotifications"
+    ]
+  },
+  "app/(app)/search/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-search"
+    ],
+    "notes": "route:/search",
+    "exportNames": [
+      "SearchRoute"
+    ]
+  },
+  "app/(auth)/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "AuthLayout"
+    ]
+  },
+  "app/(auth)/disabled.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-disabled"
+    ],
+    "notes": "route:/disabled",
+    "exportNames": [
+      "DisabledAccountScreen"
+    ]
+  },
+  "app/(auth)/login.tsx": {
+    "classification": "EXCLUDED_NON_VISUAL",
+    "registryIds": [],
+    "notes": "non-visual",
+    "exportNames": []
+  },
+  "app/(auth)/mfa.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-mfa"
+    ],
+    "notes": "route:/mfa",
+    "exportNames": [
+      "MfaScreen"
+    ]
+  },
+  "app/(auth)/offline.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-offline"
+    ],
+    "notes": "route:/offline",
+    "exportNames": [
+      "OfflineScreen"
+    ]
+  },
+  "app/(auth)/session-expired.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-session-expired"
+    ],
+    "notes": "route:/session-expired",
+    "exportNames": [
+      "SessionExpiredScreen"
+    ]
+  },
+  "app/(auth)/unlock.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-unlock"
+    ],
+    "notes": "route:/unlock",
+    "exportNames": [
+      "UnlockScreen"
+    ]
+  },
+  "app/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.--layout"
+    ],
+    "notes": "route:/_layout",
+    "exportNames": [
+      "RootLayout"
+    ]
+  },
+  "app/dev/_layout.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev--layout"
+    ],
+    "notes": "route:/dev/_layout",
+    "exportNames": [
+      "DevLayout"
+    ]
+  },
+  "app/dev/admin-home.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-admin-home"
+    ],
+    "notes": "route:/dev/admin-home",
+    "exportNames": [
+      "AdminHomeGalleryScreen"
+    ]
+  },
+  "app/dev/catalog.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-catalog"
+    ],
+    "notes": "route:/dev/catalog",
+    "exportNames": [
+      "CatalogGalleryScreen"
+    ]
+  },
+  "app/dev/dealer-home.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-dealer-home"
+    ],
+    "notes": "route:/dev/dealer-home",
+    "exportNames": [
+      "DealerHomeGalleryScreen"
+    ]
+  },
+  "app/dev/new-order.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-new-order"
+    ],
+    "notes": "route:/dev/new-order",
+    "exportNames": [
+      "NewOrderGalleryScreen"
+    ]
+  },
+  "app/dev/order-detail.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-order-detail"
+    ],
+    "notes": "route:/dev/order-detail",
+    "exportNames": [
+      "OrderDetailGalleryScreen"
+    ]
+  },
+  "app/dev/orders.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-orders"
+    ],
+    "notes": "route:/dev/orders",
+    "exportNames": [
+      "OrdersGalleryScreen"
+    ]
+  },
+  "app/dev/product-detail.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-product-detail"
+    ],
+    "notes": "route:/dev/product-detail",
+    "exportNames": [
+      "ProductDetailGalleryScreen"
+    ]
+  },
+  "app/dev/task-detail.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-task-detail"
+    ],
+    "notes": "route:/dev/task-detail",
+    "exportNames": [
+      "TaskDetailGalleryScreen"
+    ]
+  },
+  "app/dev/tasks.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-tasks"
+    ],
+    "notes": "route:/dev/tasks",
+    "exportNames": [
+      "TasksGalleryScreen"
+    ]
+  },
+  "app/dev/tests/[id].tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-tests-[id]"
+    ],
+    "notes": "route:/dev/tests/[id]",
+    "exportNames": [
+      "DevTestsInspectorRoute"
+    ]
+  },
+  "app/dev/tests/coverage.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-tests-coverage"
+    ],
+    "notes": "route:/dev/tests/coverage",
+    "exportNames": [
+      "DevTestsCoverageRoute"
+    ]
+  },
+  "app/dev/tests/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-tests"
+    ],
+    "notes": "route:/dev/tests",
+    "exportNames": [
+      "DevTestsShowroomRoute"
+    ]
+  },
+  "app/dev/worker-home.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.-dev-worker-home"
+    ],
+    "notes": "route:/dev/worker-home",
+    "exportNames": [
+      "WorkerHomeGalleryScreen"
+    ]
+  },
+  "app/index.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.root"
+    ],
+    "notes": "route:",
+    "exportNames": [
+      "SplashGate"
+    ]
+  },
+  "src/components/AppText.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.app-text"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AppText"
+    ]
+  },
+  "src/components/BackButton.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.back-button"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "BackButton"
+    ]
+  },
+  "src/components/BrandMark.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.brand-mark"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "BrandMark"
+    ]
+  },
+  "src/components/DirectionalIcon.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.directional-icon",
+      "shared.chevron-glyph"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "DirectionalIcon",
+      "ChevronGlyph"
+    ]
+  },
+  "src/components/ExpandableLocaleSwitcher.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.expandable-locale-switcher"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ExpandableLocaleSwitcher"
+    ]
+  },
+  "src/components/ThemeSwitcher.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.theme-switcher"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ThemeSwitcher"
+    ]
+  },
+  "src/components/badges/PriorityBadge.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.priority-badge"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "PriorityBadge"
+    ]
+  },
+  "src/components/badges/StatusBadge.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.status-badge"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "StatusBadge"
+    ]
+  },
+  "src/components/branding/AnimatedBrandIntro.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.animated-brand-intro"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AnimatedBrandIntro"
+    ]
+  },
+  "src/components/branding/LoginReveal.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.login-reveal"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LoginReveal"
+    ]
+  },
+  "src/components/branding/MaherAghbarLogo.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.logo",
+      "shared.path",
+      "shared.stem",
+      "shared.curve",
+      "shared.maher-aghbar-logo"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LOGO",
+      "PATH",
+      "STEM",
+      "CURVE",
+      "MaherAghbarLogo"
+    ]
+  },
+  "src/components/buttons/DestructiveButton.tsx": {
+    "classification": "EXCLUDED_NON_VISUAL",
+    "registryIds": [],
+    "notes": "non-visual",
+    "exportNames": []
+  },
+  "src/components/buttons/IconButton.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.icon-button"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "IconButton"
+    ]
+  },
+  "src/components/buttons/PrimaryButton.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.primary-button",
+      "shared.secondary-button",
+      "shared.tertiary-button",
+      "shared.destructive-button",
+      "shared.success-button"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "PrimaryButton",
+      "SecondaryButton",
+      "TertiaryButton",
+      "DestructiveButton",
+      "SuccessButton"
+    ]
+  },
+  "src/components/buttons/SecondaryButton.tsx": {
+    "classification": "EXCLUDED_NON_VISUAL",
+    "registryIds": [],
+    "notes": "non-visual",
+    "exportNames": []
+  },
+  "src/components/buttons/TertiaryButton.tsx": {
+    "classification": "EXCLUDED_NON_VISUAL",
+    "registryIds": [],
+    "notes": "non-visual",
+    "exportNames": []
+  },
+  "src/components/calendar/CalendarLegend.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.calendar-legend"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "CalendarLegend"
+    ]
+  },
+  "src/components/calendar/DatePickerField.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.date-picker-field",
+      "shared.inline-date-calendar"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "DatePickerField",
+      "InlineDateCalendar"
+    ]
+  },
+  "src/components/calendar/DatePickerSheet.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.date-picker-sheet"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "DatePickerSheet"
+    ]
+  },
+  "src/components/calendar/MonthCalendar.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.month-calendar"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "MonthCalendar"
+    ]
+  },
+  "src/components/desk/DeskDepth.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.desk-page",
+      "shared.desk-section-band",
+      "shared.desk-card"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "DeskPage",
+      "DeskSectionBand",
+      "DeskCard"
+    ]
+  },
+  "src/components/desk/ProductThumb.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.product-thumb"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ProductThumb"
+    ]
+  },
+  "src/components/feedback/EmptyState.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.empty-state"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "EmptyState"
+    ]
+  },
+  "src/components/feedback/ErrorState.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.error-state"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ErrorState"
+    ]
+  },
+  "src/components/feedback/LastUpdatedLabel.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.last-updated-label"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LastUpdatedLabel"
+    ]
+  },
+  "src/components/feedback/LoadingOverlay.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.loading-overlay"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LoadingOverlay"
+    ]
+  },
+  "src/components/feedback/NetworkStatus.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.network-status"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "NetworkStatus"
+    ]
+  },
+  "src/components/feedback/OfflineBanner.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.offline-banner"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "OfflineBanner"
+    ]
+  },
+  "src/components/feedback/SkeletonLoader.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.skeleton-loader"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SkeletonLoader"
+    ]
+  },
+  "src/components/feedback/Toast.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.toast-provider"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ToastProvider"
+    ]
+  },
+  "src/components/feedback/ToastCard.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.toast-card"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ToastCard"
+    ]
+  },
+  "src/components/forms/AppTextInput.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.app-text-input"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AppTextInput"
+    ]
+  },
+  "src/components/forms/CodeField.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.code-field"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "CodeField"
+    ]
+  },
+  "src/components/forms/CopyNotesButton.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.copy-notes-button"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "CopyNotesButton"
+    ]
+  },
+  "src/components/forms/InfoRow.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.info-row"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "InfoRow"
+    ]
+  },
+  "src/components/forms/KeyboardDismissAccessory.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.keyboard-dismiss-accessory"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "KeyboardDismissAccessory"
+    ]
+  },
+  "src/components/forms/LockedTextField.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.locked-text-field"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LockedTextField"
+    ]
+  },
+  "src/components/forms/PasswordField.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.password-field"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "PasswordField"
+    ]
+  },
+  "src/components/forms/PhoneField.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.phone-field"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "PhoneField"
+    ]
+  },
+  "src/components/forms/QtyStepperField.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.qty-stepper-field"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "QtyStepperField"
+    ]
+  },
+  "src/components/forms/SearchBarShell.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.search-bar-shell"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SearchBarShell"
+    ]
+  },
+  "src/components/forms/TextField.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.text-field"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "TextField"
+    ]
+  },
+  "src/components/layout/AppHeader.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.app-header"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AppHeader"
+    ]
+  },
+  "src/components/layout/AppScreen.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.app-screen"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AppScreen"
+    ]
+  },
+  "src/components/layout/Divider.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.divider"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "Divider"
+    ]
+  },
+  "src/components/layout/FloatingActionDock.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.floating-action-dock"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "FloatingActionDock"
+    ]
+  },
+  "src/components/layout/KeyboardAwareScreen.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.keyboard-aware-screen"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "KeyboardAwareScreen"
+    ]
+  },
+  "src/components/layout/LargeTitleHeader.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.large-title-header"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LargeTitleHeader"
+    ]
+  },
+  "src/components/layout/ScreenBackLead.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.screen-back-lead"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ScreenBackLead"
+    ]
+  },
+  "src/components/layout/ScrollableScreen.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.scrollable-screen"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ScrollableScreen"
+    ]
+  },
+  "src/components/layout/SectionHeader.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.section-header"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SectionHeader"
+    ]
+  },
+  "src/components/maps/LocationMapPicker.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.location-map-picker"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LocationMapPicker"
+    ]
+  },
+  "src/components/maps/LocationMapVisibility.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.location-map-visibility-provider"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LocationMapVisibilityProvider"
+    ]
+  },
+  "src/components/maps/LocationPinField.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.location-pin-field"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "LocationPinField"
+    ]
+  },
+  "src/components/media/ImageViewer.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.image-viewer"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ImageViewer"
+    ]
+  },
+  "src/components/network/NetworkProvider.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.network-provider"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "NetworkProvider"
+    ]
+  },
+  "src/components/scan/CodeScannerProvider.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.code-scanner-provider"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "CodeScannerProvider"
+    ]
+  },
+  "src/components/scan/CodeScannerScreen.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.code-scanner-screen"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "CodeScannerScreen"
+    ]
+  },
+  "src/components/sheets/ActionSheet.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.action-sheet"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ActionSheet"
+    ]
+  },
+  "src/components/sheets/BottomSheet.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.bottom-sheet"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "BottomSheet"
+    ]
+  },
+  "src/components/sheets/ConfirmationSheet.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.confirmation-sheet"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ConfirmationSheet"
+    ]
+  },
+  "src/components/sheets/SheetOverlayYield.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.sheet-overlay-yield-provider"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SheetOverlayYieldProvider"
+    ]
+  },
+  "src/components/surfaces/SurfaceCard.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "shared.surface-card"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SurfaceCard"
+    ]
+  },
+  "src/features/account/DealerAccountScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.account.dealer-account-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealerAccountScreen"
+    ]
+  },
+  "src/features/account/DealerPaymentsScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.account.dealer-payments-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealerPaymentsScreen"
+    ]
+  },
+  "src/features/account/DealerStatementScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.account.dealer-statement-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealerStatementScreen"
+    ]
+  },
+  "src/features/account/components/DealerAiSpotlight.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.dealer-ai-spotlight"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "DealerAiSpotlight"
+    ]
+  },
+  "src/features/account/components/DealerIdentityBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.dealer-identity-board"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "DealerIdentityBoard"
+    ]
+  },
+  "src/features/account/components/DealerPlacesDock.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.dealer-places-dock"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "DealerPlacesDock"
+    ]
+  },
+  "src/features/account/components/DealerPreferencesBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.dealer-preferences-board"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "DealerPreferencesBoard"
+    ]
+  },
+  "src/features/account/components/StatementActivityCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.statement-activity-card"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "StatementActivityCard"
+    ]
+  },
+  "src/features/account/components/StatementBalanceBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.statement-balance-board"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "StatementBalanceBoard"
+    ]
+  },
+  "src/features/account/components/StatementDateSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.statement-date-trigger",
+      "feature.account.statement-date-sheet"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "StatementDateTrigger",
+      "StatementDateSheet"
+    ]
+  },
+  "src/features/account/components/StatementTypeRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.statement-type-rail"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "StatementTypeRail"
+    ]
+  },
+  "src/features/admin-home/AdminHomeScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.admin-home.admin-home-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AdminHomeScreen"
+    ]
+  },
+  "src/features/admin-home/AtelierScrollContext.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.atelier-scroll-provider"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AtelierScrollProvider"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeActionRibbons.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-action-ribbons"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeActionRibbons"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeAtelierDashboard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-atelier-dashboard"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeAtelierDashboard"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeAtelierHero.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-atelier-hero"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeAtelierHero"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeDestinations.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-destinations"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeDestinations"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeFloorJourney.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-floor-journey"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeFloorJourney"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeFocusMoment.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-focus-moment"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeFocusMoment"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeHeroCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-hero-card"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeHeroCard"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeLivingHero.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-living-hero"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeLivingHero"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeLivingHome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-living-home"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeLivingHome"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeModuleGrid.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-module-grid"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeModuleGrid"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeMoments.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-moments"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeMoments"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeOpsInventory.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-ops-inventory"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeOpsInventory"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomePulseStrip.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-pulse-strip"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomePulseStrip"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeQuickAccess.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-quick-access"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeQuickAccess"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeRecentCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-recent-card"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeRecentCard"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeSearchResults.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-search-results"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeSearchResults"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeSearchRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-search-row"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeSearchRow"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeSignalMarquee.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-signal-marquee"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeSignalMarquee"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeSignatureHome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-signature-home"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeSignatureHome"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-skeleton"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeSkeleton"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeStageBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-stage-board"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeStageBoard"
+    ]
+  },
+  "src/features/admin-home/components/AdminHomeTrackingCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.admin-home-tracking-card"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "AdminHomeTrackingCard"
+    ]
+  },
+  "src/features/admin-home/components/HomeHeader.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.home-header"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "HomeHeader"
+    ]
+  },
+  "src/features/admin-home/components/HomeSectionFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.home-section-filter-sheet"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "HomeSectionFilterSheet"
+    ]
+  },
+  "src/features/admin-home/components/MetricGrid.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.metric-card",
+      "feature.admin-home.metric-grid"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "MetricCard",
+      "MetricGrid"
+    ]
+  },
+  "src/features/admin-home/components/RecentActivityList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.recent-activity-list"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "RecentActivityList"
+    ]
+  },
+  "src/features/admin-home/components/RecentOrdersList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.recent-orders-list"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "RecentOrdersList"
+    ]
+  },
+  "src/features/admin-home/components/UrgentAlertCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.urgent-alert-card"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "UrgentAlertCard"
+    ]
+  },
+  "src/features/admin-home/components/UrgentTasksList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.admin-home.urgent-tasks-list"
+    ],
+    "notes": "parent-domain:admin-home",
+    "exportNames": [
+      "UrgentTasksList"
+    ]
+  },
+  "src/features/ai-chatbot/AiChatbotScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.ai-chatbot.ai-chatbot-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AiChatbotScreen"
+    ]
+  },
+  "src/features/ai-chatbot/components/ChatComposer.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.ai-chatbot.chat-composer"
+    ],
+    "notes": "parent-domain:ai-chatbot",
+    "exportNames": [
+      "ChatComposer"
+    ]
+  },
+  "src/features/ai-chatbot/components/ChatMessageBubble.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.ai-chatbot.chat-message-bubble"
+    ],
+    "notes": "parent-domain:ai-chatbot",
+    "exportNames": [
+      "ChatMessageBubble"
+    ]
+  },
+  "src/features/ai-chatbot/components/responseBoards.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.ai-chatbot.suggestion-chips",
+      "feature.ai-chatbot.assistant-content-block"
+    ],
+    "notes": "parent-domain:ai-chatbot",
+    "exportNames": [
+      "SuggestionChips",
+      "AssistantContentBlock"
+    ]
+  },
+  "src/features/ai-intake/AiIntakeListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.ai-intake.ai-intake-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AiIntakeListScreen"
+    ]
+  },
+  "src/features/ai-intake/AiReviewScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.ai-intake.ai-review-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AiReviewScreen"
+    ]
+  },
+  "src/features/ai-intake/components/AiProcessingAnimation.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.ai-intake.ai-processing-animation"
+    ],
+    "notes": "parent-domain:ai-intake",
+    "exportNames": [
+      "AiProcessingAnimation"
+    ]
+  },
+  "src/features/auth/LoginScreenContent.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.login-screen-content"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "LoginScreenContent"
+    ]
+  },
+  "src/features/auth/components/AmbientBackground.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.ambient-background"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "AmbientBackground"
+    ]
+  },
+  "src/features/auth/components/AnimatedBrandIntro.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.animated-brand-intro"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "AnimatedBrandIntro"
+    ]
+  },
+  "src/features/auth/components/AnimatedLogoStroke.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.animated-logo-stroke"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "AnimatedLogoStroke"
+    ]
+  },
+  "src/features/auth/components/LoginBiometricButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.login-biometric-button"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "LoginBiometricButton"
+    ]
+  },
+  "src/features/auth/components/LoginButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.login-button"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "LoginButton"
+    ]
+  },
+  "src/features/auth/components/LoginError.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.login-error"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "LoginError"
+    ]
+  },
+  "src/features/auth/components/LoginForm.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.login-form"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "LoginForm"
+    ]
+  },
+  "src/features/auth/components/LoginInput.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.login-input"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "LoginInput"
+    ]
+  },
+  "src/features/auth/components/LoginPasswordField.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.login-password-field"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "LoginPasswordField"
+    ]
+  },
+  "src/features/auth/components/LoginThemeSwitcher.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.login-theme-switcher"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "LoginThemeSwitcher"
+    ]
+  },
+  "src/features/auth/components/PasswordVisibilityIcon.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.auth.password-visibility-icon"
+    ],
+    "notes": "parent-domain:auth",
+    "exportNames": [
+      "PasswordVisibilityIcon"
+    ]
+  },
+  "src/features/auth/screens/LoginScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.auth.login-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "LoginScreen"
+    ]
+  },
+  "src/features/catalog/AdminProductDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.catalog.admin-product-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AdminProductDetailScreen"
+    ]
+  },
+  "src/features/catalog/CatalogScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.catalog.catalog-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "CatalogScreen"
+    ]
+  },
+  "src/features/catalog/ProductDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.catalog.product-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ProductDetailScreen"
+    ]
+  },
+  "src/features/catalog/components/BomFloorRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.bom-floor-row"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "BomFloorRow"
+    ]
+  },
+  "src/features/catalog/components/BomMaterialPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.bom-material-picker-sheet"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "BomMaterialPickerSheet"
+    ]
+  },
+  "src/features/catalog/components/CatalogFilterButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.catalog-filter-button"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "CatalogFilterButton"
+    ]
+  },
+  "src/features/catalog/components/CatalogFilterChips.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.catalog-filter-chips"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "CatalogFilterChips"
+    ]
+  },
+  "src/features/catalog/components/CatalogFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.catalog-filter-sheet"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "CatalogFilterSheet"
+    ]
+  },
+  "src/features/catalog/components/CatalogGridSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.catalog-grid-skeleton"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "CatalogGridSkeleton"
+    ]
+  },
+  "src/features/catalog/components/CatalogStoreChrome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.catalog-store-chrome"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "CatalogStoreChrome"
+    ]
+  },
+  "src/features/catalog/components/CategoryPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.category-picker-sheet"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "CategoryPickerSheet"
+    ]
+  },
+  "src/features/catalog/components/CreateProductSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.create-product-sheet"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "CreateProductSheet"
+    ]
+  },
+  "src/features/catalog/components/DealerCatalogChrome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.dealer-catalog-chrome"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "DealerCatalogChrome"
+    ]
+  },
+  "src/features/catalog/components/DealerCatalogGridSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.dealer-catalog-grid-skeleton"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "DealerCatalogGridSkeleton"
+    ]
+  },
+  "src/features/catalog/components/DealerCatalogModeTabs.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.dealer-catalog-mode-tabs"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "DealerCatalogModeTabs"
+    ]
+  },
+  "src/features/catalog/components/DealerCategoryRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.dealer-category-rail"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "DealerCategoryRail"
+    ]
+  },
+  "src/features/catalog/components/MeasurementFloorRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.measurement-floor-row"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "MeasurementFloorRow"
+    ]
+  },
+  "src/features/catalog/components/MeasurementValueSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.measurement",
+      "feature.catalog.unit-preset-chips",
+      "feature.catalog.unit-picker-panel",
+      "feature.catalog.measurement-value-panel"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "MEASUREMENT",
+      "UnitPresetChips",
+      "UnitPickerPanel",
+      "MeasurementValuePanel"
+    ]
+  },
+  "src/features/catalog/components/ProductCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.product",
+      "feature.catalog.product-card"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "PRODUCT",
+      "ProductCard"
+    ]
+  },
+  "src/features/catalog/components/ProductCardMedia.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.product-card-media"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "ProductCardMedia"
+    ]
+  },
+  "src/features/catalog/components/ProductDetailSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.product-detail-skeleton"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "ProductDetailSkeleton"
+    ]
+  },
+  "src/features/catalog/components/ProductGalleryBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.product-gallery-board"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "ProductGalleryBoard"
+    ]
+  },
+  "src/features/catalog/components/ProductImageCarousel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.product-image-carousel"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "ProductImageCarousel"
+    ]
+  },
+  "src/features/catalog/components/ProductPhotoSourceSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.product-photo-source-sheet"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "ProductPhotoSourceSheet"
+    ]
+  },
+  "src/features/catalog/components/RelatedProductsRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.catalog.related-products-rail"
+    ],
+    "notes": "parent-domain:catalog",
+    "exportNames": [
+      "RelatedProductsRail"
+    ]
+  },
+  "src/features/dealer-home/DealerHomeScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.dealer-home.dealer-home-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealerHomeScreen"
+    ]
+  },
+  "src/features/dealer-home/components/DealerHomeDestinations.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-home.dealer-home-destinations"
+    ],
+    "notes": "parent-domain:dealer-home",
+    "exportNames": [
+      "DealerHomeDestinations"
+    ]
+  },
+  "src/features/dealer-home/components/DealerHomeHeader.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-home.dealer-home-header"
+    ],
+    "notes": "parent-domain:dealer-home",
+    "exportNames": [
+      "DealerHomeHeader"
+    ]
+  },
+  "src/features/dealer-home/components/DealerHomeMetrics.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-home.dealer-home-metrics"
+    ],
+    "notes": "parent-domain:dealer-home",
+    "exportNames": [
+      "DealerHomeMetrics"
+    ]
+  },
+  "src/features/dealer-home/components/DealerHomeSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-home.dealer-home-skeleton"
+    ],
+    "notes": "parent-domain:dealer-home",
+    "exportNames": [
+      "DealerHomeSkeleton"
+    ]
+  },
+  "src/features/dealer-home/components/FeaturedCollections.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-home.featured-collections"
+    ],
+    "notes": "parent-domain:dealer-home",
+    "exportNames": [
+      "FeaturedCollections"
+    ]
+  },
+  "src/features/dealer-home/components/FeaturedModels.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-home.featured-models"
+    ],
+    "notes": "parent-domain:dealer-home",
+    "exportNames": [
+      "FeaturedModels"
+    ]
+  },
+  "src/features/dealer-home/components/OrderCarousel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-home.order-carousel"
+    ],
+    "notes": "parent-domain:dealer-home",
+    "exportNames": [
+      "OrderCarousel"
+    ]
+  },
+  "src/features/dealer-home/components/RecentInvoices.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-home.recent-invoices"
+    ],
+    "notes": "parent-domain:dealer-home",
+    "exportNames": [
+      "RecentInvoices"
+    ]
+  },
+  "src/features/dealer-ui/DealerBalanceCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-balance-card"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerBalanceCard"
+    ]
+  },
+  "src/features/dealer-ui/DealerEmptyState.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-empty-state"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerEmptyState"
+    ]
+  },
+  "src/features/dealer-ui/DealerFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-filter-sheet"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerFilterSheet"
+    ]
+  },
+  "src/features/dealer-ui/DealerGlassCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-glass-card"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerGlassCard"
+    ]
+  },
+  "src/features/dealer-ui/DealerHero.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-hero"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerHero"
+    ]
+  },
+  "src/features/dealer-ui/DealerInvoiceCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-invoice-card"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerInvoiceCard"
+    ]
+  },
+  "src/features/dealer-ui/DealerNewOrderButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer",
+      "feature.dealer-ui.dealer-new-order-button"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DEALER",
+      "DealerNewOrderButton"
+    ]
+  },
+  "src/features/dealer-ui/DealerOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-order-card"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerOrderCard"
+    ]
+  },
+  "src/features/dealer-ui/DealerProductCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-product-card"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerProductCard"
+    ]
+  },
+  "src/features/dealer-ui/DealerProgressMap.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-progress-map"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerProgressMap"
+    ]
+  },
+  "src/features/dealer-ui/DealerSearchBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-search-bar"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerSearchBar"
+    ]
+  },
+  "src/features/dealer-ui/DealerSectionHeader.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-section-header"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerSectionHeader"
+    ]
+  },
+  "src/features/dealer-ui/DealerSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-skeleton"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerSkeleton"
+    ]
+  },
+  "src/features/dealer-ui/DealerStatusBadge.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-status-badge"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerStatusBadge"
+    ]
+  },
+  "src/features/dealer-ui/DealerUploadGrid.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealer-ui.dealer-upload-grid"
+    ],
+    "notes": "parent-domain:dealer-ui",
+    "exportNames": [
+      "DealerUploadGrid"
+    ]
+  },
+  "src/features/dealers/DealerDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.dealers.dealer-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealerDetailScreen"
+    ]
+  },
+  "src/features/dealers/DealersListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.dealers.dealers-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealersListScreen"
+    ]
+  },
+  "src/features/dealers/components/AddPriceSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.add-price-sheet"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "AddPriceSheet"
+    ]
+  },
+  "src/features/dealers/components/CreateDealerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.create-dealer-sheet"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "CreateDealerSheet"
+    ]
+  },
+  "src/features/dealers/components/DealerBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-board"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerBoard"
+    ]
+  },
+  "src/features/dealers/components/DealerCrmSheets.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.add-contact-sheet",
+      "feature.dealers.add-address-sheet",
+      "feature.dealers.edit-address-sheet",
+      "feature.dealers.add-note-sheet",
+      "feature.dealers.view-note-sheet"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "AddContactSheet",
+      "AddAddressSheet",
+      "EditAddressSheet",
+      "AddNoteSheet",
+      "ViewNoteSheet"
+    ]
+  },
+  "src/features/dealers/components/DealerEmptyPanel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-empty-panel"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerEmptyPanel"
+    ]
+  },
+  "src/features/dealers/components/DealerInvoicesList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-invoices-list"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerInvoicesList"
+    ]
+  },
+  "src/features/dealers/components/DealerListCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-list-card"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerListCard"
+    ]
+  },
+  "src/features/dealers/components/DealerMetricTile.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-metric-tile"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerMetricTile"
+    ]
+  },
+  "src/features/dealers/components/DealerOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-order-card",
+      "feature.dealers.dealer"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerOrderCard",
+      "DEALER"
+    ]
+  },
+  "src/features/dealers/components/DealerPaymentsList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-payments-list"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerPaymentsList"
+    ]
+  },
+  "src/features/dealers/components/DealerPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-picker-sheet"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerPickerSheet"
+    ]
+  },
+  "src/features/dealers/components/DealerPriceList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-price-list"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerPriceList"
+    ]
+  },
+  "src/features/dealers/components/DealerSummaryRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-summary-rail"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerSummaryRail"
+    ]
+  },
+  "src/features/dealers/components/DeleteDealerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.delete-dealer-sheet"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DeleteDealerSheet"
+    ]
+  },
+  "src/features/dealers/components/EditDealerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.edit-dealer-sheet"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "EditDealerSheet"
+    ]
+  },
+  "src/features/dealers/components/dealerSheetForm.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.dealers.dealer-form-section",
+      "feature.dealers.dealer-form-chip",
+      "feature.dealers.dealer-form-error",
+      "feature.dealers.dealer-form-footer"
+    ],
+    "notes": "parent-domain:dealers",
+    "exportNames": [
+      "DealerFormSection",
+      "DealerFormChip",
+      "DealerFormError",
+      "DealerFormFooter"
+    ]
+  },
+  "src/features/delivery-load/DeliveryLoadSheetScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.delivery-load.delivery-load-sheet-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DeliveryLoadSheetScreen"
+    ]
+  },
+  "src/features/delivery-load/DeliveryOrdersListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.delivery-load.delivery-orders-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DeliveryOrdersListScreen"
+    ]
+  },
+  "src/features/delivery-load/DeliveryWorkerHomeScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.delivery-load.delivery-worker-home-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DeliveryWorkerHomeScreen"
+    ]
+  },
+  "src/features/delivery-load/components/DeliveryFloorOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.delivery-load.delivery-floor-order-card"
+    ],
+    "notes": "parent-domain:delivery-load",
+    "exportNames": [
+      "DeliveryFloorOrderCard"
+    ]
+  },
+  "src/features/inventory/InventoryFinishedOrderScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.inventory.inventory-finished-order-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "InventoryFinishedOrderScreen"
+    ]
+  },
+  "src/features/inventory/InventoryGroupListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.inventory.inventory-group-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "InventoryGroupListScreen"
+    ]
+  },
+  "src/features/inventory/InventoryGroupsClassicScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.inventory.inventory-groups-classic-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "InventoryGroupsClassicScreen"
+    ]
+  },
+  "src/features/inventory/InventoryGroupsScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.inventory.inventory-groups-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "InventoryGroupsScreen"
+    ]
+  },
+  "src/features/inventory/InventoryItemDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.inventory.inventory-item-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "InventoryItemDetailScreen"
+    ]
+  },
+  "src/features/inventory/InventorySemiOrderScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.inventory.inventory-semi-order-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "InventorySemiOrderScreen"
+    ]
+  },
+  "src/features/inventory/components/AccessoryCameraProvider.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.accessory-camera-provider"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "AccessoryCameraProvider"
+    ]
+  },
+  "src/features/inventory/components/AccessoryCameraScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.inventory.accessory-camera-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AccessoryCameraScreen"
+    ]
+  },
+  "src/features/inventory/components/AccessoryPhotoField.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.accessory-photo-field"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "AccessoryPhotoField"
+    ]
+  },
+  "src/features/inventory/components/AccessoryPhotoSourceSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.accessory-photo-source-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "AccessoryPhotoSourceSheet"
+    ]
+  },
+  "src/features/inventory/components/AddStockSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.add-stock-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "AddStockSheet"
+    ]
+  },
+  "src/features/inventory/components/CreateInventoryItemSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.create-inventory-item-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "CreateInventoryItemSheet"
+    ]
+  },
+  "src/features/inventory/components/CreateStockCountSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.create-stock-count-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "CreateStockCountSheet"
+    ]
+  },
+  "src/features/inventory/components/CreateTransferSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.create-transfer-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "CreateTransferSheet"
+    ]
+  },
+  "src/features/inventory/components/CreateWarehouseSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.create-warehouse-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "CreateWarehouseSheet"
+    ]
+  },
+  "src/features/inventory/components/EditInventoryItemSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.edit-inventory-item-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "EditInventoryItemSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-board-card",
+      "feature.inventory.inventory-section-header",
+      "feature.inventory.inventory-qty-strip"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryBoardCard",
+      "InventorySectionHeader",
+      "InventoryQtyStrip"
+    ]
+  },
+  "src/features/inventory/components/InventoryCategoryRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-category-rail"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryCategoryRail"
+    ]
+  },
+  "src/features/inventory/components/InventoryCompositionChrome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-composition-chrome"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryCompositionChrome"
+    ]
+  },
+  "src/features/inventory/components/InventoryFgLotInspectSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-fg-lot-inspect-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryFgLotInspectSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryFilterButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-filter-button"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryFilterButton"
+    ]
+  },
+  "src/features/inventory/components/InventoryFilterSheetChrome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-filter-section",
+      "feature.inventory.inventory-floor-chip",
+      "feature.inventory.inventory-filter-sheet-footer",
+      "feature.inventory.inventory-warehouse-search-picker"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryFilterSection",
+      "InventoryFloorChip",
+      "InventoryFilterSheetFooter",
+      "InventoryWarehouseSearchPicker"
+    ]
+  },
+  "src/features/inventory/components/InventoryFinishedFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-finished-filter-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryFinishedFilterSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryFinishedOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-finished-order-card"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryFinishedOrderCard"
+    ]
+  },
+  "src/features/inventory/components/InventoryGroupCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-group-card"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryGroupCard"
+    ]
+  },
+  "src/features/inventory/components/InventoryItemPickPanel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-item-pick-panel"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryItemPickPanel"
+    ]
+  },
+  "src/features/inventory/components/InventoryLifecycleTabs.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-lifecycle-tabs"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryLifecycleTabs"
+    ]
+  },
+  "src/features/inventory/components/InventoryLotInspectSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-lot-inspect-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryLotInspectSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryLowStockFocus.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-low-stock-focus"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryLowStockFocus"
+    ]
+  },
+  "src/features/inventory/components/InventoryMaterialCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-material-card"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryMaterialCard"
+    ]
+  },
+  "src/features/inventory/components/InventoryMaterialRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-material-row"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryMaterialRow"
+    ]
+  },
+  "src/features/inventory/components/InventoryMaterialTypeSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-material-type-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryMaterialTypeSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryMeasurementsSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-measurements-list",
+      "feature.inventory.inventory-measurement-editor-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryMeasurementsList",
+      "InventoryMeasurementEditorSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryPickerRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-picker-row"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryPickerRow"
+    ]
+  },
+  "src/features/inventory/components/InventoryProductionRows.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-wip-row",
+      "feature.inventory.inventory-finished-row",
+      "feature.inventory.inventory-fg-lot-row"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryWipRow",
+      "InventoryFinishedRow",
+      "InventoryFgLotRow"
+    ]
+  },
+  "src/features/inventory/components/InventoryQrSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-qr-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryQrSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryScanMatchResult.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-scan-match-result"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryScanMatchResult"
+    ]
+  },
+  "src/features/inventory/components/InventoryScanResultSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-scan-result-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryScanResultSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryScanSelectInline.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-scan-select-inline"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryScanSelectInline"
+    ]
+  },
+  "src/features/inventory/components/InventorySectionTabs.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-section-tabs"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySectionTabs"
+    ]
+  },
+  "src/features/inventory/components/InventorySemiFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-semi-filter-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySemiFilterSheet"
+    ]
+  },
+  "src/features/inventory/components/InventorySemiOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-semi-order-card"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySemiOrderCard"
+    ]
+  },
+  "src/features/inventory/components/InventorySemiOrderDetailSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-semi-order-detail-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySemiOrderDetailSheet"
+    ]
+  },
+  "src/features/inventory/components/InventorySemiOrderGroupCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-semi-order-group-card"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySemiOrderGroupCard"
+    ]
+  },
+  "src/features/inventory/components/InventorySemiStageGroup.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-semi-stage-group"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySemiStageGroup"
+    ]
+  },
+  "src/features/inventory/components/InventorySemiStagePickerButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-semi-stage-picker-button"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySemiStagePickerButton"
+    ]
+  },
+  "src/features/inventory/components/InventorySemiStagePickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-semi-stage-picker-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySemiStagePickerSheet"
+    ]
+  },
+  "src/features/inventory/components/InventorySheetBody.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-sheet-body",
+      "feature.inventory.inventory-sheet-section-label"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySheetBody",
+      "InventorySheetSectionLabel"
+    ]
+  },
+  "src/features/inventory/components/InventorySheetFooter.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-sheet-footer"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySheetFooter"
+    ]
+  },
+  "src/features/inventory/components/InventorySignatureHome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-signature-home"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySignatureHome"
+    ]
+  },
+  "src/features/inventory/components/InventorySkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-groups-skeleton",
+      "feature.inventory.inventory-list-skeleton",
+      "feature.inventory.inventory-detail-skeleton"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryGroupsSkeleton",
+      "InventoryListSkeleton",
+      "InventoryDetailSkeleton"
+    ]
+  },
+  "src/features/inventory/components/InventorySkuThumb.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-sku-thumb"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventorySkuThumb"
+    ]
+  },
+  "src/features/inventory/components/InventoryStockCountRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-stock-count-row"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryStockCountRow"
+    ]
+  },
+  "src/features/inventory/components/InventoryTransferRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-transfer-row"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryTransferRow"
+    ]
+  },
+  "src/features/inventory/components/InventoryUnitPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-unit-picker-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryUnitPickerSheet"
+    ]
+  },
+  "src/features/inventory/components/InventoryWarehousePickerControl.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-warehouse-picker-control"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryWarehousePickerControl"
+    ]
+  },
+  "src/features/inventory/components/InventoryWipKitRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.inventory-wip-kit-row"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "InventoryWipKitRow"
+    ]
+  },
+  "src/features/inventory/components/KnownItemLabelConfirm.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.known-item-label-confirm"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "KnownItemLabelConfirm"
+    ]
+  },
+  "src/features/inventory/components/ScanInventoryItemAction.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.scan-inventory-item-action"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "ScanInventoryItemAction"
+    ]
+  },
+  "src/features/inventory/components/ScannedInventoryItemConfirm.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.scanned-inventory-item-confirm"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "ScannedInventoryItemConfirm"
+    ]
+  },
+  "src/features/inventory/components/WarehousePickList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.warehouse-pick-list"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "WarehousePickList"
+    ]
+  },
+  "src/features/inventory/components/WarehouseTypeSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.warehouse-type-sheet"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "WarehouseTypeSheet"
+    ]
+  },
+  "src/features/inventory/components/WipKitBoardSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.inventory.wip-kit-board-section"
+    ],
+    "notes": "parent-domain:inventory",
+    "exportNames": [
+      "WipKitBoardSection"
+    ]
+  },
+  "src/features/invoices/InvoiceDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.invoices.invoice-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "InvoiceDetailScreen"
+    ]
+  },
+  "src/features/invoices/InvoicesListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.invoices.invoices-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "InvoicesListScreen"
+    ]
+  },
+  "src/features/invoices/components/ApplyCreditSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.apply-credit-sheet"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "ApplyCreditSheet"
+    ]
+  },
+  "src/features/invoices/components/CreateInvoiceFromSalesOrderSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.create-invoice-from-sales-order-sheet"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "CreateInvoiceFromSalesOrderSheet"
+    ]
+  },
+  "src/features/invoices/components/InvoiceBalanceBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-balance-board"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceBalanceBoard"
+    ]
+  },
+  "src/features/invoices/components/InvoiceBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-board-card"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceBoardCard"
+    ]
+  },
+  "src/features/invoices/components/InvoiceDealerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-dealer-sheet"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceDealerSheet"
+    ]
+  },
+  "src/features/invoices/components/InvoiceDetailHero.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-detail-hero"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceDetailHero"
+    ]
+  },
+  "src/features/invoices/components/InvoiceFilterTriggers.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-filter-triggers"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceFilterTriggers"
+    ]
+  },
+  "src/features/invoices/components/InvoiceFloorBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-floor-board"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceFloorBoard"
+    ]
+  },
+  "src/features/invoices/components/InvoiceJofotaraBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-jofotara-board"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceJofotaraBoard"
+    ]
+  },
+  "src/features/invoices/components/InvoiceLinesBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-lines-board"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceLinesBoard"
+    ]
+  },
+  "src/features/invoices/components/InvoiceMetaBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-meta-board"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceMetaBoard"
+    ]
+  },
+  "src/features/invoices/components/InvoicePaymentsBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-payments-board"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoicePaymentsBoard"
+    ]
+  },
+  "src/features/invoices/components/InvoiceStatusFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-status-filter-sheet"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceStatusFilterSheet"
+    ]
+  },
+  "src/features/invoices/components/InvoiceStickyActions.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.invoice-sticky-actions"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "InvoiceStickyActions"
+    ]
+  },
+  "src/features/invoices/components/RecordPaymentSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.invoices.record-payment-sheet"
+    ],
+    "notes": "parent-domain:invoices",
+    "exportNames": [
+      "RecordPaymentSheet"
+    ]
+  },
+  "src/features/more/AdminSettingsScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.more.admin-settings-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AdminSettingsScreen"
+    ]
+  },
+  "src/features/more/MoreAccountScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.more.more-account-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "MoreAccountScreen"
+    ]
+  },
+  "src/features/more/MoreHubScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.more.more-hub-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "MoreHubScreen"
+    ]
+  },
+  "src/features/more/components/MoreAiSpotlight.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.more.more-ai-spotlight"
+    ],
+    "notes": "parent-domain:more",
+    "exportNames": [
+      "MoreAiSpotlight"
+    ]
+  },
+  "src/features/more/components/MoreBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.more.more-board"
+    ],
+    "notes": "parent-domain:more",
+    "exportNames": [
+      "MoreBoard"
+    ]
+  },
+  "src/features/more/components/MoreFloorCommand.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.more.more-floor-command"
+    ],
+    "notes": "parent-domain:more",
+    "exportNames": [
+      "MoreFloorCommand"
+    ]
+  },
+  "src/features/more/components/MoreIdentityBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.more.more-identity-board"
+    ],
+    "notes": "parent-domain:more",
+    "exportNames": [
+      "MoreIdentityBoard"
+    ]
+  },
+  "src/features/more/components/MorePlacesDock.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.more.more-places-dock"
+    ],
+    "notes": "parent-domain:more",
+    "exportNames": [
+      "MorePlacesDock"
+    ]
+  },
+  "src/features/more/components/MorePreferencesBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.more.more-preferences-board"
+    ],
+    "notes": "parent-domain:more",
+    "exportNames": [
+      "MorePreferencesBoard"
+    ]
+  },
+  "src/features/notifications/NotificationsInboxScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.notifications.notifications-inbox-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "NotificationsInboxScreen"
+    ]
+  },
+  "src/features/notifications/components/NotificationBoardCard.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "feature.notifications.notification-board-card"
+    ],
+    "notes": "direct-demo",
+    "exportNames": [
+      "NotificationBoardCard"
+    ]
+  },
+  "src/features/notifications/components/NotificationsListSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.notifications.notifications-list-skeleton"
+    ],
+    "notes": "parent-domain:notifications",
+    "exportNames": [
+      "NotificationsListSkeleton"
+    ]
+  },
+  "src/features/notifications/components/NotificationsSegmentRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.notifications.notifications-segment-rail"
+    ],
+    "notes": "parent-domain:notifications",
+    "exportNames": [
+      "NotificationsSegmentRail"
+    ]
+  },
+  "src/features/pdf/PdfDownloadSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.pdf.pdf-download-sheet"
+    ],
+    "notes": "parent-domain:pdf",
+    "exportNames": [
+      "PdfDownloadSheet"
+    ]
+  },
+  "src/features/pdf/usePdfDownload.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.pdf.use-pdf-download"
+    ],
+    "notes": "parent-domain:pdf",
+    "exportNames": []
+  },
+  "src/features/production/ProductionDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.production.production-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ProductionDetailScreen"
+    ]
+  },
+  "src/features/production/ProductionOverviewScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.production.production-overview-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ProductionOverviewScreen"
+    ]
+  },
+  "src/features/production/components/AdminScheduleStrip.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.admin-schedule-strip"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "AdminScheduleStrip"
+    ]
+  },
+  "src/features/production/components/AssignWorkerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.assign-worker-sheet"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "AssignWorkerSheet"
+    ]
+  },
+  "src/features/production/components/HoursMinutesRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.hours-minutes-row"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "HoursMinutesRow"
+    ]
+  },
+  "src/features/production/components/PriorityDeliverySheets.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.priority-sheet",
+      "feature.production.delivery-date-sheet"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "PrioritySheet",
+      "DeliveryDateSheet"
+    ]
+  },
+  "src/features/production/components/PriorityTouchBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.priority-touch-bar"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "PriorityTouchBar"
+    ]
+  },
+  "src/features/production/components/ProductionDealerBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-dealer-bar"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionDealerBar"
+    ]
+  },
+  "src/features/production/components/ProductionDealerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-dealer-sheet"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionDealerSheet"
+    ]
+  },
+  "src/features/production/components/ProductionFilterChips.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-filter-chips"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionFilterChips"
+    ]
+  },
+  "src/features/production/components/ProductionHubJump.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-hub-jump"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionHubJump"
+    ]
+  },
+  "src/features/production/components/ProductionLifecycleStrip.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-lifecycle-strip"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionLifecycleStrip"
+    ]
+  },
+  "src/features/production/components/ProductionMaterialUsageBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-material-usage-board"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionMaterialUsageBoard"
+    ]
+  },
+  "src/features/production/components/ProductionMaterialsCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-materials-card"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionMaterialsCard"
+    ]
+  },
+  "src/features/production/components/ProductionOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-order-card"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionOrderCard"
+    ]
+  },
+  "src/features/production/components/ProductionPlanAssignSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-plan-assign-sheet"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionPlanAssignSheet"
+    ]
+  },
+  "src/features/production/components/ProductionSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-list-skeleton"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionListSkeleton"
+    ]
+  },
+  "src/features/production/components/ProductionTaskCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-task-card"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionTaskCard"
+    ]
+  },
+  "src/features/production/components/ProductionTaskSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-task-sheet"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionTaskSheet"
+    ]
+  },
+  "src/features/production/components/ProductionWipKitSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-wip-kit-sheet"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionWipKitSheet"
+    ]
+  },
+  "src/features/production/components/ProductionWipSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production.production-wip-section"
+    ],
+    "notes": "parent-domain:production",
+    "exportNames": [
+      "ProductionWipSection"
+    ]
+  },
+  "src/features/production-flow/ProductionFlowScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.production-flow.production-flow-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ProductionFlowScreen"
+    ]
+  },
+  "src/features/production-flow/components/AdminStageDrillSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.admin-stage-drill-sheet"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "AdminStageDrillSheet"
+    ]
+  },
+  "src/features/production-flow/components/DealerStageSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.dealer-stage-sheet"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "DealerStageSheet"
+    ]
+  },
+  "src/features/production-flow/components/FlowJoinHub.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.flow",
+      "feature.production-flow.flow-join-hub"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "FLOW",
+      "FlowJoinHub"
+    ]
+  },
+  "src/features/production-flow/components/FlowMapAtmosphere.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.flow-map-atmosphere"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "FlowMapAtmosphere"
+    ]
+  },
+  "src/features/production-flow/components/FlowStageNode.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.flow",
+      "feature.production-flow.flow-stage-node"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "FLOW",
+      "FlowStageNode"
+    ]
+  },
+  "src/features/production-flow/components/ParallelJoinSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.parallel-join-sheet"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "ParallelJoinSheet"
+    ]
+  },
+  "src/features/production-flow/components/ProductionFlowMap.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.production-flow-map"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "ProductionFlowMap"
+    ]
+  },
+  "src/features/production-flow/components/StageWorkPhotos.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.stage-work-photos"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "StageWorkPhotos"
+    ]
+  },
+  "src/features/production-flow/components/WorkflowProgressHit.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.production-flow.workflow-progress-hit"
+    ],
+    "notes": "parent-domain:production-flow",
+    "exportNames": [
+      "WorkflowProgressHit"
+    ]
+  },
+  "src/features/purchasing/CreatePurchaseScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.purchasing.create-purchase-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "CreatePurchaseScreen"
+    ]
+  },
+  "src/features/purchasing/PurchaseDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.purchasing.purchase-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "PurchaseDetailScreen"
+    ]
+  },
+  "src/features/purchasing/PurchaseRequestDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.purchasing.purchase-request-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "PurchaseRequestDetailScreen"
+    ]
+  },
+  "src/features/purchasing/PurchasingHubScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.purchasing.purchasing-hub-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "PurchasingHubScreen"
+    ]
+  },
+  "src/features/purchasing/SupplierInvoiceDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.purchasing.supplier-invoice-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "SupplierInvoiceDetailScreen"
+    ]
+  },
+  "src/features/purchasing/components/CreatePurchaseOrderSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.create-purchase-order-sheet"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "CreatePurchaseOrderSheet"
+    ]
+  },
+  "src/features/purchasing/components/CreatePurchaseRequestSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.create-purchase-request-sheet"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "CreatePurchaseRequestSheet"
+    ]
+  },
+  "src/features/purchasing/components/CreateSupplierSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.create-supplier-sheet"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "CreateSupplierSheet"
+    ]
+  },
+  "src/features/purchasing/components/PurchaseOrderBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchase-order-board-card"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PurchaseOrderBoardCard"
+    ]
+  },
+  "src/features/purchasing/components/PurchaseRequestBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchase-request-board-card"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PurchaseRequestBoardCard"
+    ]
+  },
+  "src/features/purchasing/components/PurchasingFilterTriggers.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchasing",
+      "feature.purchasing.purchasing-filter-triggers"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PURCHASING",
+      "PurchasingFilterTriggers"
+    ]
+  },
+  "src/features/purchasing/components/PurchasingFloorBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchasing-floor-board"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PurchasingFloorBoard"
+    ]
+  },
+  "src/features/purchasing/components/PurchasingHeroActions.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchasing-hero-actions"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PurchasingHeroActions"
+    ]
+  },
+  "src/features/purchasing/components/PurchasingStatusFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchasing-status-filter-sheet"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PurchasingStatusFilterSheet"
+    ]
+  },
+  "src/features/purchasing/components/PurchasingSupplierSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchasing-supplier-sheet"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PurchasingSupplierSheet"
+    ]
+  },
+  "src/features/purchasing/components/PurchasingTabBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.purchasing-tab-bar"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "PurchasingTabBar"
+    ]
+  },
+  "src/features/purchasing/components/ReceiveGoodsSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.receive-goods-sheet"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "ReceiveGoodsSheet"
+    ]
+  },
+  "src/features/purchasing/components/SupplierInvoiceBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.purchasing.supplier-invoice-board-card"
+    ],
+    "notes": "parent-domain:purchasing",
+    "exportNames": [
+      "SupplierInvoiceBoardCard"
+    ]
+  },
+  "src/features/quality/components/InspectionFloorPanel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quality.inspection-floor-panel"
+    ],
+    "notes": "parent-domain:quality",
+    "exportNames": [
+      "InspectionFloorPanel"
+    ]
+  },
+  "src/features/quality/components/PackagingConfirmPanel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quality.packaging-confirm-panel"
+    ],
+    "notes": "parent-domain:quality",
+    "exportNames": [
+      "PackagingConfirmPanel"
+    ]
+  },
+  "src/features/quality/components/QcFailSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quality.qc-fail-sheet"
+    ],
+    "notes": "parent-domain:quality",
+    "exportNames": [
+      "QcFailSheet"
+    ]
+  },
+  "src/features/quality/components/ReinspectionBanner.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quality.reinspection-banner"
+    ],
+    "notes": "parent-domain:quality",
+    "exportNames": [
+      "ReinspectionBanner"
+    ]
+  },
+  "src/features/quality/components/ReworkFloorBanner.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quality.rework-floor-banner"
+    ],
+    "notes": "parent-domain:quality",
+    "exportNames": [
+      "ReworkFloorBanner"
+    ]
+  },
+  "src/features/quotations/AdminQuotationDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.quotations.admin-quotation-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AdminQuotationDetailScreen",
+      "AdminQuotationPanel"
+    ]
+  },
+  "src/features/quotations/DealerQuotationDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.quotations.dealer-quotation-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealerQuotationDetailScreen"
+    ]
+  },
+  "src/features/quotations/DealerQuotationsEntry.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quotations.dealer-quotations-entry"
+    ],
+    "notes": "parent-domain:quotations",
+    "exportNames": [
+      "DealerQuotationsEntry"
+    ]
+  },
+  "src/features/quotations/DealerQuotationsListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.quotations.dealer-quotations-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealerQuotationsListScreen"
+    ]
+  },
+  "src/features/requests/AdminRequestDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.requests.admin-request-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AdminRequestDetailScreen"
+    ]
+  },
+  "src/features/requests/EditRequestScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.requests.edit-request-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "EditRequestScreen"
+    ]
+  },
+  "src/features/requests/NewOrderScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.requests.new-order-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "NewOrderScreen"
+    ]
+  },
+  "src/features/requests/components/AttachmentRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.attachment-row"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "AttachmentRow"
+    ]
+  },
+  "src/features/requests/components/CatalogModelPicker.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.catalog-model-picker"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "CatalogModelPicker"
+    ]
+  },
+  "src/features/requests/components/DeliveryAvailabilityCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.delivery-availability-card"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "DeliveryAvailabilityCard"
+    ]
+  },
+  "src/features/requests/components/DeliveryFavoriteSummary.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.delivery-favorite-summary"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "DeliveryFavoriteSummary"
+    ]
+  },
+  "src/features/requests/components/LocationMapPicker.tsx": {
+    "classification": "EXCLUDED_NON_VISUAL",
+    "registryIds": [],
+    "notes": "non-visual",
+    "exportNames": []
+  },
+  "src/features/requests/components/NewOrderDeliveryAddressBlock.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.new-order-delivery-address-block"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "NewOrderDeliveryAddressBlock"
+    ]
+  },
+  "src/features/requests/components/NewOrderDimensionsEditor.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.new-order-dimensions-editor"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "NewOrderDimensionsEditor"
+    ]
+  },
+  "src/features/requests/components/NewOrderFloatingDock.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.new-order-floating-dock"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "NewOrderFloatingDock"
+    ]
+  },
+  "src/features/requests/components/NewOrderPriorityBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.new-order-priority-bar"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "NewOrderPriorityBar"
+    ]
+  },
+  "src/features/requests/components/NewOrderQtyStepper.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.new-order-qty-stepper"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "NewOrderQtyStepper"
+    ]
+  },
+  "src/features/requests/components/NewOrderStageRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.new-order-stage-rail"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "NewOrderStageRail"
+    ]
+  },
+  "src/features/requests/components/ProductQuickPickSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.product-quick-pick-sheet"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "ProductQuickPickSheet"
+    ]
+  },
+  "src/features/requests/components/ReviewStep.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.review-step"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "ReviewStep"
+    ]
+  },
+  "src/features/requests/components/RfqStageRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.rfq-stage-rail"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "RfqStageRail"
+    ]
+  },
+  "src/features/requests/components/SaveAddressSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.save-address-sheet"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "SaveAddressSheet"
+    ]
+  },
+  "src/features/requests/components/SavedAddressPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.saved-address-picker-sheet"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "SavedAddressPickerSheet"
+    ]
+  },
+  "src/features/requests/components/StepIndicator.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.step-indicator"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "StepIndicator"
+    ]
+  },
+  "src/features/requests/components/UploadsStep.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.requests.uploads-step"
+    ],
+    "notes": "parent-domain:requests",
+    "exportNames": [
+      "UploadsStep"
+    ]
+  },
+  "src/features/returns/CreateReturnScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.returns.create-return-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "CreateReturnScreen"
+    ]
+  },
+  "src/features/returns/ReturnDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.returns.return-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReturnDetailScreen"
+    ]
+  },
+  "src/features/returns/ReturnsListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.returns.returns-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ReturnsListScreen"
+    ]
+  },
+  "src/features/returns/components/ReturnBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.return-board-card"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnBoardCard"
+    ]
+  },
+  "src/features/returns/components/ReturnOrderPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.return-order-picker-sheet"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnOrderPickerSheet"
+    ]
+  },
+  "src/features/returns/components/ReturnPhotoBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.return-photo-board"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnPhotoBoard"
+    ]
+  },
+  "src/features/returns/components/ReturnPhotoGallery.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.return-photo-gallery"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnPhotoGallery"
+    ]
+  },
+  "src/features/returns/components/ReturnsDealerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.returns-dealer-sheet"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnsDealerSheet"
+    ]
+  },
+  "src/features/returns/components/ReturnsFilterTriggers.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.returns-filter-triggers"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnsFilterTriggers"
+    ]
+  },
+  "src/features/returns/components/ReturnsStatusFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.returns-status-filter-sheet"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnsStatusFilterSheet"
+    ]
+  },
+  "src/features/returns/components/ReturnsStatusRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.returns.returns-status-rail"
+    ],
+    "notes": "parent-domain:returns",
+    "exportNames": [
+      "ReturnsStatusRail"
+    ]
+  },
+  "src/features/sales-orders/OrderDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.sales-orders.order-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "OrderDetailScreen"
+    ]
+  },
+  "src/features/sales-orders/OrdersListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.sales-orders.orders-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "OrdersListScreen"
+    ]
+  },
+  "src/features/sales-orders/components/AdminLifecycleChips.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.admin",
+      "feature.sales-orders.admin-lifecycle-chips"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ADMIN",
+      "AdminLifecycleChips"
+    ]
+  },
+  "src/features/sales-orders/components/AdminLifecycleTray.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.admin-lifecycle-tray"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "AdminLifecycleTray"
+    ]
+  },
+  "src/features/sales-orders/components/AdminOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.admin-order-card"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "AdminOrderCard"
+    ]
+  },
+  "src/features/sales-orders/components/AdminOrdersDeskSwitch.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.admin-orders-desk-switch"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "AdminOrdersDeskSwitch"
+    ]
+  },
+  "src/features/sales-orders/components/ChangeDeliveryDateSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.change-delivery-date-sheet"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ChangeDeliveryDateSheet"
+    ]
+  },
+  "src/features/sales-orders/components/CommercialSummaryPanel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.commercial-summary-panel"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "CommercialSummaryPanel"
+    ]
+  },
+  "src/features/sales-orders/components/ConfirmReceiptSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.confirm-receipt-sheet"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ConfirmReceiptSheet"
+    ]
+  },
+  "src/features/sales-orders/components/DealerDeliveryCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.dealer-delivery-card"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "DealerDeliveryCard"
+    ]
+  },
+  "src/features/sales-orders/components/DealerDeliverySummaryBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.dealer-delivery-summary-board"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "DealerDeliverySummaryBoard"
+    ]
+  },
+  "src/features/sales-orders/components/DealerOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.dealer-order-card"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "DealerOrderCard"
+    ]
+  },
+  "src/features/sales-orders/components/DealerOrdersFocusRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.dealer-orders-focus-rail"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "DealerOrdersFocusRail"
+    ]
+  },
+  "src/features/sales-orders/components/ImageCarousel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.image-carousel"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ImageCarousel"
+    ]
+  },
+  "src/features/sales-orders/components/LinkedTablePanel.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.linked-table-panel"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "LinkedTablePanel"
+    ]
+  },
+  "src/features/sales-orders/components/ManufacturingCostBreakdownSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.manufacturing-cost-breakdown-sheet"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ManufacturingCostBreakdownSheet"
+    ]
+  },
+  "src/features/sales-orders/components/ManufacturingCostCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.manufacturing-cost-card"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ManufacturingCostCard"
+    ]
+  },
+  "src/features/sales-orders/components/ManufacturingCostEditor.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.manufacturing-cost-editor"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ManufacturingCostEditor"
+    ]
+  },
+  "src/features/sales-orders/components/MaterialPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.material-picker-sheet"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "MaterialPickerSheet"
+    ]
+  },
+  "src/features/sales-orders/components/OrderBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.order-board-card",
+      "feature.sales-orders.order-section-header"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrderBoardCard",
+      "OrderSectionHeader"
+    ]
+  },
+  "src/features/sales-orders/components/OrderCardMedia.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.order-card-media"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrderCardMedia"
+    ]
+  },
+  "src/features/sales-orders/components/OrderDetailSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.order-detail-skeleton"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrderDetailSkeleton"
+    ]
+  },
+  "src/features/sales-orders/components/OrderProgressCaption.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.order-progress-caption"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrderProgressCaption"
+    ]
+  },
+  "src/features/sales-orders/components/OrderScheduleCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.order-schedule-card"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrderScheduleCard"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersCompositionChrome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-composition-chrome"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersCompositionChrome"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersDaySectionHeader.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-day-section-header"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersDaySectionHeader"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersDealerBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-dealer-bar"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersDealerBar"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersDealerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-dealer-sheet"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersDealerSheet"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersFilterButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-filter-button"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersFilterButton"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersFilterChips.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.dealer",
+      "feature.sales-orders.orders-filter-chips"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "DEALER",
+      "OrdersFilterChips"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-filter-sheet"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersFilterSheet"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersLedgerHome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-ledger-home"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersLedgerHome"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersListSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-list-skeleton"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersListSkeleton"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersPipelineHome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-pipeline-home"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersPipelineHome"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersProgressCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-progress-card"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersProgressCard"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersQuietRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-quiet-row"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersQuietRow"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersSignatureHome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-signature-home"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersSignatureHome"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersStageSpine.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-stage-spine"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersStageSpine"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersStreamStrip.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-stream-strip"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersStreamStrip"
+    ]
+  },
+  "src/features/sales-orders/components/OrdersWorkbenchHome.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.orders-workbench-home"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "OrdersWorkbenchHome"
+    ]
+  },
+  "src/features/sales-orders/components/ProductionStageGraph.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.production-stage-graph"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ProductionStageGraph"
+    ]
+  },
+  "src/features/sales-orders/components/journey/JourneyStickyDock.tsx": {
+    "classification": "EXCLUDED_NON_VISUAL",
+    "registryIds": [],
+    "notes": "non-visual",
+    "exportNames": []
+  },
+  "src/features/sales-orders/production-setup/OrderProductionSetupHomeScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.sales-orders.order-production-setup-home-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "OrderProductionSetupHomeScreen"
+    ]
+  },
+  "src/features/sales-orders/production-setup/OrderProductionSetupLineScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.sales-orders.order-production-setup-line-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "OrderProductionSetupLineScreen"
+    ]
+  },
+  "src/features/sales-orders/production-setup/components/FactoryReadinessSummary.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.factory-readiness-summary"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "FactoryReadinessSummary"
+    ]
+  },
+  "src/features/sales-orders/production-setup/components/ReleaseReviewSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.release-review-sheet"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "ReleaseReviewSheet"
+    ]
+  },
+  "src/features/sales-orders/production-setup/components/SetupEstimatedCostSummary.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.setup-estimated-cost-summary"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "SetupEstimatedCostSummary"
+    ]
+  },
+  "src/features/sales-orders/production-setup/components/SetupFabricSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.setup-fabric-section"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "SetupFabricSection"
+    ]
+  },
+  "src/features/sales-orders/production-setup/components/SetupLineCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.setup-line-card"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "SetupLineCard"
+    ]
+  },
+  "src/features/sales-orders/production-setup/components/SetupProgressSteps.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.setup-progress-steps"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "SetupProgressSteps"
+    ]
+  },
+  "src/features/sales-orders/production-setup/components/WorkflowPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.sales-orders.workflow-picker-sheet"
+    ],
+    "notes": "parent-domain:sales-orders",
+    "exportNames": [
+      "WorkflowPickerSheet"
+    ]
+  },
+  "src/features/scheduling/AdminSchedulingScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.scheduling.admin-scheduling-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "AdminSchedulingScreen"
+    ]
+  },
+  "src/features/scheduling/DealerDeliveryCalendarScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.scheduling.dealer-delivery-calendar-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "DealerDeliveryCalendarScreen"
+    ]
+  },
+  "src/features/scheduling/components/AdminScheduleSheets.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.approve-schedule-sheet",
+      "feature.scheduling.admin-change-schedule-date-sheet",
+      "feature.scheduling.recalculate-schedule-sheet",
+      "feature.scheduling.admin-day-exception-sheet",
+      "feature.scheduling.approve-all-schedules-sheet",
+      "feature.scheduling.resolve-conflict-sheet",
+      "feature.scheduling.conflict-review-sheet",
+      "feature.scheduling.conflict-help-sheet",
+      "feature.scheduling.at-risk-help-sheet",
+      "feature.scheduling.at-risk-detail-sheet",
+      "feature.scheduling.resolve-all-at-risk-sheet",
+      "feature.scheduling.sync-schedule-sheet",
+      "feature.scheduling.optimize-schedule-sheet"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "ApproveScheduleSheet",
+      "AdminChangeScheduleDateSheet",
+      "RecalculateScheduleSheet",
+      "AdminDayExceptionSheet",
+      "ApproveAllSchedulesSheet",
+      "ResolveConflictSheet",
+      "ConflictReviewSheet",
+      "ConflictHelpSheet",
+      "AtRiskHelpSheet",
+      "AtRiskDetailSheet",
+      "ResolveAllAtRiskSheet",
+      "SyncScheduleSheet",
+      "OptimizeScheduleSheet"
+    ]
+  },
+  "src/features/scheduling/components/AtRiskOrderCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.at-risk-order-card"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "AtRiskOrderCard"
+    ]
+  },
+  "src/features/scheduling/components/DealerDeliveryOrdersBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.dealer",
+      "feature.scheduling.dealer-board-pill",
+      "feature.scheduling.dealer-board-empty",
+      "feature.scheduling.dealer-delivery-orders-board",
+      "feature.scheduling.dealer-capped-nested-scroll"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "DEALER",
+      "DealerBoardPill",
+      "DealerBoardEmpty",
+      "DealerDeliveryOrdersBoard",
+      "DealerCappedNestedScroll"
+    ]
+  },
+  "src/features/scheduling/components/FactoryCapacityCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.factory-capacity-card"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "FactoryCapacityCard"
+    ]
+  },
+  "src/features/scheduling/components/FactoryCapacityDetailSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.factory-capacity-detail-sheet"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "FactoryCapacityDetailSheet"
+    ]
+  },
+  "src/features/scheduling/components/FactoryCapacitySection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.factory-capacity-section"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "FactoryCapacitySection"
+    ]
+  },
+  "src/features/scheduling/components/FactoryCapacityWeekRow.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.factory-capacity-week-row"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "FactoryCapacityWeekRow"
+    ]
+  },
+  "src/features/scheduling/components/HoursOfText.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.hours-of-text"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "HoursOfText"
+    ]
+  },
+  "src/features/scheduling/components/ScheduleExplanation.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.scheduling.schedule-explanation"
+    ],
+    "notes": "parent-domain:scheduling",
+    "exportNames": [
+      "ScheduleExplanation"
+    ]
+  },
+  "src/features/search/SearchHitCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.search.search-hit-card"
+    ],
+    "notes": "parent-domain:search",
+    "exportNames": [
+      "SearchHitCard"
+    ]
+  },
+  "src/features/tasks/TaskDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.tasks.task-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "TaskDetailScreen"
+    ]
+  },
+  "src/features/tasks/TasksListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.tasks.tasks-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "TasksListScreen"
+    ]
+  },
+  "src/features/tasks/components/CompletedDatePickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.completed-date-picker-sheet"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "CompletedDatePickerSheet"
+    ]
+  },
+  "src/features/tasks/components/CompletedDateRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.completed",
+      "feature.tasks.completed-date-rail"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "COMPLETED",
+      "CompletedDateRail"
+    ]
+  },
+  "src/features/tasks/components/CompletedTasksFilters.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.completed-tasks-filters"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "CompletedTasksFilters"
+    ]
+  },
+  "src/features/tasks/components/HoldToConfirmButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.hold-to-confirm-button"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "HoldToConfirmButton"
+    ]
+  },
+  "src/features/tasks/components/IndustrialFloorTaskCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.industrial-floor-task-card"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "IndustrialFloorTaskCard"
+    ]
+  },
+  "src/features/tasks/components/PendingOutboxBanner.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.pending-outbox-banner"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "PendingOutboxBanner"
+    ]
+  },
+  "src/features/tasks/components/TaskActionDock.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-action-dock"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskActionDock"
+    ]
+  },
+  "src/features/tasks/components/TaskCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-card"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskCard"
+    ]
+  },
+  "src/features/tasks/components/TaskFilePreview.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-file-preview"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskFilePreview"
+    ]
+  },
+  "src/features/tasks/components/TaskIncomingWorkFloorSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-incoming-work-floor-section"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskIncomingWorkFloorSection"
+    ]
+  },
+  "src/features/tasks/components/TaskMaterialUsageSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-material-usage-sheet"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskMaterialUsageSheet"
+    ]
+  },
+  "src/features/tasks/components/TaskMaterialsFloorSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-materials-floor-section"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskMaterialsFloorSection"
+    ]
+  },
+  "src/features/tasks/components/TaskSemiFinishedFloorSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-semi-finished-floor-section"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskSemiFinishedFloorSection"
+    ]
+  },
+  "src/features/tasks/components/TaskSemiOutputFloorSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-semi-output-floor-section"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskSemiOutputFloorSection"
+    ]
+  },
+  "src/features/tasks/components/TaskTimerBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.task-timer-board"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TaskTimerBoard"
+    ]
+  },
+  "src/features/tasks/components/TasksListSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.tasks-list-skeleton",
+      "feature.tasks.task-detail-skeleton"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TasksListSkeleton",
+      "TaskDetailSkeleton"
+    ]
+  },
+  "src/features/tasks/components/TasksSegmentRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.tasks.tasks",
+      "feature.tasks.tasks-segment-rail"
+    ],
+    "notes": "parent-domain:tasks",
+    "exportNames": [
+      "TASKS",
+      "TasksSegmentRail"
+    ]
+  },
+  "src/features/users/StaffTypeEditorScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.users.staff-type-editor-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "StaffTypeEditorScreen"
+    ]
+  },
+  "src/features/users/StaffTypesListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.users.staff-types-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "StaffTypesListScreen"
+    ]
+  },
+  "src/features/users/UsersListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.users.users-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "UsersListScreen"
+    ]
+  },
+  "src/features/users/components/CreateUserSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.create-user-sheet"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "CreateUserSheet"
+    ]
+  },
+  "src/features/users/components/DepartmentField.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.department-field"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "DepartmentField"
+    ]
+  },
+  "src/features/users/components/DepartmentPickerSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.department-picker-sheet"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "DepartmentPickerSheet"
+    ]
+  },
+  "src/features/users/components/EditUserSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.edit-user-sheet"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "EditUserSheet"
+    ]
+  },
+  "src/features/users/components/RolesTouchBar.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.roles-touch-bar"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "RolesTouchBar"
+    ]
+  },
+  "src/features/users/components/StaffTypeBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.staff-type-board-card"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "StaffTypeBoardCard"
+    ]
+  },
+  "src/features/users/components/StaffTypePicker.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.staff-type-picker"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "StaffTypePicker"
+    ]
+  },
+  "src/features/users/components/StageSkillsPicker.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.stage-skills-picker"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "StageSkillsPicker"
+    ]
+  },
+  "src/features/users/components/TempPasswordSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.temp-password-sheet"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "TempPasswordSheet"
+    ]
+  },
+  "src/features/users/components/UserBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.user-board-card"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "UserBoardCard"
+    ]
+  },
+  "src/features/users/components/UserIdentityFields.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.user-identity-fields"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "UserIdentityFields"
+    ]
+  },
+  "src/features/users/components/UsersFilterTriggers.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.users-filter-triggers"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "UsersFilterTriggers"
+    ]
+  },
+  "src/features/users/components/UsersSegmentRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.users-segment-rail"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "UsersSegmentRail"
+    ]
+  },
+  "src/features/users/components/UsersStatusFilterSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.users-filter-sheet",
+      "feature.users.users-role-filter-sheet"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "UsersFilterSheet",
+      "UsersRoleFilterSheet"
+    ]
+  },
+  "src/features/users/components/userSheetForm.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.users.user-form-section",
+      "feature.users.user-form-chip",
+      "feature.users.user-form-error",
+      "feature.users.user-form-footer",
+      "feature.users.user-active-toggle"
+    ],
+    "notes": "parent-domain:users",
+    "exportNames": [
+      "UserFormSection",
+      "UserFormChip",
+      "UserFormError",
+      "UserFormFooter",
+      "UserActiveToggle"
+    ]
+  },
+  "src/features/worker-home/WorkerHomeScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.worker-home.worker-home-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "WorkerHomeScreen"
+    ]
+  },
+  "src/features/worker-home/components/TodayFloorBucketSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.worker-home.today-floor-bucket-section"
+    ],
+    "notes": "parent-domain:worker-home",
+    "exportNames": [
+      "TodayFloorBucketSection"
+    ]
+  },
+  "src/features/worker-home/components/TodayProgressCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.worker-home.today-progress-card"
+    ],
+    "notes": "parent-domain:worker-home",
+    "exportNames": [
+      "TodayProgressCard"
+    ]
+  },
+  "src/features/worker-home/components/UpcomingTasksList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.worker-home.upcoming-tasks-list"
+    ],
+    "notes": "parent-domain:worker-home",
+    "exportNames": [
+      "UpcomingTasksList"
+    ]
+  },
+  "src/features/worker-home/components/WorkerCurrentTaskHero.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.worker-home.worker-current-task-hero",
+      "feature.worker-home.worker-current-task-idle"
+    ],
+    "notes": "parent-domain:worker-home",
+    "exportNames": [
+      "WorkerCurrentTaskHero",
+      "WorkerCurrentTaskIdle"
+    ]
+  },
+  "src/features/worker-home/components/WorkerHomeHeader.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.worker-home.worker-home-header"
+    ],
+    "notes": "parent-domain:worker-home",
+    "exportNames": [
+      "WorkerHomeHeader"
+    ]
+  },
+  "src/features/worker-home/components/WorkerHomeSkeleton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.worker-home.worker-home-skeleton"
+    ],
+    "notes": "parent-domain:worker-home",
+    "exportNames": [
+      "WorkerHomeSkeleton"
+    ]
+  },
+  "src/features/worker-home/components/WorkerNotificationsPreview.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.worker-home.worker-notifications-preview"
+    ],
+    "notes": "parent-domain:worker-home",
+    "exportNames": [
+      "WorkerNotificationsPreview"
+    ]
+  },
+  "src/features/worker-home/components/WorkerTaskCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.worker-home.worker-task-card"
+    ],
+    "notes": "parent-domain:worker-home",
+    "exportNames": [
+      "WorkerTaskCard"
+    ]
+  },
+  "src/features/worker-profile/WorkerProfileScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.worker-profile.worker-profile-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "WorkerProfileScreen"
+    ]
+  },
+  "src/features/workflow/ManageStagesScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.workflow.manage-stages-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ManageStagesScreen"
+    ]
+  },
+  "src/features/workflow/ProductWorkflowTimesScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.workflow.product-workflow-times-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ProductWorkflowTimesScreen"
+    ]
+  },
+  "src/features/workflow/ProductionSetupScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.workflow.production-setup-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "ProductionSetupScreen"
+    ]
+  },
+  "src/features/workflow/WorkflowDetailScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.workflow.workflow-detail-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "WorkflowDetailScreen"
+    ]
+  },
+  "src/features/workflow/WorkflowListScreen.tsx": {
+    "classification": "SCREEN_LINK",
+    "registryIds": [
+      "screen.workflow.workflow-list-screen"
+    ],
+    "notes": "feature-screen",
+    "exportNames": [
+      "WorkflowListScreen"
+    ]
+  },
+  "src/features/workflow/components/AddStageSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.add-stage-sheet"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "AddStageSheet"
+    ]
+  },
+  "src/features/workflow/components/AssignOrderWorkflowCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.assign-order-workflow-card"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "AssignOrderWorkflowCard"
+    ]
+  },
+  "src/features/workflow/components/CircularIconButton.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.circular-icon-button",
+      "feature.workflow.workflow-pill-button-wrap"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "CircularIconButton",
+      "WorkflowPillButtonWrap"
+    ]
+  },
+  "src/features/workflow/components/EditStageSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.edit-stage-sheet"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "EditStageSheet"
+    ]
+  },
+  "src/features/workflow/components/ParallelBandLinkControl.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.parallel-band-link-control"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "ParallelBandLinkControl"
+    ]
+  },
+  "src/features/workflow/components/PlacementArrowPreview.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.placement-arrow-preview"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "PlacementArrowPreview"
+    ]
+  },
+  "src/features/workflow/components/PlacementTogetherPickList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.placement-together-pick-list",
+      "feature.workflow.placement-mode-hint"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "PlacementTogetherPickList",
+      "PlacementModeHint"
+    ]
+  },
+  "src/features/workflow/components/ProductWorkflowSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.product-workflow-section"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "ProductWorkflowSection"
+    ]
+  },
+  "src/features/workflow/components/ProductionStageSetupSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.production-stage-setup-sheet"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "ProductionStageSetupSheet"
+    ]
+  },
+  "src/features/workflow/components/StageDurationSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.stage-duration-sheet"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "StageDurationSheet"
+    ]
+  },
+  "src/features/workflow/components/StageEditorFields.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.stage-toggle-row",
+      "feature.workflow.stage-schedule-mode-picker",
+      "feature.workflow.stage-slot-stepper",
+      "feature.workflow.stage-quiet-delete"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "StageToggleRow",
+      "StageScheduleModePicker",
+      "StageSlotStepper",
+      "StageQuietDelete"
+    ]
+  },
+  "src/features/workflow/components/StageLibraryCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.stage-library-card",
+      "feature.workflow.stage-library-section"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "StageLibraryCard",
+      "StageLibrarySection"
+    ]
+  },
+  "src/features/workflow/components/WorkflowFloorList.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.workflow-floor-board",
+      "feature.workflow.workflow-stage-row-actions",
+      "feature.workflow.workflow-floor-row",
+      "feature.workflow.workflow-compact-pick-row"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "WorkflowFloorBoard",
+      "WorkflowStageRowActions",
+      "WorkflowFloorRow",
+      "WorkflowCompactPickRow"
+    ]
+  },
+  "src/features/workflow/components/WorkflowOpeningSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.workflow-opening-section"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "WorkflowOpeningSection"
+    ]
+  },
+  "src/features/workflow/components/WorkflowPageHeader.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.workflow-page-header",
+      "feature.workflow.workflow-status-pill"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "WorkflowPageHeader",
+      "WorkflowStatusPill"
+    ]
+  },
+  "src/features/workflow/components/WorkflowTerminalSection.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.workflow.workflow-terminal-section"
+    ],
+    "notes": "parent-domain:workflow",
+    "exportNames": [
+      "WorkflowTerminalSection"
+    ]
+  },
+  "src/motion/AnimatedPressable.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.animated-pressable"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "AnimatedPressable"
+    ]
+  },
+  "src/motion/BottomSheetTransition.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.sheet",
+      "motion.bottom-sheet-transition"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SHEET",
+      "BottomSheetTransition"
+    ]
+  },
+  "src/motion/CountUp.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.count-up"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "CountUp"
+    ]
+  },
+  "src/motion/ExpandCollapse.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.expand-collapse"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ExpandCollapse"
+    ]
+  },
+  "src/motion/FadeIn.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.fade-in"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "FadeIn"
+    ]
+  },
+  "src/motion/FormShake.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.form-shake"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "FormShake"
+    ]
+  },
+  "src/motion/ListItemEnter.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.list-item-enter"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ListItemEnter"
+    ]
+  },
+  "src/motion/ProgressBar.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.progress-bar"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "ProgressBar"
+    ]
+  },
+  "src/motion/SkeletonShimmer.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.skeleton-shimmer"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SkeletonShimmer"
+    ]
+  },
+  "src/motion/SlideIn.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.slide-in"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SlideIn"
+    ]
+  },
+  "src/motion/StatusTransition.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.status-transition"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "StatusTransition"
+    ]
+  },
+  "src/motion/SuccessBurst.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.success-burst"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "SuccessBurst"
+    ]
+  },
+  "src/motion/TabIndicator.tsx": {
+    "classification": "REGISTERED",
+    "registryIds": [
+      "motion.tab-indicator"
+    ],
+    "notes": "shared/motion",
+    "exportNames": [
+      "TabIndicator"
+    ]
+  }
+}

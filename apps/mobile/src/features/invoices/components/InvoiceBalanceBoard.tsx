@@ -17,7 +17,7 @@ function moneyLabel(locale: string, value: number): string {
 }
 
 /**
- * Outstanding-first statement board — big balance, paid bar, compact subtotal/tax.
+ * Amount due / Paid / Account credit board — credit uses success tone, overdue uses error.
  */
 export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -25,13 +25,10 @@ export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const overdue = model.isOverdue;
   const accent = overdue ? colors.error : colors.brand;
-  /** Paid+credit share of this invoice's total — never a dealer AR figure. */
-  const settledRatio =
-    model.total > 0
-      ? Math.min(1, Math.max(0, (model.total - model.outstanding) / model.total))
-      : model.outstanding <= 0
-        ? 1
-        : 0;
+  const amountDue = model.amountDue;
+  const showCredit = model.availableCredit > 0.001;
+  const paidRatio =
+    model.total > 0 ? Math.min(1, Math.max(0, model.paid / model.total)) : model.outstanding <= 0 ? 1 : 0;
 
   return (
     <View
@@ -77,21 +74,20 @@ export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
               textAlign: isRTL ? 'right' : 'left',
             }}
           >
-            {t('accounting.outstanding')}
+            {t('accounting.amountDue')}
           </AppText>
           <AppText
             weight={titleWeight}
             dir="ltr"
             style={{
               fontSize: 34,
-              // Arabic KO Sans needs ~1.5×; AppText also guards metrics.
               lineHeight: locale === 'ar' ? 52 : 42,
               textAlign: isRTL ? 'right' : 'left',
               color: overdue ? colors.error : colors.textPrimary,
               fontVariant: ['tabular-nums'],
             }}
           >
-            {`${moneyLabel(locale, model.outstanding)} ${currencySuffix}`}
+            {`${moneyLabel(locale, amountDue)} ${currencySuffix}`}
           </AppText>
           {overdue ? (
             <AppText
@@ -138,12 +134,22 @@ export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
             label={t('accounting.paidAmount')}
             value={`${moneyLabel(locale, model.paid)} ${currencySuffix}`}
             alignEnd={false}
+            valueColor={model.paid > 0 ? colors.success : undefined}
           />
-          <MoneyPill
-            label={t('accounting.accountCredit')}
-            value={`${moneyLabel(locale, model.credit)} ${currencySuffix}`}
-            alignEnd
-          />
+          {showCredit ? (
+            <MoneyPill
+              label={t('accounting.accountCredit')}
+              value={`${moneyLabel(locale, model.availableCredit)} ${currencySuffix}`}
+              alignEnd
+              valueColor={colors.success}
+            />
+          ) : (
+            <MoneyPill
+              label={t('accounting.total')}
+              value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
+              alignEnd
+            />
+          )}
         </View>
 
         <View
@@ -155,6 +161,12 @@ export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
             gap: theme.spacing.sm,
           }}
         >
+          {showCredit ? (
+            <FootRow
+              label={t('accounting.total')}
+              value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
+            />
+          ) : null}
           <FootRow
             label={t('accounting.total')}
             value={`${moneyLabel(locale, model.total)} ${currencySuffix}`}
@@ -177,10 +189,12 @@ function MoneyPill({
   label,
   value,
   alignEnd,
+  valueColor,
 }: {
   label: string;
   value: string;
   alignEnd: boolean;
+  valueColor?: string;
 }) {
   const { isRTL } = useLocale();
   const { colors, theme } = useTheme();
@@ -222,7 +236,12 @@ function MoneyPill({
         weight="semibold"
         dir="ltr"
         numberOfLines={1}
-        style={{ fontSize: 15, lineHeight: 20, textAlign, color: colors.textPrimary }}
+        style={{
+          fontSize: 15,
+          lineHeight: 20,
+          textAlign,
+          color: valueColor ?? colors.textPrimary,
+        }}
       >
         {value}
       </AppText>

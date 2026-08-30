@@ -81,7 +81,22 @@ export function resolveBomLineUnitCost(
   return 0;
 }
 
-/** Catalog unit price first; latest purchase-receipt (then other costed txs) wins. */
+/**
+ * MANUFACTURING INVENTORY COST BASIS (Piece 5 — shared with commercial BOM costing).
+ *
+ * Policy:
+ * 1. Seed map from InventoryItem.standardCost where standardCost > 0 (never invent 0).
+ * 2. Overlay with latest costed InventoryTransaction per SKU; PURCHASE_RECEIPT preferred
+ *    over other types when both exist (stable sort then first-seen wins).
+ *
+ * Purchasing → inventory → consumption chain:
+ *   GRN / purchase receipt posts PURCHASE_RECEIPT with unitCost
+ *   → this map resolves unit valuation
+ *   → production finalizeForTask freezes unitCost on ISSUE/RETURN + usage extendedCost.
+ *
+ * Missing / zero costs stay absent from the map — callers must treat as null / incomplete.
+ * See also `apps/api/src/modules/production/manufacturing-cost-basis.ts`.
+ */
 export function buildMaterialCostMap(input: {
   standardCosts?: Array<{ sku: string; standardCost?: unknown }>;
   transactions?: Array<{ sku: string; unitCost?: unknown; type?: string }>;

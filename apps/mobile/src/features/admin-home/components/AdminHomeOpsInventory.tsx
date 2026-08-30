@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { can, canAny } from '@maher/permissions';
 import { queryKeys } from '@/api/queryKeys';
 import {
@@ -14,8 +14,7 @@ import {
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
-import { chevronForwardName, rowDirection, startEdge } from '@/i18n/rtl';
-import { AnimatedPressable, CountUp, haptics, useReducedMotion } from '@/motion';
+import { AnimatedPressable, CountUp, haptics, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
 const INVENTORY_HREF = '/(app)/(admin)/(tabs)/inventory' as Href;
@@ -104,9 +103,7 @@ export function AdminHomeOpsInventory() {
   };
 
   const Wrapper = reduce ? View : Animated.View;
-  const wrapperProps = reduce
-    ? {}
-    : { entering: FadeInDown.delay(260).duration(400).damping(22) };
+  const wrapperProps = reduce ? {} : { entering: softFadeDown(120) };
 
   return (
     <Wrapper

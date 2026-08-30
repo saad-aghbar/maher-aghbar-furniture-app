@@ -2,7 +2,7 @@
 
 import { Link } from '@/i18n/navigation';
 import { Button, StatusBadge } from '@maher/ui';
-import { History, Plus } from 'lucide-react';
+import { History, Layers, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 type Props = {
@@ -72,7 +72,9 @@ export function WorkflowHeader({
           </Button>
         ) : null}
         <Link href="/production/workflow/stages">
-          <Button variant="ghost">{t('workflow.stageLibrary')}</Button>
+          <Button variant="ghost" leadingIcon={<Layers className="h-4 w-4" />}>
+            {t('workflow.manageStages')}
+          </Button>
         </Link>
       </div>
     </div>

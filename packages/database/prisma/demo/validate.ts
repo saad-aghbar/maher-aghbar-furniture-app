@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { classifyScheduleRisk, isInternalScheduleReason } from '../../../../apps/api/src/modules/scheduling/domain/at-risk';
 import { STANDARD_FURNITURE_STAGE_CODES } from '../seed/workflow';
 import { demoAsOf } from './clock';
+import { CEDAR_VELVET_SKU, MATERIAL_PHOTO_BY_SKU, isHttpImageUrl } from './material-photo-pool';
 
 export class DemoValidationError extends Error {
   constructor(readonly failures: string[]) {
@@ -52,6 +53,7 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
     include: { productionOrders: { include: { tasks: true } } },
   });
   for (const so of inProd) {
+    if (so.projectName === 'Nile blank production start') continue;
     const started = so.productionOrders.flatMap((po) =>
       po.tasks.filter((t) => ['IN_PROGRESS', 'PAUSED', 'COMPLETED', 'READY_FOR_INSPECTION', 'BLOCKED'].includes(t.status)),
     );
@@ -259,6 +261,34 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
 
   const products = await prisma.product.findMany({ select: { sku: true, nameEn: true, nameAr: true, bomDefaults: true } });
   const itemSkus = new Set((await prisma.inventoryItem.findMany({ select: { sku: true } })).map((i) => i.sku));
+  const rawItems = await prisma.inventoryItem.findMany({
+    where: { itemClass: 'RAW_MATERIAL', archivedAt: null },
+    select: { sku: true, imageUrl: true, qrCode: true, barcode: true },
+  });
+  const rawBySku = new Map(rawItems.map((i) => [i.sku, i]));
+  const curatedSkus = Object.keys(MATERIAL_PHOTO_BY_SKU);
+  if (new Set(Object.values(MATERIAL_PHOTO_BY_SKU)).size !== curatedSkus.length) {
+    fail('curated raw-material photos are not unique per SKU');
+  }
+  for (const sku of curatedSkus) {
+    const row = rawBySku.get(sku);
+    if (!row) {
+      fail(`curated raw-material ${sku} missing as inventory item`);
+      continue;
+    }
+    if (!isHttpImageUrl(row.imageUrl)) {
+      fail(`${sku}: missing or invalid imageUrl`);
+    } else     if (row.imageUrl !== MATERIAL_PHOTO_BY_SKU[sku]) {
+      fail(`${sku}: imageUrl does not match curated demo photo`);
+    }
+    if (row.qrCode !== sku) {
+      fail(`${sku}: qrCode must equal sku for printed identity`);
+    }
+  }
+  const cedar = rawBySku.get(CEDAR_VELVET_SKU);
+  if (!cedar || !isHttpImageUrl(cedar.imageUrl)) {
+    fail(`${CEDAR_VELVET_SKU}: Cedar Italian velvet must have a dedicated image`);
+  }
   for (const p of products) {
     const bom = p.bomDefaults as { materials?: Array<{ sku: string }> } | null;
     for (const line of bom?.materials ?? []) {
@@ -342,23 +372,25 @@ export async function validateDemoFactory(prisma: PrismaClient): Promise<void> {
 }
 
 const SYNTHETIC_KIND_SUFFIX =
-  /\s(not_started|in_production|ready_delivery|waiting_materials|at_risk_material|at_risk_wip|at_risk_committed|delivered|packaging|qc|proposed|draft)$/;
+  /\s(not_started|in_production|fresh_production|ready_delivery|waiting_materials|at_risk_material|at_risk_wip|at_risk_committed|delivered|packaging|qc|proposed|draft)$/;
 const DEALER_SKU_PROJECT =
   /^(nile|oasis|balqis|cedar|zaatar|qasr|rawnaq|diwan|noor|jabal)\s+[A-Z0-9]+(?:-[A-Z0-9]+)+\s/i;
 
-const EXPECTED_FLAGSHIP: Record<string, { so: string; status: string }> = {
+const EXPECTED_FLAGSHIP: Record<string, { so: string | null | '*'; status: string }> = {
   'Abdoun lounge set': { so: 'SO-2026-00001', status: 'DELIVERED' },
   'Sweifieh sectional': { so: 'SO-2026-00047', status: 'IN_PRODUCTION' },
+  'Nile blank production start': { so: 'SO-2026-00066', status: 'IN_PRODUCTION' },
   'Abdali hotel banquettes': { so: 'SO-2026-00019', status: 'READY_FOR_DELIVERY' },
-  'Cedar Italian velvet recliner': { so: 'SO-2026-00056', status: 'WAITING_FOR_MATERIALS' },
-  'Diwan wingback foam gate': { so: 'SO-2026-00051', status: 'IN_PRODUCTION' },
+  'Cedar Italian velvet recliner': { so: 'SO-2026-00057', status: 'WAITING_FOR_MATERIALS' },
+  'Diwan wingback frame gate': { so: 'SO-2026-00052', status: 'IN_PRODUCTION' },
   'Jabal contract dining': { so: 'SO-2026-00023', status: 'IN_PRODUCTION' },
   'Oasis club armchair QC': { so: 'SO-2026-00042', status: 'IN_PRODUCTION' },
   'Nile loveseat recovered': { so: 'SO-2026-00006', status: 'DELIVERED' },
   'Zaatar ottoman scuff': { so: 'SO-2026-00013', status: 'DELIVERED' },
-  'Qasr suite dining': { so: 'SO-2026-00064', status: 'READY_FOR_PRODUCTION' },
-  'Noor club chair hold': { so: 'SO-2026-00065', status: 'DRAFT' },
-  'Rawnaq dining six': { so: 'SO-2026-00063', status: 'READY_FOR_PRODUCTION' },
+  'Qasr suite dining': { so: 'SO-2026-00065', status: 'READY_FOR_PRODUCTION' },
+  'Noor club chair hold': { so: null, status: 'SENT' },
+  'Noor banquettes 4 of 6 frames': { so: 'SO-2026-00049', status: 'IN_PRODUCTION' },
+  'Rawnaq dining six': { so: 'SO-2026-00064', status: 'READY_FOR_PRODUCTION' },
 };
 
 function isSyntheticProjectName(name: string): boolean {
@@ -464,14 +496,58 @@ async function assertPresentationReady(
   });
   const byName = new Map(flagship.map((so) => [so.projectName ?? '', so]));
   for (const name of Object.keys(EXPECTED_FLAGSHIP)) {
-    const expected = EXPECTED_FLAGSHIP[name];
+    const expected = EXPECTED_FLAGSHIP[name]!;
     const so = byName.get(name);
+    if (expected.so == null) {
+      if (so) fail(`${name}: expected no sales order, found ${so.number}`);
+      const quote = await prisma.quotation.findFirst({
+        where: { request: { projectName: name }, archivedAt: null },
+        select: { number: true, status: true, salesOrders: { select: { id: true } } },
+      });
+      if (!quote) fail(`walkthrough missing quotation for ${name}`);
+      else if (quote.status !== 'SENT') fail(`${name}: expected SENT quote, found ${quote.status}`);
+      else if (quote.salesOrders.length) fail(`${name}: SENT quote must not have a sales order`);
+      continue;
+    }
     if (!so) {
       fail(`walkthrough missing ${name}`);
       continue;
     }
-    if (expected && so.number !== expected.so) fail(`${name}: expected ${expected.so}, found ${so.number}`);
-    if (expected && so.status !== expected.status) fail(`${name}: expected ${expected.status}, found ${so.status}`);
+    if (expected.so !== '*' && so.number !== expected.so) {
+      fail(`${name}: expected ${expected.so}, found ${so.number}`);
+    }
+    if (so.status !== expected.status) fail(`${name}: expected ${expected.status}, found ${so.status}`);
+    if (name === 'Nile blank production start') {
+      const po = so.productionOrders[0];
+      if (!po) {
+        fail(`${name}: missing production order`);
+      } else {
+        if (po.status !== 'IN_PROGRESS') fail(`${name}: PO expected IN_PROGRESS, found ${po.status}`);
+        const started = po.tasks.filter((t) =>
+          ['IN_PROGRESS', 'PAUSED', 'COMPLETED', 'READY_FOR_INSPECTION', 'BLOCKED'].includes(t.status),
+        );
+        if (started.length) {
+          fail(`${name}: expected empty floor (no started tasks), found ${started.length}`);
+        }
+        const issues = await prisma.inventoryTransaction.count({
+          where: { referenceId: po.id, type: 'PRODUCTION_ISSUE' },
+        });
+        if (issues > 0) fail(`${name}: expected 0 production issues, found ${issues}`);
+        const kits = await prisma.wipKit.count({ where: { productionOrderId: po.id } });
+        if (kits > 0) fail(`${name}: expected 0 WIP kits, found ${kits}`);
+      }
+    }
+  }
+
+  const accepted = await prisma.quotation.findMany({
+    where: { status: 'ACCEPTED', archivedAt: null },
+    select: { number: true, acceptedById: true, sentAt: true, acceptedAt: true },
+  });
+  for (const q of accepted) {
+    if (!q.acceptedById) fail(`${q.number}: ACCEPTED without acceptedById`);
+    if (!q.sentAt || !q.acceptedAt || q.sentAt.getTime() > q.acceptedAt.getTime()) {
+      fail(`${q.number}: sentAt must be set and not after acceptedAt`);
+    }
   }
 
   const abdali = byName.get('Abdali hotel banquettes');
@@ -482,11 +558,58 @@ async function assertPresentationReady(
     );
   }
 
-  const diwan = byName.get('Diwan wingback foam gate');
+  const diwan = byName.get('Diwan wingback frame gate');
   for (const task of diwan?.productionOrders.flatMap((po) => po.tasks) ?? []) {
     const code = task.stageDefinition?.code;
-    if ((code === 'FOAM' || code === 'UPHOLSTERY') && task.status === 'IN_PROGRESS') {
-      fail(`Diwan ${code} is IN_PROGRESS; walkthrough says foam/upholstery gated`);
+    if ((code === 'FOAM' || code === 'UPHOLSTERY' || code === 'CARPENTRY') && task.status === 'IN_PROGRESS') {
+      fail(`Diwan ${code} is IN_PROGRESS; walkthrough says frames (SEMI) gated`);
+    }
+  }
+
+  // Physical inventory honesty: READY_FOR_DELIVERY with FIN tracking must have FIN lots.
+  const readySos = await prisma.salesOrder.findMany({
+    where: { status: 'READY_FOR_DELIVERY' },
+    include: {
+      productionOrders: {
+        include: {
+          workflowSnapshot: { include: { nodes: true } },
+        },
+      },
+    },
+  });
+  for (const so of readySos) {
+    for (const po of so.productionOrders) {
+      const producesFin = po.workflowSnapshot?.nodes.some(
+        (n) => n.inventoryTracking === 'PRODUCES_FINISHED',
+      );
+      if (!producesFin) continue;
+      const finLots = await prisma.inventoryLot.count({
+        where: {
+          productionOrderId: po.id,
+          status: { in: ['AVAILABLE', 'RESERVED'] },
+          inventoryItem: { itemClass: 'FINISHED_GOOD' },
+        },
+      });
+      if (finLots < 1) {
+        fail(`${so.number} (${so.projectName}): READY_FOR_DELIVERY without FIN lots`);
+      }
+    }
+  }
+
+  // Diwan WIP_NOT_READY must match missing SEMI (no AVAILABLE/RESERVED SEMI lots).
+  for (const po of diwan?.productionOrders ?? []) {
+    const schedule = po.schedules?.[0];
+    if (schedule?.unschedulableReason === 'WIP_NOT_READY') {
+      const semi = await prisma.inventoryLot.count({
+        where: {
+          productionOrderId: po.id,
+          status: { in: ['AVAILABLE', 'RESERVED'] },
+          inventoryItem: { itemClass: 'SEMI_FINISHED_GOOD' },
+        },
+      });
+      if (semi > 0) {
+        fail(`${po.number}: WIP_NOT_READY but SEMI lots exist`);
+      }
     }
   }
 
@@ -524,7 +647,7 @@ async function assertPresentationReady(
       mayBeLateNames.add(s.productionOrder.salesOrder?.projectName ?? s.productionOrder.number);
     }
   }
-  const expectedLate = ['Cedar Italian velvet recliner', 'Diwan wingback foam gate', 'Jabal contract dining'];
+  const expectedLate = ['Cedar Italian velvet recliner', 'Diwan wingback frame gate', 'Jabal contract dining'];
   for (const name of expectedLate) {
     if (!mayBeLateNames.has(name)) fail(`may-be-late missing ${name}`);
   }

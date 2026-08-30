@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
 import {
   flattenPaginatedPages,
@@ -33,6 +33,8 @@ export function useOrdersInfiniteQuery(
     getNextPageParam: getNextPageParamFromMeta,
     enabled,
     staleTime: 30_000,
+    // Keep the board visible while search / sort loads — avoids unmounting the search field.
+    placeholderData: keepPreviousData,
   });
 }
 

@@ -34,7 +34,6 @@ export const SALES_ORDER_STATUSES = [
 
 export const QUOTATION_STATUSES = [
   'DRAFT',
-  'PENDING_APPROVAL',
   'INTERNAL_REVIEW',
   'APPROVED',
   'SENT',
@@ -43,7 +42,6 @@ export const QUOTATION_STATUSES = [
   'REJECTED',
   'REVISION_REQUESTED',
   'EXPIRED',
-  'CONVERTED',
   'CANCELLED',
 ] as const;
 

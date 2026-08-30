@@ -29,6 +29,11 @@ import {
 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
+import {
+  matchesProductionLifecycleFilter,
+  productionLifecycleBoardLabel,
+  type ProductionLifecycleFilter,
+} from '@/lib/production-lifecycle';
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 interface DealerOption {
@@ -246,6 +251,42 @@ function ProductionPageInner() {
   const [banner, setBanner] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startId, setStartId] = useState<string | null>(null);
+  const [lifecycleFilter, setLifecycleFilter] = useState<ProductionLifecycleFilter>(() => {
+    const fromUrl = searchParams.get('lifecycle');
+    if (
+      fromUrl === 'active' ||
+      fromUrl === 'inspection' ||
+      fromUrl === 'packaging' ||
+      fromUrl === 'ready' ||
+      fromUrl === 'completed'
+    ) {
+      return fromUrl;
+    }
+    return 'all';
+  });
+
+  useEffect(() => {
+    const fromUrl = searchParams.get('lifecycle');
+    if (
+      fromUrl === 'active' ||
+      fromUrl === 'inspection' ||
+      fromUrl === 'packaging' ||
+      fromUrl === 'ready' ||
+      fromUrl === 'completed'
+    ) {
+      setLifecycleFilter(fromUrl);
+    }
+  }, [searchParams]);
+
+  const lifecycleTabs: Array<{ key: ProductionLifecycleFilter; label: string }> = [
+    { key: 'all', label: tp('lifecycleAll') },
+    { key: 'active', label: tp('lifecycleActive') },
+    { key: 'inspection', label: tp('lifecycleInspection') },
+    { key: 'packaging', label: tp('lifecyclePackaging') },
+    { key: 'ready', label: tp('lifecycleReady') },
+    { key: 'completed', label: tp('lifecycleCompleted') },
+  ];
+
   const [activeSection, setActiveSection] = useState<SectionKey>(() => {
     const fromUrl = searchParams.get('section');
     if (
@@ -380,7 +421,11 @@ function ProductionPageInner() {
     },
   ];
 
-  const activeRows = sections[activeSection];
+  const activeRows = useMemo(() => {
+    const base = sections[activeSection];
+    if (lifecycleFilter === 'all') return base;
+    return base.filter((row) => matchesProductionLifecycleFilter(row, lifecycleFilter));
+  }, [sections, activeSection, lifecycleFilter]);
   const activeTab = tabs.find((tab) => tab.key === activeSection) ?? tabs[2]!;
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(activeRows.length / pageSize));
@@ -395,11 +440,21 @@ function ProductionPageInner() {
   }
 
   function stageLabel(row: ProductionRow) {
-    if (row.currentStage) {
-      return `${tp('stage')}: ${localizedName(locale, row.currentStage, row.currentStage.nameEn)}`;
-    }
-    if (row.currentStageCode) return `${tp('stage')}: ${row.currentStageCode}`;
-    return `${tp('stage')}: —`;
+    const localized =
+      row.currentStage != null
+        ? localizedName(locale, row.currentStage, row.currentStage.nameEn)
+        : null;
+    return productionLifecycleBoardLabel(
+      row,
+      {
+        inspection: tp('lifecycleInspection'),
+        packaging: tp('lifecyclePackaging'),
+        ready: tp('lifecycleReady'),
+        rework: tp('reworkRequired'),
+        stageFallback: (name) => `${tp('stage')}: ${name}`,
+      },
+      localized,
+    );
   }
 
   function dealerName(row: ProductionRow) {
@@ -451,6 +506,35 @@ function ProductionPageInner() {
       </div>
 
       <p className="text-sm text-text-secondary">{activeTab.hint}</p>
+
+      <div
+        role="tablist"
+        aria-label={tp('lifecycleFilterLabel')}
+        className="flex flex-wrap gap-2"
+      >
+        {lifecycleTabs.map((tab) => {
+          const selected = lifecycleFilter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => {
+                setPage(1);
+                setLifecycleFilter(tab.key);
+              }}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                selected
+                  ? 'border-brand bg-[var(--maher-brand-soft)] text-brand'
+                  : 'border-border bg-surface text-text-secondary hover:border-brand/40'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="maher-animate-rise flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="block min-w-0 flex-1 sm:max-w-md">

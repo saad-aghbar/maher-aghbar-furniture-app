@@ -30,6 +30,7 @@ import { AnimatedPressable, haptics, ListItemEnter, useDraggablePillBar, useRedu
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import { orderBoardShadow } from './orderFloorStyle';
 import { AppTextInput } from '@/components/forms/AppTextInput';
+import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
 
 const CATEGORIES: InventoryCategoryGroup[] = [
   'fabric',
@@ -78,6 +79,8 @@ type Props = {
    * Modal dismiss/present races when Add material is pressed from create sheets).
    */
   overlay?: boolean;
+  /** Prefill category rail when opening. */
+  initialCategory?: InventoryCategoryGroup;
 };
 
 /**
@@ -90,6 +93,7 @@ export function MaterialPickerSheet({
   onPick,
   formatCurrency,
   overlay = false,
+  initialCategory,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -97,7 +101,9 @@ export function MaterialPickerSheet({
   const { height } = useWindowDimensions();
   const sheetHeight = Math.min(Math.round(height * (overlay ? 0.72 : 0.5)), 640);
 
-  const [category, setCategory] = useState<InventoryCategoryGroup>('fabric');
+  const [category, setCategory] = useState<InventoryCategoryGroup>(
+    initialCategory ?? 'fabric',
+  );
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [selected, setSelected] = useState<InventoryItem | null>(null);
@@ -114,14 +120,16 @@ export function MaterialPickerSheet({
 
   useEffect(() => {
     if (!open) {
-      setCategory('fabric');
+      setCategory(initialCategory ?? 'fabric');
       setQ('');
       setDebouncedQ('');
       setSelected(null);
       setQty('1');
       setLayouts({});
+    } else if (initialCategory) {
+      setCategory(initialCategory);
     }
-  }, [open]);
+  }, [open, initialCategory]);
 
   const activeIdx = Math.max(0, CATEGORIES.indexOf(category));
   const dark = colorScheme === 'dark';
@@ -493,24 +501,12 @@ export function MaterialPickerSheet({
                             : { paddingLeft: theme.spacing.md + 4 }),
                         }}
                       >
-                        <View
-                          style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 20,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            backgroundColor: active ? colors.surface : colors.brandSoft,
-                            borderWidth: 1,
-                            borderColor: colors.border,
-                          }}
-                        >
-                          <Ionicons
-                            name={GROUP_ICON[category]}
-                            size={18}
-                            color={colors.brand}
-                          />
-                        </View>
+                        <InventorySkuThumb
+                          uri={item.imageUrl}
+                          size={40}
+                          rounded="full"
+                          fallback={GROUP_ICON[category]}
+                        />
                         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
                           <AppText
                             variant="label"

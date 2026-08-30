@@ -5,7 +5,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryItemCardModel } from '../selectInventory';
-import { formatInventoryMaterialType } from '../selectInventory';
+import { formatInventoryMaterialType, showsRawMaterialPhoto } from '../selectInventory';
 
 type Props = {
   item: InventoryItemCardModel;
@@ -19,6 +19,7 @@ type Props = {
   onIssue?: () => void;
   onEdit?: () => void;
   onLabelPdf?: () => void;
+  onQrCode?: () => void;
   /** Skip stagger enter (section tab swaps). */
   animateEnter?: boolean;
 };
@@ -36,6 +37,7 @@ export function InventoryMaterialRow({
   onIssue,
   onEdit,
   onLabelPdf,
+  onQrCode,
   animateEnter = true,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -47,12 +49,13 @@ export function InventoryMaterialRow({
     (canReceive && onReceive) ||
       (canIssue && onIssue) ||
       (canEdit && onEdit) ||
-      (canLabelPdf && onLabelPdf),
+      (canLabelPdf && onLabelPdf) ||
+      onQrCode,
   );
   const nameWeight = locale === 'ar' ? 'medium' : 'semibold';
   const materialTypeLabel = formatInventoryMaterialType(item.materialType, t);
   const meta = [item.sku, materialTypeLabel, item.color].filter(Boolean).join(' · ');
-  const showPhoto = item.isAccessory;
+  const showPhoto = showsRawMaterialPhoto(item.itemClass);
   const accent = item.isLowStock ? colors.warning : colors.brand;
 
   return (
@@ -229,6 +232,13 @@ export function InventoryMaterialRow({
                   label={t('mobile.inventory.labelPdf')}
                   tone="ghost"
                   onPress={onLabelPdf}
+                />
+              ) : null}
+              {onQrCode ? (
+                <ActionChip
+                  label={t('mobile.inventory.qrCode')}
+                  tone="ghost"
+                  onPress={onQrCode}
                 />
               ) : null}
             </View>

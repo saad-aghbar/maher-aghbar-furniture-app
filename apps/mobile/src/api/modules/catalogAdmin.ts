@@ -12,6 +12,7 @@ export type AdminBomLine = {
   nameEn: string;
   nameAr: string;
   materialId?: string | null;
+  imageUrl?: string | null;
 };
 
 export type AdminCustomMeasurement = {

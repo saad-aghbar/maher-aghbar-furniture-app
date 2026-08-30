@@ -211,4 +211,28 @@ describe('WorkingCalendar (Asia/Amman)', () => {
         cal.overlapWorkingMinutesOnLocalDay(start, end, '2026-08-30'),
     ).toBe(120);
   });
+
+  it('occupiedLocalYmds omits working days with no overlap inside a min-max span', () => {
+    const cal = calendar();
+    const sat = cal.occupiedLocalYmds(amman(2026, 8, 22, 8, 0), amman(2026, 8, 22, 16, 0));
+    expect(sat).toEqual(['2026-08-22']);
+
+    const sun16 = cal.occupiedLocalYmds(
+      amman(2026, 8, 16, 8, 0),
+      amman(2026, 8, 16, 12, 0),
+      '2026-08-16',
+      '2026-08-23',
+    );
+    const sun23 = cal.occupiedLocalYmds(
+      amman(2026, 8, 23, 8, 0),
+      amman(2026, 8, 23, 12, 0),
+      '2026-08-16',
+      '2026-08-23',
+    );
+    const occupied = new Set([...sun16, ...sun23]);
+    expect(occupied.has('2026-08-16')).toBe(true);
+    expect(occupied.has('2026-08-22')).toBe(false);
+    expect(occupied.has('2026-08-23')).toBe(true);
+    expect(occupied.has('2026-08-21')).toBe(false);
+  });
 });

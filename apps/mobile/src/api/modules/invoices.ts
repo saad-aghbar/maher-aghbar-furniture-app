@@ -21,6 +21,32 @@ export type InvoicePayment = {
   referenceNumber?: string | null;
 };
 
+export type InvoicePresentation = {
+  phase?: string;
+  labelKey?: string;
+  tone?: string;
+  amountDue?: number;
+  paidAmount?: number;
+  remaining?: number;
+};
+
+export type DealerFinanceSnapshot = {
+  amountDue: number;
+  availableCredit: number;
+  openInvoiceCount?: number;
+  overdueAmount?: number;
+};
+
+export type ApplyCreditPreview = {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceOutstanding: number;
+  availableCredit: number;
+  applyAmount: number;
+  invoiceRemainingAfter: number;
+  creditRemainingAfter: number;
+};
+
 export type Invoice = {
   id: string;
   number: string;
@@ -56,6 +82,8 @@ export type Invoice = {
     title?: string | null;
   } | null;
   payments?: InvoicePayment[];
+  presentation?: InvoicePresentation | null;
+  dealerFinance?: DealerFinanceSnapshot | null;
   jofotaraUuid?: string | null;
   jofotaraQr?: string | null;
   jofotaraStatus?: string | null;
@@ -66,6 +94,8 @@ export type InvoiceListFilters = PageParams & {
   status?: string;
   q?: string;
   customerId?: string;
+  /** When true, server filters overdue; count matches dataset. */
+  overdue?: boolean | string;
 };
 
 export async function listInvoices(filters: InvoiceListFilters = {}) {
@@ -75,6 +105,32 @@ export async function listInvoices(filters: InvoiceListFilters = {}) {
 
 export async function getInvoice(id: string) {
   return apiGet<Invoice>(`/invoices/${encodeURIComponent(id)}`);
+}
+
+/** Preview applying dealer account credit to an invoice (no mutation). */
+export async function previewApplyCredit(invoiceId: string, amount?: number) {
+  const qs =
+    amount != null && Number.isFinite(amount)
+      ? `?amount=${encodeURIComponent(String(amount))}`
+      : '';
+  return apiGet<ApplyCreditPreview>(
+    `/invoices/${encodeURIComponent(invoiceId)}/apply-credit/preview${qs}`,
+  );
+}
+
+/** Explicitly apply available account credit to an invoice. */
+export async function applyCredit(body: {
+  invoiceId: string;
+  amount?: number;
+  idempotencyKey: string;
+}) {
+  return apiPost<Invoice>(
+    `/invoices/${encodeURIComponent(body.invoiceId)}/apply-credit`,
+    {
+      amount: body.amount,
+      idempotencyKey: body.idempotencyKey,
+    },
+  );
 }
 
 /** Idempotent ensure — creates or returns existing invoice for the sales order. */

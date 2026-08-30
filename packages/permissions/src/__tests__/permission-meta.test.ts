@@ -84,7 +84,22 @@ describe('WAREHOUSE_MANAGEMENT preset', () => {
     );
   });
 
+  it('Piece 6 grants purchase-order.read for receive flow', () => {
+    expect(preset).toContain('purchase-order.read');
+  });
+
   it('is not a hardcoded identity role', () => {
     expect(ROLE_PERMISSIONS).not.toHaveProperty('WAREHOUSE_MANAGEMENT');
+  });
+});
+
+describe('quotation.accept is dealer-only', () => {
+  it('does not grant quotation.accept to admin or sales staff', () => {
+    expect(ROLE_PERMISSIONS.SYSTEM_ADMINISTRATOR).not.toContain('quotation.accept');
+    expect(SYSTEM_STAFF_PRESETS.SALES.permissionCodes as readonly string[]).not.toContain(
+      'quotation.accept',
+    );
+    expect(ROLE_PERMISSIONS.CUSTOMER).toContain('quotation.accept');
+    expect(PERMISSION_META['quotation.accept'].assignableToStaff).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { Keyboard, useWindowDimensions } from 'react-native';
 import { CodeField } from '@/components/forms/CodeField';
 import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
@@ -30,6 +30,8 @@ import { InventoryUnitPickerSheet } from './InventoryUnitPickerSheet';
 type Props = {
   open: boolean;
   onClose: () => void;
+  /** After the create Modal unmounts — present another Modal only from here. */
+  onClosed?: () => void;
   categoryGroup: InventoryCategoryGroup;
   loading?: boolean;
   onSubmit: (body: CreateInventoryItemInput) => void;
@@ -38,6 +40,7 @@ type Props = {
 export function CreateInventoryItemSheet({
   open,
   onClose,
+  onClosed,
   categoryGroup,
   loading,
   onSubmit,
@@ -68,10 +71,14 @@ export function CreateInventoryItemSheet({
     open,
   );
 
-  const showPhoto = materialGroup === 'accessories';
+  const showPhoto = true;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setUnitSheet(false);
+      setTypeSheet(false);
+      return;
+    }
     setMaterialGroup(categoryGroup);
     setNameEn('');
     setNameAr('');
@@ -94,10 +101,6 @@ export function CreateInventoryItemSheet({
     setMeasurements((rows) =>
       measurementsHaveValues(rows) ? rows : starterMeasurements(next),
     );
-    if (next !== 'accessories') {
-      setPhotoPreview(null);
-      setPhotoRemoteUrl(null);
-    }
   }
 
   function submit() {
@@ -106,6 +109,10 @@ export function CreateInventoryItemSheet({
       return;
     }
     setError(null);
+    Keyboard.dismiss();
+    setUnitSheet(false);
+    setTypeSheet(false);
+    // Camera on this form fills supplier barcode only. Printed identity is assigned on save.
     onSubmit({
       nameEn: nameEn.trim(),
       nameAr: nameAr.trim(),
@@ -126,6 +133,7 @@ export function CreateInventoryItemSheet({
       <BottomSheet
         open={open}
         onClose={onClose}
+        onClosed={onClosed}
         title={t('mobile.inventory.newItem')}
         sheetHeight={sheetHeight}
       >
@@ -189,10 +197,14 @@ export function CreateInventoryItemSheet({
             placeholder="0"
           />
           <CodeField
-            label={t('mobile.inventory.barcode')}
+            label={t('mobile.inventory.supplierBarcode')}
             value={barcode}
             onChangeText={setBarcode}
-            placeholder={t('mobile.scan.enterOrScan')}
+            placeholder={t('mobile.inventory.scanSupplierBarcodeHint')}
+            scanTitle={t('mobile.inventory.scanSupplierBarcode')}
+            scanHint={t('mobile.inventory.scanSupplierBarcodeHint')}
+            scanAccessibilityLabel={t('mobile.inventory.scanSupplierBarcode')}
+            scanIcon="barcode-outline"
           />
           <TextField
             label={t('mobile.inventory.color')}

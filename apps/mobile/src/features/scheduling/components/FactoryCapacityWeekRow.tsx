@@ -121,6 +121,7 @@ export function FactoryCapacityWeekRow({ card, cells }: Props) {
                   variant="caption"
                   weight="semibold"
                   dir={latin ? 'ltr' : 'auto'}
+                  face={latin ? 'latin' : 'app'}
                   style={{ color: colors.textPrimary }}
                 >
                   {text}

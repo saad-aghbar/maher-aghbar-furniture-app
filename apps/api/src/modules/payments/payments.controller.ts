@@ -1,6 +1,15 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsEnum, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsArray,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaymentMethod } from '@maher/database';
 import { PaymentsService } from './payments.service';
@@ -8,6 +17,16 @@ import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ListPaymentsDto } from './dto/payment.dto';
 import type { AuthUser } from '@maher/types';
+
+class AllocationDto {
+  @IsUUID()
+  invoiceId!: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.001)
+  amount!: number;
+}
 
 class RecordPaymentDto {
   @IsUUID()
@@ -41,6 +60,12 @@ class RecordPaymentDto {
   @IsOptional()
   @IsString()
   idempotencyKey?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AllocationDto)
+  allocations?: AllocationDto[];
 }
 
 @ApiTags('payments')
@@ -50,8 +75,20 @@ export class PaymentsController {
 
   @Get()
   @RequirePermissions('payment.read')
-  list(@Query() query: ListPaymentsDto, @CurrentUser() user: AuthUser) {
+  list(
+    @Query() query: ListPaymentsDto & { dateFrom?: string; dateTo?: string; method?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
     return this.payments.list(query, user);
+  }
+
+  @Get('dealer/:customerId/summary')
+  @RequirePermissions('payment.read')
+  dealerSummary(@Param('customerId') customerId: string, @CurrentUser() user: AuthUser) {
+    if (user.customerId && user.customerId !== customerId) {
+      return this.payments.getDealerFinanceSummary(user.customerId);
+    }
+    return this.payments.getDealerFinanceSummary(customerId);
   }
 
   @Post()

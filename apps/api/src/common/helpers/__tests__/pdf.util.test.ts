@@ -1,5 +1,7 @@
 import { inflateSync } from 'node:zlib';
 import {
+  buildInventoryItemReportPdf,
+  buildInventoryLabelPdf,
   buildSimplePdf,
   printableScanCode,
   shapePdfText,
@@ -337,5 +339,87 @@ describe('buildSimplePdf', () => {
     expect(pdfRaw(withQr)).not.toContain('exp://');
     expect(pdfHasLatin(withQr, 'MAT-FAB-ROLL')).toBe(true);
     expect(pdfHasOutlines(withQr)).toBe(true);
+  });
+
+  it('embeds an optional material photo as an extra image XObject', async () => {
+    // 1×1 PNG
+    const photo = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const base = {
+      locale: 'en' as const,
+      theme: 'white' as const,
+      title: 'Boucle cream roll',
+      sku: 'MAT-BOU-CRM',
+      scanCode: 'MAT-BOU-CRM',
+      details: [
+        { label: 'Unit', value: 'm' },
+        { label: 'Min stock', value: '35' },
+      ],
+      hint: 'Scan barcode / QR at warehouse stations',
+    };
+    const withoutPhoto = await buildInventoryLabelPdf(base);
+    const withPhoto = await buildInventoryLabelPdf({ ...base, image: photo });
+    expect(imageXObjectCount(withPhoto)).toBeGreaterThan(imageXObjectCount(withoutPhoto));
+    expect(pdfHasLatin(withPhoto, 'Boucle cream roll')).toBe(true);
+    // SKU is encoded in the QR only — not printed as a separate text line.
+    expect(pdfHasLatin(withPhoto, 'MAT-BOU-CRM')).toBe(false);
+  });
+
+  it('inventory label stays one centered page in Arabic', async () => {
+    const buf = await buildInventoryLabelPdf({
+      locale: 'ar',
+      theme: 'white',
+      title: 'رول قماش بوكل',
+      subtitle: 'Boucle cream roll',
+      sku: 'MAT-BOU-CRM',
+      scanCode: 'MAT-BOU-CRM',
+      details: [
+        { label: 'الوحدة', value: 'm' },
+        { label: 'الحد الأدنى', value: '35' },
+      ],
+      hint: 'امسح الرمز في المستودع',
+    });
+    expect(pageCount(buf)).toBe(1);
+    expect(pdfHasLatin(buf, 'Boucle cream roll')).toBe(true);
+    expect(imageXObjectCount(buf)).toBeGreaterThan(0);
+  });
+});
+
+describe('buildInventoryItemReportPdf', () => {
+  it('embeds QR and report title; soft-fails without image', async () => {
+    const without = await buildInventoryItemReportPdf({
+      locale: 'en',
+      theme: 'white',
+      reportTitle: 'Inventory Item Report',
+      companyLine: 'Maher Furniture',
+      generatedLabel: 'Generated',
+      generatedAt: '24 Aug 2026, 13:15',
+      itemName: 'Italian Velvet',
+      itemSku: 'MAT-ITAL-VEL',
+      identityRows: [
+        ['SKU', 'MAT-ITAL-VEL'],
+        ['Unit', 'm'],
+      ],
+      sections: [
+        {
+          title: 'Current stock',
+          pairs: [
+            ['On hand', '0 m'],
+            ['Incoming', '24 m'],
+          ],
+        },
+      ],
+      scanTitle: 'Scan this item',
+      scanHint: 'Scan this code in Inventory to open this item.',
+      scanCode: 'MAT-ITAL-VEL',
+      scanName: 'Italian Velvet',
+      scanSku: 'MAT-ITAL-VEL',
+    });
+    expect(without.slice(0, 5).toString()).toBe('%PDF-');
+    expect(pdfHasLatin(without, 'Inventory Item Report')).toBe(true);
+    expect(pdfHasLatin(without, 'MAT-ITAL-VEL')).toBe(true);
+    expect(imageXObjectCount(without)).toBeGreaterThan(0); // QR
   });
 });

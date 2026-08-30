@@ -214,6 +214,7 @@ WIP PARALLEL INPUTS:                PASS
 WIP PRODUCER LATE REPLAN:           PASS
 WIP EXISTING STOCK:                 PASS
 OPTIONAL STAGE:                     PASS
+PAST-SAFE:                          PASS (replan from scheduling floor, not historical readyAt)
 TEST J:                             PASS
 TEST K:                             PASS
 NEW CONFLICTS:                      0

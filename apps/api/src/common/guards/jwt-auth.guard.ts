@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from '../decorators/auth.decorators';
 import { effectivePermissionCodes } from '../helpers/auth-permissions.util';
+import { resolveJwtAccessSecret } from '../helpers/jwt-secret';
 import { PrismaService } from '../prisma.service';
 import type { AuthUser } from '@maher/types';
 
@@ -40,7 +41,7 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const payload = await this.jwt.verifyAsync<{ sub: string }>(token, {
-        secret: process.env.JWT_ACCESS_SECRET ?? 'dev-access-secret-change-me-min-32-chars!!',
+        secret: resolveJwtAccessSecret(),
       });
       const user = await this.prisma.user.findFirst({
         where: { id: payload.sub, archivedAt: null, isActive: true },
@@ -52,6 +53,10 @@ export class JwtAuthGuard implements CanActivate {
               },
             },
           },
+          workerSkills: {
+            where: { isActive: true },
+            include: { stageDefinition: { select: { code: true } } },
+          },
         },
       });
       if (!user) throw new UnauthorizedException({ code: 'UNAUTHORIZED', message: 'User not found.' });
@@ -61,14 +66,19 @@ export class JwtAuthGuard implements CanActivate {
         roles,
         user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.code)),
       );
+      const stageSkillCodes = (user.workerSkills ?? [])
+        .map((s) => s.stageDefinition.code)
+        .filter(Boolean);
 
       req.user = {
         id: user.id,
+        username: user.username ?? '',
         email: user.email ?? '',
         phone: user.phone ?? undefined,
         name: `${user.firstName} ${user.lastName}`.trim(),
         roles,
         permissions,
+        stageSkillCodes,
         preferredLanguage: user.preferredLanguage,
         customerId: user.customerId ?? undefined,
       } as AuthUser & { customerId?: string };

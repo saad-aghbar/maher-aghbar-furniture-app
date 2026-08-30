@@ -1,5 +1,5 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet, apiPatch, apiPost } from '../client';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
 import type { RequestDetail, RequestEditPolicy } from '@/features/requests/types';
 
@@ -65,6 +65,7 @@ export type RequestSummary = {
 
 export type ListRequestsFilters = PageParams & {
   status?: string;
+  statusGroup?: string;
   q?: string;
 };
 
@@ -99,16 +100,22 @@ export async function markRequestReadyForQuotation(id: string): Promise<RequestD
 
 export async function markRequestNeedsInformation(
   id: string,
-  notes?: string,
+  reason?: string,
 ): Promise<RequestDetail> {
   return apiPost<RequestDetail>(
     `/requests/${encodeURIComponent(id)}/needs-information`,
-    { notes },
+    { reason, notes: reason },
   );
 }
 
 export async function closeRequest(id: string): Promise<RequestDetail> {
   return apiPost<RequestDetail>(`/requests/${encodeURIComponent(id)}/close`);
+}
+
+export async function discardRequestDraft(id: string): Promise<{ id: string; discarded: boolean }> {
+  return apiDelete<{ id: string; discarded: boolean }>(
+    `/requests/${encodeURIComponent(id)}`,
+  );
 }
 
 export async function getRequest(id: string): Promise<RequestDetail> {
@@ -122,6 +129,7 @@ export async function listRequests(
     page: filters.page,
     pageSize: filters.pageSize,
     status: filters.status,
+    statusGroup: filters.statusGroup,
     q: filters.q,
   });
   return apiGet<PaginatedResponse<RequestSummary>>(`/requests${qs}`);

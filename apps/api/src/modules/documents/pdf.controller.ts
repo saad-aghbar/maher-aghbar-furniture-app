@@ -1,32 +1,47 @@
 import {
+  BadRequestException,
   Controller,
   ForbiddenException,
   Get,
   Headers,
+  NotFoundException,
   Param,
   Query,
   Res,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { inventoryScanPayload, wipKitScanPayload, wipPieceScanPayload } from '@maher/types';
 import type { AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import {
+  buildInventoryItemReportPdf,
+  buildInventoryLabelPdf,
   buildSimplePdf,
+  fetchPdfImageBuffer,
   parsePdfQuery,
   printableScanCode,
   sendPdf,
 } from '../../common/helpers/pdf.util';
-import { localizedName, pdfMessages } from '../../common/helpers/pdf-i18n';
+import { localizedName, localizedQuotationStatus, pdfMessages } from '../../common/helpers/pdf-i18n';
 import { roundMoney } from '../../common/helpers/money.util';
+import { isDealerVisibleQuotationStatus } from '../quotations/quotation-visibility';
+import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
+import { InventoryItemReportService } from '../inventory/inventory-item-report.service';
+import { mapInventoryItemReportToPdfSpec } from '../inventory/inventory-item-report-pdf';
+import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 
 @ApiTags('pdf')
 @Controller()
 export class PdfController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inventoryItemReport: InventoryItemReportService,
+    private readonly storage: LocalStorageService,
+  ) {}
 
   private opts(
     query: { lang?: string; theme?: string },
@@ -39,6 +54,7 @@ export class PdfController {
   @RequirePermissions('quotation.read')
   async quotationPdf(
     @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
     @Query('lang') lang: string | undefined,
     @Query('theme') theme: string | undefined,
     @Headers('accept-language') acceptLanguage: string | undefined,
@@ -46,28 +62,66 @@ export class PdfController {
   ) {
     const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
     const m = pdfMessages(locale);
-    const q = await this.prisma.quotation.findUniqueOrThrow({
-      where: { id },
-      include: { customer: true, lines: true },
+    const q = await this.prisma.quotation.findFirst({
+      where: { id, archivedAt: null },
+      include: { customer: true, lines: true, request: { select: { number: true } } },
     });
+    if (!q) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Quotation not found.' });
+    }
+    if (user.customerId) {
+      if (q.customerId !== user.customerId || !isDealerVisibleQuotationStatus(q.status)) {
+        throw new NotFoundException({ code: 'NOT_FOUND', message: 'Quotation not found.' });
+      }
+    }
+
+    const specOf = (l: (typeof q.lines)[number]) => {
+      const parts: string[] = [];
+      if (l.material) parts.push(String(l.material));
+      if (l.fabric) parts.push(String(l.fabric));
+      if (l.color) parts.push(String(l.color));
+      const w = l.width != null ? Number(l.width) : null;
+      const h = l.height != null ? Number(l.height) : null;
+      const d = l.depth != null ? Number(l.depth) : null;
+      if (w || h || d) parts.push(`${w ?? '—'}×${h ?? '—'}×${d ?? '—'} cm`);
+      return parts.join(' · ');
+    };
+
+    const meta = [
+      `${m.customer}: ${localizedName(locale, q.customer)}`,
+      `${m.status}: ${localizedQuotationStatus(locale, q.status)}`,
+      `${m.currency}: ${q.currency}`,
+    ];
+    if (q.request?.number) meta.push(`${m.rfq}: ${q.request.number}`);
+    if (q.expirationDate) {
+      meta.push(`${m.validUntil}: ${q.expirationDate.toISOString().slice(0, 10)}`);
+    }
+    if (q.paymentTerms) meta.push(`${m.paymentTerms}: ${q.paymentTerms}`);
+    if (q.deliveryTerms) meta.push(`${m.deliveryTerms}: ${q.deliveryTerms}`);
+    if (q.customerNotes) meta.push(`${m.notes}: ${q.customerNotes}`);
+
     const buffer = await buildSimplePdf({
       locale,
       theme: pdfTheme,
       title: m.quotation,
       subtitle: `${q.number} · ${m.version} ${q.version}`,
-      meta: [
-        `${m.customer}: ${localizedName(locale, q.customer)}`,
-        `${m.status}: ${q.status}`,
-        `${m.currency}: ${q.currency}`,
+      meta,
+      columns: [m.description, m.qty, m.unitPrice, m.discount, m.lineTotal],
+      rows: q.lines.map((l) => {
+        const spec = specOf(l);
+        return [
+          spec ? `${l.description}\n${spec}` : l.description,
+          String(l.quantity),
+          String(l.unitPrice),
+          String(l.discountValue ?? 0),
+          String(l.lineTotal),
+        ];
+      }),
+      footerLines: [
+        `${m.subtotal}: ${q.subtotal} ${q.currency}`,
+        `${m.tax}: ${q.taxTotal} ${q.currency}`,
+        `${m.total}: ${q.total} ${q.currency}`,
       ],
-      columns: [m.description, m.qty, m.unitPrice, m.lineTotal],
-      rows: q.lines.map((l) => [
-        l.description,
-        String(l.quantity),
-        String(l.unitPrice),
-        String(l.lineTotal),
-      ]),
-      footerLines: [`${m.total}: ${q.total} ${q.currency}`],
     });
     sendPdf(res, `${q.number}-v${q.version}.pdf`, buffer);
   }
@@ -221,6 +275,22 @@ export class PdfController {
     sendPdf(res, `${c.number}.pdf`, buffer);
   }
 
+  /**
+   * GRN PDF — not implemented as a dealer-facing document.
+   * Internal receipt detail lives on PO API (`goodsReceipts` + unitCost).
+   * Never expose purchase unit costs on dealer PDFs.
+   */
+  @Get('purchasing/goods-receipts/:id/pdf')
+  @RequirePermissions('purchase-order.read')
+  goodsReceiptPdf(@Param('id') id: string) {
+    throw new BadRequestException({
+      code: 'GRN_PDF_NOT_AVAILABLE',
+      message:
+        'Goods receipt PDF is not available. Use the purchase order PDF for expected costs, or PO detail goodsReceipts for internal actual unit costs. GRN PDFs are never dealer-facing.',
+      goodsReceiptId: id,
+    });
+  }
+
   @Get('purchasing/orders/:id/pdf')
   @RequirePermissions('purchase-order.read')
   async purchaseOrderPdf(
@@ -345,6 +415,34 @@ export class PdfController {
   @RequirePermissions('inventory.read')
   async inventoryLabel(
     @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const report = await this.inventoryItemReport.getReportData(
+      id,
+      user.permissions ?? [],
+      locale,
+    );
+    const photo = await fetchPdfImageBuffer(report.identity.imageUrl);
+    const buffer = await buildInventoryItemReportPdf(
+      mapInventoryItemReportToPdfSpec({
+        report,
+        image: photo,
+        theme: pdfTheme,
+      }),
+    );
+    sendPdf(res, `item-report-${report.identity.sku}.pdf`, buffer);
+  }
+
+  /** Warehouse print sheet — centered photo + large QR (not the item report). */
+  @Get('inventory/items/:id/qr-label')
+  @RequirePermissions('inventory.read')
+  async inventoryQrLabel(
+    @Param('id') id: string,
     @Query('lang') lang: string | undefined,
     @Query('theme') theme: string | undefined,
     @Headers('accept-language') acceptLanguage: string | undefined,
@@ -365,27 +463,232 @@ export class PdfController {
         : locale === 'ar' && item.nameEn
           ? item.nameEn
           : undefined;
-    const barcode = printableScanCode(item.barcode);
-    const qrPayload = printableScanCode(item.qrCode, '') || item.sku;
-    const buffer = await buildSimplePdf({
+    const supplierBarcode = printableScanCode(item.barcode, '');
+    const qrPayload = inventoryScanPayload(item);
+    const photo = await fetchPdfImageBuffer(canonicalInventoryImageUrl(item));
+    const details: Array<{ label: string; value: string }> = [
+      { label: m.unit, value: item.unit },
+      { label: m.minStock, value: String(item.minStock) },
+    ];
+    if (item.materialType?.trim()) {
+      details.push({ label: m.materialType, value: item.materialType.trim() });
+    }
+    if (item.color?.trim()) {
+      details.push({ label: m.color, value: item.color.trim() });
+    }
+    if (item.size?.trim()) {
+      details.push({ label: m.size, value: item.size.trim() });
+    }
+    if (supplierBarcode) {
+      details.push({ label: m.supplierBarcode, value: supplierBarcode });
+    }
+
+    const buffer = await buildInventoryLabelPdf({
       locale,
       theme: pdfTheme,
       title: primary,
       subtitle: secondary,
-      meta: [
-        `${m.sku}: ${item.sku}`,
-        `${m.barcode}: ${barcode}`,
-        `${m.unit}: ${item.unit}`,
-      ],
-      columns: [m.field, m.value],
-      rows: [
-        [m.sku, item.sku],
-        [m.barcode, barcode],
-        [m.minStock, String(item.minStock)],
-      ],
-      footerLines: [m.labelScanHint],
-      qr: qrPayload ? { payload: qrPayload } : undefined,
+      sku: item.sku,
+      scanCode: qrPayload,
+      details,
+      hint: m.labelScanHint,
+      image: photo ?? undefined,
     });
-    sendPdf(res, `label-${item.sku}.pdf`, buffer);
+    sendPdf(res, `qr-label-${item.sku}.pdf`, buffer);
+  }
+
+  /** Floor print sheet for a WIP kit QR. */
+  @Get('inventory/wip-kits/:id/qr-label')
+  @RequirePermissions('inventory.read')
+  async wipKitQrLabel(
+    @Param('id') id: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const kit = await this.prisma.wipKit.findUnique({
+      where: { id },
+      include: {
+        productionOrder: {
+          select: {
+            number: true,
+            productDescription: true,
+            product: {
+              select: { nameEn: true, nameAr: true, nameHe: true, sku: true, imageUrl: true },
+            },
+          },
+        },
+        stageInstance: {
+          include: {
+            stageDefinition: {
+              select: { code: true, nameEn: true, nameAr: true, nameHe: true },
+            },
+          },
+        },
+        location: { select: { code: true, name: true } },
+        pieces: {
+          orderBy: { sortOrder: 'asc' },
+          take: 1,
+          include: {
+            photoDocument: { select: { storageKey: true } },
+          },
+        },
+      },
+    });
+    if (!kit) {
+      throw new NotFoundException({ code: 'WIP_KIT_NOT_FOUND', message: 'WIP kit not found.' });
+    }
+
+    const stage = kit.stageInstance.stageDefinition;
+    const stageName =
+      locale === 'ar'
+        ? stage.nameAr || stage.nameEn
+        : locale === 'he' && stage.nameHe
+          ? stage.nameHe
+          : stage.nameEn;
+    const product = kit.productionOrder.product;
+    const primary = product
+      ? localizedName(locale, product)
+      : kit.productionOrder.productDescription;
+    const scanCode = wipKitScanPayload(kit);
+    const photo =
+      (await this.bufferFromStorageKey(kit.pieces[0]?.photoDocument?.storageKey)) ??
+      (await fetchPdfImageBuffer(product?.imageUrl));
+
+    const details: Array<{ label: string; value: string }> = [
+      { label: 'PO', value: kit.productionOrder.number },
+      { label: 'Stage', value: stageName },
+      { label: 'Pieces', value: String(kit.expectedPieceCount) },
+    ];
+    if (kit.location) {
+      details.push({
+        label: m.warehouse,
+        value: kit.location.name?.trim() || kit.location.code,
+      });
+    }
+
+    const buffer = await buildInventoryLabelPdf({
+      locale,
+      theme: pdfTheme,
+      title: primary,
+      subtitle: `${kit.productionOrder.number} · ${stageName}`,
+      sku: kit.qrCode,
+      scanCode,
+      details,
+      hint: m.labelScanHint,
+      image: photo ?? undefined,
+    });
+    sendPdf(res, `wip-kit-${kit.qrCode}.pdf`, buffer);
+  }
+
+  /** Floor print sheet for a single WIP piece QR. */
+  @Get('inventory/wip-pieces/:id/qr-label')
+  @RequirePermissions('inventory.read')
+  async wipPieceQrLabel(
+    @Param('id') id: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const piece = await this.prisma.wipPiece.findUnique({
+      where: { id },
+      include: {
+        photoDocument: { select: { storageKey: true } },
+        kit: {
+          include: {
+            productionOrder: {
+              select: {
+                number: true,
+                productDescription: true,
+                product: {
+                  select: { nameEn: true, nameAr: true, nameHe: true, sku: true, imageUrl: true },
+                },
+              },
+            },
+            stageInstance: {
+              include: {
+                stageDefinition: {
+                  select: { code: true, nameEn: true, nameAr: true, nameHe: true },
+                },
+              },
+            },
+            location: { select: { code: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!piece) {
+      throw new NotFoundException({
+        code: 'WIP_PIECE_NOT_FOUND',
+        message: 'WIP piece not found.',
+      });
+    }
+
+    const kit = piece.kit;
+    const stage = kit.stageInstance.stageDefinition;
+    const stageName =
+      locale === 'ar'
+        ? stage.nameAr || stage.nameEn
+        : locale === 'he' && stage.nameHe
+          ? stage.nameHe
+          : stage.nameEn;
+    const product = kit.productionOrder.product;
+    const primary = product
+      ? localizedName(locale, product)
+      : kit.productionOrder.productDescription;
+    const scanCode = wipPieceScanPayload(piece);
+    const photo =
+      (await this.bufferFromStorageKey(piece.photoDocument?.storageKey)) ??
+      (await fetchPdfImageBuffer(product?.imageUrl));
+    const pieceLabel = piece.label?.trim() || `Piece ${piece.sortOrder + 1}`;
+
+    const details: Array<{ label: string; value: string }> = [
+      { label: 'PO', value: kit.productionOrder.number },
+      { label: 'Stage', value: stageName },
+      { label: 'Piece', value: pieceLabel },
+      { label: 'Kit', value: kit.qrCode },
+    ];
+    if (kit.location) {
+      details.push({
+        label: m.warehouse,
+        value: kit.location.name?.trim() || kit.location.code,
+      });
+    }
+
+    const buffer = await buildInventoryLabelPdf({
+      locale,
+      theme: pdfTheme,
+      title: primary,
+      subtitle: `${kit.productionOrder.number} · ${pieceLabel}`,
+      sku: piece.qrCode || kit.qrCode,
+      scanCode,
+      details,
+      hint: m.labelScanHint,
+      image: photo ?? undefined,
+    });
+    sendPdf(res, `wip-piece-${piece.qrCode || piece.id}.pdf`, buffer);
+  }
+
+  private async bufferFromStorageKey(key: string | null | undefined): Promise<Buffer | null> {
+    const trimmed = key?.trim();
+    if (!trimmed) return null;
+    try {
+      const stream = await this.storage.getObjectStream(trimmed);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const buf = Buffer.concat(chunks);
+      if (buf.byteLength < 32 || buf.byteLength > 8_000_000) return null;
+      return buf;
+    } catch {
+      return null;
+    }
   }
 }

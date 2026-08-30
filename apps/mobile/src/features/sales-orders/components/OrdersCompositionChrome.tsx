@@ -104,6 +104,10 @@ export function OrdersCompositionChrome({
           value={searchInput}
           onChangeText={setSearchInput}
           placeholder={searchPlaceholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          blurOnSubmit={false}
         />
       )}
       {children}

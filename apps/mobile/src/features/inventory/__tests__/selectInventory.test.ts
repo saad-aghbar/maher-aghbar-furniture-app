@@ -4,6 +4,7 @@ import {
   selectInventoryItemCard,
   selectInventoryItemDetail,
   selectInventoryTransaction,
+  showsRawMaterialPhoto,
 } from '../selectInventory';
 import type { InventoryItem, InventoryTransaction } from '../api';
 import { inventoryItemUnitCost } from '@/api/modules/inventory';
@@ -50,13 +51,39 @@ describe('selectInventory cost visibility', () => {
     expect(card.costLabel).not.toBe('0');
   });
 
-  it('hides accessory photo flags for fabric items', () => {
-    const card = selectInventoryItemCard(baseItem, 'en');
+  it('hides accessory photo flags for fabric items but keeps imageUrl', () => {
+    const withPhoto: InventoryItem = {
+      ...baseItem,
+      imageUrl: 'https://cdn.example/linen.jpg',
+    };
+    const card = selectInventoryItemCard(withPhoto, 'en');
     expect(card.isAccessory).toBe(false);
-    expect(card.imageUrl).toBeNull();
+    expect(card.imageUrl).toBe('https://cdn.example/linen.jpg');
+    expect(showsRawMaterialPhoto(card.itemClass)).toBe(true);
   });
 
-  it('flags accessories and keeps optional imageUrl', () => {
+  it('maps missing imageUrl to null and still shows a raw-material photo slot', () => {
+    const card = selectInventoryItemCard(baseItem, 'en');
+    expect(card.imageUrl).toBeNull();
+    expect(showsRawMaterialPhoto(card.itemClass)).toBe(true);
+  });
+
+  it('does not show inventory SKU photos on finished goods', () => {
+    expect(showsRawMaterialPhoto('FINISHED_GOOD')).toBe(false);
+    expect(showsRawMaterialPhoto('SEMI_FINISHED_GOOD')).toBe(false);
+    expect(showsRawMaterialPhoto('RAW_MATERIAL')).toBe(true);
+  });
+
+  it('maps scanCode and treats missing active flags as active', () => {
+    const card = selectInventoryItemCard(baseItem, 'en');
+    expect(card.scanCode).toBeNull();
+    expect(card.isActive).toBe(true);
+    expect(card.archivedAt).toBeNull();
+    const withCode = selectInventoryItemCard({ ...baseItem, scanCode: 'MAT-ITAL-VEL' }, 'en');
+    expect(withCode.scanCode).toBe('MAT-ITAL-VEL');
+  });
+
+  it('keeps accessory imageUrl for hardware kits', () => {
     const accessory: InventoryItem = {
       ...baseItem,
       id: 'acc-1',

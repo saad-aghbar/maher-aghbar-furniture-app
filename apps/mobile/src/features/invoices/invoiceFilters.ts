@@ -1,9 +1,11 @@
+/** Home chips: All / Draft / Open / Partial / Overdue / Paid (API status values). */
 export const INVOICE_STATUS_FILTERS = [
   'ALL',
-  'PAID',
+  'DRAFT',
   'ISSUED',
-  'OVERDUE',
   'PARTIALLY_PAID',
+  'OVERDUE',
+  'PAID',
 ] as const;
 
 export type InvoiceStatusFilter = (typeof INVOICE_STATUS_FILTERS)[number];

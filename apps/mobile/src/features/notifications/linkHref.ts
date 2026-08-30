@@ -43,6 +43,13 @@ export function mapNotificationLinkToHref(
     return '/(app)/(customer)/account/statement' as Href;
   }
 
+  if (path.startsWith('/quotations/')) {
+    if (surface === 'customer') {
+      return `/(app)/(customer)/quotations/${id}` as Href;
+    }
+    return `/(app)/(admin)/quotations/${id}` as Href;
+  }
+
   if (path.startsWith('/requests/')) {
     if (surface === 'customer') {
       return `/(app)/(customer)/requests/${id}` as Href;
