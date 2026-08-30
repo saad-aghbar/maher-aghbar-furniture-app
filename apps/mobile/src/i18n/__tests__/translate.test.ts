@@ -68,6 +68,10 @@ describe('translate', () => {
     expect(translate('en', 'sales.autoCalculated')).toMatch(/Auto/i);
     expect(translate('en', 'sales.fromInventoryCosts')).toMatch(/inventory/i);
     expect(translate('en', 'mobile.orderDetail.linkedProduction')).toMatch(/Production/i);
+    expect(translate('en', 'mobile.orderDetail.setupBody')).toMatch(/This order was accepted/i);
+    expect(translate('en', 'mobile.orderDetail.setupBody')).not.toMatch(/^Accept /);
+    expect(translate('en', 'mobile.orderDetail.setupTitle')).toMatch(/Production setup required/i);
+    expect(translate('en', 'mobile.orderDetail.prepareProduction')).toBe('Prepare production');
     expect(translate('en', 'navigation.returns')).toBe('Returns');
     expect(translate('ar', 'catalog.noReturnPhoto')).toBeTruthy();
     expect(translate('ar', 'catalog.noReturnPhoto')).not.toBe('catalog.noReturnPhoto');

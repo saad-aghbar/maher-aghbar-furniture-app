@@ -58,6 +58,7 @@ export const adminOrderDetailFixture: SalesOrderDetail = {
     items: [
       {
         id: 'i1',
+        productId: 'prod-sofa',
         productName: 'Lobby Sofa',
         description: '3-seater with oak legs',
         fabricType: 'Linen',
@@ -84,6 +85,7 @@ export const adminOrderDetailFixture: SalesOrderDetail = {
   orderedItems: [
     {
       id: 'i1',
+      productId: 'prod-sofa',
       productName: 'Lobby Sofa',
       quantity: 2,
     },

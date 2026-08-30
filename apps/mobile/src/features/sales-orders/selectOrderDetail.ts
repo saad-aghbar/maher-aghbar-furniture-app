@@ -10,6 +10,7 @@ export type OrderGalleryImage = {
 
 export type OrderLineItemView = {
   id: string;
+  productId: string | null;
   productName: string;
   description: string | null;
   quantity: number | null;
@@ -111,6 +112,9 @@ export type OrderDetailViewModel = {
   /** Product + public image URLs only; document images resolved separately. */
   heroImageUrls: string[];
   isDraft: boolean;
+  /** Admin draft with no production order — next step is production setup, then release. */
+  needsProductionSetup: boolean;
+  setupProductId: string | null;
   showCosts: boolean;
   showStages: boolean;
   showEndCustomer: boolean;
@@ -164,6 +168,7 @@ function dim(item: SalesOrderLineItem): string | null {
 function mapItems(order: SalesOrderDetail): OrderLineItemView[] {
   return orderItems(order).map((item) => ({
     id: item.id,
+    productId: item.productId ?? null,
     productName: item.productName,
     description: item.description ?? null,
     quantity: toNumber(item.quantity),
@@ -265,6 +270,11 @@ export function selectOrderDetail(
   const isAdmin = variant === 'admin';
   const isDraft = order.status === 'DRAFT';
   const { flat: stages, productionOrders } = mapStages(order, locale);
+  const items = mapItems(order);
+  const needsProductionSetup = isAdmin && isDraft && productionOrders.length === 0;
+  const setupProductId = needsProductionSetup
+    ? (items.map((item) => item.productId).find((id): id is string => Boolean(id)) ?? null)
+    : null;
 
   const docs = order.customerRequest?.documents ?? [];
   const photos = isAdmin
@@ -348,7 +358,7 @@ export function selectOrderDetail(
     requestSource: order.customerRequest?.source ?? null,
     sellerPrice: seller,
     fabricSummary: fabricSummary(order),
-    items: mapItems(order),
+    items,
     translatedText: isAdmin ? translatedText : translatedText,
     originalText: isAdmin ? originalText : null,
     detectedLanguage: isAdmin
@@ -381,6 +391,8 @@ export function selectOrderDetail(
     })),
     heroImageUrls,
     isDraft,
+    needsProductionSetup,
+    setupProductId,
     showCosts: isAdmin,
     showStages: isAdmin || productionOrders.some((po) => po.stages.length > 0),
     showEndCustomer: isAdmin,
