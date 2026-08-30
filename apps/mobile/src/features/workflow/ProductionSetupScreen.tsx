@@ -110,8 +110,6 @@ export function ProductionSetupScreen({
   }, [productQuery.data?.bomLines]);
 
   const productLine = productionSetupProductLine(productQuery.data, locale);
-  const tabClearance =
-    theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + Math.max(insets.bottom, theme.spacing.sm);
 
   function saveAll() {
     saveMutation.mutate(
@@ -172,15 +170,19 @@ export function ProductionSetupScreen({
     padding: theme.spacing.md,
     minHeight: 44,
   };
+  /** Sit above the floating tab shell with a gap; list clears Save + tab bar. */
+  const stickyBottom = SURFACE_TAB_BAR_CLEARANCE + Math.max(insets.bottom, theme.spacing.md);
+  const listBottomPad = stickyBottom + theme.sizes.touch.min + theme.spacing.xl;
 
   return (
     <AppScreen backFallback={backFallback}>
       <ScrollView
+        style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: theme.spacing.lg,
           gap: theme.spacing.md,
-          paddingBottom: tabClearance,
+          paddingBottom: listBottomPad,
         }}
         refreshControl={
           <RefreshControl
@@ -208,6 +210,7 @@ export function ProductionSetupScreen({
           <WorkflowStatusPill
             label={statusLabel(setup.status, t)}
             active={setup.status === 'READY'}
+            branded={setup.status !== 'READY'}
           />
         ) : null}
         {(setup?.issues ?? []).length ? (
@@ -325,14 +328,26 @@ export function ProductionSetupScreen({
             ))}
           </View>
         ) : null}
+      </ScrollView>
 
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: stickyBottom,
+          paddingHorizontal: theme.spacing.lg,
+          zIndex: 30,
+        }}
+      >
         <PrimaryButton
           label={t('mobile.production.workflow.setupSave')}
           loading={saveMutation.isPending}
           disabled={!setup?.workflow || saveMutation.isPending}
           onPress={saveAll}
         />
-      </ScrollView>
+      </View>
 
       <ProductionStageSetupSheet
         open={Boolean(editing)}
