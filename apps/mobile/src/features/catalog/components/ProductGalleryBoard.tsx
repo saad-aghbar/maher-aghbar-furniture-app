@@ -43,158 +43,147 @@ export function ProductGalleryBoard({
     return v === key ? fallback : v;
   };
 
+  const heroStyle = {
+    width: '100%' as const,
+    aspectRatio,
+    borderRadius: theme.radius.xl,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    overflow: 'hidden' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    ...orderBoardShadow(colorScheme),
+  };
+
+  const heroInner = (
+    <>
+      {current ? (
+        <Image
+          source={{ uri: current }}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="cover"
+        />
+      ) : (
+        <View
+          style={{
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+            padding: theme.spacing.lg,
+          }}
+        >
+          <View
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <Ionicons name="images-outline" size={26} color={colors.brand} />
+          </View>
+          <AppText variant="label" weight="semibold" style={{ color: colors.brand }}>
+            {label('catalog.productPhotosTapHint', 'Tap to add product photos')}
+          </AppText>
+          <AppText
+            variant="caption"
+            color="muted"
+            align="center"
+            style={{ lineHeight: 16 }}
+          >
+            {label(
+              'catalog.productPhotosHint',
+              'Add several photos — they rotate on product cards.',
+            )}
+          </AppText>
+        </View>
+      )}
+
+      {photos.length > 1 && !uploading ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: theme.spacing.sm,
+            ...(isRTL ? { left: theme.spacing.sm } : { right: theme.spacing.sm }),
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: theme.radius.full,
+            backgroundColor: 'rgba(30,26,27,0.55)',
+          }}
+        >
+          <AppText
+            variant="caption"
+            weight="semibold"
+            dir="ltr"
+            style={{ color: '#fff', fontSize: 11, lineHeight: 14 }}
+          >
+            {safeIndex + 1}/{photos.length}
+          </AppText>
+        </View>
+      ) : null}
+
+      {uploading ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            backgroundColor: 'rgba(30,26,27,0.4)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: theme.spacing.sm,
+          }}
+        >
+          <ActivityIndicator color={colors.onBrand} />
+          <AppText variant="caption" style={{ color: colors.onBrand }}>
+            {t('common.uploading')}
+          </AppText>
+        </View>
+      ) : null}
+    </>
+  );
+
   return (
     <View style={{ gap: theme.spacing.md }}>
-      <AnimatedPressable
-        variant="button"
-        accessibilityRole="button"
-        accessibilityLabel={label('catalog.changeProductPhoto', 'Product photos')}
-        disabled={uploading}
-        onPress={() => {
-          void haptics.selection();
-          onAddPress();
-        }}
-        style={{
-          width: '100%',
-          aspectRatio,
-          borderRadius: theme.radius.xl,
-          backgroundColor: colors.surfaceSecondary,
-          borderWidth: 1,
-          borderColor: colors.borderStrong,
-          overflow: 'hidden',
-          alignItems: 'center',
-          justifyContent: 'center',
-          ...orderBoardShadow(colorScheme),
-        }}
-      >
-        {current ? (
-          <Image
-            source={{ uri: current }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-          />
-        ) : (
-          <View
-            style={{
-              alignItems: 'center',
-              gap: theme.spacing.sm,
-              padding: theme.spacing.lg,
-            }}
-          >
-            <View
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 28,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <Ionicons name="images-outline" size={26} color={colors.brand} />
-            </View>
-            <AppText variant="label" weight="semibold" style={{ color: colors.brand }}>
-              {label('catalog.productPhotosTapHint', 'Tap to add product photos')}
-            </AppText>
-            <AppText
-              variant="caption"
-              color="muted"
-              align="center"
-              style={{ lineHeight: 16 }}
-            >
-              {label(
-                'catalog.productPhotosHint',
-                'Add several photos — they rotate on product cards.',
-              )}
-            </AppText>
-          </View>
-        )}
+      {current ? (
+        <View style={heroStyle}>{heroInner}</View>
+      ) : (
+        <AnimatedPressable
+          variant="button"
+          accessibilityRole="button"
+          accessibilityLabel={label('catalog.changeProductPhoto', 'Product photos')}
+          disabled={uploading}
+          onPress={() => {
+            void haptics.selection();
+            onAddPress();
+          }}
+          style={heroStyle}
+        >
+          {heroInner}
+        </AnimatedPressable>
+      )}
 
-        {current && !uploading ? (
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              paddingVertical: theme.spacing.sm,
-              paddingHorizontal: theme.spacing.md,
-              backgroundColor: 'rgba(30,26,27,0.45)',
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: theme.spacing.xs,
-            }}
-          >
-            <Ionicons name="add-circle-outline" size={14} color={colors.onBrand} />
-            <AppText variant="caption" style={{ color: colors.onBrand }}>
-              {label('catalog.addProductPhotos', 'Add more photos')}
-            </AppText>
-          </View>
-        ) : null}
-
-        {photos.length > 1 && !uploading ? (
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: theme.spacing.sm,
-              ...(isRTL ? { left: theme.spacing.sm } : { right: theme.spacing.sm }),
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              borderRadius: theme.radius.full,
-              backgroundColor: 'rgba(30,26,27,0.55)',
-            }}
-          >
-            <AppText
-              variant="caption"
-              weight="semibold"
-              dir="ltr"
-              style={{ color: '#fff', fontSize: 11, lineHeight: 14 }}
-            >
-              {safeIndex + 1}/{photos.length}
-            </AppText>
-          </View>
-        ) : null}
-
-        {uploading ? (
-          <View
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              bottom: 0,
-              left: 0,
-              backgroundColor: 'rgba(30,26,27,0.4)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: theme.spacing.sm,
-            }}
-          >
-            <ActivityIndicator color={colors.onBrand} />
-            <AppText variant="caption" style={{ color: colors.onBrand }}>
-              {t('common.uploading')}
-            </AppText>
-          </View>
-        ) : null}
-      </AnimatedPressable>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{
-          gap: theme.spacing.sm,
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'flex-start',
-          // Room for the delete badge that sits on the thumb corner.
-          paddingTop: 8,
-          paddingBottom: 2,
-          paddingHorizontal: 4,
-        }}
-      >
+      {photos.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{
+            gap: theme.spacing.sm,
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'flex-start',
+            // Room for the delete badge that sits on the thumb corner.
+            paddingTop: 8,
+            paddingBottom: 2,
+            paddingHorizontal: 4,
+          }}
+        >
         {photos.map((uri, i) => {
           const active = i === safeIndex;
           return (
@@ -287,7 +276,8 @@ export function ProductGalleryBoard({
             {label('catalog.addProductPhotos', 'Add')}
           </AppText>
         </AnimatedPressable>
-      </ScrollView>
+        </ScrollView>
+      ) : null}
     </View>
   );
 }
