@@ -30,6 +30,7 @@ import {
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import type { BrowseCategory, BrowseProduct } from './api';
 import { CatalogFilterChips } from './components/CatalogFilterChips';
+import { CatalogPageHeader } from './components/CatalogPageHeader';
 import {
   CatalogFilterSheet,
   countActiveCatalogFilters,
@@ -88,7 +89,6 @@ export function CatalogScreen({
 }: CatalogScreenProps = {}) {
   const { user } = useAuth();
   const { t, formatCurrency, locale, isRTL } = useLocale();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
@@ -329,6 +329,7 @@ export function CatalogScreen({
       }}
       showBack={showBack}
       backFallback={backFallback}
+      showTitle={false}
     >
       <CatalogFilterChips
         categories={categories}
@@ -338,9 +339,19 @@ export function CatalogScreen({
     </CatalogStoreChrome>
   );
 
+  const pageHeader =
+    !isDealer ? (
+      <CatalogPageHeader
+        title={t(titleKey)}
+        showBack={showBack}
+        backFallback={backFallback}
+      />
+    ) : null;
+
   if (isInitialLoading) {
     return (
       <AppScreen>
+        {pageHeader}
         {chrome}
         <View style={{ paddingHorizontal: isDealer ? pad : 0, paddingTop: theme.spacing.sm }}>
           <GridSkeleton />
@@ -364,10 +375,8 @@ export function CatalogScreen({
 
   if (forceState === 'error' || (listError && !forceState)) {
     return (
-      <AppScreen backFallback={showBack ? backFallback : undefined}>
-        <AppText variant="title" weight={titleWeight}>
-          {t(titleKey)}
-        </AppText>
+      <AppScreen>
+        {pageHeader}
         <View
           style={{
             flex: 1,
@@ -391,6 +400,11 @@ export function CatalogScreen({
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
+      {pageHeader ? (
+        <View style={{ paddingHorizontal: pad, paddingBottom: theme.spacing.sm }}>
+          {pageHeader}
+        </View>
+      ) : null}
       <FlatList
         data={cards}
         keyExtractor={(item) => item.id}
