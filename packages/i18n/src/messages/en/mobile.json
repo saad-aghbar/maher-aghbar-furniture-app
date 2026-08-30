@@ -21,7 +21,7 @@
   "toast": {
     "success": "Done",
     "warning": "Needs a look",
-    "error": "Couldn’t finish",
+    "error": "Couldn’t connect",
     "info": "Notice",
     "dismiss": "Dismiss"
   },

@@ -8,7 +8,7 @@ import {
 import { translateApiError, translateErrorCode } from '@maher/i18n';
 import { getActiveLocale } from '@/i18n/LocaleProvider';
 import { isApiError } from './errors';
-import { shouldSkipQueryErrorToast } from './queryErrorToast';
+import { isRawNetworkFailure } from './queryErrorToast';
 import { shouldRetryQuery } from './retry';
 import { createSafeAsyncStorage } from './safeAsyncStorage';
 import { QUERY_PERSIST_KEY } from './queryPersist';
@@ -20,8 +20,6 @@ export type QueryClientHooks = {
   onError?: (error: unknown) => void;
 };
 
-export { shouldSkipQueryErrorToast } from './queryErrorToast';
-
 export function createQueryClient(hooks: QueryClientHooks = {}): QueryClient {
   const notify = (error: unknown) => {
     hooks.onError?.(error);
@@ -29,10 +27,7 @@ export function createQueryClient(hooks: QueryClientHooks = {}): QueryClient {
 
   return new QueryClient({
     queryCache: new QueryCache({
-      onError: (error, query) => {
-        if (shouldSkipQueryErrorToast(query.meta)) return;
-        notify(error);
-      },
+      onError: (error) => notify(error),
     }),
     mutationCache: new MutationCache({
       onError: (error) => notify(error),
@@ -74,6 +69,9 @@ export function shouldToastApiError(error: unknown): boolean {
 
 export function toastMessageForError(error: unknown, _t?: unknown): string {
   const locale = getActiveLocale();
+  if (isRawNetworkFailure(error)) {
+    return translateErrorCode(locale, 'NETWORK');
+  }
   if (isApiError(error)) {
     if (error.isOffline) return translateErrorCode(locale, 'OFFLINE');
     return translateApiError(locale, error);

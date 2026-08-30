@@ -7,7 +7,8 @@
   "VALIDATION_ERROR": "Please check the form and try again.",
   "RATE_LIMITED": "Too many requests. Please wait and try again.",
   "INTERNAL_ERROR": "Something went wrong. Please try again.",
-  "REQUEST_FAILED": "Request failed",
+  "REQUEST_FAILED": "That didn’t go through. Try again.",
+  "NETWORK": "Check your connection and try again.",
 
   "USERNAME_IN_USE": "A user with this username already exists.",
   "EMAIL_IN_USE": "A user with this email already exists.",

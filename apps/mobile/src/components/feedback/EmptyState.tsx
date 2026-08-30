@@ -1,7 +1,4 @@
-import { View } from 'react-native';
-import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { useTheme } from '@/theme';
+import { FloorStatus } from './FloorStatus';
 
 type EmptyStateProps = {
   title: string;
@@ -11,30 +8,13 @@ type EmptyStateProps = {
 };
 
 export function EmptyState({ title, description, actionLabel, onAction }: EmptyStateProps) {
-  const { theme } = useTheme();
-
   return (
-    <View
-      accessibilityRole="summary"
-      style={{
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: theme.spacing['3xl'],
-        paddingHorizontal: theme.spacing.lg,
-        gap: theme.spacing.md,
-      }}
-    >
-      <AppText variant="heading" align="center">
-        {title}
-      </AppText>
-      {description ? (
-        <AppText variant="bodySecondary" color="secondary" align="center">
-          {description}
-        </AppText>
-      ) : null}
-      {actionLabel && onAction ? (
-        <PrimaryButton label={actionLabel} onPress={onAction} style={{ marginTop: theme.spacing.sm }} />
-      ) : null}
-    </View>
+    <FloorStatus
+      tone="empty"
+      title={title}
+      description={description}
+      actionLabel={actionLabel}
+      onAction={onAction}
+    />
   );
 }

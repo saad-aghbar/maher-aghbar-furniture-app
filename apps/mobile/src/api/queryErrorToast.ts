@@ -1,9 +1,11 @@
-/** Screens that already paint an in-page error can opt out of the global toast. */
-export function shouldSkipQueryErrorToast(meta: unknown): boolean {
-  return Boolean(
-    meta &&
-      typeof meta === 'object' &&
-      'skipErrorToast' in meta &&
-      (meta as { skipErrorToast?: boolean }).skipErrorToast,
-  );
+/** RN / fetch debug strings that should never reach the user. */
+export function isRawNetworkFailureMessage(message: string | undefined | null): boolean {
+  if (!message) return false;
+  return /network request failed|failed to fetch|networkerror|load failed/i.test(message);
+}
+
+export function isRawNetworkFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const message = 'message' in error ? String((error as { message?: unknown }).message ?? '') : '';
+  return isRawNetworkFailureMessage(message);
 }

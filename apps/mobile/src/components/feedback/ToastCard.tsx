@@ -113,8 +113,7 @@ export function ToastCard({ message, variant, onPress, durationMs }: Props) {
             weight={locale === 'ar' ? 'regular' : 'medium'}
             style={{
               color: chrome.fg,
-              letterSpacing: locale === 'ar' ? 0 : 0.6,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              letterSpacing: locale === 'ar' ? 0 : 0.2,
               textAlign: isRTL ? 'right' : 'left',
             }}
           >

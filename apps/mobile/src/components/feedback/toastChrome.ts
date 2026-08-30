@@ -30,10 +30,10 @@ export function toastChrome(variant: ToastVariant, colors: ThemeColors): ToastCh
       };
     case 'error':
       return {
-        accent: colors.error,
-        fg: colors.error,
-        soft: colors.errorSoft,
-        icon: 'close-circle',
+        accent: colors.brandActive,
+        fg: colors.brandActive,
+        soft: colors.brandSoft,
+        icon: 'alert-circle',
         labelKey: 'mobile.toast.error',
       };
     default:

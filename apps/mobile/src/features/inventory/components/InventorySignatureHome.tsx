@@ -6,6 +6,7 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
@@ -35,7 +36,6 @@ import {
 import { AddStockSheet, type StockMoveMode } from './AddStockSheet';
 import { InventoryCategoryRail } from './InventoryCategoryRail';
 import { InventoryCompositionChrome } from './InventoryCompositionChrome';
-import { InventoryHubStatus } from './InventoryHubStatus';
 import { CreateInventoryItemSheet } from './CreateInventoryItemSheet';
 import { CreateStockCountSheet } from './CreateStockCountSheet';
 import { CreateTransferSheet } from './CreateTransferSheet';
@@ -458,8 +458,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     empty = <InventoryListSkeleton />;
   } else if (bodyError) {
     empty = (
-      <InventoryHubStatus
-        tone="error"
+      <ErrorState
         title={t('mobile.inventory.errorTitle')}
         description={t('mobile.inventory.errorBody')}
         retryLabel={t('mobile.inventory.retry')}
@@ -468,7 +467,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     );
   } else if (section === 'items') {
     empty = (
-      <InventoryHubStatus
+      <EmptyState
         title={
           lifecycle === 'semiFinished'
             ? t('mobile.inventory.emptySemiTitle')
@@ -489,7 +488,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     );
   } else if (section === 'transfers') {
     empty = (
-      <InventoryHubStatus
+      <EmptyState
         title={t('mobile.inventory.emptyTransfersTitle')}
         description={
           q
@@ -504,7 +503,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     );
   } else {
     empty = (
-      <InventoryHubStatus
+      <EmptyState
         title={t('mobile.inventory.emptyCountsTitle')}
         description={
           q
