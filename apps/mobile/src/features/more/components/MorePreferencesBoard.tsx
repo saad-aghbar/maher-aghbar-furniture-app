@@ -33,11 +33,7 @@ export function MorePreferencesBoard() {
         variant="caption"
         color="muted"
         weight={locale === 'ar' ? 'regular' : 'medium'}
-        style={{
-          letterSpacing: locale === 'ar' ? 0 : 0.8,
-          textTransform: locale === 'ar' ? 'none' : 'uppercase',
-          fontSize: 11,
-        }}
+        style={{ fontSize: 11 }}
       >
         {t('mobile.more.prefsEyebrow')}
       </AppText>

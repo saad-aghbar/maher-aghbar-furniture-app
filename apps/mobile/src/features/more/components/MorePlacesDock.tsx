@@ -52,11 +52,7 @@ export function MorePlacesDock() {
         <AppText
           variant="caption"
           weight={locale === 'ar' ? 'regular' : 'medium'}
-          style={{
-            letterSpacing: locale === 'ar' ? 0 : 1.2,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
-            color: colors.brand,
-          }}
+          style={{ color: colors.brand }}
         >
           {t('mobile.more.floor.dockEyebrow')}
         </AppText>
