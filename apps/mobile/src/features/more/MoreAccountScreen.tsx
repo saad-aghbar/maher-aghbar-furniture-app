@@ -307,7 +307,7 @@ export function MoreAccountScreen({
     <ScrollableScreen
       contentContainerStyle={{
         flexGrow: 0,
-        paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+        paddingBottom: 0,
       }}
     >
       {showOfflineBanner ? <OfflineBanner /> : null}
@@ -377,16 +377,7 @@ export function MoreAccountScreen({
                 paddingRight: theme.sizes.touch.min + theme.spacing.sm,
               }}
             >
-              <AppText
-                variant="caption"
-                weight="regular"
-                align="start"
-                style={{
-                  letterSpacing: 0,
-                  textTransform: 'none',
-                  color: colors.brand,
-                }}
-              >
+              <AppText variant="caption" color="brand" weight="regular" align="start">
                 {eyebrow}
               </AppText>
               <AppText variant="title" weight={titleWeight} align="start">
@@ -407,15 +398,7 @@ export function MoreAccountScreen({
               label={backLabel}
             />
             <View style={{ gap: theme.spacing.xs }}>
-              <AppText
-                variant="caption"
-                weight={locale === 'ar' ? 'regular' : 'medium'}
-                style={{
-                  letterSpacing: 0,
-                  textTransform: 'none',
-                  color: colors.brand,
-                }}
-              >
+              <AppText variant="caption" color="brand" weight="regular">
                 {eyebrow}
               </AppText>
               <AppText variant="title" weight={titleWeight}>
@@ -431,7 +414,7 @@ export function MoreAccountScreen({
 
       <View style={{ gap: theme.spacing.lg }}>
         <Animated.View entering={enter(40)} style={{ gap: theme.spacing.sm }}>
-          <SectionLabel label={t('mobile.more.profileSection')} locale={locale} />
+          <SectionLabel label={t('mobile.more.profileSection')} />
           <MoreBoard
             style={{
               padding: theme.spacing.lg,
@@ -525,7 +508,7 @@ export function MoreAccountScreen({
         </Animated.View>
 
         <Animated.View entering={enter(100)} style={{ gap: theme.spacing.sm }}>
-          <SectionLabel label={t('mobile.more.appearanceSection')} locale={locale} />
+          <SectionLabel label={t('mobile.more.appearanceSection')} />
           <MoreBoard
             style={{
               padding: theme.spacing.lg,
@@ -553,7 +536,7 @@ export function MoreAccountScreen({
         </Animated.View>
 
         <Animated.View entering={enter(160)} style={{ gap: theme.spacing.sm }}>
-          <SectionLabel label={t('mobile.more.securitySection')} locale={locale} />
+          <SectionLabel label={t('mobile.more.securitySection')} />
           <MoreBoard
             style={{
               padding: theme.spacing.lg,
@@ -756,20 +739,9 @@ export function MoreAccountScreen({
   );
 }
 
-function SectionLabel({ label, locale }: { label: string; locale: string }) {
-  const { colors } = useTheme();
+function SectionLabel({ label }: { label: string }) {
   return (
-    <AppText
-      variant="caption"
-      weight={locale === 'ar' ? 'regular' : 'medium'}
-      align="start"
-      style={{
-        letterSpacing: 0,
-        textTransform: 'none',
-        color: colors.brand,
-        fontSize: 11,
-      }}
-    >
+    <AppText variant="caption" color="brand" weight="regular" align="start">
       {label}
     </AppText>
   );
