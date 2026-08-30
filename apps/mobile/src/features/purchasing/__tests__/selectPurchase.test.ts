@@ -1,4 +1,6 @@
+import { stripBidiIsolates } from '@/i18n/format';
 import {
+  formatSupplierInvoiceLineMath,
   grandTotal,
   humanizeWarehouseLabel,
   incomingQtyFromOrders,
@@ -291,5 +293,14 @@ describe('selectSupplierInvoiceCard', () => {
     expect(card.hasBalance).toBe(false);
     expect(card.supplierName).toBe('Zarqa Timber Yard');
     expect(card.outstanding).toBe(0);
+  });
+});
+
+describe('formatSupplierInvoiceLineMath', () => {
+  it('shows ₪ and two decimals for SINV-2026-00011 lines', () => {
+    const spring = stripBidiIsolates(formatSupplierInvoiceLineMath('en', 16, 22, 408.32));
+    const casters = stripBidiIsolates(formatSupplierInvoiceLineMath('en', 20, 14, 324.8));
+    expect(spring).toBe('16 × ₪22.00 = ₪408.32');
+    expect(casters).toBe('20 × ₪14.00 = ₪324.80');
   });
 });

@@ -1,5 +1,6 @@
 import type { Href } from 'expo-router';
 import { ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -14,14 +15,15 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { useSupplierInvoiceQuery } from './query';
-import { localizedNamed } from './selectPurchase';
+import { formatSupplierInvoiceLineMath, localizedNamed } from './selectPurchase';
 
 type Props = { invoiceId: string };
 
 export function SupplierInvoiceDetailScreen({ invoiceId }: Props) {
   const { user } = useAuth();
   const { t, locale, formatCurrency, formatDate, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const canRead = can(user, 'supplier-invoice.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -66,9 +68,14 @@ export function SupplierInvoiceDetailScreen({ invoiceId }: Props) {
     <AppScreen backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          flexGrow: 1,
+          paddingBottom:
+            theme.spacing['3xl'] +
+            SURFACE_TAB_BAR_CLEARANCE +
+            Math.max(insets.bottom, theme.spacing.sm),
         }}
       >
         <View
@@ -127,7 +134,12 @@ export function SupplierInvoiceDetailScreen({ invoiceId }: Props) {
                   {line.description}
                 </AppText>
                 <AppText variant="caption" color="secondary" dir="ltr">
-                  {`${String(line.quantity)} × ${String(line.unitPrice)} = ${String(line.lineTotal)}`}
+                  {formatSupplierInvoiceLineMath(
+                    locale,
+                    line.quantity,
+                    line.unitPrice,
+                    line.lineTotal,
+                  )}
                 </AppText>
               </View>
             ))
