@@ -14,9 +14,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const ALLOWLIST = new Set([
   path.normalize('packages/database/prisma/seed/dealer-orders-recent.ts'),
-  path.normalize('packages/database/prisma/demo/chronology.ts'),
-  path.normalize('packages/database/prisma/demo/orders.ts'),
-  path.normalize('packages/database/prisma/demo/validate.ts'),
 ]);
 
 const SKIP_DIRS = new Set([
@@ -130,6 +127,4 @@ if (violations.length) {
   process.exit(1);
 }
 
-console.log(
-  'Boundary check passed (allowlist: packages/database/prisma/seed/dealer-orders-recent.ts, prisma/demo chronology/orders/validate).',
-);
+console.log('Boundary check passed (allowlist: packages/database/prisma/seed/dealer-orders-recent.ts).');
