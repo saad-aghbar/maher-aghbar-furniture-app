@@ -30,9 +30,8 @@ export function MoreHubScreen() {
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const reduce = useReducedMotion();
-  /** Same scroll pad as Orders / other tab screens so the last Places card clears the pill. */
-  const scrollBottomPad =
-    insets.bottom + theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + theme.spacing['5xl'];
+  /** Last Places card must sit above the floating pill — not under it. */
+  const scrollBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const canNotify = can(user, 'notification.read');
   const notificationsQuery = useNotificationsQuery(Boolean(user) && canNotify);
@@ -62,11 +61,7 @@ export function MoreHubScreen() {
           <AppText
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
-            style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              color: colors.brand,
-            }}
+            style={{ color: colors.brand }}
           >
             {t('mobile.more.pulseEyebrow')}
           </AppText>
