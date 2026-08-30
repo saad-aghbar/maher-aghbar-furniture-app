@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { Href } from 'expo-router';
 import { Image, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -14,6 +15,7 @@ import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import { ActionSheet } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
@@ -22,8 +24,12 @@ import { haptics } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { ReturnPhotoGallery } from './components/ReturnPhotoGallery';
-import { useResolveReturnMutation, useReturnQuery } from './query';
-import { selectReturnCard } from './selectReturn';
+import { useResolveReturnMutation, useReturnQuery, useSetReturnFateMutation } from './query';
+import {
+  RETURN_FATE_OPTIONS,
+  returnFateLabelKey,
+  selectReturnCard,
+} from './selectReturn';
 
 type Props = { returnId: string };
 
@@ -31,6 +37,7 @@ export function ReturnDetailScreen({ returnId }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const canRead = can(user, 'sales-order.read');
@@ -39,8 +46,10 @@ export function ReturnDetailScreen({ returnId }: Props) {
   const backFallback = '/(app)/(admin)/returns' as Href;
 
   const [confirm, setConfirm] = useState<'APPROVED' | 'REJECTED' | null>(null);
+  const [dispositionOpen, setDispositionOpen] = useState(false);
   const query = useReturnQuery(returnId, canRead);
   const resolveMutation = useResolveReturnMutation(returnId);
+  const fateMutation = useSetReturnFateMutation(returnId);
 
   const label = (key: string, fallback: string) => {
     const v = t(key);
@@ -90,9 +99,11 @@ export function ReturnDetailScreen({ returnId }: Props) {
     <AppScreen backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom:
+            insets.bottom + SURFACE_TAB_BAR_CLEARANCE + theme.spacing['3xl'],
         }}
       >
         <View
@@ -118,7 +129,15 @@ export function ReturnDetailScreen({ returnId }: Props) {
               borderBottomColor: colors.border,
             }}
           >
-            <StatusBadge status={card.approvalStatus} dot />
+            <StatusBadge
+              status={card.approvalStatus}
+              label={
+                card.beingResolved
+                  ? label('mobile.returns.beingResolved', 'Being resolved')
+                  : undefined
+              }
+              dot
+            />
             <AppText
               variant="caption"
               color="muted"
@@ -185,6 +204,52 @@ export function ReturnDetailScreen({ returnId }: Props) {
             </View>
           </View>
         </View>
+
+        {canResolve && card.beingResolved ? (
+          <FloorBoard>
+            <View
+              style={{
+                paddingHorizontal: theme.spacing.md,
+                paddingTop: theme.spacing.md,
+                paddingBottom: theme.spacing.sm,
+              }}
+            >
+              <AppText
+                variant="caption"
+                weight="semibold"
+                style={{
+                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  letterSpacing: 0.55,
+                  fontSize: 11,
+                  color: colors.brand,
+                  textAlign: isRTL ? 'right' : 'left',
+                }}
+              >
+                {label('mobile.returns.nextAction', 'Next action')}
+              </AppText>
+            </View>
+            <View
+              style={{
+                paddingHorizontal: theme.spacing.md,
+                paddingBottom: theme.spacing.md,
+              }}
+            >
+              <PrimaryButton
+                label={label(
+                  'mobile.returns.receiveDisposition',
+                  'Receive / set disposition',
+                )}
+                onPress={() => setDispositionOpen(true)}
+                loading={fateMutation.isPending}
+                style={{
+                  borderRadius: theme.radius.xl,
+                  alignSelf: 'stretch',
+                  width: '100%',
+                }}
+              />
+            </View>
+          </FloorBoard>
+        ) : null}
 
         {productUri ? (
           <View
@@ -277,60 +342,62 @@ export function ReturnDetailScreen({ returnId }: Props) {
               />
             ) : null}
           </View>
-          {card.description ? (
+        </FloorBoard>
+
+        {card.reasonPhotoUrls.length ? (
+          <ReturnPhotoGallery
+            title={label('catalog.reasonPhoto', 'Reason')}
+            uris={card.reasonPhotoUrls}
+            emptyLabel={label('catalog.noReturnPhoto', 'No photo')}
+            icon="document-text-outline"
+          />
+        ) : null}
+
+        {card.issuePhotoUrls.length ? (
+          <ReturnPhotoGallery
+            title={label('catalog.issuePhoto', 'Damage')}
+            uris={card.issuePhotoUrls}
+            emptyLabel={label('catalog.noReturnPhoto', 'No photo')}
+            icon="alert-circle-outline"
+          />
+        ) : null}
+
+        {card.description ? (
+          <FloorBoard>
             <View
               style={{
-                marginHorizontal: theme.spacing.md,
-                marginBottom: theme.spacing.md,
-                borderRadius: theme.radius.lg,
-                backgroundColor: colors.surfaceSecondary,
-                borderWidth: 1,
-                borderColor: colors.border,
                 paddingHorizontal: theme.spacing.md,
-                paddingVertical: theme.spacing.sm + 2,
+                paddingTop: theme.spacing.md,
+                paddingBottom: theme.spacing.md,
                 gap: 4,
               }}
             >
               <AppText
                 variant="caption"
-                color="muted"
+                weight="semibold"
                 style={{
                   textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                  letterSpacing: 0.45,
-                  fontSize: 10,
+                  letterSpacing: 0.55,
+                  fontSize: 11,
+                  color: colors.brand,
                   textAlign: isRTL ? 'right' : 'left',
                 }}
               >
                 {label('mobile.returns.notes', 'Notes')}
               </AppText>
               <AppText
-                variant="caption"
-                color="secondary"
+                weight="semibold"
                 style={{
                   textAlign: isRTL ? 'right' : 'left',
-                  lineHeight: 18,
-                  fontSize: 13,
+                  fontSize: 15,
+                  color: colors.textPrimary,
                 }}
               >
                 {card.description}
               </AppText>
             </View>
-          ) : null}
-        </FloorBoard>
-
-        <ReturnPhotoGallery
-          title={label('catalog.reasonPhoto', 'Reason')}
-          uris={card.reasonPhotoUrls}
-          emptyLabel={label('catalog.noReturnPhoto', 'No photo')}
-          icon="document-text-outline"
-        />
-
-        <ReturnPhotoGallery
-          title={label('catalog.issuePhoto', 'Damage')}
-          uris={card.issuePhotoUrls}
-          emptyLabel={label('catalog.noReturnPhoto', 'No photo')}
-          icon="alert-circle-outline"
-        />
+          </FloorBoard>
+        ) : null}
 
         {canResolve && card.isPending ? (
           <View style={{ gap: theme.spacing.sm, paddingTop: theme.spacing.xs }}>
@@ -377,6 +444,38 @@ export function ReturnDetailScreen({ returnId }: Props) {
             },
           });
         }}
+      />
+
+      <ActionSheet
+        open={dispositionOpen}
+        onClose={() => setDispositionOpen(false)}
+        title={label('mobile.returns.dispositionTitle', 'Set disposition')}
+        cancelLabel={t('mobile.returns.cancel')}
+        actions={RETURN_FATE_OPTIONS.map((fate) => {
+          const key = returnFateLabelKey(fate);
+          const translated = t(key);
+          return {
+            label: translated === key ? fate.replace(/_/g, ' ') : translated,
+            onPress: () => {
+              fateMutation.mutate(fate, {
+                onSuccess: () => {
+                  void haptics.confirmMedium();
+                  showToast({
+                    variant: 'success',
+                    message: t('inventory.fateApplied'),
+                  });
+                },
+                onError: () => {
+                  void haptics.error();
+                  showToast({
+                    variant: 'error',
+                    message: t('mobile.returns.resolveFailed'),
+                  });
+                },
+              });
+            },
+          };
+        })}
       />
     </AppScreen>
   );

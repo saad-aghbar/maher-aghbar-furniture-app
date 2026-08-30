@@ -2666,6 +2666,10 @@
     "cancel": "ביטול",
     "resolveSuccess": "ההחזרה עודכנה",
     "resolveFailed": "לא ניתן לעדכן",
+    "nextAction": "הפעולה הבאה",
+    "receiveDisposition": "קליטה וקביעת יעד",
+    "dispositionTitle": "קביעת יעד",
+    "beingResolved": "בטיפול",
     "reasons": {
       "MANUFACTURING_DEFECT": "פגם ייצור",
       "INCORRECT_MEASUREMENT": "מדידה שגויה",

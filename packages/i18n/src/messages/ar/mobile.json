@@ -2666,6 +2666,10 @@
     "cancel": "إلغاء",
     "resolveSuccess": "تم تحديث المرتجع",
     "resolveFailed": "تعذّر تحديث المرتجع",
+    "nextAction": "الإجراء التالي",
+    "receiveDisposition": "استلام وتحديد المصير",
+    "dispositionTitle": "تحديد المصير",
+    "beingResolved": "قيد المعالجة",
     "reasons": {
       "MANUFACTURING_DEFECT": "عيب تصنيع",
       "INCORRECT_MEASUREMENT": "قياس غير صحيح",

@@ -6,6 +6,8 @@ import {
   getReturn,
   listReturns,
   resolveReturn,
+  setReturnInventoryFate,
+  type ReturnInventoryFate,
   type ReturnReason,
 } from './api';
 
@@ -47,6 +49,18 @@ export function useResolveReturnMutation(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (status: 'APPROVED' | 'REJECTED') => resolveReturn(id, status),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.returns.detail(id) });
+      await qc.invalidateQueries({ queryKey: queryKeys.returns.lists() });
+    },
+  });
+}
+
+export function useSetReturnFateMutation(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (inventoryFate: Exclude<ReturnInventoryFate, 'PENDING'>) =>
+      setReturnInventoryFate(id, inventoryFate),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: queryKeys.returns.detail(id) });
       await qc.invalidateQueries({ queryKey: queryKeys.returns.lists() });
