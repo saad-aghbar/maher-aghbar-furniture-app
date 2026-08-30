@@ -21,6 +21,7 @@ import {
 } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme, type ThemeColors } from '@/theme';
+import { honestJourneyCount } from '../honestJourneyCount';
 import {
   toggleStageFocus,
   type OrdersStageFocus,
@@ -68,7 +69,7 @@ function StageIcon({
   }
 }
 
-/** 4-up: All · Prep · Ready · Line — short two-line-safe labels, honest zeros. */
+/** 4-up: All · Prep · Ready · Prod — one-line labels, honest zeros. */
 const JOURNEY: JourneyKey[] = ['all', 'pending', 'ready', 'production'];
 const STAGES: OrdersStageKey[] = ['pending', 'production', 'ready'];
 
@@ -216,7 +217,7 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
                 fontVariant: ['tabular-nums'],
               }}
             >
-              {String(total)}
+              {honestJourneyCount(total)}
             </AppText>
           </View>
         </View>
@@ -280,7 +281,7 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
           {JOURNEY.map((key) => {
             const { tint, soft } = stageTint(colors, key);
             const active = stageFocus === key;
-            const value = key === 'all' ? total : counts[key];
+            const value = key === 'all' ? total : (counts[key] ?? 0);
             return (
               <StageNode
                 key={key}
@@ -407,13 +408,15 @@ function StageNode({
             fontVariant: ['tabular-nums'],
           }}
         >
-          {String(value)}
+          {honestJourneyCount(value)}
         </AppText>
         <AppText
           variant="caption"
           color="secondary"
-          numberOfLines={2}
+          numberOfLines={1}
           align="center"
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
           maxFontSizeMultiplier={1.1}
           style={{
             fontSize: 11,

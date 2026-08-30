@@ -1,3 +1,4 @@
+import { honestJourneyCount } from '../honestJourneyCount';
 import {
   classifyOrderStage,
   countOrderStages,
@@ -7,6 +8,15 @@ import {
 } from '../stageCounts';
 import { pickHotOrder, scoreHotOrder } from '../pickHotOrder';
 import { groupOrdersByDay, groupOrdersFloorBoard } from '../groupOrdersByDay';
+
+describe('honestJourneyCount', () => {
+  it('shows 0 for empty counts — never a dash', () => {
+    expect(honestJourneyCount(0)).toBe('0');
+    expect(honestJourneyCount(undefined)).toBe('0');
+    expect(honestJourneyCount(null)).toBe('0');
+    expect(honestJourneyCount(4)).toBe('4');
+  });
+});
 
 describe('orders stageCounts', () => {
   it('classifies statuses by pipeline stage', () => {

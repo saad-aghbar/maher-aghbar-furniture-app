@@ -1106,7 +1106,7 @@
     "stages": {
       "all": "All",
       "pending": "Prep",
-      "production": "Line",
+      "production": "Prod",
       "ready": "Ready",
       "late": "Late"
     },
