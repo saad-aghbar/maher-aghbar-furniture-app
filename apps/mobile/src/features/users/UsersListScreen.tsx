@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { localizedName } from '@maher/i18n';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
@@ -94,11 +95,14 @@ export function UsersListScreen() {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const allowed = can(user, 'user.manage');
+  /** Last-card inset: home indicator + floating tab bar (same as other leftover PRs). */
+  const listBottomClearance = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
 
   const [segment, setSegment] = useState<UsersSegment>('workers');
   const [q, setQ] = useState('');
@@ -325,10 +329,9 @@ export function UsersListScreen() {
         onEndReachedThreshold={0.4}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
           flexGrow: 1,
         }}
-        style={{ opacity: isFilterUpdating ? 0.72 : 1 }}
+        style={{ flex: 1, opacity: isFilterUpdating ? 0.72 : 1 }}
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
             <UsersScreenTitle titleWeight={titleWeight} />
@@ -449,15 +452,19 @@ export function UsersListScreen() {
           </ListItemEnter>
         )}
         ListFooterComponent={
-          query.isFetchingNextPage ? (
-            <AppText variant="caption" color="muted" align="center">
-              {t('common.loading')}
-            </AppText>
-          ) : isFilterUpdating ? (
-            <AppText variant="caption" color="muted" align="center">
-              {t('common.loading')}
-            </AppText>
-          ) : null
+          <View>
+            {query.isFetchingNextPage || isFilterUpdating ? (
+              <AppText variant="caption" color="muted" align="center">
+                {t('common.loading')}
+              </AppText>
+            ) : null}
+            <View
+              pointerEvents="none"
+              style={{ height: listBottomClearance }}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            />
+          </View>
         }
       />
 
