@@ -150,9 +150,9 @@ export function UserBoardCard({
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
-          alignItems: 'center',
+          alignItems: 'stretch',
           justifyContent: 'flex-start',
-          flexWrap: 'nowrap',
+          flexWrap: 'wrap',
           gap: theme.spacing.sm,
           paddingHorizontal: theme.spacing.md,
           paddingVertical: theme.spacing.md,
@@ -188,18 +188,27 @@ export function UserBoardCard({
               onDelete();
             }}
             style={{
-              marginStart: isRTL ? 0 : 'auto',
-              width: 36,
-              height: 36,
-              borderRadius: theme.radius.lg,
+              flexGrow: 1,
+              flexBasis: '40%',
+              minHeight: theme.sizes.touch.min - 8,
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: colors.errorSoft,
-              borderWidth: 1,
-              borderColor: colors.border,
             }}
           >
-            <Ionicons name="trash-outline" size={16} color={colors.error} />
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: theme.radius.lg,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.errorSoft,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <Ionicons name="trash-outline" size={16} color={colors.error} />
+            </View>
           </AnimatedPressable>
         ) : null}
       </View>
@@ -271,12 +280,15 @@ function FooterChip({
         onPress();
       }}
       style={{
+        flexGrow: 1,
+        flexBasis: '40%',
+        minWidth: 0,
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
         minHeight: theme.sizes.touch.min - 8,
-        paddingHorizontal: theme.spacing.md,
+        paddingHorizontal: theme.spacing.sm,
         paddingVertical: theme.spacing.sm,
         borderRadius: theme.radius.full,
         borderWidth: 1,
@@ -295,6 +307,7 @@ function FooterChip({
         numberOfLines={1}
         style={{
           color: danger ? colors.error : emphasis ? colors.brand : colors.textSecondary,
+          flexShrink: 1,
         }}
       >
         {label}
