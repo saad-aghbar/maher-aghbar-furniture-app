@@ -10,6 +10,7 @@ describe('badge status / priority maps', () => {
     expect(resolveStatusVariant('APPROVED')).toBe('success');
     expect(resolveStatusVariant('PENDING')).toBe('warning');
     expect(resolveStatusVariant('OVERDUE')).toBe('error');
+    expect(resolveStatusVariant('LATE')).toBe('warning');
     expect(resolveStatusVariant('QUOTED')).toBe('brand');
     expect(resolveStatusVariant('UNKNOWN_XYZ')).toBe('default');
   });
