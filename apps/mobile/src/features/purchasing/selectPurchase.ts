@@ -1,6 +1,6 @@
 import { pickPluralKey } from '@maher/i18n';
 import type { Locale } from '@maher/types';
-import { formatDate, formatNumber } from '@/i18n/format';
+import { formatCurrency, formatDate, formatNumber } from '@/i18n/format';
 import { translatePlural } from '@/i18n/translate';
 import type {
   NamedRef,
@@ -109,6 +109,21 @@ export function purchaseLineQtyLabel(
     resolvedPlural(typed, `catalog.qtyWithUnit.${catalogUnit}`, count, qtyText) ??
     `${qtyText} ${unitKey}`
   );
+}
+
+/**
+ * Materials-list calc: `16 × ₪22.00 = ₪408.32`.
+ * Quantity stays a count (no invented unit); money uses ILS + two decimals.
+ */
+export function formatSupplierInvoiceLineMath(
+  locale: string,
+  quantity: number | string,
+  unitPrice: number | string,
+  lineTotal: number | string,
+): string {
+  const typed = asLocale(locale);
+  const qty = formatNumber(typed, toNum(quantity), { maximumFractionDigits: 2 });
+  return `${qty} × ${formatCurrency(typed, toNum(unitPrice))} = ${formatCurrency(typed, toNum(lineTotal))}`;
 }
 
 export function localizedNamed(
