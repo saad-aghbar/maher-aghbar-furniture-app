@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -14,7 +14,7 @@ import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import type { SemiFinishedLot } from '@/api/modules/inventory';
 import { openInventoryLabelPdf, type InventoryCategoryGroup } from '../api';
 import {
@@ -538,6 +538,11 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   const movePending =
     (move?.mode === 'receive' && receiveMutation.isPending) ||
     (move?.mode === 'issue' && issueMutation.isPending);
+  /** Same stack inset as order detail so the last card clears the floating pill. */
+  const listBottomPad =
+    theme.spacing['3xl'] +
+    surfaceTabBarStackInset(insets.bottom, theme.spacing.sm) +
+    theme.spacing['2xl'];
 
   return (
     <AppScreen>
@@ -546,11 +551,12 @@ export function InventorySignatureHome({ initialGroup }: Props) {
         ref={listRef}
         data={bodyLoading ? [] : listRows}
         keyExtractor={(row) => `${row.kind}-${row.model.id}`}
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
           paddingBottom: bodyLoading
-            ? theme.spacing.md + SURFACE_TAB_BAR_CLEARANCE
-            : theme.spacing['4xl'] + SURFACE_TAB_BAR_CLEARANCE + insets.bottom,
+            ? theme.spacing.md + surfaceTabBarStackInset(insets.bottom, theme.spacing.sm)
+            : listBottomPad,
           flexGrow: 1,
         }}
         refreshControl={
