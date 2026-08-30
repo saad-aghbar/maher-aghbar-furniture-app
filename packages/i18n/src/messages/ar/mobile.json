@@ -100,6 +100,11 @@
   "noPurchaseOrders": "لا توجد أوامر شراء مفتوحة",
   "noQuotations": "لا يوجد ما يستدعي المراجعة",
   "noReportsAccess": "لا توجد صلاحيات تقارير لحسابك.",
+  "reports": {
+    "today": "اليوم",
+    "thisWeek": "هذا الأسبوع",
+    "thisMonth": "هذا الشهر"
+  },
   "noStages": "لا توجد مراحل بعد",
   "noTasks": "لا توجد مهام مسندة",
   "noTasksHint": "ستظهر هنا المهام المسندة إليك.",
@@ -399,6 +404,8 @@
     "navPurchasingHint": "أوامر الشراء والموردون",
     "navInvoices": "الفواتير",
     "navInvoicesHint": "الفوترة والتحصيل",
+    "navReports": "التقارير",
+    "navReportsHint": "المبيعات والإنتاج والمالية",
     "navUsers": "المستخدمون",
     "navUsersHint": "الأشخاص والصلاحيات",
     "navReturns": "المرتجعات",

@@ -100,6 +100,11 @@
   "noPurchaseOrders": "No open purchase orders",
   "noQuotations": "Nothing pending",
   "noReportsAccess": "No report permissions for your account.",
+  "reports": {
+    "today": "Today",
+    "thisWeek": "This week",
+    "thisMonth": "This month"
+  },
   "noStages": "No stages yet",
   "noTasks": "No tasks assigned",
   "noTasksHint": "Tasks assigned to you will appear here.",
@@ -399,6 +404,8 @@
     "navPurchasingHint": "POs & suppliers",
     "navInvoices": "Invoices",
     "navInvoicesHint": "Billing & collections",
+    "navReports": "Reports",
+    "navReportsHint": "Sales, production, financial",
     "navUsers": "Users",
     "navUsersHint": "People & access",
     "navReturns": "Returns",

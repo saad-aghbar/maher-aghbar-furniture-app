@@ -54,6 +54,7 @@ export function activeTabFromPath(surface: AppSurface, pathname: string): TabNam
       segments.includes('users') ||
       segments.includes('purchasing') ||
       segments.includes('invoices') ||
+      segments.includes('reports') ||
       segments.includes('returns') ||
       segments.includes('ai-intake') ||
       segments.includes('ai-chat') ||

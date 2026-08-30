@@ -16,6 +16,8 @@ describe('activeTabFromPath', () => {
   it('maps more-stack destinations to more, not home', () => {
     expect(activeTabFromPath('admin', '/(app)/(admin)/products')).toBe('more');
     expect(activeTabFromPath('admin', '/(app)/(admin)/dealers')).toBe('more');
+    expect(activeTabFromPath('admin', '/(app)/(admin)/invoices')).toBe('more');
+    expect(activeTabFromPath('admin', '/(app)/(admin)/reports')).toBe('more');
     expect(activeTabFromPath('admin', '/notifications')).toBe('more');
     expect(activeTabFromPath('admin', '/search')).toBe('more');
     expect(activeTabFromPath('admin', '/(app)/(admin)/more/account')).toBe('more');

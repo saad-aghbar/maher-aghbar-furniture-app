@@ -100,6 +100,11 @@
   "noPurchaseOrders": "אין הזמנות רכש פתוחות",
   "noQuotations": "אין פריטים ממתינים",
   "noReportsAccess": "אין הרשאות דוחות לחשבון שלך.",
+  "reports": {
+    "today": "היום",
+    "thisWeek": "השבוע",
+    "thisMonth": "החודש"
+  },
   "noStages": "עדיין אין שלבים",
   "noTasks": "אין משימות משויכות",
   "noTasksHint": "משימות ששויכו אליך יופיעו כאן.",
@@ -399,6 +404,8 @@
     "navPurchasingHint": "הזמנות ספקים",
     "navInvoices": "חשבוניות",
     "navInvoicesHint": "חיוב וגבייה",
+    "navReports": "דוחות",
+    "navReportsHint": "מכירות, ייצור, כספים",
     "navUsers": "משתמשים",
     "navUsersHint": "אנשים והרשאות",
     "navReturns": "החזרות",

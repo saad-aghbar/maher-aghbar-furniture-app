@@ -3,8 +3,10 @@ import {
   compactHoursOfSegments,
   formatCompactHours,
   formatCompactHoursOf,
+  dateRangeParts,
   formatCurrency,
   formatDate,
+  formatDateRange,
   formatDuration,
   formatIdentifier,
   formatMonthYear,
@@ -46,6 +48,24 @@ describe('format', () => {
     expect(he).toMatch(/2026/);
     expect(he).toMatch(/אוג|אב/);
     expect(he).not.toContain('\u2066');
+  });
+
+  it('formats calendar ranges as invoice-style dates with an en dash', () => {
+    const en = formatDateRange('en', '2026-08-01', '2026-08-30');
+    expect(en).toMatch(/1 Aug 2026/);
+    expect(en).toMatch(/30 Aug 2026/);
+    expect(en).toContain('\u2013');
+    expect(en).not.toContain('->');
+    expect(en).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    const parts = dateRangeParts('en', '2026-08-01', '2026-08-30');
+    expect(parts.dash).toBe('\u2013');
+    expect(parts.start).toMatch(/1 Aug 2026/);
+    expect(parts.end).toMatch(/30 Aug 2026/);
+    const ar = formatDateRange('ar', '2026-08-01', '2026-08-30');
+    expect(ar).toContain('\u2013');
+    expect(ar).not.toContain('->');
+    expect(ar).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(ar).not.toMatch(/Aug|August/);
   });
 
   it('parses bare YMD as a local calendar day', () => {
