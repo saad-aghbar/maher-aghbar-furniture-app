@@ -1,6 +1,8 @@
 import {
   invoiceListCustomerScope,
+  invoiceRemainingDue,
   selectInvoiceCard,
+  selectInvoiceDealerChip,
   selectInvoiceDetail,
 } from '../selectInvoice';
 import type { Invoice } from '../api';
@@ -105,6 +107,7 @@ describe('selectInvoiceDetail', () => {
     const detail = selectInvoiceDetail(baseInv, 'en');
     expect(detail.outstanding).toBe(40);
     expect(detail.paid).toBe(60);
+    expect(detail.credit).toBe(0);
     expect(detail.subtotal).toBe(90);
     expect(detail.tax).toBe(10);
     expect(detail.lines).toHaveLength(1);
@@ -116,6 +119,7 @@ describe('selectInvoiceDetail', () => {
     expect(detail.jofotara.uuid).toBe('uuid-1');
     expect(detail.jofotara.qr).toBe('data:image/png;base64,abc');
     expect(detail.factoryOrderNumber).toBe('SO-9');
+    expect(detail.dealerChip).toEqual({ value: 'D-22', prefixDealer: false });
   });
 
   it('treats missing JoFotara as not submitted', () => {
@@ -143,5 +147,90 @@ describe('selectInvoiceDetail', () => {
       'en',
     );
     expect(detail.paid).toBe(75);
+    expect(detail.outstanding).toBe(25);
+  });
+
+  it('uses this invoice remaining due when outstandingAmount is a dealer AR figure', () => {
+    const detail = selectInvoiceDetail(
+      {
+        ...baseInv,
+        number: 'INV-P11-L',
+        total: '127.6',
+        paidAmount: '51.04',
+        outstandingAmount: '14913.38',
+        subtotal: '110',
+        taxTotal: '17.6',
+        status: 'PARTIALLY_PAID',
+      },
+      'en',
+    );
+    expect(detail.paid).toBe(51.04);
+    expect(detail.credit).toBe(0);
+    expect(detail.outstanding).toBe(76.56);
+    expect(detail.status).toBe('PARTIALLY_PAID');
+    expect(detail.total).toBe(127.6);
+  });
+
+  it('subtracts invoice credit from remaining due without inventing paid-in-full', () => {
+    const detail = selectInvoiceDetail(
+      {
+        ...baseInv,
+        total: '127.6',
+        paidAmount: '51.04',
+        outstandingAmount: '14913.38',
+        appliedCredit: '10',
+        status: 'PARTIALLY_PAID',
+      },
+      'en',
+    );
+    expect(detail.paid).toBe(51.04);
+    expect(detail.credit).toBe(10);
+    expect(detail.outstanding).toBe(66.56);
+    expect(detail.status).toBe('PARTIALLY_PAID');
+  });
+});
+
+describe('invoiceRemainingDue', () => {
+  it('does not treat a dealer-scale outstanding as this invoice remainder', () => {
+    const due = invoiceRemainingDue({
+      ...baseInv,
+      total: 127.6,
+      paidAmount: 51.04,
+      outstandingAmount: 14913.38,
+    });
+    expect(due.outstanding).toBe(76.56);
+    expect(due.paid).toBe(51.04);
+  });
+});
+
+describe('selectInvoiceDealerChip', () => {
+  it('uses the API dealer code with a Dealer prefix, matching Factory SO shape', () => {
+    expect(
+      selectInvoiceDealerChip({
+        ...baseInv,
+        customer: { ...baseInv.customer!, code: 'CUS-0101' },
+        salesOrder: { id: 'so1', number: 'SO-P11-L', externalOrderNumber: 'P11-L' },
+      }),
+    ).toEqual({ value: 'CUS-0101', prefixDealer: true });
+  });
+
+  it('shows a leftover order code cleanly without a chopped Dealer prefix', () => {
+    expect(
+      selectInvoiceDealerChip({
+        ...baseInv,
+        customer: { id: 'c1', nameEn: 'Nile Interiors', name: 'Nile Interiors' },
+        salesOrder: { id: 'so1', number: 'SO-P11-L', externalOrderNumber: 'P11-L' },
+      }),
+    ).toEqual({ value: 'P11-L', prefixDealer: false });
+  });
+
+  it('does not prefix Dealer when the API code is the same leftover order code', () => {
+    expect(
+      selectInvoiceDealerChip({
+        ...baseInv,
+        customer: { id: 'c1', nameEn: 'Nile Interiors', name: 'Nile Interiors', code: 'P11-L' },
+        salesOrder: { id: 'so1', number: 'SO-P11-L', externalOrderNumber: 'P11-L' },
+      }),
+    ).toEqual({ value: 'P11-L', prefixDealer: false });
   });
 });

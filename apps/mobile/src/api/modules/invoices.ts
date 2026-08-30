@@ -30,9 +30,14 @@ export type Invoice = {
   subtotal?: number | string | null;
   taxAmount?: number | string | null;
   taxTotal?: number | string | null;
+  discountTotal?: number | string | null;
   total: number | string;
   outstandingAmount?: number | string | null;
   paidAmount?: number | string | null;
+  /** Applied to this invoice when the API sends it — not dealer AR. */
+  creditAmount?: number | string | null;
+  appliedCredit?: number | string | null;
+  accountCredit?: number | string | null;
   customerId: string;
   customer?: {
     id: string;

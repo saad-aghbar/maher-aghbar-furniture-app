@@ -18,6 +18,13 @@ export type InvoiceCardModel = {
   isOverdue: boolean;
 };
 
+/** Dealer identity chip on invoice detail — full code, or a clean leftover order code. */
+export type InvoiceDealerChip = {
+  value: string;
+  /** Prefix with `accounting.dealerOrderShort` only for a full dealer code. */
+  prefixDealer: boolean;
+};
+
 export type InvoiceDetailModel = {
   id: string;
   number: string;
@@ -26,12 +33,14 @@ export type InvoiceDetailModel = {
   dealerName: string;
   factoryOrderNumber: string | null;
   dealerOrderNumber: string | null;
+  dealerChip: InvoiceDealerChip | null;
   salesOrderId: string | null;
   invoiceDateLabel: string;
   dueDateLabel: string | null;
   isOverdue: boolean;
   outstanding: number;
   paid: number;
+  credit: number;
   total: number;
   subtotal: number;
   tax: number;
@@ -66,6 +75,60 @@ function asLocale(locale: string): Locale {
 function toNum(v: number | string | null | undefined): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function hasMoney(v: number | string | null | undefined): boolean {
+  if (v == null || v === '') return false;
+  return Number.isFinite(Number(v));
+}
+
+/** Invoice-record money — 3 dp like the API, not dealer AR. */
+function roundMoney(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/** Credit applied to this invoice only. Dealer/account balance is not credit. */
+function invoiceCredit(inv: Invoice): number {
+  return toNum(inv.appliedCredit ?? inv.creditAmount ?? inv.accountCredit);
+}
+
+/**
+ * Remaining due on this invoice: total − paid − credit.
+ * Ignore `outstandingAmount` when it cannot be this invoice's remainder
+ * (e.g. a dealer AR figure larger than the invoice total).
+ */
+export function invoiceRemainingDue(inv: Invoice): { paid: number; credit: number; outstanding: number } {
+  const total = toNum(inv.total);
+  const credit = Math.max(0, invoiceCredit(inv));
+  const reportedDue = hasMoney(inv.outstandingAmount) ? toNum(inv.outstandingAmount) : null;
+  const dueLooksLikeInvoice = reportedDue != null && reportedDue <= total + 0.009;
+
+  const paid = hasMoney(inv.paidAmount)
+    ? toNum(inv.paidAmount)
+    : dueLooksLikeInvoice
+      ? Math.max(0, total - (reportedDue ?? 0) - credit)
+      : 0;
+
+  return {
+    paid,
+    credit,
+    outstanding: Math.max(0, roundMoney(total - paid - credit)),
+  };
+}
+
+/**
+ * Dealer chip value: API dealer code when present; otherwise the dealer
+ * order code without a chopped "Dealer {short leftover}" prefix.
+ */
+export function selectInvoiceDealerChip(inv: Invoice): InvoiceDealerChip | null {
+  const code = inv.customer?.code?.trim();
+  const orderNo = inv.salesOrder?.externalOrderNumber?.trim();
+  if (code) {
+    const choppedLeftover = Boolean(orderNo && code === orderNo);
+    return { value: code, prefixDealer: !choppedLeftover };
+  }
+  if (orderNo) return { value: orderNo, prefixDealer: false };
+  return null;
 }
 
 function moneyLabel(locale: string, value: number): string {
@@ -112,8 +175,7 @@ export function selectInvoiceCard(inv: Invoice, locale: string): InvoiceCardMode
 export function selectInvoiceDetail(inv: Invoice, locale: string): InvoiceDetailModel {
   const typed = asLocale(locale);
   const total = toNum(inv.total);
-  const outstanding = toNum(inv.outstandingAmount ?? inv.total);
-  const paid = toNum(inv.paidAmount ?? Math.max(0, total - outstanding));
+  const { paid, credit, outstanding } = invoiceRemainingDue(inv);
   const tax = toNum(inv.taxAmount ?? inv.taxTotal);
   const subtotal = toNum(inv.subtotal ?? Math.max(0, total - tax));
 
@@ -146,12 +208,14 @@ export function selectInvoiceDetail(inv: Invoice, locale: string): InvoiceDetail
     dealerName: dealerNameFor(inv, locale),
     factoryOrderNumber: inv.salesOrder?.number?.trim() || null,
     dealerOrderNumber: inv.salesOrder?.externalOrderNumber?.trim() || null,
+    dealerChip: selectInvoiceDealerChip(inv),
     salesOrderId: inv.salesOrder?.id ?? null,
     invoiceDateLabel: inv.invoiceDate ? formatDate(typed, inv.invoiceDate) : '—',
     dueDateLabel: inv.dueDate ? formatDate(typed, inv.dueDate) : null,
     isOverdue: isOverdueInvoice(inv, outstanding),
     outstanding,
     paid,
+    credit,
     total,
     subtotal,
     tax,

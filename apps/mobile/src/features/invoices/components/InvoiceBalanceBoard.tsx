@@ -25,8 +25,13 @@ export function InvoiceBalanceBoard({ model, currencySuffix = 'ILS' }: Props) {
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const overdue = model.isOverdue;
   const accent = overdue ? colors.error : colors.brand;
-  const paidRatio =
-    model.total > 0 ? Math.min(1, Math.max(0, model.paid / model.total)) : model.outstanding <= 0 ? 1 : 0;
+  /** Paid+credit share of this invoice's total — never a dealer AR figure. */
+  const settledRatio =
+    model.total > 0
+      ? Math.min(1, Math.max(0, (model.total - model.outstanding) / model.total))
+      : model.outstanding <= 0
+        ? 1
+        : 0;
 
   return (
     <View
@@ -115,8 +120,8 @@ export function InvoiceBalanceBoard({ model, currencySuffix = 'ILS' }: Props) {
               top: 0,
               bottom: 0,
               ...(isRTL
-                ? { right: 0, width: `${paidRatio * 100}%` as `${number}%` }
-                : { left: 0, width: `${paidRatio * 100}%` as `${number}%` }),
+                ? { right: 0, width: `${settledRatio * 100}%` as `${number}%` }
+                : { left: 0, width: `${settledRatio * 100}%` as `${number}%` }),
               backgroundColor: overdue ? colors.error : colors.brand,
               opacity: 0.85,
             }}
