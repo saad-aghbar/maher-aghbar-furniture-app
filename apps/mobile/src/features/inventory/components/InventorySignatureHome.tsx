@@ -6,7 +6,6 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
-import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
@@ -19,6 +18,7 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { SemiFinishedLot } from '@/api/modules/inventory';
 import { openInventoryLabelPdf, type InventoryCategoryGroup } from '../api';
 import {
+  inventoryGroupRouteTitle,
   isValidCategoryGroup,
   selectInventoryItemCard,
   type InventoryItemCardModel,
@@ -35,6 +35,7 @@ import {
 } from '../selectInventoryOps';
 import { AddStockSheet, type StockMoveMode } from './AddStockSheet';
 import { InventoryCategoryRail } from './InventoryCategoryRail';
+import { InventoryGroupLoadError } from './InventoryGroupLoadError';
 import { InventoryCompositionChrome } from './InventoryCompositionChrome';
 import { CreateInventoryItemSheet } from './CreateInventoryItemSheet';
 import { CreateStockCountSheet } from './CreateStockCountSheet';
@@ -333,6 +334,24 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     );
   }
 
+  if (bodyError) {
+    const landmarkKey =
+      lifecycle === 'semiFinished'
+        ? 'semi'
+        : lifecycle === 'finished'
+          ? 'finished'
+          : 'raw';
+    return (
+      <AppScreen>
+        {showOfflineBanner ? <OfflineBanner /> : null}
+        <InventoryGroupLoadError
+          groupTitle={inventoryGroupRouteTitle(landmarkKey, t)}
+          onRetry={() => void activeQuery.refetch()}
+        />
+      </AppScreen>
+    );
+  }
+
   const canCreate =
     section === 'items'
       ? lifecycle === 'materials' && canCreateItem
@@ -463,14 +482,6 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   let empty: ReactElement | null = null;
   if (bodyLoading) {
     empty = <InventoryListSkeleton />;
-  } else if (bodyError) {
-    empty = (
-      <ErrorState
-        title={t('mobile.inventory.errorTitle')}
-        retryLabel={t('mobile.inventory.retry')}
-        onRetry={() => void activeQuery.refetch()}
-      />
-    );
   } else if (section === 'items') {
     empty = (
       <EmptyState
@@ -533,12 +544,13 @@ export function InventorySignatureHome({ initialGroup }: Props) {
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
         ref={listRef}
-        data={bodyLoading || bodyError ? [] : listRows}
+        data={bodyLoading ? [] : listRows}
         keyExtractor={(row) => `${row.kind}-${row.model.id}`}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom:
-            theme.spacing['4xl'] + SURFACE_TAB_BAR_CLEARANCE + insets.bottom,
+          paddingBottom: bodyLoading
+            ? theme.spacing.md + SURFACE_TAB_BAR_CLEARANCE
+            : theme.spacing['4xl'] + SURFACE_TAB_BAR_CLEARANCE + insets.bottom,
           flexGrow: 1,
         }}
         refreshControl={

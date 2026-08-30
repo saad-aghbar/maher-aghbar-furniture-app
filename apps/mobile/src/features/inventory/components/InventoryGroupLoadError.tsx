@@ -1,3 +1,4 @@
+import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { ToastClearance } from '@/components/feedback/Toast';
@@ -10,13 +11,13 @@ type Props = {
 
 /**
  * Failed inventory group — landmark name + shared error chrome.
- * No list, skeleton, or invented stock behind the error.
+ * No list, skeleton, last-card inset, or invented stock behind the error.
  */
 export function InventoryGroupLoadError({ groupTitle, onRetry }: Props) {
   const { t, locale } = useLocale();
 
   return (
-    <>
+    <View style={{ flex: 1 }}>
       <ToastClearance />
       <AppText variant="title" weight={locale === 'ar' ? 'medium' : 'semibold'}>
         {groupTitle}
@@ -27,6 +28,6 @@ export function InventoryGroupLoadError({ groupTitle, onRetry }: Props) {
         retryLabel={t('mobile.inventory.retry')}
         onRetry={onRetry}
       />
-    </>
+    </View>
   );
 }
