@@ -17,7 +17,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { TaskCard } from './components/TaskCard';
 import {
@@ -79,7 +79,11 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
   const allowed = can(user, 'production-task.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const isCompleted = variant === 'completed';
-  const listBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
+  /** Same stack inset as admin inventory / order detail so the last card clears the pill. */
+  const listBottomPad =
+    theme.spacing['3xl'] +
+    surfaceTabBarStackInset(insets.bottom, theme.spacing.sm) +
+    theme.spacing['2xl'];
 
   const [segment, setSegment] = useState<TasksSegment>('open');
   const [completedFilters, setCompletedFilters] = useState<CompletedFiltersState>(
@@ -359,7 +363,7 @@ export function TasksListScreen({ variant, forceState, fixture }: TasksListScree
           paddingBottom: listBottomPad,
           flexGrow: 1,
         }}
-        style={{ opacity: isFilterUpdating ? 0.72 : 1 }}
+        style={{ flex: 1, opacity: isFilterUpdating ? 0.72 : 1 }}
         refreshControl={
           <RefreshControl
             refreshing={Boolean(pullRefreshing)}
