@@ -169,7 +169,7 @@ export function ProductWorkflowTimesScreen({
             {t('mobile.production.workflow.productTimesTitle')}
           </AppText>
           {productIdentity ? (
-            <AppText variant="body" weight="medium">
+            <AppText variant="body" weight="medium" dir="ltr" face="latin" numberOfLines={2}>
               {productIdentity}
             </AppText>
           ) : null}
