@@ -26,6 +26,10 @@ type Props = {
   onStagePress?: (stage: ProductionFlowStage) => void;
   /** Template editor preview — quieter nodes, no progress clutter. */
   preview?: boolean;
+  /** Extra space below the last node (e.g. tab-bar clearance). */
+  bottomInset?: number;
+  /** Product-times editor may show estimates; order flow leaves pending nodes empty. */
+  showEstimatedDuration?: boolean;
 };
 
 function toOrderStages(stages: ProductionFlowStage[]): OrderStageView[] {
@@ -141,7 +145,13 @@ function EdgePath({
   );
 }
 
-export function ProductionFlowMap({ stages, onStagePress, preview = false }: Props) {
+export function ProductionFlowMap({
+  stages,
+  onStagePress,
+  preview = false,
+  bottomInset = 0,
+  showEstimatedDuration = false,
+}: Props) {
   const { width: winW } = useWindowDimensions();
   const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -163,6 +173,7 @@ export function ProductionFlowMap({ stages, onStagePress, preview = false }: Pro
   const rowGap = layout.levelCount >= 5 ? 64 : 56;
   const labelBand = 48;
   const padY = 32;
+  const padBottom = padY + Math.max(0, bottomInset);
   const padX = 40;
   const colW = FLOW_NODE + colGap;
   const rowH = FLOW_NODE + labelBand + rowGap;
@@ -173,7 +184,7 @@ export function ProductionFlowMap({ stages, onStagePress, preview = false }: Pro
       Math.max(0, layout.levelCount - 1) * rowH +
       FLOW_NODE +
       labelBand +
-      padY,
+      padBottom,
   );
   const centerX = contentW / 2;
 
@@ -218,7 +229,7 @@ export function ProductionFlowMap({ stages, onStagePress, preview = false }: Pro
           position: 'absolute',
           left: centerX - 1,
           top: padY,
-          bottom: padY,
+          bottom: padBottom,
           width: 2,
           borderRadius: 1,
           backgroundColor: colors.border,
@@ -299,6 +310,7 @@ export function ProductionFlowMap({ stages, onStagePress, preview = false }: Pro
             top={top}
             reduceMotion={reduceMotion}
             preview={preview}
+            showEstimatedDuration={showEstimatedDuration}
             onPress={onStagePress ? () => onStagePress(stage) : undefined}
           />
         );

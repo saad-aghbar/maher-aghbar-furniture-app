@@ -13,6 +13,7 @@ import Animated, {
 import { AppText } from '@/components/AppText';
 import { useTheme } from '@/theme';
 import type { ProductionFlowStage } from '../selectProductionFlow';
+import { selectFlowStageGlyph } from '../flowStageGlyph';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -27,6 +28,8 @@ type Props = {
   reduceMotion: boolean;
   /** Template / editor chart — show step numbers, not estimate warnings. */
   preview?: boolean;
+  /** Product-times editor may show estimates; order flow leaves pending nodes empty. */
+  showEstimatedDuration?: boolean;
 };
 
 function normalizeStatus(status: string): string {
@@ -43,6 +46,7 @@ export function FlowStageNode({
   onPress,
   reduceMotion,
   preview = false,
+  showEstimatedDuration = false,
 }: Props) {
   const { colors } = useTheme();
   const status = normalizeStatus(stage.status);
@@ -50,6 +54,11 @@ export function FlowStageNode({
   const inProgress = status === 'IN_PROGRESS' || status === 'ACTIVE';
   const ready = status === 'READY';
   const blocked = status === 'BLOCKED' || stage.blockers.length > 0 || stage.isOverdue;
+  const glyph = selectFlowStageGlyph(stage, {
+    preview,
+    index,
+    showEstimatedDuration,
+  });
 
   const ring =
     blocked && !completed
@@ -235,13 +244,13 @@ export function FlowStageNode({
               />
             ) : null}
           </Svg>
-          {!completed ? (
+          {!completed && glyph ? (
             <AppText
               variant="caption"
               weight="semibold"
               style={{
                 color:
-                  !preview && stage.estimateReviewRequired
+                  glyph === '!'
                     ? colors.error
                     : inProgress || ready
                       ? colors.brand
@@ -249,17 +258,7 @@ export function FlowStageNode({
                 fontSize: 11,
               }}
             >
-              {preview
-                ? String(index + 1)
-                : stage.estimateReviewRequired
-                  ? '!'
-                  : inProgress || stage.progressPercent > 0
-                    ? `${Math.round(stage.progressPercent)}%`
-                    : stage.estimatedMinutes != null && stage.estimatedMinutes > 0
-                      ? stage.estimatedMinutes >= 60
-                        ? `${Math.round(stage.estimatedMinutes / 60)}h`
-                        : `${stage.estimatedMinutes}m`
-                      : `${Math.round(stage.progressPercent)}%`}
+              {glyph}
             </AppText>
           ) : null}
         </View>
