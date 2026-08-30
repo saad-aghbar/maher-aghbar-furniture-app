@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { localizedName } from '@maher/i18n';
 import type { Href } from 'expo-router';
+import { getAdminProduct } from '@/api/modules/catalogAdmin';
 import { isApiError } from '@/api/errors';
+import { queryKeys } from '@/api/queryKeys';
 import { toastMessageForError } from '@/api/queryClient';
 import { stageEstimateMinutes } from '@/api/modules/scheduling';
 import { AppText } from '@/components/AppText';
@@ -18,8 +22,12 @@ import {
 import { formatMinutesDuration } from '@/features/tasks/formatDuration';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
-import { useWorkflowQuery, useWorkflowVersionQuery } from '@/features/workflow/query';
-import { selectProductionFlowFromWorkflowVersion } from '@/features/workflow/selectProductionFlowFromWorkflowVersion';
+import { useProductWorkflowQuery, useWorkflowQuery, useWorkflowVersionQuery } from '@/features/workflow/query';
+import {
+  formatProductIdentity,
+  selectProductionFlowFromStageEstimates,
+  selectProductionFlowFromWorkflowVersion,
+} from '@/features/workflow/selectProductionFlowFromWorkflowVersion';
 import { StageDurationSheet } from '@/features/workflow/components/StageDurationSheet';
 
 type Props = {
@@ -38,10 +46,23 @@ export function ProductWorkflowTimesScreen({
   const { showToast } = useToast();
   const [selected, setSelected] = useState<ProductionFlowStage | null>(null);
 
-  const workflowQuery = useWorkflowQuery(workflowId, Boolean(workflowId));
+  const productQuery = useQuery({
+    queryKey: queryKeys.catalog.adminDetail(productId),
+    queryFn: () => getAdminProduct(productId),
+    enabled: Boolean(productId),
+    staleTime: 30_000,
+  });
+  const configQuery = useProductWorkflowQuery(productId);
+  const resolvedWorkflowId = (workflowId.trim() || configQuery.data?.workflowId || '').trim();
+
+  const workflowQuery = useWorkflowQuery(resolvedWorkflowId, Boolean(resolvedWorkflowId));
   const activeVersionId = workflowQuery.data?.activeVersion?.id ?? null;
   // Version endpoint always includes stageDefinition; lean getWorkflow payloads may not.
-  const versionQuery = useWorkflowVersionQuery(workflowId, activeVersionId, Boolean(activeVersionId));
+  const versionQuery = useWorkflowVersionQuery(
+    resolvedWorkflowId,
+    activeVersionId,
+    Boolean(activeVersionId),
+  );
   const estimatesQuery = useProductStageEstimatesQuery(productId);
   const profileQuery = useProductProductionProfileQuery(productId);
   const saveMutation = useUpsertProductStageEstimatesMutation(productId);
@@ -54,11 +75,26 @@ export function ProductWorkflowTimesScreen({
     return map;
   }, [estimatesQuery.data]);
 
-  const stages = useMemo(() => {
+  const graphStages = useMemo(() => {
     const version = versionQuery.data ?? workflowQuery.data?.activeVersion;
     if (!version) return [];
     return selectProductionFlowFromWorkflowVersion(version, locale, estimateMap);
   }, [estimateMap, locale, versionQuery.data, workflowQuery.data?.activeVersion]);
+
+  const estimateStages = useMemo(
+    () => selectProductionFlowFromStageEstimates(estimatesQuery.data ?? [], locale),
+    [estimatesQuery.data, locale],
+  );
+
+  const workflowPending =
+    (!resolvedWorkflowId && configQuery.isLoading) ||
+    (Boolean(resolvedWorkflowId) && (workflowQuery.isLoading || versionQuery.isLoading));
+
+  const stages = useMemo(() => {
+    if (graphStages.length > 0) return graphStages;
+    if (workflowPending) return [];
+    return estimateStages;
+  }, [estimateStages, graphStages, workflowPending]);
 
   const totalMinutes = useMemo(() => {
     if (profileQuery.data?.totalStandardMinutes != null) {
@@ -69,10 +105,20 @@ export function ProductWorkflowTimesScreen({
 
   const missingCount = stages.filter((s) => s.estimateReviewRequired).length;
   const loading =
-    (workflowQuery.isLoading || versionQuery.isLoading || estimatesQuery.isLoading) &&
-    stages.length === 0;
+    (workflowPending || estimatesQuery.isLoading) && stages.length === 0;
+  const productIdentity = formatProductIdentity(
+    productQuery.data?.sku,
+    productQuery.data ? localizedName(locale, productQuery.data, productQuery.data.sku) : '',
+  );
 
-  if ((workflowQuery.isError || versionQuery.isError) && !workflowQuery.data && !versionQuery.data) {
+  if (
+    resolvedWorkflowId &&
+    (workflowQuery.isError || versionQuery.isError) &&
+    !workflowQuery.data &&
+    !versionQuery.data &&
+    estimateStages.length === 0 &&
+    !estimatesQuery.isLoading
+  ) {
     return (
       <AppScreen backFallback={backFallback}>
         <ErrorState
@@ -82,6 +128,8 @@ export function ProductWorkflowTimesScreen({
           onRetry={() => {
             void workflowQuery.refetch();
             void versionQuery.refetch();
+            void estimatesQuery.refetch();
+            void configQuery.refetch();
           }}
         />
       </AppScreen>
@@ -101,13 +149,17 @@ export function ProductWorkflowTimesScreen({
               workflowQuery.isRefetching ||
               versionQuery.isRefetching ||
               estimatesQuery.isRefetching ||
-              profileQuery.isRefetching
+              profileQuery.isRefetching ||
+              configQuery.isRefetching ||
+              productQuery.isRefetching
             }
             onRefresh={() => {
               void workflowQuery.refetch();
               void versionQuery.refetch();
               void estimatesQuery.refetch();
               void profileQuery.refetch();
+              void configQuery.refetch();
+              void productQuery.refetch();
             }}
           />
         }
@@ -116,9 +168,16 @@ export function ProductWorkflowTimesScreen({
           <AppText variant="title" weight="semibold">
             {t('mobile.production.workflow.productTimesTitle')}
           </AppText>
-          <AppText variant="caption" color="muted">
-            {t('mobile.production.workflow.productTimesHint')}
-          </AppText>
+          {productIdentity ? (
+            <AppText variant="body" weight="medium" dir="ltr" face="latin" numberOfLines={2}>
+              {productIdentity}
+            </AppText>
+          ) : null}
+          {stages.length > 0 ? (
+            <AppText variant="caption" color="muted">
+              {t('mobile.production.workflow.productTimesHint')}
+            </AppText>
+          ) : null}
         </View>
 
         <View
@@ -140,7 +199,7 @@ export function ProductWorkflowTimesScreen({
               minute: t('mobile.workerHome.durationMinute'),
             })}
           </AppText>
-          {missingCount > 0 ? (
+          {stages.length === 0 ? null : missingCount > 0 ? (
             <AppText variant="caption" style={{ color: colors.error }}>
               {t('mobile.production.workflow.stagesNeedTime', { count: missingCount })}
             </AppText>
@@ -154,7 +213,7 @@ export function ProductWorkflowTimesScreen({
         {loading ? (
           <AppText color="muted">{t('mobile.production.loadingMore')}</AppText>
         ) : stages.length === 0 ? (
-          <AppText color="muted">{t('mobile.production.workflow.emptyWorkflowHint')}</AppText>
+          <AppText color="muted">{t('mobile.production.workflow.emptyStages')}</AppText>
         ) : (
           <ProductionFlowMap
             stages={stages}
