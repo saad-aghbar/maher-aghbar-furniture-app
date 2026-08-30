@@ -130,16 +130,14 @@ export function ChatComposer({ value, onChangeText, onSend, disabled }: Props) {
               borderRadius: 16,
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: canSend ? colors.brand : 'transparent',
-              borderWidth: canSend ? 0 : 1,
-              borderColor: dark ? 'rgba(255,255,255,0.16)' : 'rgba(63,52,44,0.14)',
+              backgroundColor: colors.brand,
               opacity: disabled ? 0.45 : 1,
             }}
           >
             <Ionicons
               name={isRTL ? 'arrow-back' : 'arrow-up'}
               size={16}
-              color={canSend ? colors.onBrand : colors.textMuted}
+              color={colors.onBrand}
             />
           </AnimatedPressable>
         </View>
