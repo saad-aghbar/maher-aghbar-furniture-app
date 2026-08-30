@@ -130,6 +130,30 @@ describe('selectProduction', () => {
     expect(vm.tasks[0]?.name).toBe('Cutting');
     expect(vm.tasks[0]?.notes).toBe('Need sharp blades');
     expect(vm).not.toHaveProperty('stages');
+    expect(vm.estimatedManufacturingCost).toBeNull();
+    expect(vm.actualManufacturingCost).toBeNull();
+  });
+
+  it('reads catalog estimate and never fakes actual or zero', () => {
+    const withCost = selectProductionDetail(
+      {
+        ...detail,
+        product: { ...detail.product!, manufacturingCost: '380.50' },
+      },
+      'en',
+    );
+    expect(withCost.estimatedManufacturingCost).toBe(380.5);
+    expect(withCost.actualManufacturingCost).toBeNull();
+
+    const zero = selectProductionDetail(
+      {
+        ...detail,
+        product: { ...detail.product!, manufacturingCost: 0 },
+      },
+      'en',
+    );
+    expect(zero.estimatedManufacturingCost).toBeNull();
+    expect(zero.actualManufacturingCost).toBeNull();
   });
 
   it('filters workers to the stage department', () => {

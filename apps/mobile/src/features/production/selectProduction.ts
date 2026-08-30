@@ -99,6 +99,10 @@ export type ProductionDetailModel = ProductionCardModel & {
     category: string;
     reason: string;
   }>;
+  /** Catalog estimate only — null when the backend did not send a cost. Never fake 0. */
+  estimatedManufacturingCost: number | null;
+  /** Actual manufacturing cost when the backend provides one. */
+  actualManufacturingCost: number | null;
   /** Admin production UI never renders a Production Stages section */
   showStages: false;
 };
@@ -114,6 +118,13 @@ export function productionFloorStatusLabel(
   const key = status.trim().toUpperCase().replace(/\s+/g, '_');
   if (key === 'IN_PROGRESS' || key === 'IN_PRODUCTION') return inProductionLabel;
   return undefined;
+}
+
+function toFiniteCost(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
 }
 
 export function selectProductionCard(
@@ -254,6 +265,8 @@ export function selectProductionDetail(
     requiredDeliveryDate: order.requiredDeliveryDate ?? null,
     tasks,
     openBlockers,
+    estimatedManufacturingCost: toFiniteCost(order.product?.manufacturingCost),
+    actualManufacturingCost: null,
     showStages: false,
   };
 }

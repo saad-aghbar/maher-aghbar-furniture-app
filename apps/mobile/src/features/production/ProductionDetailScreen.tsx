@@ -68,7 +68,7 @@ function priorityText(priority: string, t: (key: string) => string): string {
 
 export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps) {
   const { user } = useAuth();
-  const { t, locale, isRTL } = useLocale();
+  const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
@@ -187,6 +187,44 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
         }
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.lg, marginBottom: theme.spacing.sm }}>
+            {detail.estimatedManufacturingCost != null ? (
+              <HeaderEnter reduce={reduce} delay={0}>
+                <SurfaceCard>
+                  <View style={{ gap: theme.spacing.sm }}>
+                    <AppText variant="heading" weight="semibold">
+                      {detail.actualManufacturingCost != null
+                        ? t('mobile.production.manufacturingCostActualTitle')
+                        : t('mobile.production.manufacturingCostEstimated')}
+                    </AppText>
+                    {detail.actualManufacturingCost == null ? (
+                      <AppText variant="caption" color="muted">
+                        {t('mobile.production.estimatedOnly')}
+                      </AppText>
+                    ) : null}
+                    <MetaRow
+                      isRTL={isRTL}
+                      label={t('mobile.production.estimatedLabel')}
+                      value={formatCurrency(detail.estimatedManufacturingCost)}
+                    />
+                    <MetaRow
+                      isRTL={isRTL}
+                      label={t('mobile.production.actualLabel')}
+                      value={
+                        detail.actualManufacturingCost != null
+                          ? formatCurrency(detail.actualManufacturingCost)
+                          : t('mobile.production.unavailable')
+                      }
+                    />
+                    <MetaRow
+                      isRTL={isRTL}
+                      label={t('mobile.production.varianceLabel')}
+                      value={t('mobile.production.unavailable')}
+                    />
+                  </View>
+                </SurfaceCard>
+              </HeaderEnter>
+            ) : null}
+
             <HeaderEnter reduce={reduce} delay={0}>
               <View
                 style={{
@@ -681,11 +719,18 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
             ) : null}
 
             <HeaderEnter reduce={reduce} delay={200}>
-              <AppText variant="heading" weight="semibold">
-                {viewCompleted
-                  ? t('mobile.production.completedTasks')
-                  : t('mobile.production.tasks')}
-              </AppText>
+              <View style={{ gap: theme.spacing.xs }}>
+                <AppText variant="heading" weight="semibold">
+                  {viewCompleted
+                    ? t('mobile.production.completedTasks')
+                    : t('mobile.production.stageAssignments')}
+                </AppText>
+                {!viewCompleted ? (
+                  <AppText variant="caption" color="muted">
+                    {t('mobile.production.stageAssignmentsHint')}
+                  </AppText>
+                ) : null}
+              </View>
             </HeaderEnter>
           </View>
         }
