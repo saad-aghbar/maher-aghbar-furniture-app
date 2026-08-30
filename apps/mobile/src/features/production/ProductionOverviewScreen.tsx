@@ -107,8 +107,11 @@ export function ProductionOverviewScreen() {
   );
 
   const selectBucket = (next: ProductionListBucket) => {
-    const resolved = next === bucket ? 'all' : next;
-    if (resolved === bucket) return;
+    const isPeriod =
+      next === 'daily' || next === 'weekly' || next === 'monthly';
+    const resolved =
+      isPeriod && next === bucket ? 'all' : next === bucket ? null : next;
+    if (resolved == null) return;
     void haptics.selection();
     setBucket(resolved);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -314,28 +317,15 @@ export function ProductionOverviewScreen() {
                   />
                   <View
                     style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: theme.spacing.md,
                       paddingHorizontal: theme.spacing.lg,
                       paddingTop: theme.spacing.md,
                       paddingBottom: theme.spacing.xs,
+                      alignItems: isRTL ? 'flex-end' : 'flex-start',
                     }}
                   >
                     <AppText variant="caption" color="muted" numberOfLines={1}>
                       {t('mobile.production.board')}
                     </AppText>
-                    {bucket !== 'all' ? (
-                      <AppText
-                        variant="caption"
-                        color="muted"
-                        numberOfLines={1}
-                        style={{ flexShrink: 1 }}
-                      >
-                        {t('mobile.production.tapAgainForAll')}
-                      </AppText>
-                    ) : null}
                   </View>
                   <MetricRow
                     isRTL={isRTL}

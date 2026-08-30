@@ -51,11 +51,7 @@ import {
   useUpdateProductionMutation,
   useUpdateTaskNotesMutation,
 } from './query';
-import {
-  productionFloorStatusLabel,
-  selectProductionDetail,
-  type ProductionTaskRow,
-} from './selectProduction';
+import { selectProductionDetail, type ProductionTaskRow } from './selectProduction';
 
 type ProductionDetailScreenProps = {
   orderId: string;
@@ -265,13 +261,7 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
                       marginTop: 2,
                     }}
                   >
-                    <StatusBadge
-                      status={detail.status}
-                      label={productionFloorStatusLabel(
-                        detail.status,
-                        t('mobile.production.inProduction'),
-                      )}
-                    />
+                    <StatusBadge status={detail.status} />
                     {urgent ? (
                       <View
                         style={{
