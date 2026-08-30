@@ -52,6 +52,10 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
     const v = t('mobile.returns.order');
     return v === 'mobile.returns.order' ? 'Order' : v;
   })();
+  const beingResolvedLabel = (() => {
+    const v = t('mobile.returns.beingResolved');
+    return v === 'mobile.returns.beingResolved' ? 'Being resolved' : v;
+  })();
 
   return (
     <AnimatedPressable
@@ -100,7 +104,11 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
           backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <StatusBadge status={item.approvalStatus} dot />
+        <StatusBadge
+          status={item.approvalStatus}
+          label={item.beingResolved ? beingResolvedLabel : undefined}
+          dot
+        />
         <AppText variant="caption" color="brand" weight="semibold">
           {t('common.details')}
         </AppText>
@@ -292,7 +300,7 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
             value={reasonLabel}
             isRTL={isRTL}
           />
-          <Divider compact />
+          <Divider compact plain />
           <MetaRow
             icon="layers-outline"
             label={qtyLabel}
@@ -302,7 +310,7 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
           />
           {item.salesOrderNumber ? (
             <>
-              <Divider compact />
+              <Divider compact plain />
               <MetaRow
                 icon="cube-outline"
                 label={orderLabel}
@@ -315,7 +323,7 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
           ) : null}
           {item.dealerOrderNumber ? (
             <>
-              <Divider compact />
+              <Divider compact plain />
               <MetaRow
                 icon="pricetag-outline"
                 label={dealerOrderLabel}
