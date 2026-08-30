@@ -79,8 +79,6 @@ export function InventoryCategoryRail({ groups, active, onChange }: Props) {
           variant="caption"
           weight={titleWeight}
           style={{
-            letterSpacing: locale === 'ar' ? 0 : 0.7,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
             fontSize: 11,
             color: colors.brand,
             textAlign: isRTL ? 'right' : 'left',
