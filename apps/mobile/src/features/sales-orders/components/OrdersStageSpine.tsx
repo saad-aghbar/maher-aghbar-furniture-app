@@ -345,7 +345,7 @@ function StageNode({
   }));
 
   return (
-    <Animated.View style={[{ flex: 1 }, selectStyle]}>
+    <Animated.View style={[{ flex: 1, minWidth: 0 }, selectStyle]}>
       <AnimatedPressable
         variant="button"
         onPress={onPress}
@@ -411,14 +411,16 @@ function StageNode({
         <AppText
           variant="caption"
           color="secondary"
-          numberOfLines={stageKey === 'production' ? 1 : 2}
+          numberOfLines={1}
           align="center"
           adjustsFontSizeToFit
-          minimumFontScale={0.75}
+          minimumFontScale={0.7}
           maxFontSizeMultiplier={1.1}
           style={{
-            fontSize: 11,
-            lineHeight: 14,
+            fontSize: 10,
+            lineHeight: 13,
+            letterSpacing: locale === 'ar' ? 0 : -0.35,
+            textAlign: 'center',
             width: '100%',
             textTransform: 'none',
           }}
