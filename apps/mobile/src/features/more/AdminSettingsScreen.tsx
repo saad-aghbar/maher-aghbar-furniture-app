@@ -214,7 +214,7 @@ export function AdminSettingsScreen() {
           <AppText
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
-            style={{ color: colors.brand }}
+            style={{ color: colors.brand, textTransform: 'none' }}
           >
             {t('mobile.adminSettings.eyebrow')}
           </AppText>
@@ -481,24 +481,28 @@ export function AdminSettingsScreen() {
 }
 
 /**
- * Last-content inset so Currency, later fields, and per-section Save
- * clear the floating tab bar. Do not restyle the pill — pad content only.
+ * Last-content inset: insets.bottom + SURFACE_TAB_BAR_CLEARANCE.
+ * Real trailing height (not only paddingBottom) so Currency, VAT `16`,
+ * and Save clear the floating pill. Do not restyle the tab bar.
  */
 function SettingsScroll({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
   const bottomInset = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background, paddingBottom: bottomInset }}>
-      <ScrollableScreen
-        contentContainerStyle={{ paddingBottom: bottomInset }}
-        scrollProps={{
-          scrollIndicatorInsets: { bottom: bottomInset },
-        }}
-      >
-        {children}
-      </ScrollableScreen>
-    </View>
+    <ScrollableScreen
+      style={{ paddingBottom: bottomInset }}
+      contentContainerStyle={{ flexGrow: 0, paddingBottom: 0 }}
+      scrollProps={{
+        scrollIndicatorInsets: { bottom: bottomInset },
+      }}
+    >
+      {children}
+      <View
+        pointerEvents="none"
+        accessible={false}
+        style={{ height: bottomInset }}
+      />
+    </ScrollableScreen>
   );
 }
 
@@ -511,6 +515,7 @@ function SectionLabel({ label, locale }: { label: string; locale: string }) {
       style={{
         color: colors.brand,
         fontSize: 11,
+        textTransform: 'none',
       }}
     >
       {label}
