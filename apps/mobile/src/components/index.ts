@@ -22,6 +22,7 @@ export { AppHeader } from './layout/AppHeader';
 export { LargeTitleHeader } from './layout/LargeTitleHeader';
 export { ScreenBackLead } from './layout/ScreenBackLead';
 export { SectionHeader } from './layout/SectionHeader';
+export { ListRow } from './layout/ListRow';
 export { Divider } from './layout/Divider';
 
 export { PrimaryButton } from './buttons/PrimaryButton';

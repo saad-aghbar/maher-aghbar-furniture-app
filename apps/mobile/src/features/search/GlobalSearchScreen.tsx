@@ -14,7 +14,9 @@ import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { TextField } from '@/components/forms/TextField';
+import { localizeStatusPrefixedText } from '@/components/badges/statusDisplay';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { ListRow } from '@/components/layout/ListRow';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -183,9 +185,12 @@ export function GlobalSearchScreen() {
         renderItem={({ item, index }) => {
           const invoiceMeta =
             item.type === 'invoice' ? parseInvoiceSearchSubtitle(item.subtitle) : null;
+          const localizedSubtitle = item.subtitle
+            ? localizeStatusPrefixedText(locale, item.subtitle)
+            : null;
           const a11yMeta = invoiceMeta
             ? `${statusLabel(locale, invoiceMeta.status)} ${formatCurrency(invoiceMeta.amount)}`
-            : (item.subtitle ?? '');
+            : (localizedSubtitle ?? '');
           return (
             <ListItemEnter index={index}>
               <SurfaceCard
@@ -193,11 +198,18 @@ export function GlobalSearchScreen() {
                 accessibilityLabel={`${item.title}. ${a11yMeta}`}
                 style={{ minHeight: theme.sizes.touch.min }}
               >
-                <AppText variant="caption" color="muted">
-                  {t(`mobile.search.types.${item.type}`)}
-                </AppText>
-                <AppText weight="semibold">{item.title}</AppText>
-                <SearchHitMeta type={item.type} subtitle={item.subtitle} />
+                <ListRow
+                  eyebrow={t(`mobile.search.types.${item.type}`)}
+                  title={item.title}
+                  subtitle={invoiceMeta ? null : localizedSubtitle}
+                  titleDir="ltr"
+                  chevron
+                  trailing={
+                    item.type === 'invoice' ? (
+                      <SearchHitMeta type={item.type} subtitle={item.subtitle} />
+                    ) : undefined
+                  }
+                />
               </SurfaceCard>
             </ListItemEnter>
           );

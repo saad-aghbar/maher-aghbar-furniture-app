@@ -127,15 +127,23 @@ function softFill(colors: ThemeColors, variant: BadgeVariant): { bg: string; fg:
   }
 }
 
-export function getBadgeContainerStyle(theme: Theme, variant: BadgeVariant): ViewStyle {
+export function getBadgeContainerStyle(
+  theme: Theme,
+  variant: BadgeVariant,
+  opts: { isRTL?: boolean } = {},
+): ViewStyle {
   const { bg } = softFill(theme.colors, variant);
+  const isRTL = Boolean(opts.isRTL);
   return {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
+    alignSelf: isRTL ? 'flex-end' : 'flex-start',
+    flexDirection: isRTL ? 'row-reverse' : 'row',
     alignItems: 'center',
     gap: theme.spacing['2xs'],
+    maxWidth: '100%',
+    flexShrink: 1,
+    minWidth: 0,
     paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing['2xs'],
+    paddingVertical: isRTL ? theme.spacing.xs : theme.spacing['2xs'],
     borderRadius: theme.radius.full,
     backgroundColor: bg,
     borderWidth: 1,
