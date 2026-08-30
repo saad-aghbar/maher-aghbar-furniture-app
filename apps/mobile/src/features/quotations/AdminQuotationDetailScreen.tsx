@@ -38,10 +38,18 @@ import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import {
   OrderBoardCard,
   OrderSectionHeader,
 } from '@/features/sales-orders/components/OrderBoardCard';
+import {
+  presentableText,
+  quotationLineDims,
+  quotationLineNet,
+  quotationLineSpecs,
+  quotationQtyLabel,
+} from '@/features/quotations/presentAdminQuotation';
 
 type Props = {
   quotationId: string;
@@ -73,24 +81,6 @@ function money(value: number | string | null | undefined): string {
   if (value == null || value === '') return '—';
   const n = Number(value);
   return Number.isFinite(n) ? n.toFixed(2) : String(value);
-}
-
-function lineDims(line: {
-  width?: number | string | null;
-  height?: number | string | null;
-  depth?: number | string | null;
-}): string {
-  const parts = [line.width, line.height, line.depth].filter((v) => v != null && v !== '');
-  return parts.length ? parts.map(String).join('×') : '—';
-}
-
-function lineSpecs(line: {
-  material?: string | null;
-  fabric?: string | null;
-  color?: string | null;
-}): string {
-  const parts = [line.material, line.fabric, line.color].filter(Boolean);
-  return parts.length ? parts.join(' / ') : '—';
 }
 
 function MetaCell({
@@ -484,6 +474,8 @@ export function AdminQuotationDetailScreen({
   const showRejectBtn =
     canReject && ['INTERNAL_REVIEW', 'SENT', 'APPROVED'].includes(status);
   const linkedSalesOrder = detail.salesOrders?.[0];
+  const paymentTermsShown = isDraft && canUpdate ? null : presentableText(detail.paymentTerms);
+  const deliveryTermsShown = isDraft && canUpdate ? null : presentableText(detail.deliveryTerms);
 
   let enter = 0;
   const nextIndex = () => enter++;
@@ -517,37 +509,45 @@ export function AdminQuotationDetailScreen({
                   : t('mobile.adminQuotation.detail')
               }
               accent={colors.brand}
+              uppercase={false}
               trailing={embedded ? <StatusBadge status={detail.status} dot /> : undefined}
             />
 
             <View style={{ gap: theme.spacing.lg }}>
               <MetaRow isRTL={isRTL}>
                 <MetaCell
-                  label={t('mobile.adminQuotation.customer')}
-                  value={dealerName}
-                  brand
-                />
-                <MetaCell
                   label={t('mobile.adminQuotation.total')}
                   value={formatCurrency(Number(detail.total ?? 0))}
                   ltr
                 />
+                {linkedSalesOrder && !embedded ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.openSalesOrder')}
+                    value={linkedSalesOrder.number}
+                    brand
+                    ltr
+                    onPress={() => {
+                      void haptics.selection();
+                      router.push(`/(app)/(admin)/orders/${linkedSalesOrder.id}` as never);
+                    }}
+                  />
+                ) : null}
               </MetaRow>
 
-              {isDraft && canUpdate ? null : (
-                <View style={{ gap: theme.spacing.md }}>
-                  <MetaCell
-                    label={t('mobile.adminQuotation.paymentTerms')}
-                    value={detail.paymentTerms?.trim() || '—'}
-                    fullWidth
-                  />
-                  <MetaCell
-                    label={t('mobile.adminQuotation.deliveryTerms')}
-                    value={detail.deliveryTerms?.trim() || '—'}
-                    fullWidth
-                  />
-                </View>
-              )}
+              {paymentTermsShown ? (
+                <MetaCell
+                  label={t('mobile.adminQuotation.paymentTerms')}
+                  value={paymentTermsShown}
+                  fullWidth
+                />
+              ) : null}
+              {deliveryTermsShown ? (
+                <MetaCell
+                  label={t('mobile.adminQuotation.deliveryTerms')}
+                  value={deliveryTermsShown}
+                  fullWidth
+                />
+              ) : null}
 
               {detail.request && !embedded ? (
                 <MetaRow isRTL={isRTL}>
@@ -579,20 +579,6 @@ export function AdminQuotationDetailScreen({
                     label={t('mobile.adminQuotation.dealerOrder')}
                     value={detail.request.externalOrderNumber}
                     ltr
-                  />
-                </MetaRow>
-              ) : null}
-              {linkedSalesOrder && !embedded ? (
-                <MetaRow isRTL={isRTL}>
-                  <MetaCell
-                    label={t('mobile.adminQuotation.openSalesOrder')}
-                    value={linkedSalesOrder.number}
-                    brand
-                    ltr
-                    onPress={() => {
-                      void haptics.selection();
-                      router.push(`/(app)/(admin)/orders/${linkedSalesOrder.id}` as never);
-                    }}
                   />
                 </MetaRow>
               ) : null}
@@ -708,9 +694,10 @@ export function AdminQuotationDetailScreen({
                 gap: theme.spacing.md,
               }}
             >
-              <SecondaryButton
+              <PrimaryButton
                 label={t('mobile.adminQuotation.pdf')}
                 disabled={pdfBusy}
+                loading={pdfBusy}
                 onPress={() => void openPdf()}
                 style={{ alignSelf: 'stretch', width: '100%' }}
               />
@@ -791,6 +778,7 @@ export function AdminQuotationDetailScreen({
             <OrderSectionHeader
               icon="list-outline"
               label={t('mobile.adminQuotation.lines')}
+              uppercase={false}
             />
             {(detail.lines ?? []).length === 0 ? (
               <AppText variant="caption" color="muted">
@@ -804,6 +792,10 @@ export function AdminQuotationDetailScreen({
                   line,
                 }))).map((row, index) => {
                   const line = row.line;
+                  const dims = quotationLineDims(line);
+                  const specs = quotationLineSpecs(line);
+                  const qtyLabel = quotationQtyLabel(line.quantity);
+                  const lineNet = quotationLineNet(line.unitPrice, line.quantity);
                   return (
                   <View
                     key={row.id}
@@ -832,25 +824,27 @@ export function AdminQuotationDetailScreen({
                       >
                         {line.description || t('mobile.adminQuotation.line', { n: index + 1 })}
                       </AppText>
-                      <View
-                        style={{
-                          paddingHorizontal: theme.spacing.sm,
-                          paddingVertical: 4,
-                          borderRadius: theme.radius.md,
-                          backgroundColor: colors.brandSoft,
-                          borderWidth: 1,
-                          borderColor: colors.brand,
-                        }}
-                      >
-                        <AppText
-                          variant="caption"
-                          weight="semibold"
-                          style={{ color: colors.brand }}
-                          dir="ltr"
+                      {qtyLabel ? (
+                        <View
+                          style={{
+                            paddingHorizontal: theme.spacing.sm,
+                            paddingVertical: 4,
+                            borderRadius: theme.radius.md,
+                            backgroundColor: colors.brandSoft,
+                            borderWidth: 1,
+                            borderColor: colors.brand,
+                          }}
                         >
-                          ×{money(line.quantity)}
-                        </AppText>
-                      </View>
+                          <AppText
+                            variant="caption"
+                            weight="semibold"
+                            style={{ color: colors.brand }}
+                            dir="ltr"
+                          >
+                            ×{qtyLabel}
+                          </AppText>
+                        </View>
+                      ) : null}
                     </View>
 
                     <View
@@ -860,30 +854,34 @@ export function AdminQuotationDetailScreen({
                         gap: theme.spacing.md,
                       }}
                     >
-                      <View style={{ minWidth: '40%', gap: 2 }}>
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}
-                        >
-                          {t('mobile.adminQuotation.dimensions')}
-                        </AppText>
-                        <AppText variant="caption" color="secondary" dir="ltr">
-                          {lineDims(line)}
-                        </AppText>
-                      </View>
-                      <View style={{ minWidth: '40%', gap: 2 }}>
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}
-                        >
-                          {t('mobile.adminQuotation.specs')}
-                        </AppText>
-                        <AppText variant="caption" color="secondary">
-                          {lineSpecs(line)}
-                        </AppText>
-                      </View>
+                      {dims ? (
+                        <View style={{ minWidth: '40%', gap: 2 }}>
+                          <AppText
+                            variant="caption"
+                            color="muted"
+                            style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}
+                          >
+                            {t('mobile.adminQuotation.dimensions')}
+                          </AppText>
+                          <AppText variant="caption" color="secondary" dir="ltr">
+                            {dims}
+                          </AppText>
+                        </View>
+                      ) : null}
+                      {specs ? (
+                        <View style={{ minWidth: '40%', gap: 2 }}>
+                          <AppText
+                            variant="caption"
+                            color="muted"
+                            style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}
+                          >
+                            {t('mobile.adminQuotation.specs')}
+                          </AppText>
+                          <AppText variant="caption" color="secondary">
+                            {specs}
+                          </AppText>
+                        </View>
+                      ) : null}
                       {isDraft && canUpdate ? (
                         <View style={{ width: '100%' }}>
                           <TextField
@@ -932,10 +930,7 @@ export function AdminQuotationDetailScreen({
                               {t('mobile.adminQuotation.lineTotal')}
                             </AppText>
                             <AppText variant="caption" weight="semibold" dir="ltr">
-                              {money(
-                                line.lineTotal ??
-                                  Number(line.unitPrice) * Number(line.quantity),
-                              )}
+                              {money(lineNet)}
                             </AppText>
                           </View>
                         </>
@@ -1032,7 +1027,7 @@ export function AdminQuotationDetailScreen({
         }
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
-          paddingBottom: theme.spacing['3xl'] + insets.bottom + 72,
+          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
           gap: theme.spacing.md,
         }}
         keyboardShouldPersistTaps="handled"

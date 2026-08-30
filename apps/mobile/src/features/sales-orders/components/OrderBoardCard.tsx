@@ -68,6 +68,8 @@ type OrderSectionHeaderProps = {
   label: string;
   accent?: string;
   trailing?: ReactNode;
+  /** Floor boards default to uppercase. Quotation detail uses sentence-case. */
+  uppercase?: boolean;
 };
 
 export function OrderSectionHeader({
@@ -75,6 +77,7 @@ export function OrderSectionHeader({
   label,
   accent,
   trailing,
+  uppercase = true,
 }: OrderSectionHeaderProps) {
   const { isRTL } = useLocale();
   const { colors, theme } = useTheme();
@@ -106,8 +109,8 @@ export function OrderSectionHeader({
         color="muted"
         style={{
           flex: 1,
-          textTransform: 'uppercase',
-          letterSpacing: 0.6,
+          textTransform: uppercase ? 'uppercase' : 'none',
+          letterSpacing: uppercase ? 0.6 : 0,
           fontSize: 11,
           lineHeight: 14,
         }}
