@@ -252,12 +252,26 @@ export function formatPhoneForDisplay(raw: string | null | undefined): string {
   const { country, national } = parsePhoneValue(trimmed);
   const canSplit = Boolean(national) && digits.startsWith(country.dial);
   if (canSplit) {
-    const grouped = groupDigitsFromEnd(national, 3);
+    const grouped = groupNationalForDisplay(national);
     return `${hadPlus ? '+' : ''}${country.dial} ${grouped}`;
   }
 
   const grouped = groupDigitsFromEnd(digits, 3);
   return hadPlus ? `+${grouped}` : grouped;
+}
+
+/** 9-digit nationals (JO/PS mobile) read as 79 021 0010 — digits unchanged. */
+function groupNationalForDisplay(national: string): string {
+  if (national.length === 9) {
+    return `${national.slice(0, 2)} ${national.slice(2, 5)} ${national.slice(5)}`;
+  }
+  if (national.length === 10) {
+    return `${national.slice(0, 3)} ${national.slice(3, 6)} ${national.slice(6)}`;
+  }
+  if (national.length === 8) {
+    return `${national.slice(0, 4)} ${national.slice(4)}`;
+  }
+  return groupDigitsFromEnd(national, 3);
 }
 
 function groupDigitsFromEnd(digits: string, size: number): string {

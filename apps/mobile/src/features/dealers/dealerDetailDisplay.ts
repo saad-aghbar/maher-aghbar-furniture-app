@@ -1,5 +1,5 @@
 /**
- * Display-only helpers for admin dealer detail. No API / count changes.
+ * Display-only helpers for admin dealer chrome (list + detail). No API / count changes.
  */
 
 const BLANK_CONTACT = new Set(['', '-', '—', '–', '−']);

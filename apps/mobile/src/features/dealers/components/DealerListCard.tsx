@@ -3,12 +3,13 @@ import { Ionicons } from '@expo/vector-icons';
 import type { CustomerListItem } from '@/api/modules/customers';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { Divider } from '@/components/layout/Divider';
+import { formatPhoneForDisplay } from '@/components/forms/countryDialCodes';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { localizedName } from '@maher/i18n';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { dealerIdentitySubtitle, hasVisibleContact } from '../dealerDetailDisplay';
 
 type Props = {
   dealer: CustomerListItem;
@@ -51,8 +52,11 @@ export function DealerListCard({ dealer, onPress }: Props) {
     },
   ];
 
-  const phone = dealer.phone?.trim() || '—';
-  const fax = dealer.fax?.trim() || '—';
+  const identitySubtitle = dealerIdentitySubtitle(name, dealer.companyName, '');
+  const phoneRaw = dealer.phone?.trim() ?? '';
+  const faxRaw = dealer.fax?.trim() ?? '';
+  const phone = hasVisibleContact(phoneRaw) ? formatPhoneForDisplay(phoneRaw) : null;
+  const fax = hasVisibleContact(faxRaw) ? formatPhoneForDisplay(faxRaw) : null;
   const code = dealer.code?.trim() || '';
 
   return (
@@ -125,9 +129,23 @@ export function DealerListCard({ dealer, onPress }: Props) {
             </AppText>
           ) : null}
         </View>
-        <AppText variant="caption" color="brand" weight="semibold">
-          {t('common.details')}
-        </AppText>
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            gap: 2,
+            flexShrink: 0,
+          }}
+        >
+          <AppText variant="caption" color="brand" weight="semibold">
+            {t('common.details')}
+          </AppText>
+          <Ionicons
+            name={isRTL ? 'chevron-back' : 'chevron-forward'}
+            size={14}
+            color={colors.brand}
+          />
+        </View>
       </View>
 
       <View
@@ -179,45 +197,52 @@ export function DealerListCard({ dealer, onPress }: Props) {
             >
               {name}
             </AppText>
-            {dealer.companyName?.trim() ? (
+            {identitySubtitle ? (
               <AppText
                 variant="caption"
                 color="secondary"
                 numberOfLines={1}
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
-                {dealer.companyName.trim()}
+                {identitySubtitle}
               </AppText>
             ) : null}
           </View>
         </View>
 
-        {/* Contact meta board */}
-        <View
-          style={{
-            borderRadius: theme.radius.lg,
-            backgroundColor: colors.surfaceSecondary,
-            borderWidth: 1,
-            borderColor: colors.border,
-            overflow: 'hidden',
-          }}
-        >
-          <MetaRow
-            icon="call-outline"
-            label={t('customers.phone')}
-            value={phone}
-            isRTL={isRTL}
-            valueLtr
-          />
-          <Divider compact />
-          <MetaRow
-            icon="print-outline"
-            label={t('customers.fax')}
-            value={fax}
-            isRTL={isRTL}
-            valueLtr
-          />
-        </View>
+        {phone || fax ? (
+          <View
+            style={{
+              borderRadius: theme.radius.lg,
+              backgroundColor: colors.surfaceSecondary,
+              borderWidth: 1,
+              borderColor: colors.border,
+              overflow: 'hidden',
+            }}
+          >
+            {phone ? (
+              <MetaRow
+                icon="call-outline"
+                label={t('customers.phone')}
+                value={phone}
+                isRTL={isRTL}
+                valueLtr
+              />
+            ) : null}
+            {fax ? (
+              <>
+                {phone ? <BoardHairline /> : null}
+                <MetaRow
+                  icon="print-outline"
+                  label={t('customers.fax')}
+                  value={fax}
+                  isRTL={isRTL}
+                  valueLtr
+                />
+              </>
+            ) : null}
+          </View>
+        ) : null}
 
         {/* Order buckets — three inset tiles */}
         <View
@@ -262,9 +287,8 @@ export function DealerListCard({ dealer, onPress }: Props) {
                 align="center"
                 numberOfLines={1}
                 style={{
-                  fontSize: 10,
-                  letterSpacing: 0.35,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  fontSize: 11,
+                  letterSpacing: locale === 'ar' ? 0 : 0.15,
                 }}
               >
                 {m.label}
@@ -324,7 +348,7 @@ export function DealerListCard({ dealer, onPress }: Props) {
               {formatCurrency(outstanding)}
             </AppText>
           </View>
-          <Divider compact />
+          <BoardHairline />
           <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -437,5 +461,16 @@ function MetaRow({
         {value}
       </AppText>
     </View>
+  );
+}
+
+function BoardHairline() {
+  const { colors } = useTheme();
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{ height: 1, backgroundColor: colors.border }}
+    />
   );
 }
