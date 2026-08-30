@@ -73,18 +73,25 @@ export function WorkflowPageHeader({ fallback, title, subtitle, status }: Props)
 type StatusPillProps = {
   label: string;
   active?: boolean;
+  /** Cream fill + wood-brown ink instead of gray muted chrome. */
+  branded?: boolean;
 };
 
-export function WorkflowStatusPill({ label, active = false }: StatusPillProps) {
+export function WorkflowStatusPill({
+  label,
+  active = false,
+  branded = false,
+}: StatusPillProps) {
   const { theme, colors } = useTheme();
+  const chrome = active || branded;
   return (
     <View
       style={{
         alignSelf: 'center',
         borderRadius: theme.radius.full,
         borderWidth: 1,
-        borderColor: active ? colors.brand : colors.border,
-        backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
+        borderColor: chrome ? colors.brand : colors.border,
+        backgroundColor: chrome ? colors.brandSoft : colors.surfaceSecondary,
         paddingHorizontal: theme.spacing.md,
         paddingVertical: theme.spacing.xs,
       }}
@@ -92,7 +99,13 @@ export function WorkflowStatusPill({ label, active = false }: StatusPillProps) {
       <AppText
         variant="caption"
         weight="semibold"
-        style={{ color: active ? colors.brand : colors.textSecondary }}
+        style={{
+          color: active
+            ? colors.brand
+            : branded
+              ? colors.brandActive
+              : colors.textSecondary,
+        }}
       >
         {label}
       </AppText>
