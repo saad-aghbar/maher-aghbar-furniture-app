@@ -194,30 +194,31 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
               </AppText>
             </View>
           </View>
-          {total > 0 ? (
-            <View
+          <View
+            style={{
+              minWidth: 28,
+              height: 28,
+              paddingHorizontal: 8,
+              borderRadius: 14,
+              backgroundColor: total === 0 ? colors.background : colors.brandSoft,
+              borderWidth: 1,
+              borderColor: total === 0 ? colors.borderStrong : colors.brand,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight="semibold"
+              dir="ltr"
               style={{
-                minWidth: 28,
-                height: 28,
-                paddingHorizontal: 8,
-                borderRadius: 14,
-                backgroundColor: colors.brandSoft,
-                borderWidth: 1,
-                borderColor: colors.brand,
-                alignItems: 'center',
-                justifyContent: 'center',
+                color: total === 0 ? colors.textPrimary : colors.brand,
+                fontVariant: ['tabular-nums'],
               }}
             >
-              <AppText
-                variant="caption"
-                weight="semibold"
-                dir="ltr"
-                style={{ color: colors.brand, fontVariant: ['tabular-nums'] }}
-              >
-                {String(total)}
-              </AppText>
-            </View>
-          ) : null}
+              {String(total)}
+            </AppText>
+          </View>
         </View>
 
         <Animated.View
@@ -289,7 +290,7 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
                 tint={tint}
                 soft={soft}
                 active={active}
-                empty={key !== 'all' && value === 0}
+                empty={value === 0}
                 onPress={() => {
                   void haptics.selection();
                   if (key === 'all') {
