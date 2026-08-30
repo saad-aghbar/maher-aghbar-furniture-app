@@ -27,6 +27,12 @@ import {
 } from './components/NotificationsSegmentRail';
 import { mapNotificationLinkToHref } from './linkHref';
 import {
+  NOTIFICATION_LTR_TREE,
+  notificationLeadEdge,
+  notificationRowDirection,
+  notificationStartAlign,
+} from './notificationLayout';
+import {
   useMarkAllNotificationsReadMutation,
   useMarkNotificationReadMutation,
   useNotificationsQuery,
@@ -69,7 +75,7 @@ function NotificationsScreenTitle({
             position: 'absolute',
             top: 0,
             bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
+            ...notificationLeadEdge(isRTL),
             zIndex: 1,
             justifyContent: 'center',
           }}
@@ -102,7 +108,7 @@ function NotificationsShell({
   children: ReactNode;
 }) {
   return (
-    <AppScreen>
+    <AppScreen style={NOTIFICATION_LTR_TREE}>
       <NotificationsScreenTitle
         titleWeight={titleWeight}
         showBack={showBack}
@@ -253,9 +259,9 @@ export function NotificationsInboxScreen({
             >
               <View
                 style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  flexDirection: notificationRowDirection(isRTL),
                   alignItems: 'center',
-                  justifyContent: 'space-between',
+                  justifyContent: 'flex-start',
                   gap: theme.spacing.sm,
                   paddingHorizontal: theme.spacing.md,
                   paddingVertical: theme.spacing.sm + 2,
@@ -267,9 +273,11 @@ export function NotificationsInboxScreen({
                 <AppText
                   variant="caption"
                   weight={titleWeight}
+                  align="start"
                   style={{
                     flex: 1,
-                    textAlign: isRTL ? 'right' : 'left',
+                    width: '100%',
+                    textAlign: notificationStartAlign(isRTL),
                     letterSpacing: locale === 'ar' ? 0 : 0.45,
                     textTransform: locale === 'ar' ? 'none' : 'uppercase',
                     fontSize: 11,
@@ -327,8 +335,10 @@ export function NotificationsInboxScreen({
             variant="caption"
             weight={titleWeight}
             color="muted"
+            align="start"
             style={{
-              textAlign: isRTL ? 'right' : 'left',
+              width: '100%',
+              textAlign: notificationStartAlign(isRTL),
               marginBottom: theme.spacing.xs,
               letterSpacing: locale === 'ar' ? 0 : 0.6,
               textTransform: locale === 'ar' ? 'none' : 'uppercase',
