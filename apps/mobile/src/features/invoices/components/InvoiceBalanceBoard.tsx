@@ -19,7 +19,7 @@ function moneyLabel(locale: string, value: number): string {
 /**
  * Outstanding-first statement board — big balance, paid bar, compact subtotal/tax.
  */
-export function InvoiceBalanceBoard({ model, currencySuffix = 'ILS' }: Props) {
+export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';

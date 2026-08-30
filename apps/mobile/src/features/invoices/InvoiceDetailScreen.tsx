@@ -1,6 +1,7 @@
 import type { Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -34,9 +35,15 @@ type Props = {
   backFallback?: Href;
 };
 
+/** Same side inset as PersistentSurfaceTabBar floating shell. */
+const TAB_BAR_SIDE_INSET_KEY = 'md' as const;
+
+/** Invoice detail money mark — ₪, same as PORD/SINV leftovers. */
+const INVOICE_DETAIL_CURRENCY = '₪';
+
 /**
  * Invoice detail — document-forward floor boards with PDF / payment actions
- * after the date card so they cannot cover it.
+ * docked above the tab bar.
  */
 export function InvoiceDetailScreen({
   invoiceId,
@@ -45,6 +52,7 @@ export function InvoiceDetailScreen({
   const { user } = useAuth();
   const { t, locale } = useLocale();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const canRead = can(user, 'invoice.read');
@@ -97,8 +105,10 @@ export function InvoiceDetailScreen({
 
   const showPay = canPay && model.outstanding > 0 && model.status !== 'CANCELLED';
   const contentPad = theme.spacing.lg;
-  /** Tab bar clearance only — CTAs sit in the scroll after the date card, not on top of it. */
-  const stickyPad = SURFACE_TAB_BAR_CLEARANCE + theme.spacing['2xl'];
+  const tabBarInset = theme.spacing[TAB_BAR_SIDE_INSET_KEY];
+  const stickyBottom = SURFACE_TAB_BAR_CLEARANCE;
+  const dockH = showPay ? 56 : 52;
+  const stickyPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE + dockH;
 
   const onPdf = () => {
     void (async () => {
@@ -151,13 +161,33 @@ export function InvoiceDetailScreen({
         </ListItemEnter>
 
         <ListItemEnter index={1}>
-          <InvoiceBalanceBoard model={model} />
+          <InvoiceBalanceBoard model={model} currencySuffix={INVOICE_DETAIL_CURRENCY} />
         </ListItemEnter>
 
         <ListItemEnter index={2}>
           <InvoiceMetaBoard model={model} />
         </ListItemEnter>
 
+        <InvoiceLinesBoard model={model} currencySuffix={INVOICE_DETAIL_CURRENCY} />
+        <InvoicePaymentsBoard
+          model={model}
+          currencySuffix={INVOICE_DETAIL_CURRENCY}
+          methodLabel={methodLabel}
+          onPaymentPdf={onPaymentPdf}
+        />
+        <InvoiceJofotaraBoard model={model} />
+      </ScrollView>
+
+      <View
+        pointerEvents="box-none"
+        style={{
+          position: 'absolute',
+          left: tabBarInset,
+          right: tabBarInset,
+          bottom: stickyBottom,
+          zIndex: 30,
+        }}
+      >
         <InvoiceStickyActions
           pdfLabel={t('accounting.downloadPdf')}
           payLabel={showPay ? t('accounting.recordPayment') : undefined}
@@ -170,15 +200,7 @@ export function InvoiceDetailScreen({
               : undefined
           }
         />
-
-        <InvoiceLinesBoard model={model} />
-        <InvoicePaymentsBoard
-          model={model}
-          methodLabel={methodLabel}
-          onPaymentPdf={onPaymentPdf}
-        />
-        <InvoiceJofotaraBoard model={model} />
-      </ScrollView>
+      </View>
 
       {showPay ? (
         <RecordPaymentSheet

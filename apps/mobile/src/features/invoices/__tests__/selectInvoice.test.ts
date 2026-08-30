@@ -171,6 +171,28 @@ describe('selectInvoiceDetail', () => {
     expect(detail.total).toBe(127.6);
   });
 
+  it('shows 0 remaining on a paid invoice when outstandingAmount is dealer AR', () => {
+    const detail = selectInvoiceDetail(
+      {
+        ...baseInv,
+        number: 'INV-2026-00022',
+        status: 'PAID',
+        total: '127.6',
+        paidAmount: '127.6',
+        outstandingAmount: '2255.2',
+        accountCredit: '7000',
+        subtotal: '110',
+        taxTotal: '17.6',
+      },
+      'en',
+    );
+    expect(detail.paid).toBe(127.6);
+    expect(detail.credit).toBe(7000);
+    expect(detail.outstanding).toBe(0);
+    expect(detail.status).toBe('PAID');
+    expect(detail.total).toBe(127.6);
+  });
+
   it('does not invent paid-in-full from dealer-scale account credit', () => {
     const detail = selectInvoiceDetail(
       {
@@ -222,6 +244,20 @@ describe('invoiceRemainingDue', () => {
     });
     expect(due.outstanding).toBe(76.56);
     expect(due.paid).toBe(51.04);
+  });
+
+  it('zeros remaining on PAID without hiding paid or dealer credit', () => {
+    const due = invoiceRemainingDue({
+      ...baseInv,
+      status: 'PAID',
+      total: 127.6,
+      paidAmount: 127.6,
+      outstandingAmount: 2255.2,
+      accountCredit: 7000,
+    });
+    expect(due.outstanding).toBe(0);
+    expect(due.paid).toBe(127.6);
+    expect(due.credit).toBe(7000);
   });
 });
 

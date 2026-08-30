@@ -96,21 +96,27 @@ function invoiceCredit(inv: Invoice): number {
 
 /**
  * Remaining due on this invoice: total − paid − invoice-applied credit.
- * Dealer-scale `outstandingAmount` or account credit is not this invoice's remainder
- * and must not invent paid-in-full.
+ * Dealer-scale `outstandingAmount` / account credit is display-only and never
+ * the hero. A PAID invoice is 0 remaining (matches the Paid pill).
  */
 export function invoiceRemainingDue(inv: Invoice): { paid: number; credit: number; outstanding: number } {
   const total = toNum(inv.total);
   const credit = Math.max(0, invoiceCredit(inv));
   const applied = credit <= total + 0.009 ? credit : 0;
+  const paidStatus = (inv.status ?? '').toUpperCase() === 'PAID';
   const reportedDue = hasMoney(inv.outstandingAmount) ? toNum(inv.outstandingAmount) : null;
   const dueLooksLikeInvoice = reportedDue != null && reportedDue <= total + 0.009;
 
-  const paid = hasMoney(inv.paidAmount)
+  let paid = hasMoney(inv.paidAmount)
     ? toNum(inv.paidAmount)
     : dueLooksLikeInvoice
       ? Math.max(0, total - (reportedDue ?? 0) - applied)
       : 0;
+
+  if (paidStatus) {
+    if (paid <= 0.009) paid = total;
+    return { paid, credit, outstanding: 0 };
+  }
 
   return {
     paid,
