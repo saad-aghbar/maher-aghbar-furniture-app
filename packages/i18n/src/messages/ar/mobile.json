@@ -1104,9 +1104,10 @@
     "dealerRailAll": "كل التجار",
     "dealerRailShowing": "عرض {dealer}",
     "stages": {
-      "pending": "معلّق",
-      "production": "قيد الإنتاج",
-      "ready": "جاهز للتسليم",
+      "all": "الكل",
+      "pending": "تجهيز",
+      "production": "إنتاج",
+      "ready": "جاهز",
       "late": "متأخر"
     },
     "workbenchHotEyebrow": "على الطاولة",

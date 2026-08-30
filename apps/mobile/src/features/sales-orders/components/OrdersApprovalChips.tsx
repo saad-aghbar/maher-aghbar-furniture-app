@@ -19,14 +19,14 @@ const PILL_HEIGHT = 34;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
-const FILL_LIGHT = ['#F3EEE5', '#E8EEEA', '#F2E8E4'] as const;
-const BORDER_LIGHT = ['#8F7A58', '#4A6B58', '#7A4538'] as const;
+const FILL_LIGHT = ['#EDE6DA', '#EDE6DA', '#EDE6DA'] as const;
+const BORDER_LIGHT = ['#776245', '#776245', '#372612'] as const;
 const FILL_DARK = [
   'rgba(168,144,108,0.22)',
-  'rgba(122,170,148,0.18)',
-  'rgba(196,137,122,0.18)',
+  'rgba(168,144,108,0.22)',
+  'rgba(168,144,108,0.22)',
 ] as const;
-const BORDER_DARK = ['#A8906C', '#7AAA94', '#C4897A'] as const;
+const BORDER_DARK = ['#A8906C', '#A8906C', '#776245'] as const;
 
 type ChipLayout = { x: number; width: number };
 
@@ -36,19 +36,10 @@ type Props = {
 };
 
 function accentFor(
-  chip: OrdersApprovalFilter,
-  colors: {
-    brand: string;
-    success: string;
-    warning: string;
-    textSecondary: string;
-  },
+  colors: { textPrimary: string; textSecondary: string },
   focused: boolean,
 ): string {
-  if (!focused) return colors.textSecondary;
-  if (chip === 'approved') return colors.success;
-  if (chip === 'notApproved') return colors.warning;
-  return colors.brand;
+  return focused ? colors.textPrimary : colors.textSecondary;
 }
 
 /**
@@ -155,7 +146,7 @@ export function OrdersApprovalChips({ value, onChange }: Props) {
         {CHIPS.map((chip) => {
           const focused = value === chip;
           const label = t(`mobile.orders.filterApprovalOptions.${chip}`);
-          const ink = accentFor(chip, colors, focused);
+          const ink = accentFor(colors, focused);
 
           return (
             <Pressable

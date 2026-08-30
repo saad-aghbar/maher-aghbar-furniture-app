@@ -13,18 +13,26 @@ type StatusBadgeProps = {
   status: string;
   label?: string;
   dot?: boolean;
+  /** Army Camo wash + Liquorice type — board chips, not cool-grey defaults. */
+  ink?: 'semantic' | 'board';
 };
 
 function normalizeStatusKey(status: string): string {
   return status.trim().toUpperCase().replace(/\s+/g, '_');
 }
 
-export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
-  const { theme } = useTheme();
+export function StatusBadge({
+  status,
+  label,
+  dot = false,
+  ink = 'semantic',
+}: StatusBadgeProps) {
+  const { theme, colors } = useTheme();
   const { locale, isRTL } = useLocale();
   const key = normalizeStatusKey(status);
   const variant = resolveStatusVariant(key);
   const display = label ?? statusLabel(locale, key);
+  const board = ink === 'board';
 
   return (
     <View
@@ -33,6 +41,12 @@ export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
       style={[
         getBadgeContainerStyle(theme, variant),
         { alignSelf: isRTL ? 'flex-end' : 'flex-start' },
+        board
+          ? {
+              backgroundColor: colors.brandSoft,
+              borderColor: colors.brand,
+            }
+          : null,
       ]}
     >
       {dot ? (
@@ -43,7 +57,7 @@ export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
             width: 6,
             height: 6,
             borderRadius: 3,
-            backgroundColor: getBadgeDotColor(theme, variant),
+            backgroundColor: board ? colors.brandActive : getBadgeDotColor(theme, variant),
           }}
         />
       ) : null}
@@ -62,6 +76,7 @@ export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
             ...(isRTL
               ? { fontSize: 10, lineHeight: 14 }
               : null),
+            ...(board ? { color: colors.textPrimary } : null),
           },
         ]}
       >

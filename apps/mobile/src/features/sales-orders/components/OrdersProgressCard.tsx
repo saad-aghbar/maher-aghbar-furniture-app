@@ -205,12 +205,14 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             <StatusBadge
               status={order.status}
               label={chips.statusLabel}
+              ink="board"
               dot
             />
             {chips.stageLabel ? (
               <StatusBadge
                 status={chips.stageKey || order.status}
                 label={chips.stageLabel}
+                ink="board"
               />
             ) : null}
           </View>

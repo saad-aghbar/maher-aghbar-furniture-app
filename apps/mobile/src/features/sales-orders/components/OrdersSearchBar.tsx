@@ -3,7 +3,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { useLocale } from '@/i18n';
 import { resolveAppFontStyle, useTheme } from '@/theme';
-import { orderBoardShadow } from './orderFloorStyle';
 
 type Props = {
   value: string;
@@ -13,8 +12,7 @@ type Props = {
 };
 
 /**
- * Board search — cream pill + icon bubble, same language as filter / dealer / journey.
- * Not the system iOS search field.
+ * Apple White field, Liquorice icon, Tumbleweed placeholder — not a cool-grey iOS search.
  */
 export function OrdersSearchBar({
   value,
@@ -23,7 +21,7 @@ export function OrdersSearchBar({
   accessibilityLabel,
 }: Props) {
   const { isRTL, locale, t } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { colors, theme } = useTheme();
 
   return (
     <View
@@ -32,34 +30,21 @@ export function OrdersSearchBar({
         borderRadius: theme.radius.full,
         borderWidth: 1,
         borderColor: colors.borderStrong,
-        backgroundColor: colors.surface,
+        backgroundColor: colors.background,
         overflow: 'hidden',
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
         paddingHorizontal: theme.spacing.md,
         gap: theme.spacing.sm,
-        ...orderBoardShadow(colorScheme),
+        ...theme.elevation.rest,
       }}
     >
-      <View
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 16,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: colors.surfaceSecondary,
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}
-      >
-        <Ionicons name="search-outline" size={16} color={colors.brand} />
-      </View>
+      <Ionicons name="search-outline" size={18} color={colors.textPrimary} />
       <AppTextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={colors.brandActive}
         accessibilityLabel={accessibilityLabel ?? placeholder}
         autoCapitalize="none"
         autoCorrect={false}
@@ -92,7 +77,7 @@ export function OrdersSearchBar({
             justifyContent: 'center',
           }}
         >
-          <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+          <Ionicons name="close-circle" size={18} color={colors.brandActive} />
         </Pressable>
       ) : null}
     </View>

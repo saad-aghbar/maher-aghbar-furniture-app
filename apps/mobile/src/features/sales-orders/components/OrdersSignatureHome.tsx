@@ -79,7 +79,7 @@ type Props = {
 };
 
 /** Extra beige clearance under the list so the last lane + cards clear the tab bar. */
-const LIST_BOTTOM_EXTRA = 72;
+const LIST_BOTTOM_EXTRA = 120;
 
 type Section = {
   key: FloorBoardSectionKey;

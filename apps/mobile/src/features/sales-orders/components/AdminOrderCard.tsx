@@ -134,6 +134,7 @@ export function AdminOrderCard({ order, index = 0, onPress }: AdminOrderCardProp
               <StatusBadge
                 status={order.status}
                 label={humanizeOrderChip(locale, order.status)}
+                ink="board"
                 dot
               />
             </View>

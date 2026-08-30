@@ -667,14 +667,13 @@ function OrdersHeader({
           >
             {t('mobile.orders.pulseEyebrow')}
           </AppText>
-          <AppText variant="title" weight={titleWeight}>
+          <AppText variant="largeTitle" weight={titleWeight}>
             {t('mobile.orders.title')}
           </AppText>
           <AppText
             variant="caption"
-            color="muted"
-            numberOfLines={1}
-            style={{ fontSize: 12, lineHeight: 16 }}
+            numberOfLines={2}
+            style={{ fontSize: 12, lineHeight: 16, color: colors.brand }}
           >
             {t('mobile.orders.subtitle')}
           </AppText>

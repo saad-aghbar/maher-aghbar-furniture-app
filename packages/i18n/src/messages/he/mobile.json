@@ -1104,9 +1104,10 @@
     "dealerRailAll": "כל הסוחרים",
     "dealerRailShowing": "מציג {dealer}",
     "stages": {
-      "pending": "ממתין",
-      "production": "בייצור",
-      "ready": "מוכן למשלוח",
+      "all": "הכל",
+      "pending": "בהכנה",
+      "production": "ייצור",
+      "ready": "מוכן",
       "late": "באיחור"
     },
     "workbenchHotEyebrow": "על השולחן",

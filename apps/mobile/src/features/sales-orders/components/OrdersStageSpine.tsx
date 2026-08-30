@@ -27,15 +27,13 @@ type Props = {
   onStageFocusChange: (next: OrdersStageFocus) => void;
 };
 
-function stageTint(colors: ThemeColors, key: OrdersStageKey) {
-  switch (key) {
-    case 'pending':
-      return { tint: colors.brand, soft: colors.brandSoft };
-    case 'production':
-      return { tint: colors.info, soft: colors.infoSoft };
-    case 'ready':
-      return { tint: colors.success, soft: colors.successSoft };
+type JourneyKey = OrdersStageKey | 'all';
+
+function stageTint(colors: ThemeColors, key: JourneyKey) {
+  if (key === 'production') {
+    return { tint: colors.brandActive, soft: colors.brandSoft };
   }
+  return { tint: colors.brand, soft: colors.brandSoft };
 }
 
 function StageIcon({
@@ -43,20 +41,24 @@ function StageIcon({
   color,
   size,
 }: {
-  stageKey: OrdersStageKey;
+  stageKey: JourneyKey;
   color: string;
   size: number;
 }) {
   switch (stageKey) {
+    case 'all':
+      return <Ionicons name="apps-outline" size={size} color={color} />;
     case 'pending':
-      return <Ionicons name="cube-outline" size={size} color={color} />;
-    case 'production':
-      return <MaterialCommunityIcons name="factory" size={size} color={color} />;
+      return <Ionicons name="hourglass-outline" size={size} color={color} />;
     case 'ready':
-      return <Ionicons name="checkmark-circle-outline" size={size} color={color} />;
+      return <Ionicons name="play-outline" size={size} color={color} />;
+    case 'production':
+      return <MaterialCommunityIcons name="hammer" size={size} color={color} />;
   }
 }
 
+/** 4-up: All · Preparing · Ready · Production — short labels, honest zeros. */
+const JOURNEY: JourneyKey[] = ['all', 'pending', 'ready', 'production'];
 const STAGES: OrdersStageKey[] = ['pending', 'production', 'ready'];
 
 /**
@@ -255,20 +257,26 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
             gap: theme.spacing.sm,
           }}
         >
-          {STAGES.map((key) => {
+          {JOURNEY.map((key) => {
             const { tint, soft } = stageTint(colors, key);
             const active = stageFocus === key;
+            const value = key === 'all' ? total : counts[key];
             return (
               <StageNode
                 key={key}
                 stageKey={key}
                 label={t(`mobile.orders.stages.${key}`)}
-                value={counts[key]}
+                value={value}
                 tint={tint}
                 soft={soft}
                 active={active}
+                empty={key !== 'all' && value === 0}
                 onPress={() => {
                   void haptics.selection();
+                  if (key === 'all') {
+                    onStageFocusChange('all');
+                    return;
+                  }
                   onStageFocusChange(toggleStageFocus(stageFocus, key));
                 }}
               />
@@ -287,14 +295,16 @@ function StageNode({
   tint,
   soft,
   active,
+  empty,
   onPress,
 }: {
-  stageKey: OrdersStageKey;
+  stageKey: JourneyKey;
   label: string;
   value: number;
   tint: string;
   soft: string;
   active: boolean;
+  empty?: boolean;
   onPress: () => void;
 }) {
   const { isRTL, locale } = useLocale();
@@ -325,7 +335,7 @@ function StageNode({
         accessibilityLabel={`${label} ${value}`}
         style={{
           flex: 1,
-          paddingHorizontal: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.xs,
           paddingVertical: theme.spacing.sm,
           borderRadius: theme.radius.lg,
           backgroundColor: active ? soft : colors.surfaceSecondary,
@@ -357,18 +367,25 @@ function StageNode({
             borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: active ? colors.surface : colors.surface,
+            backgroundColor: colors.background,
             borderWidth: StyleSheet.hairlineWidth,
-            borderColor: active ? tint : colors.border,
+            borderColor: empty ? colors.border : tint,
           }}
         >
-          <StageIcon stageKey={stageKey} color={tint} size={15} />
+          <StageIcon
+            stageKey={stageKey}
+            color={empty ? colors.textPrimary : tint}
+            size={15}
+          />
         </View>
         <AppText
           variant="label"
           weight={titleWeight}
           dir="ltr"
-          style={{ color: tint, fontVariant: ['tabular-nums'] }}
+          style={{
+            color: empty ? colors.textPrimary : tint,
+            fontVariant: ['tabular-nums'],
+          }}
         >
           {String(value)}
         </AppText>

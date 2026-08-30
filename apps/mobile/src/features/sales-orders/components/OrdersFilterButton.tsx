@@ -4,7 +4,6 @@ import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { orderBoardShadow } from './orderFloorStyle';
 
 type Props = {
   onPress: () => void;
@@ -12,11 +11,11 @@ type Props = {
 };
 
 /**
- * Floor-style filter trigger — soft elevation, brand ink when active.
+ * Filled Army Camo pill + cream type — same chip as Home filter, not an outlined iOS capsule.
  */
 export function OrdersFilterButton({ onPress, activeCount = 0 }: Props) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { colors, theme } = useTheme();
   const active = activeCount > 0;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
@@ -34,54 +33,19 @@ export function OrdersFilterButton({ onPress, activeCount = 0 }: Props) {
         minHeight: 40,
         paddingHorizontal: theme.spacing.md,
         paddingVertical: theme.spacing.sm,
-        borderRadius: theme.radius.xl,
-        backgroundColor: active ? colors.brandSoft : colors.surface,
-        borderWidth: 1,
-        borderColor: active ? colors.brand : colors.borderStrong,
+        borderRadius: theme.radius.full,
+        backgroundColor: colors.brand,
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
         gap: theme.spacing.sm,
-        overflow: 'hidden',
-        ...orderBoardShadow(colorScheme),
+        ...theme.elevation.raised,
       }}
     >
-      {active ? (
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
-            width: 3,
-            backgroundColor: colors.brand,
-            opacity: 0.85,
-          }}
-        />
-      ) : null}
-      <View
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 14,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: active ? colors.surface : colors.surfaceSecondary,
-          borderWidth: 1,
-          borderColor: active ? colors.brand : colors.border,
-          marginLeft: isRTL ? 0 : active ? 4 : 0,
-          marginRight: isRTL ? (active ? 4 : 0) : 0,
-        }}
-      >
-        <Ionicons
-          name="options-outline"
-          size={15}
-          color={active ? colors.brand : colors.textSecondary}
-        />
-      </View>
+      <Ionicons name="options-outline" size={16} color={colors.onBrand} />
       <AppText
         variant="label"
         weight={titleWeight}
-        style={{ color: active ? colors.brand : colors.textPrimary }}
+        style={{ color: colors.onBrand }}
       >
         {t('mobile.orders.filter')}
       </AppText>
@@ -92,7 +56,7 @@ export function OrdersFilterButton({ onPress, activeCount = 0 }: Props) {
             height: 22,
             paddingHorizontal: 6,
             borderRadius: 11,
-            backgroundColor: colors.brand,
+            backgroundColor: colors.background,
             alignItems: 'center',
             justifyContent: 'center',
           }}
@@ -101,7 +65,7 @@ export function OrdersFilterButton({ onPress, activeCount = 0 }: Props) {
             variant="caption"
             weight="semibold"
             dir="ltr"
-            style={{ color: colors.onBrand, fontSize: 11, lineHeight: 14 }}
+            style={{ color: colors.brandActive, fontSize: 11, lineHeight: 14 }}
           >
             {String(activeCount)}
           </AppText>

@@ -67,14 +67,17 @@ export function OrdersCompositionChrome({
           >
             {eyebrowLabel}
           </AppText>
-          <AppText variant="title" weight={titleWeight}>
+          <AppText variant="largeTitle" weight={titleWeight}>
             {heading}
           </AppText>
           <AppText
             variant="caption"
-            color="muted"
             numberOfLines={2}
-            style={{ fontSize: 12, lineHeight: 16 }}
+            style={{
+              fontSize: 12,
+              lineHeight: 16,
+              color: colors.brand,
+            }}
           >
             {subtitleLabel}
           </AppText>
