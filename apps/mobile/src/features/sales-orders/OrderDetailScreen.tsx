@@ -425,6 +425,7 @@ export function OrderDetailScreen({
     section += 1;
     return i;
   };
+  const itemQty = vm.items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
@@ -467,8 +468,58 @@ export function OrderDetailScreen({
             marginTop: theme.spacing.md,
           }}
         >
+          {vm.needsProductionSetup ? (
+            <ListItemEnter index={nextIndex()}>
+              <OrderBoardCard accent={colors.brand}>
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    gap: theme.spacing.sm,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: colors.surfaceSecondary,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <Ionicons name="construct-outline" size={16} color={colors.brand} />
+                  </View>
+                  <AppText variant="title" weight={titleWeight} style={{ flex: 1 }}>
+                    {t('mobile.orderDetail.setupTitle')}
+                  </AppText>
+                </View>
+                <AppText variant="caption" color="secondary">
+                  {t('mobile.orderDetail.setupBody')}
+                </AppText>
+                <PrimaryButton
+                  label={t('mobile.orderDetail.prepareProduction')}
+                  onPress={() => {
+                    void haptics.selection();
+                    const href = vm.setupProductId
+                      ? (`/(app)/(admin)/products/${vm.setupProductId}/production-setup` as Href)
+                      : ('/(app)/(admin)/products' as Href);
+                    router.push(href);
+                  }}
+                />
+              </OrderBoardCard>
+            </ListItemEnter>
+          ) : null}
+
           <ListItemEnter index={nextIndex()}>
             <OrderBoardCard accent={colors.brand}>
+              <OrderSectionHeader
+                icon="cube-outline"
+                label={t('mobile.orderDetail.title')}
+                accent={colors.brand}
+              />
               <AppText variant="title" weight={titleWeight}>
                 {vm.title ?? vm.number}
               </AppText>
@@ -478,7 +529,7 @@ export function OrderDetailScreen({
                 dir="ltr"
                 style={{ letterSpacing: 0.2 }}
               >
-                {vm.number}
+                {itemQty > 0 ? `${vm.number} · ${itemQty}` : vm.number}
               </AppText>
               {vm.showCosts === false && vm.customerRef ? (
                 <AppText variant="caption" color="muted">
@@ -556,7 +607,7 @@ export function OrderDetailScreen({
             </ListItemEnter>
           ) : null}
 
-          {hasProductionWorkflow || vm.progressPercent > 0 ? (
+          {hasProductionWorkflow || (vm.progressPercent > 0 && !vm.isDraft) ? (
             <ListItemEnter index={nextIndex()}>
               <OrderBoardCard accent={colors.brand}>
                 <OrderSectionHeader
@@ -872,7 +923,7 @@ export function OrderDetailScreen({
             </ListItemEnter>
           ) : null}
 
-          {vm.showStages ? (
+          {vm.showStages && !vm.needsProductionSetup ? (
             <ListItemEnter index={nextIndex()}>
               <OrderBoardCard accent={colors.brand}>
                 <OrderSectionHeader

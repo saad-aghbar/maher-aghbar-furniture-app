@@ -39,6 +39,19 @@ describe('selectOrderDetail', () => {
     expect(vm.isDraft).toBe(true);
     expect(vm.canEdit).toBe(true);
     expect(vm.productionOrders).toEqual([]);
+    expect(vm.needsProductionSetup).toBe(true);
+    expect(vm.setupProductId).toBe('prod-sofa');
+  });
+
+  it('does not flag production setup on in-production admin orders', () => {
+    const vm = selectOrderDetail(adminOrderDetailFixture, 'admin');
+    expect(vm.needsProductionSetup).toBe(false);
+  });
+
+  it('does not flag production setup for dealer drafts', () => {
+    const vm = selectOrderDetail(adminDraftOrderDetailFixture, 'dealer');
+    expect(vm.needsProductionSetup).toBe(false);
+    expect(vm.setupProductId).toBeNull();
   });
 
   it('keeps dealer-safe stages and omits costs, worker, and end-customer', () => {
