@@ -76,6 +76,15 @@ describe('global query error toasts', () => {
       }),
     ).toBe(true);
     expect(shouldSkipGlobalQueryErrorToast(['purchasing', 'detail', 'p1'])).toBe(false);
+    expect(
+      shouldSkipGlobalQueryErrorToast(
+        ['purchasing', 'invoice-detail', 'SINV-2026-00014'],
+        { skipGlobalErrorToast: true },
+      ),
+    ).toBe(true);
+    expect(
+      shouldSkipGlobalQueryErrorToast(['purchasing', 'invoice-detail', 'SINV-2026-00014']),
+    ).toBe(false);
   });
 
   it('still toasts real screen failures that are not the worker queue', () => {
