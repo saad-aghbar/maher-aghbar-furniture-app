@@ -377,7 +377,11 @@ export function InventorySignatureHome({ initialGroup }: Props) {
   const header = (
     <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
       <InventoryCompositionChrome
-        title={t('mobile.inventory.title')}
+        title={
+          lifecycle === 'semiFinished'
+            ? t('mobile.inventory.semiTitle')
+            : t('mobile.inventory.title')
+        }
         subtitle={
           lifecycle === 'semiFinished'
             ? t('mobile.inventory.signatureSubtitleSemi')

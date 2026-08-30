@@ -2154,6 +2154,7 @@
       "finished": "מוצרים גמורים"
     },
     "semiHeading": "מלאי חצי מוגמר",
+    "semiTitle": "חצי מוגמר",
     "finishedHeading": "מוצרים גמורים",
     "emptySemiTitle": "אין מלאי חצי מוגמר",
     "emptySemiBody": "רכיבים יופיעו כאן כששלב ייצור רושם אותם.",
