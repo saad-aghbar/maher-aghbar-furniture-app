@@ -1,6 +1,7 @@
 import type { Href } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { can } from '@maher/permissions';
 import { listWarehouses } from '@/api/modules/inventory';
@@ -22,14 +23,18 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { usePurchaseActionMutation, usePurchaseOrderQuery } from './query';
-import { localizedNamed } from './selectPurchase';
+import { selectPurchaseDetail } from './selectPurchase';
 
 type Props = { orderId: string };
 
+/** Extra lift so the last Receipts card clears the floating tab bar. */
+const RECEIPTS_TAB_CLEARANCE_EXTRA = 48;
+
 export function PurchaseDetailScreen({ orderId }: Props) {
   const { user } = useAuth();
-  const { t, locale, formatCurrency, formatDate, isRTL } = useLocale();
+  const { t, locale, formatCurrency, formatDate, formatNumber, isRTL } = useLocale();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const canRead = can(user, 'purchase-order.read');
@@ -46,6 +51,11 @@ export function PurchaseDetailScreen({ orderId }: Props) {
     queryFn: listWarehouses,
     enabled: canReceive,
   });
+
+  const detail = useMemo(
+    () => (query.data ? selectPurchaseDetail(query.data, locale) : null),
+    [query.data, locale],
+  );
 
   if (!canRead) {
     return (
@@ -70,7 +80,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
   }
 
   const po = query.data;
-  if (!po) {
+  if (!po || !detail) {
     return (
       <AppScreen backFallback={backFallback}>
         <AppText>{t('mobile.purchasing.loading')}</AppText>
@@ -78,13 +88,22 @@ export function PurchaseDetailScreen({ orderId }: Props) {
     );
   }
 
+  const qtyLabel = (n: number) =>
+    formatNumber(n, { maximumFractionDigits: 3, minimumFractionDigits: 0 });
+  const remainingLabel = t('mobile.purchasing.remainingCount', {
+    count: qtyLabel(detail.remainingQty),
+  });
+
   return (
     <AppScreen backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom:
+            theme.spacing['3xl'] +
+            SURFACE_TAB_BAR_CLEARANCE +
+            Math.max(insets.bottom, RECEIPTS_TAB_CLEARANCE_EXTRA),
         }}
       >
         <View
@@ -100,46 +119,126 @@ export function PurchaseDetailScreen({ orderId }: Props) {
             dir="ltr"
             style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
           >
-            {po.number}
+            {detail.number}
           </AppText>
-          <StatusBadge status={po.status} />
+          <StatusBadge status={detail.status} />
         </View>
 
         <PurchasingFloorBoard>
-          <Meta label={t('catalog.supplier')} value={localizedNamed(locale, po.supplier)} />
-          {po.expectedDeliveryDate ? (
+          <Meta label={t('catalog.supplier')} value={detail.supplierName} />
+          {detail.expectedDeliveryDate ? (
             <Meta
               label={t('mobile.purchasing.expectedArrival')}
-              value={formatDate(po.expectedDeliveryDate)}
+              value={formatDate(detail.expectedDeliveryDate)}
+              ltr
             />
           ) : null}
-          {po.notes ? <Meta label={t('catalog.notes')} value={po.notes} /> : null}
+          {detail.notes ? <Meta label={t('catalog.notes')} value={detail.notes} /> : null}
           <Meta
-            label={t('mobile.purchasing.grandTotal')}
-            value={formatCurrency(Number(po.total) || 0)}
+            label={t('mobile.purchasing.grandTotalInclTax')}
+            value={formatCurrency(detail.grandTotalInclTax)}
             emphasize
+            ltr
           />
+          {detail.lines.length > 0 ? (
+            <View style={{ gap: 4 }}>
+              <AppText
+                variant="caption"
+                color="muted"
+                style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 11 }}
+              >
+                {t('mobile.purchasing.receptionStatus')}
+              </AppText>
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  gap: theme.spacing.sm,
+                }}
+              >
+                <AppText
+                  weight="medium"
+                  style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {t('mobile.purchasing.percentReceived', {
+                    percent: `${detail.receivedPercent}%`,
+                  })}
+                </AppText>
+                <AppText weight="semibold" color="brand" dir="ltr">
+                  {remainingLabel}
+                </AppText>
+              </View>
+            </View>
+          ) : null}
         </PurchasingFloorBoard>
 
+        {detail.lines.length > 0 ? (
+          <PurchasingFloorBoard title={t('mobile.purchasing.purchaseVariance')}>
+            <Meta
+              label={t('mobile.purchasing.expectedTotalExTax')}
+              value={formatCurrency(detail.expectedNet)}
+              ltr
+            />
+            <Meta
+              label={t('mobile.purchasing.actualReceivedExTax')}
+              value={formatCurrency(detail.actualReceivedNet)}
+              ltr
+            />
+            <Meta
+              label={t('mobile.purchasing.purchaseVariance')}
+              value={formatCurrency(detail.varianceNet)}
+              emphasize
+              ltr
+            />
+          </PurchasingFloorBoard>
+        ) : null}
+
         <PurchasingFloorBoard title={t('catalog.materialsList')}>
-          {(po.lines ?? []).length === 0 ? (
+          {detail.lines.length === 0 ? (
             <AppText variant="caption" color="muted">
               —
             </AppText>
           ) : (
-            (po.lines ?? []).map((line, idx) => (
-              <View
-                key={line.id ?? String(idx)}
-                style={{ gap: 4, paddingBottom: theme.spacing.sm }}
-              >
+            detail.lines.map((line) => (
+              <View key={line.key} style={{ gap: 4, paddingBottom: theme.spacing.sm }}>
                 <AppText weight="semibold" style={{ textAlign: isRTL ? 'right' : 'left' }}>
                   {line.description}
                 </AppText>
                 <AppText variant="caption" color="secondary" dir="ltr">
-                  {`${String(line.quantity)} ${line.unit || 'pcs'} × ${String(line.unitPrice)}`}
+                  {`${qtyLabel(line.quantity)} ${line.unit} × ${formatCurrency(line.unitPrice)}`}
                 </AppText>
-                <AppText variant="caption" weight="semibold" dir="ltr">
-                  {String(line.lineTotal ?? '—')}
+                <AppText variant="caption" color="muted" dir="ltr">
+                  {t('mobile.purchasing.lineReceiveMeta', {
+                    received: qtyLabel(line.receivedQty),
+                    remaining: qtyLabel(line.remainingQty),
+                  })}
+                </AppText>
+              </View>
+            ))
+          )}
+        </PurchasingFloorBoard>
+
+        <PurchasingFloorBoard title={t('mobile.purchasing.receipts')}>
+          {detail.receipts.length === 0 ? (
+            <AppText variant="caption" color="muted">
+              {t('mobile.noGoodsReceipts')}
+            </AppText>
+          ) : (
+            detail.receipts.map((grn) => (
+              <View
+                key={grn.id}
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  justifyContent: 'space-between',
+                  gap: theme.spacing.sm,
+                }}
+              >
+                <AppText weight="medium" dir="ltr" style={{ flex: 1 }}>
+                  {grn.number}
+                </AppText>
+                <AppText variant="caption" color="muted" dir="ltr">
+                  {grn.date ? formatDate(grn.date) : '—'}
                 </AppText>
               </View>
             ))
@@ -254,10 +353,12 @@ function Meta({
   label,
   value,
   emphasize,
+  ltr,
 }: {
   label: string;
   value: string;
   emphasize?: boolean;
+  ltr?: boolean;
 }) {
   const { isRTL } = useLocale();
   return (
@@ -271,6 +372,7 @@ function Meta({
       </AppText>
       <AppText
         weight={emphasize ? 'semibold' : 'medium'}
+        dir={ltr ? 'ltr' : undefined}
         style={{ textAlign: isRTL ? 'right' : 'left' }}
       >
         {value}

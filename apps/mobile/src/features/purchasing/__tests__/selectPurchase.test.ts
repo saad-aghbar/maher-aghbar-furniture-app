@@ -3,6 +3,7 @@ import {
   lineTotal,
   resolvePurchaseRequestSupplier,
   selectPurchaseCard,
+  selectPurchaseDetail,
   selectPurchaseRequestCard,
   selectSupplierInvoiceCard,
 } from '../selectPurchase';
@@ -96,6 +97,82 @@ describe('resolvePurchaseRequestSupplier', () => {
       ],
     };
     expect(resolvePurchaseRequestSupplier(pr, 'en')).toBe('Selected Co');
+  });
+});
+
+describe('selectPurchaseDetail', () => {
+  const velvet: PurchaseOrder = {
+    id: 'po-23',
+    number: 'PORD-2026-00023',
+    status: 'RECEIVED',
+    supplierId: 's-fabric',
+    subtotal: '3950',
+    taxAmount: '632',
+    total: '4582',
+    supplier: {
+      id: 's-fabric',
+      code: 'SUP-FABRIC',
+      name: 'Abdali Textile Mill',
+      nameEn: 'Abdali Textile Mill',
+    },
+    lines: [
+      {
+        id: 'ln-1',
+        description: 'Velvet navy roll',
+        quantity: '316',
+        unit: 'm',
+        unitPrice: '12.5',
+        lineTotal: '4582',
+        inventoryItemId: 'mat-vel-navy',
+      },
+    ],
+    goodsReceipts: [
+      {
+        id: 'grn-1',
+        number: 'GRN-2026-00023',
+        receiptDate: '2026-07-21T00:00:00.000Z',
+        lines: [
+          {
+            inventoryItemId: 'mat-vel-navy',
+            orderedQty: '316',
+            receivedQty: '316',
+            rejectedQty: '0',
+          },
+        ],
+      },
+    ],
+  };
+
+  it('keeps grand tax-inclusive and variance on the net family', () => {
+    const detail = selectPurchaseDetail(velvet, 'en');
+    expect(detail.supplierName).toBe('Abdali Textile Mill');
+    expect(detail.status).toBe('RECEIVED');
+    expect(detail.grandTotalInclTax).toBe(4582);
+    expect(detail.expectedNet).toBe(3950);
+    expect(detail.actualReceivedNet).toBe(3950);
+    expect(detail.varianceNet).toBe(0);
+    expect(detail.remainingQty).toBe(0);
+    expect(detail.receivedPercent).toBe(100);
+    expect(detail.lines[0]).toMatchObject({
+      description: 'Velvet navy roll',
+      quantity: 316,
+      unit: 'm',
+      unitPrice: 12.5,
+      receivedQty: 316,
+      remainingQty: 0,
+    });
+    expect(detail.receipts).toHaveLength(1);
+    expect(detail.receipts[0].number).toBe('GRN-2026-00023');
+  });
+
+  it('does not treat tax-inclusive lineTotal as expected net', () => {
+    const detail = selectPurchaseDetail(
+      { ...velvet, subtotal: undefined, total: '4582' },
+      'en',
+    );
+    expect(detail.expectedNet).toBe(3950);
+    expect(detail.grandTotalInclTax).toBe(4582);
+    expect(detail.varianceNet).toBe(0);
   });
 });
 

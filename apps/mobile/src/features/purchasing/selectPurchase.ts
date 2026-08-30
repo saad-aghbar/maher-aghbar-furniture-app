@@ -170,3 +170,134 @@ export function grandTotal(lines: DraftMaterialLine[]): {
   const tax = subtotal * 0.16;
   return { subtotal, tax, total: subtotal + tax };
 }
+
+export type PurchaseDetailLineModel = {
+  key: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  receivedQty: number;
+  remainingQty: number;
+};
+
+export type PurchaseDetailReceiptModel = {
+  id: string;
+  number: string;
+  date: string | null;
+};
+
+export type PurchaseDetailModel = {
+  id: string;
+  number: string;
+  status: string;
+  supplierName: string;
+  notes: string | null;
+  expectedDeliveryDate: string | null;
+  /** Backend `total` — tax-inclusive. */
+  grandTotalInclTax: number;
+  /** Backend `subtotal` when present, else qty × unit (net, no tax). */
+  expectedNet: number;
+  /** Received qty × unit price (net). */
+  actualReceivedNet: number;
+  /** actualReceivedNet − expectedNet (same net family). */
+  varianceNet: number;
+  orderedQty: number;
+  receivedQty: number;
+  remainingQty: number;
+  receivedPercent: number;
+  lines: PurchaseDetailLineModel[];
+  receipts: PurchaseDetailReceiptModel[];
+};
+
+function hasMoney(v: number | string | null | undefined): boolean {
+  return v != null && v !== '';
+}
+
+/** Accepted qty posted on goods receipts, keyed by inventory item. */
+function acceptedByItem(po: PurchaseOrder): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const grn of po.goodsReceipts ?? []) {
+    for (const line of grn.lines ?? []) {
+      if (!line.inventoryItemId) continue;
+      const accepted = Math.max(0, toNum(line.receivedQty) - toNum(line.rejectedQty));
+      map.set(line.inventoryItemId, (map.get(line.inventoryItemId) ?? 0) + accepted);
+    }
+  }
+  return map;
+}
+
+/**
+ * Detail numbers honest to the PO payload: grand stays tax-inclusive `total`,
+ * variance stays net (qty × unit). Does not invent a tax row to close the gap.
+ */
+export function selectPurchaseDetail(po: PurchaseOrder, locale: string): PurchaseDetailModel {
+  const acceptedPool = acceptedByItem(po);
+  const lines: PurchaseDetailLineModel[] = [];
+  let lineNet = 0;
+  let orderedQty = 0;
+  let receivedQty = 0;
+  let remainingQty = 0;
+  let actualReceivedNet = 0;
+
+  for (const [idx, line] of (po.lines ?? []).entries()) {
+    const quantity = toNum(line.quantity);
+    const unitPrice = toNum(line.unitPrice);
+    lineNet += quantity * unitPrice;
+    orderedQty += quantity;
+
+    let received = 0;
+    if (line.inventoryItemId) {
+      const pool = acceptedPool.get(line.inventoryItemId) ?? 0;
+      received = Math.min(quantity, Math.max(0, pool));
+      acceptedPool.set(line.inventoryItemId, pool - received);
+    }
+    const remaining = Math.max(0, quantity - received);
+    receivedQty += received;
+    remainingQty += remaining;
+    actualReceivedNet += received * unitPrice;
+
+    lines.push({
+      key: line.id ?? String(idx),
+      description: line.description,
+      quantity,
+      unit: line.unit || line.inventoryItem?.unit || 'pcs',
+      unitPrice,
+      receivedQty: received,
+      remainingQty: remaining,
+    });
+  }
+
+  const sub = hasMoney(po.subtotal) ? toNum(po.subtotal) : NaN;
+  const expectedNet =
+    Number.isFinite(sub) && !(sub === 0 && lineNet > 0) ? sub : lineNet;
+  const grand = hasMoney(po.total) ? toNum(po.total) : NaN;
+  const grandTotalInclTax = Number.isFinite(grand) ? grand : lineNet;
+  const receivedPercent =
+    orderedQty > 0 ? Math.round((receivedQty / orderedQty) * 100) : 0;
+
+  const receipts: PurchaseDetailReceiptModel[] = (po.goodsReceipts ?? []).map((grn) => ({
+    id: grn.id,
+    number: grn.number?.trim() || grn.id,
+    date: grn.receiptDate || grn.createdAt || null,
+  }));
+
+  return {
+    id: po.id,
+    number: po.number,
+    status: po.status,
+    supplierName: localizedNamed(locale, po.supplier),
+    notes: po.notes?.trim() || null,
+    expectedDeliveryDate: po.expectedDeliveryDate ?? null,
+    grandTotalInclTax,
+    expectedNet,
+    actualReceivedNet,
+    varianceNet: actualReceivedNet - expectedNet,
+    orderedQty,
+    receivedQty,
+    remainingQty,
+    receivedPercent,
+    lines,
+    receipts,
+  };
+}
