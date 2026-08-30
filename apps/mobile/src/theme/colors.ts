@@ -1,22 +1,23 @@
 import type { ThemeColors } from './types';
 
 /**
- * Light — warm parchment / linen canvas (never pure white), Army Camo brand.
+ * Light — oatmeal canvas, off-white cards, wood-bronze brand.
  * Semantic accents stay in the coffee / camo family (no traffic red / UI blue / mint).
+ * Splash stays `#E1DFD3`; login ivory stays `#F5F1EA` (see brand.ts / app.config).
  */
 export const lightColors: ThemeColors = {
-  background: '#E1DFD3',
-  /** Warm paper — lifted from canvas, not Apple-white cards */
-  surface: '#F5F1EA',
-  surfaceSecondary: '#EBE6DC',
+  background: '#F3F0E9',
+  /** Off-white paper — lifted from canvas, not Apple-white cards */
+  surface: '#F8F6F0',
+  surfaceSecondary: '#EBE7DD',
   textPrimary: '#1E1A1B',
   textSecondary: '#5C574F',
   textMuted: '#8A857C',
   border: '#D4CFC4',
   borderStrong: '#C4BDB0',
-  brand: '#776245',
-  brandHover: '#635239',
-  brandActive: '#372612',
+  brand: '#8B7049',
+  brandHover: '#7B6651',
+  brandActive: '#5C4E3A',
   brandSoft: '#EDE6DA',
   onBrand: '#F5F1EA',
   /** Delivered / complete — olive camo, not mint green */
@@ -34,6 +35,9 @@ export const lightColors: ThemeColors = {
   disabled: '#8A857C',
   disabledFill: '#EBE6DC',
   overlay: 'rgba(30, 26, 27, 0.40)',
+  attention: '#2F2924',
+  attentionAccent: '#B79B7B',
+  attentionOn: '#F5F1EA',
   /** Schedule load — bright empty → sand → amber → sienna → stone (readable on parchment) */
   calendarLoadEmpty: '#FFFCF7',
   calendarLoadLight: '#E0D2B8',
@@ -71,6 +75,9 @@ export const darkColors: ThemeColors = {
   disabled: '#8F8E8C',
   disabledFill: '#322C2D',
   overlay: 'rgba(0, 0, 0, 0.55)',
+  attention: '#1A1614',
+  attentionAccent: '#C4A574',
+  attentionOn: '#F5F1EA',
   calendarLoadEmpty: '#352F30',
   calendarLoadLight: 'rgba(168, 144, 108, 0.40)',
   calendarLoadHalf: 'rgba(196, 160, 106, 0.55)',

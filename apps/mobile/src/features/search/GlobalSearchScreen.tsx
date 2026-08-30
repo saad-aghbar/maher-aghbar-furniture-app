@@ -8,13 +8,17 @@ import { globalSearch } from '@/api/modules/search';
 import { queryKeys } from '@/api/queryKeys';
 import { flattenPaginatedPages, getNextPageParamFromMeta } from '@/api/infinite';
 import { AppText } from '@/components/AppText';
+import { TertiaryButton } from '@/components/buttons/TertiaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { TextField } from '@/components/forms/TextField';
+import { AppTextInput } from '@/components/forms/AppTextInput';
+import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { EntityRow } from '@/components/lists/EntityRow';
+import { splitSearchMeta } from '@/components/lists/entityRowMeta';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
+import { useSmartBack } from '@/navigation/useSmartBack';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
@@ -46,8 +50,9 @@ function hitHref(type: string, id: string, userCustomerId?: string | null): Href
 
 export function GlobalSearchScreen() {
   const { user } = useAuth();
-  const { t } = useLocale();
-  const { theme } = useTheme();
+  const { t, isRTL } = useLocale();
+  const { theme, colors } = useTheme();
+  const onBack = useSmartBack('/(app)/(admin)/(tabs)' as Href);
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const [search, setSearch] = useState('');
@@ -100,19 +105,35 @@ export function GlobalSearchScreen() {
           if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
         }}
         ListHeaderComponent={
-          <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
-            <AppText variant="title" weight="semibold">
-              {t('mobile.search.title')}
-            </AppText>
-            <TextField
-              value={search}
-              onChangeText={setSearch}
-              placeholder={t('mobile.search.placeholder')}
-              autoCorrect={false}
-              autoCapitalize="none"
-              returnKeyType="search"
-              accessibilityLabel={t('mobile.search.placeholder')}
-            />
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+              marginBottom: theme.spacing.sm,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <SearchBarShell>
+                <AppTextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder={t('mobile.search.placeholder')}
+                  placeholderTextColor={colors.textMuted}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  accessibilityLabel={t('mobile.search.placeholder')}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    color: colors.textPrimary,
+                    paddingVertical: 0,
+                  }}
+                />
+              </SearchBarShell>
+            </View>
+            <TertiaryButton label={t('common.cancel')} onPress={onBack} />
           </View>
         }
         ListEmptyComponent={
@@ -137,25 +158,21 @@ export function GlobalSearchScreen() {
             />
           )
         }
-        renderItem={({ item, index }) => (
-          <ListItemEnter index={index}>
-            <SurfaceCard
-              onPress={() => router.push(hitHref(item.type, item.id, user?.customerId))}
-              accessibilityLabel={`${item.title}. ${item.subtitle ?? ''}`}
-              style={{ minHeight: theme.sizes.touch.min }}
-            >
-              <AppText variant="caption" color="muted">
-                {t(`mobile.search.types.${item.type}`)}
-              </AppText>
-              <AppText weight="semibold">{item.title}</AppText>
-              {item.subtitle ? (
-                <AppText variant="caption" color="secondary">
-                  {item.subtitle}
-                </AppText>
-              ) : null}
-            </SurfaceCard>
-          </ListItemEnter>
-        )}
+        renderItem={({ item, index }) => {
+          const { status, meta } = splitSearchMeta(item.subtitle);
+          return (
+            <ListItemEnter index={index}>
+              <EntityRow
+                kind={t(`mobile.search.types.${item.type}`)}
+                title={item.title}
+                status={status}
+                meta={meta}
+                onPress={() => router.push(hitHref(item.type, item.id, user?.customerId))}
+                accessibilityLabel={`${item.title}. ${item.subtitle ?? ''}`}
+              />
+            </ListItemEnter>
+          );
+        }}
       />
     </AppScreen>
   );

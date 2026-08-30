@@ -19,7 +19,7 @@ import { haptics, springs, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
 type Props = {
-  greeting: string;
+  greeting?: string;
   companyName?: string;
   /** Product image URIs (5–10 random from catalog). */
   imageUris: readonly string[];
@@ -194,7 +194,9 @@ export function DealerHero({
 
   return (
     <View style={{ gap: theme.spacing.md }}>
+      {greeting || companyName ? (
       <View style={{ gap: 2 }}>
+        {greeting ? (
         <AppText
           variant="title"
           weight={titleWeight}
@@ -207,6 +209,7 @@ export function DealerHero({
         >
           {greeting}
         </AppText>
+        ) : null}
         {companyName ? (
           <AppText
             variant="body"
@@ -217,6 +220,7 @@ export function DealerHero({
           </AppText>
         ) : null}
       </View>
+      ) : null}
 
       <DealerGlassCard
         intensity="solid"

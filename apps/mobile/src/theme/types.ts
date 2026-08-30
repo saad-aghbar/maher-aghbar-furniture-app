@@ -35,6 +35,12 @@ export type ThemeColors = {
   disabled: string;
   disabledFill: string;
   overlay: string;
+  /** Dark charcoal attention / alert card (never traffic red). */
+  attention: string;
+  /** Gold-tan ink on attention cards (IDs, actions). */
+  attentionAccent: string;
+  /** Cream text on attention cards. */
+  attentionOn: string;
   /** Admin schedule month-board load tones (must read on parchment). */
   calendarLoadEmpty: string;
   calendarLoadLight: string;
@@ -88,6 +94,8 @@ export type ThemeRadius = {
   md: number;
   lg: number;
   xl: number;
+  /** Soft boards / list cards — 16–24px language. */
+  card: number;
   full: number;
 };
 

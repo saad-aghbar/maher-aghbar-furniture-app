@@ -32,6 +32,7 @@ type BottomSheetProps = {
    */
   onClosed?: () => void;
   title?: string;
+  subtitle?: string;
   children: ReactNode;
   /** Fixed height when `fitContent` is false. */
   sheetHeight?: number;
@@ -56,6 +57,7 @@ export function BottomSheet({
   onClose,
   onClosed,
   title,
+  subtitle,
   children,
   sheetHeight = 360,
   fitContent = false,
@@ -286,9 +288,9 @@ export function BottomSheet({
               onLayout={fitContent ? onSheetLayout : undefined}
               style={[
                 {
-                  backgroundColor: colors.surface,
-                  borderTopLeftRadius: theme.radius.xl,
-                  borderTopRightRadius: theme.radius.xl,
+                  backgroundColor: colors.background,
+                  borderTopLeftRadius: theme.radius.card,
+                  borderTopRightRadius: theme.radius.card,
                   borderTopWidth: 1,
                   borderColor: colors.border,
                   paddingHorizontal: theme.spacing.lg,
@@ -327,9 +329,19 @@ export function BottomSheet({
                   {title ? (
                     <AppText
                       variant="heading"
-                      style={{ marginBottom: theme.spacing.md, alignSelf: 'stretch' }}
+                      weight="semibold"
+                      style={{ marginBottom: subtitle ? theme.spacing.xs : theme.spacing.md, alignSelf: 'stretch' }}
                     >
                       {title}
+                    </AppText>
+                  ) : null}
+                  {subtitle ? (
+                    <AppText
+                      variant="bodySecondary"
+                      color="secondary"
+                      style={{ marginBottom: theme.spacing.md, alignSelf: 'stretch' }}
+                    >
+                      {subtitle}
                     </AppText>
                   ) : null}
                 </View>

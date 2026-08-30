@@ -6,5 +6,6 @@ export const radius: ThemeRadius = {
   md: 10,
   lg: 14,
   xl: 20,
+  card: 22,
   full: 9999,
 };

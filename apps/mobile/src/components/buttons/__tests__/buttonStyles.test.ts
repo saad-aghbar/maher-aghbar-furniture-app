@@ -17,6 +17,12 @@ describe('buttonStyles', () => {
     expect(icon.width).toBe(lightTheme.sizes.touch.min);
   });
 
+  it('uses pill radius for buttons', () => {
+    const style = getButtonContainerStyle(lightTheme, 'primary', false);
+    expect(style.borderRadius).toBe(lightTheme.radius.full);
+    expect(getIconButtonStyle(lightTheme, false).borderRadius).toBe(lightTheme.radius.full);
+  });
+
   it('maps variant colors from theme', () => {
     expect(getButtonContainerStyle(lightTheme, 'primary', false).backgroundColor).toBe(
       lightTheme.colors.brand,

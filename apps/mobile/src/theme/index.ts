@@ -45,6 +45,15 @@ export {
 export { useTheme } from './useTheme';
 export { dealerTokens, dealerTokens as dealerSurface } from './dealerTokens';
 export type { DealerTokens } from './dealerTokens';
+export {
+  chromeSizes,
+  attentionChrome,
+  sheetChrome,
+  searchTrackColor,
+  tabBarChrome,
+  cardRadius,
+} from './chrome';
+export type { AttentionChrome, SheetChrome } from './chrome';
 export type {
   ColorScheme,
   ThemeMode,

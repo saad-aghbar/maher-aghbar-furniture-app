@@ -29,7 +29,7 @@ type Props = {
  */
 export function AdminHomeFocusMoment({ focus }: Props) {
   const { t, isRTL } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { colors, theme } = useTheme();
   const router = useRouter();
   const reduce = useReducedMotion();
   const stamp = useSharedValue(reduce ? 1 : 0);
@@ -148,7 +148,7 @@ export function AdminHomeFocusMoment({ focus }: Props) {
     );
   }
 
-  const ink = colorScheme === 'dark' ? colors.surfaceSecondary : '#2F2924';
+  const ink = colors.attention;
   const hot = focus.kind === 'blocker';
 
   return (
@@ -169,7 +169,7 @@ export function AdminHomeFocusMoment({ focus }: Props) {
             overflow: 'hidden',
             gap: theme.spacing.md,
             borderWidth: 1,
-            borderColor: hot ? 'rgba(232,201,138,0.28)' : 'rgba(212,196,168,0.18)',
+            borderColor: hot ? 'rgba(183,155,123,0.28)' : colors.attentionAccent + '2E',
             ...theme.elevation.raised,
           }}
         >
@@ -210,7 +210,7 @@ export function AdminHomeFocusMoment({ focus }: Props) {
             variant="caption"
             weight="semibold"
             style={{
-              color: hot ? '#E8C98A' : '#D4C4A8',
+              color: colors.attentionAccent,
               letterSpacing: 2,
               textTransform: 'uppercase',
               writingDirection: isRTL ? 'rtl' : 'ltr',
@@ -220,21 +220,21 @@ export function AdminHomeFocusMoment({ focus }: Props) {
           </AppText>
 
           <Animated.View style={[{ alignSelf: isRTL ? 'flex-end' : 'flex-start' }, stampStyle]}>
-            <CountUp value={focus.count} variant="largeTitle" color="#F5F1EA" />
+            <CountUp value={focus.count} variant="largeTitle" color={colors.attentionOn} />
           </Animated.View>
 
           <View style={{ gap: 6 }}>
             <AppText
               variant="heading"
               weight="semibold"
-              style={{ color: '#F5F1EA', writingDirection: isRTL ? 'rtl' : 'ltr' }}
+              style={{ color: colors.attentionOn, writingDirection: isRTL ? 'rtl' : 'ltr' }}
             >
               {t(focus.titleKey)}
             </AppText>
             <AppText
               variant="bodySecondary"
               style={{
-                color: 'rgba(245,241,234,0.65)',
+                color: 'rgba(245,241,234,0.65)', // attention muted cream
                 writingDirection: isRTL ? 'rtl' : 'ltr',
               }}
             >
@@ -256,7 +256,7 @@ export function AdminHomeFocusMoment({ focus }: Props) {
             <AppText
               variant="label"
               weight="semibold"
-              style={{ color: '#D4C4A8', flexShrink: 1 }}
+              style={{ color: colors.attentionAccent, flexShrink: 1 }}
             >
               {t('mobile.adminHome.homeFocusCta')}
             </AppText>
@@ -271,13 +271,13 @@ export function AdminHomeFocusMoment({ focus }: Props) {
                 chevronStyle,
               ]}
             >
-              <AppText variant="caption" weight="semibold" style={{ color: '#F5F1EA' }}>
+              <AppText variant="caption" weight="semibold" style={{ color: colors.attentionOn }}>
                 {t('mobile.adminHome.queueOpen')}
               </AppText>
               <Ionicons
                 name={isRTL ? 'arrow-back' : 'arrow-forward'}
                 size={16}
-                color="#F5F1EA"
+                color={colors.attentionOn}
               />
             </Animated.View>
           </View>

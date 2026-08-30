@@ -20,13 +20,14 @@ export function LoadingOverlay({ visible, message }: LoadingOverlayProps) {
         <View
           style={{
             backgroundColor: colors.surface,
-            borderRadius: theme.radius.lg,
+            borderRadius: theme.radius.card,
             padding: theme.spacing['2xl'],
             gap: theme.spacing.md,
             alignItems: 'center',
-            minWidth: 120,
+            minWidth: 160,
             borderWidth: 1,
             borderColor: colors.border,
+            ...theme.elevation.raised,
           }}
         >
           <ActivityIndicator color={colors.brand} size="large" />

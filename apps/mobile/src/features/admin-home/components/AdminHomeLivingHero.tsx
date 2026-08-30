@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { Pressable, View, useWindowDimensions } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   Easing,
   FadeIn,
@@ -17,6 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { BrandMark } from '@/components/BrandMark';
 import { AppText } from '@/components/AppText';
+import { NotificationBellButton } from '@/components/chrome/NotificationBellButton';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
@@ -227,52 +227,13 @@ export function AdminHomeLivingHero({
             <ExpandableLocaleSwitcher expandToward="end" />
             <ThemeSwitcher />
             {canOpenNotifications ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.adminHome.notificationsA11y')}
-                onPress={() => {
-                  void haptics.selection();
-                  router.push('/(app)/notifications' as Href);
-                }}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  backgroundColor: colors.surface,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Animated.View style={bellStyle}>
-                  <Ionicons name="notifications-outline" size={20} color={colors.brand} />
-                </Animated.View>
-                {unreadNotifications > 0 ? (
-                  <View
-                    style={{
-                      position: 'absolute',
-                      top: 4,
-                      ...(isRTL ? { left: 4 } : { right: 4 }),
-                      minWidth: 16,
-                      height: 16,
-                      borderRadius: 8,
-                      backgroundColor: colors.warning,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      paddingHorizontal: 3,
-                    }}
-                  >
-                    <AppText
-                      variant="caption"
-                      weight="semibold"
-                      style={{ color: colors.onBrand, fontSize: 9, lineHeight: 11 }}
-                    >
-                      {unreadNotifications > 99 ? '99+' : String(unreadNotifications)}
-                    </AppText>
-                  </View>
-                ) : null}
-              </Pressable>
+              <Animated.View style={bellStyle}>
+                <NotificationBellButton
+                  unread={unreadNotifications}
+                  accessibilityLabel={t('mobile.adminHome.notificationsA11y')}
+                  onPress={() => router.push('/(app)/notifications' as Href)}
+                />
+              </Animated.View>
             ) : null}
           </View>
         </View>

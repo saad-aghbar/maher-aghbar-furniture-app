@@ -25,7 +25,7 @@ export function SurfaceCard({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: theme.radius.lg,
+    borderRadius: theme.radius.card,
     padding: padded ? theme.spacing.lg : 0,
     ...theme.elevation.card,
   };
