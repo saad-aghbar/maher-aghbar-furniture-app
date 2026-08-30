@@ -27,6 +27,7 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
+import { formatPhoneForDisplay } from '@/components/forms/countryDialCodes';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { Divider } from '@/components/layout/Divider';
 import { useNetwork } from '@/components/network/NetworkProvider';
@@ -53,6 +54,7 @@ import { DealerPaymentsList } from './components/DealerPaymentsList';
 import { DealerPriceList } from './components/DealerPriceList';
 import { DealerSummaryRail } from './components/DealerSummaryRail';
 import { EditDealerSheet } from './components/EditDealerSheet';
+import { dealerIdentitySubtitle, hasVisibleContact } from './dealerDetailDisplay';
 import {
   dealerTypeLabel,
   filterCompletedOrders,
@@ -245,6 +247,19 @@ export function DealerDetailScreen({ dealerId }: Props) {
 
   const name = localizedName(locale, dealer, dealer.code || '—');
   const initial = (name || dealer.code || '?').trim().charAt(0).toUpperCase();
+  const identitySubtitle = dealerIdentitySubtitle(
+    name,
+    dealer.companyName,
+    dealerTypeLabel(String(dealer.customerType), t),
+  );
+  const phoneDisplay = hasVisibleContact(dealer.phone)
+    ? formatPhoneForDisplay(dealer.phone)
+    : null;
+  const faxDisplay = hasVisibleContact(dealer.fax)
+    ? formatPhoneForDisplay(dealer.fax)
+    : null;
+  const emailRaw = dealer.email?.trim() ?? '';
+  const emailDisplay = hasVisibleContact(emailRaw) ? emailRaw : null;
   const contacts = dealer.contacts ?? [];
   const addresses = dealer.addresses ?? [];
   const notes = notesQuery.data ?? [];
@@ -324,7 +339,6 @@ export function DealerDetailScreen({ dealerId }: Props) {
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
               alignItems: 'center',
-              justifyContent: 'space-between',
               gap: theme.spacing.sm,
               paddingHorizontal: theme.spacing.lg,
               paddingVertical: theme.spacing.md,
@@ -336,31 +350,18 @@ export function DealerDetailScreen({ dealerId }: Props) {
               backgroundColor: colors.surfaceSecondary,
             }}
           >
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                gap: theme.spacing.sm,
-                flex: 1,
-                minWidth: 0,
-              }}
-            >
-              <StatusBadge status={status} dot />
-              {code ? (
-                <AppText
-                  variant="caption"
-                  weight="semibold"
-                  dir="ltr"
-                  numberOfLines={1}
-                  style={{ color: colors.brand, flexShrink: 1 }}
-                >
-                  {code}
-                </AppText>
-              ) : null}
-            </View>
-            <AppText variant="caption" color="brand" weight="semibold">
-              {t('customers.detail')}
-            </AppText>
+            <StatusBadge status={status} dot />
+            {code ? (
+              <AppText
+                variant="caption"
+                weight="semibold"
+                dir="ltr"
+                numberOfLines={1}
+                style={{ color: colors.brand, flexShrink: 1 }}
+              >
+                {code}
+              </AppText>
+            ) : null}
           </View>
 
           <View
@@ -412,61 +413,61 @@ export function DealerDetailScreen({ dealerId }: Props) {
                 >
                   {name}
                 </AppText>
-                {dealer.companyName?.trim() ? (
+                {identitySubtitle ? (
                   <AppText
                     variant="caption"
                     color="secondary"
                     numberOfLines={1}
                     style={{ textAlign: isRTL ? 'right' : 'left' }}
                   >
-                    {dealer.companyName.trim()}
+                    {identitySubtitle}
                   </AppText>
-                ) : (
-                  <AppText
-                    variant="caption"
-                    color="muted"
-                    style={{ textAlign: isRTL ? 'right' : 'left' }}
-                  >
-                    {dealerTypeLabel(String(dealer.customerType), t)}
-                  </AppText>
-                )}
+                ) : null}
               </View>
             </View>
 
-            <View
-              style={{
-                borderRadius: theme.radius.lg,
-                backgroundColor: colors.surfaceSecondary,
-                borderWidth: 1,
-                borderColor: colors.border,
-                overflow: 'hidden',
-              }}
-            >
-              <MetaRow
-                icon="call-outline"
-                label={t('customers.phone')}
-                value={dealer.phone?.trim() || '—'}
-                valueLtr
-              />
-              <Divider compact />
-              <MetaRow
-                icon="print-outline"
-                label={t('customers.fax')}
-                value={dealer.fax?.trim() || '—'}
-                valueLtr
-              />
-              {dealer.email?.trim() ? (
-                <>
-                  <Divider compact />
+            {phoneDisplay || faxDisplay || emailDisplay ? (
+              <View
+                style={{
+                  borderRadius: theme.radius.lg,
+                  backgroundColor: colors.surfaceSecondary,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  overflow: 'hidden',
+                }}
+              >
+                {phoneDisplay ? (
                   <MetaRow
-                    icon="mail-outline"
-                    label={t('customers.email')}
-                    value={dealer.email.trim()}
+                    icon="call-outline"
+                    label={t('customers.phone')}
+                    value={phoneDisplay}
                     valueLtr
                   />
-                </>
-              ) : null}
-            </View>
+                ) : null}
+                {faxDisplay ? (
+                  <>
+                    {phoneDisplay ? <Divider compact /> : null}
+                    <MetaRow
+                      icon="print-outline"
+                      label={t('customers.fax')}
+                      value={faxDisplay}
+                      valueLtr
+                    />
+                  </>
+                ) : null}
+                {emailDisplay ? (
+                  <>
+                    {phoneDisplay || faxDisplay ? <Divider compact /> : null}
+                    <MetaRow
+                      icon="mail-outline"
+                      label={t('customers.email')}
+                      value={emailDisplay}
+                      valueLtr
+                    />
+                  </>
+                ) : null}
+              </View>
+            ) : null}
 
             <View
               style={{
@@ -552,9 +553,8 @@ export function DealerDetailScreen({ dealerId }: Props) {
                 align="center"
                 numberOfLines={1}
                 style={{
-                  fontSize: 10,
-                  letterSpacing: 0.35,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  fontSize: 11,
+                  letterSpacing: locale === 'ar' ? 0 : 0.15,
                 }}
               >
                 {m.label}
@@ -691,23 +691,27 @@ export function DealerDetailScreen({ dealerId }: Props) {
             <MetaRow
               icon="mail-outline"
               label={t('customers.email')}
-              value={dealer.email?.trim() || '—'}
+              value={emailDisplay || '—'}
               valueLtr
             />
             <Divider compact />
             <MetaRow
               icon="call-outline"
               label={t('customers.phone')}
-              value={dealer.phone?.trim() || '—'}
+              value={phoneDisplay || '—'}
               valueLtr
             />
-            <Divider compact />
-            <MetaRow
-              icon="print-outline"
-              label={t('customers.fax')}
-              value={dealer.fax?.trim() || '—'}
-              valueLtr
-            />
+            {faxDisplay ? (
+              <>
+                <Divider compact />
+                <MetaRow
+                  icon="print-outline"
+                  label={t('customers.fax')}
+                  value={faxDisplay}
+                  valueLtr
+                />
+              </>
+            ) : null}
           </View>
         </DealerBoard>
       </ListItemEnter>

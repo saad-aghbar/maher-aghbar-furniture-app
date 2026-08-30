@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { RefreshControl, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
@@ -15,6 +16,7 @@ import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ListItemEnter, haptics } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSmartBack } from '@/navigation/useSmartBack';
 import { useTheme } from '@/theme';
 import { CreateDealerSheet } from './components/CreateDealerSheet';
@@ -67,6 +69,8 @@ export function DealersListScreen() {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const insets = useSafeAreaInsets();
+  const listBottomPad = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
   const router = useRouter();
   const onBack = useSmartBack('/(app)/(admin)/(tabs)' as Href);
   const allowed = can(user, 'customer.read');
@@ -142,8 +146,6 @@ export function DealersListScreen() {
           variant="caption"
           weight={locale === 'ar' ? 'regular' : 'medium'}
           style={{
-            letterSpacing: locale === 'ar' ? 0 : 1.4,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
             color: colors.brand,
             textAlign: isRTL ? 'right' : 'left',
           }}
@@ -197,7 +199,13 @@ export function DealersListScreen() {
       {rows.length === 0 ? (
         <EmptyState title={t('customers.empty')} description={t('mobile.dealers.emptyBody')} />
       ) : (
-        <View style={{ gap: theme.spacing.lg, marginTop: theme.spacing.md }}>
+        <View
+          style={{
+            gap: theme.spacing.lg,
+            marginTop: theme.spacing.md,
+            paddingBottom: listBottomPad,
+          }}
+        >
           {rows.map((dealer, index) => (
             <ListItemEnter key={dealer.id} index={index}>
               <DealerListCard
