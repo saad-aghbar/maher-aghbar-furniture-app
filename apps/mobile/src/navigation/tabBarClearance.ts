@@ -2,12 +2,13 @@
 export const SURFACE_TAB_BAR_CLEARANCE = 88;
 
 /**
- * Bottom inset so the last list row clears the floating pill and home indicator.
- * Prefer this as FlatList `ListFooterComponent` height — VirtualizedList always
+ * Last-content inset so the last list row clears the floating pill
+ * (`insets.bottom + SURFACE_TAB_BAR_CLEARANCE`). Prefer this as FlatList
+ * `paddingBottom` and `ListFooterComponent` height — VirtualizedList always
  * counts the footer in content size.
  */
-export function surfaceListBottomInset(afterLastItem: number, safeBottom: number): number {
-  return afterLastItem + SURFACE_TAB_BAR_CLEARANCE + Math.max(0, safeBottom);
+export function surfaceListBottomInset(safeBottom: number): number {
+  return SURFACE_TAB_BAR_CLEARANCE + Math.max(0, safeBottom);
 }
 
 /**

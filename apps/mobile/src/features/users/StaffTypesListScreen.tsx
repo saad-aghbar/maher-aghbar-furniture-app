@@ -38,8 +38,8 @@ export function StaffTypesListScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  /** Footer spacer so the last card's View/Duplicate row clears the floating tab bar. */
-  const listBottomInset = surfaceListBottomInset(theme.spacing['3xl'], insets.bottom);
+  /** Last-content inset so View/Duplicate on the last card clear the floating pill. */
+  const listBottomInset = surfaceListBottomInset(insets.bottom);
   const query = useStaffTypesQuery(true, {});
   const duplicateMutation = useDuplicateStaffTypeMutation();
   const deactivateMutation = useDeactivateStaffTypeMutation();
@@ -92,6 +92,7 @@ export function StaffTypesListScreen() {
       <FlatList
         data={rows}
         keyExtractor={(item) => item.id}
+        style={{ flex: 1 }}
         refreshControl={
           <RefreshControl
             refreshing={query.isRefetching}
@@ -101,7 +102,7 @@ export function StaffTypesListScreen() {
         }
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing.md,
+          paddingBottom: listBottomInset,
           flexGrow: 1,
         }}
         ListFooterComponent={<View pointerEvents="none" style={{ height: listBottomInset }} />}
@@ -172,9 +173,9 @@ export function StaffTypesListScreen() {
                     <AppText
                       variant="caption"
                       color="brand"
+                      weight={locale === 'ar' ? 'regular' : 'medium'}
                       style={{
-                        letterSpacing: locale === 'ar' ? 0 : 0.7,
-                        textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                        letterSpacing: isRTL ? 0 : 0.2,
                         fontSize: 11,
                       }}
                     >
