@@ -60,6 +60,9 @@ describe('translate', () => {
     expect(translate('en', 'mobile.purchasing.searchOrders')).toBe('Search orders');
     expect(translate('en', 'mobile.purchasing.actionNewOrder')).toBe('New order');
     expect(translate('en', 'mobile.purchasing.filterApply')).toBe('Apply');
+    expect(translate('en', 'mobile.purchasing.needsToBuy')).toBe('Needs to buy');
+    expect(translate('en', 'mobile.purchasing.addToPurchase')).toBe('Add to purchase');
+    expect(translate('en', 'mobile.purchasing.lineCountOne')).toBe('1 line');
     expect(translate('ar', 'mobile.purchasing.searchOrders')).toMatch(/أوامر الشراء/);
   });
 

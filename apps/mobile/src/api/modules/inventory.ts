@@ -421,6 +421,11 @@ export async function getInventoryOverview() {
   return apiGet<InventoryOverview>('/inventory/overview');
 }
 
+/** Low-stock raw materials — same list the atelier uses on Inventory. */
+export async function listLowStock() {
+  return apiGet<InventoryItem[]>('/inventory/low-stock');
+}
+
 export type SemiFinishedLot = {
   id: string;
   quantity: number | string;

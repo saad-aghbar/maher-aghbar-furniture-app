@@ -1,12 +1,11 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { Divider } from '@/components/layout/Divider';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import type { PurchaseCardModel } from '../selectPurchase';
+import { humanizeWarehouseLabel, type PurchaseCardModel } from '../selectPurchase';
 
 type Props = {
   order: PurchaseCardModel;
@@ -17,6 +16,7 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const warehouse = humanizeWarehouseLabel(order.warehouseLabel, t) ?? '—';
 
   return (
     <AnimatedPressable
@@ -114,10 +114,14 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
             valueLtr
             isRTL={isRTL}
           />
-          <Divider compact />
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={{ height: 1, backgroundColor: colors.border }}
+          />
           <MetaRow
             label={t('catalog.warehouseShort')}
-            value={order.warehouseLabel ?? '—'}
+            value={warehouse}
             isRTL={isRTL}
             multiline
           />

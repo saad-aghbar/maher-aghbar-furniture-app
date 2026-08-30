@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,7 +8,8 @@ import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
-import { listWarehouses } from '@/api/modules/inventory';
+import { listLowStock, listWarehouses } from '@/api/modules/inventory';
+import { queryKeys } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
@@ -21,11 +23,12 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceListBottomInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { CreatePurchaseOrderSheet } from './components/CreatePurchaseOrderSheet';
 import { CreatePurchaseRequestSheet } from './components/CreatePurchaseRequestSheet';
 import { CreateSupplierSheet } from './components/CreateSupplierSheet';
+import { NeedsToBuyBoard } from './components/NeedsToBuyBoard';
 import { PurchaseOrderBoardCard } from './components/PurchaseOrderBoardCard';
 import { PurchaseRequestBoardCard } from './components/PurchaseRequestBoardCard';
 import { PurchasingFilterTriggers, PURCHASING_CHROME_CONTROL_H, PURCHASING_CHROME_GAP } from './components/PurchasingFilterTriggers';
@@ -51,9 +54,13 @@ import {
   useSuppliersQuery,
 } from './query';
 import {
+  incomingQtyFromOrders,
+  needsToBuyDraftLine,
+  selectNeedsToBuyItem,
   selectPurchaseCard,
   selectPurchaseRequestCard,
   selectSupplierInvoiceCard,
+  type DraftMaterialLine,
 } from './selectPurchase';
 
 /** Extra clearance under the list so the last cards clear the floating tab bar. */
@@ -100,6 +107,7 @@ export function PurchasingHubScreen() {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -112,6 +120,7 @@ export function PurchasingHubScreen() {
   const canCreatePo = can(user, 'purchase-order.create');
   const canCreatePr = can(user, 'purchase-request.create');
   const canManageSupplier = can(user, 'supplier.manage');
+  const canInventory = can(user, 'inventory.read');
 
   const initialTab: PurchasingHubTab = canPo ? 'orders' : canPr ? 'requests' : 'invoices';
   const [tab, setTab] = useState<PurchasingHubTab>(initialTab);
@@ -126,6 +135,7 @@ export function PurchasingHubScreen() {
   const [createPoOpen, setCreatePoOpen] = useState(false);
   const [createPrOpen, setCreatePrOpen] = useState(false);
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
+  const [poSeedLines, setPoSeedLines] = useState<DraftMaterialLine[]>([]);
 
   useEffect(() => {
     const id = setTimeout(() => setQ(search.trim()), 300);
@@ -150,6 +160,11 @@ export function PurchasingHubScreen() {
     queryKey: ['warehouses-purchasing-hub'],
     queryFn: listWarehouses,
     enabled: canPo,
+  });
+  const lowStockQuery = useQuery({
+    queryKey: queryKeys.inventory.lowStock(),
+    queryFn: listLowStock,
+    enabled: canPo && canInventory,
   });
   const fromLowStock = useFromLowStockMutation();
 
@@ -181,17 +196,23 @@ export function PurchasingHubScreen() {
     });
   }, [suppliersQuery.data?.data, locale]);
 
+  const poRows = useMemo(() => flattenPurchaseOrders(poQuery.data), [poQuery.data]);
   const poCards = useMemo(
     () =>
-      flattenPurchaseOrders(poQuery.data).map((po) =>
+      poRows.map((po) =>
         selectPurchaseCard(
           po,
           locale,
           po.warehouseId ? warehouseNameById.get(po.warehouseId) : null,
         ),
       ),
-    [poQuery.data, locale, warehouseNameById],
+    [poRows, locale, warehouseNameById],
   );
+  const needsToBuy = useMemo(() => {
+    return (lowStockQuery.data ?? []).slice(0, 8).map((item) =>
+      selectNeedsToBuyItem(item, locale, incomingQtyFromOrders(item.id, poRows)),
+    );
+  }, [lowStockQuery.data, locale, poRows]);
   const prCards = useMemo(
     () =>
       flattenPurchaseRequests(prQuery.data).map((pr) =>
@@ -288,14 +309,22 @@ export function PurchasingHubScreen() {
     <AppScreen>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
+        style={{ flex: 1 }}
         data={listData as Array<{ id: string }>}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom:
-            theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + LIST_BOTTOM_EXTRA,
         }}
+        ListFooterComponent={
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={{
+              height: theme.spacing['3xl'] + LIST_BOTTOM_EXTRA + surfaceListBottomInset(insets.bottom),
+            }}
+          />
+        }
         refreshControl={
           <RefreshControl
             refreshing={activeQuery.isRefetching && !activeQuery.isFetchingNextPage}
@@ -338,7 +367,10 @@ export function PurchasingHubScreen() {
                 });
               }}
               onNewRequest={() => setCreatePrOpen(true)}
-              onNewOrder={() => setCreatePoOpen(true)}
+              onNewOrder={() => {
+                setPoSeedLines([]);
+                setCreatePoOpen(true);
+              }}
             />
 
             <PurchasingTabBar
@@ -439,6 +471,17 @@ export function PurchasingHubScreen() {
                 onOpenStatus={() => setStatusSheetOpen(true)}
               />
             </View>
+
+            {tab === 'orders' && needsToBuy.length > 0 ? (
+              <NeedsToBuyBoard
+                items={needsToBuy}
+                canAdd={canCreatePo}
+                onAddToPurchase={(item) => {
+                  setPoSeedLines([needsToBuyDraftLine(item)]);
+                  setCreatePoOpen(true);
+                }}
+              />
+            ) : null}
           </View>
         }
         ListEmptyComponent={
@@ -505,6 +548,7 @@ export function PurchasingHubScreen() {
           open={createPoOpen}
           onClose={() => setCreatePoOpen(false)}
           onCreated={(id) => router.push(`/(app)/(admin)/purchasing/${id}` as Href)}
+          seedLines={poSeedLines}
         />
       ) : null}
       {canCreatePr ? (
