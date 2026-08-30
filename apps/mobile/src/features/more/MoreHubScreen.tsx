@@ -1,5 +1,6 @@
 import { View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
@@ -14,6 +15,7 @@ import { useNotificationsQuery } from '@/features/notifications/query';
 import { normalizeNotificationList, unreadCount } from '@/features/notifications/selectNotification';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { MoreFloorCommand } from './components/MoreFloorCommand';
 import { MoreIdentityBoard } from './components/MoreIdentityBoard';
@@ -24,9 +26,13 @@ export function MoreHubScreen() {
   const { user, logout } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const reduce = useReducedMotion();
+  /** Same scroll pad as Orders / other tab screens so the last Places card clears the pill. */
+  const scrollBottomPad =
+    insets.bottom + theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + theme.spacing['5xl'];
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const canNotify = can(user, 'notification.read');
   const notificationsQuery = useNotificationsQuery(Boolean(user) && canNotify);
@@ -40,7 +46,7 @@ export function MoreHubScreen() {
     : { entering: FadeInDown.delay(360).duration(380).damping(22) };
 
   return (
-    <ScrollableScreen>
+    <ScrollableScreen contentContainerStyle={{ paddingBottom: scrollBottomPad }}>
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View
