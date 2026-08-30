@@ -46,6 +46,7 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import {
   adminOrderFlowHref,
+  adminOrderProductionSetupHref,
   dealerOrderFlowHref,
 } from '@/features/production-flow/flowRoutes';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
@@ -485,6 +486,21 @@ export function OrderDetailScreen({
                 <AppText variant="caption" color="muted">
                   {t('mobile.orders.dealer')}: {vm.dealerName}
                 </AppText>
+              ) : null}
+              {variant === 'admin' ? (
+                <Pressable
+                  onPress={() => {
+                    void haptics.selection();
+                    router.push(adminOrderProductionSetupHref(vm.id));
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('mobile.orderProductionSetup.title')}
+                  style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}
+                >
+                  <AppText variant="body" weight="semibold" color="brand">
+                    {t('mobile.orderProductionSetup.title')}
+                  </AppText>
+                </Pressable>
               ) : null}
             </OrderBoardCard>
           </ListItemEnter>

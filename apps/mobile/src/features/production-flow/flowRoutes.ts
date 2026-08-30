@@ -15,3 +15,7 @@ export function dealerOrderFlowHref(orderId: string): Href {
 export function adminProductionFlowHref(productionOrderId: string): Href {
   return `/(app)/(admin)/production/${productionOrderId}/flow` as Href;
 }
+
+export function adminOrderProductionSetupHref(orderId: string): Href {
+  return `/(app)/(admin)/orders/${orderId}/production-setup` as Href;
+}
