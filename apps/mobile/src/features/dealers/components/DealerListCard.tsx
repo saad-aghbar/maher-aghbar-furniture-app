@@ -327,8 +327,7 @@ export function DealerListCard({ dealer, onPress }: Props) {
               variant="caption"
               color="muted"
               style={{
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                letterSpacing: locale === 'ar' ? 0 : 0.55,
+                letterSpacing: locale === 'ar' ? 0 : 0.15,
                 fontSize: 10,
                 textAlign: isRTL ? 'right' : 'left',
               }}
@@ -363,8 +362,7 @@ export function DealerListCard({ dealer, onPress }: Props) {
               variant="caption"
               color="muted"
               style={{
-                textTransform: 'uppercase',
-                letterSpacing: 0.45,
+                letterSpacing: locale === 'ar' ? 0 : 0.15,
                 fontSize: 10,
                 flexShrink: 0,
                 textAlign: isRTL ? 'right' : 'left',
@@ -436,8 +434,7 @@ function MetaRow({
         variant="caption"
         color="muted"
         style={{
-          textTransform: 'uppercase',
-          letterSpacing: 0.45,
+          letterSpacing: 0.15,
           fontSize: 10,
           flexShrink: 0,
           maxWidth: '34%',
