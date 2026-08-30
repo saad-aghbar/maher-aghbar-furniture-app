@@ -1,5 +1,5 @@
 import { RefreshControl, View } from 'react-native';
-import { can } from '@maher/permissions';
+import { can, shouldFetchWorkerQueue } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -32,7 +32,7 @@ export function WorkerHomeScreen({ forceState, fixture }: WorkerHomeScreenProps 
   const { t } = useLocale();
   const { colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
-  const allowed = can(user, 'production-task.read');
+  const allowed = shouldFetchWorkerQueue(user);
   const canNotify = can(user, 'notification.read');
 
   const query = useWorkerHomeQuery(allowed && !forceState);

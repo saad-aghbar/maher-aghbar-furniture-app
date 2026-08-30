@@ -37,6 +37,7 @@ export function useTasksInfiniteQuery(
     staleTime: 30_000,
     // Keep the current list visible while segment / search / date filters load.
     placeholderData: keepPreviousData,
+    meta: { skipGlobalErrorToast: true },
   });
 }
 
@@ -46,6 +47,7 @@ export function useCompletedDealersQuery(enabled: boolean) {
     queryFn: listCompletedDealers,
     enabled,
     staleTime: 60_000,
+    meta: { skipGlobalErrorToast: true },
   });
 }
 
@@ -61,6 +63,7 @@ export function useTaskQuery(id: string | undefined, enabled: boolean) {
     queryFn: () => getTask(id!),
     enabled: Boolean(id) && enabled,
     staleTime: 15_000,
+    meta: { skipGlobalErrorToast: true },
   });
 }
 

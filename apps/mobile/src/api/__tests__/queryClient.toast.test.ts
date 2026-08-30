@@ -1,6 +1,11 @@
 import { abortedError, ApiError, offlineError } from '../errors';
 import { isTechnicalQueryError, sanitizeFeedbackCopy, shouldToastApiError } from '../toastErrors';
-import { isRawNetworkFailure, isRawNetworkFailureMessage } from '../queryErrorToast';
+import {
+  isRawNetworkFailure,
+  isRawNetworkFailureMessage,
+  isWorkerQueueQueryKey,
+  shouldSkipGlobalQueryErrorToast,
+} from '../queryErrorToast';
 
 describe('raw network failure copy', () => {
   it('detects RN / fetch debug strings', () => {
@@ -46,3 +51,38 @@ describe('shouldToastApiError', () => {
   });
 });
 
+describe('global query error toasts', () => {
+  it('identifies worker-home and tasks keys as the floor queue', () => {
+    expect(isWorkerQueueQueryKey(['reports', 'worker-home'])).toBe(true);
+    expect(isWorkerQueueQueryKey(['tasks', 'list', {}])).toBe(true);
+    expect(isWorkerQueueQueryKey(['tasks', 'detail', 't1'])).toBe(true);
+    expect(isWorkerQueueQueryKey(['reports', 'admin-home'])).toBe(false);
+    expect(isWorkerQueueQueryKey(['inventory', 'detail', 'i1'])).toBe(false);
+    expect(isWorkerQueueQueryKey(undefined)).toBe(false);
+  });
+
+  it('skips the global toast for worker-queue queries even when the API error would toast', () => {
+    const forbidden = new ApiError('No access', { status: 403, code: 'FORBIDDEN' });
+    expect(shouldToastApiError(forbidden)).toBe(true);
+    expect(shouldSkipGlobalQueryErrorToast(['reports', 'worker-home'])).toBe(true);
+    expect(shouldSkipGlobalQueryErrorToast(['tasks', 'list', { mine: true }])).toBe(true);
+    expect(shouldSkipGlobalQueryErrorToast(['inventory', 'detail', 'i1'])).toBe(false);
+  });
+
+  it('skips the global toast when a query opts out via meta', () => {
+    expect(
+      shouldSkipGlobalQueryErrorToast(['purchasing', 'detail', 'p1'], {
+        skipGlobalErrorToast: true,
+      }),
+    ).toBe(true);
+    expect(shouldSkipGlobalQueryErrorToast(['purchasing', 'detail', 'p1'])).toBe(false);
+  });
+
+  it('still toasts real screen failures that are not the worker queue', () => {
+    const server = new ApiError('boom', { status: 500, code: 'INTERNAL_ERROR' }));
+    expect(shouldToastApiError(server)).toBe(true);
+    expect(shouldSkipGlobalQueryErrorToast(['purchasing', 'detail', 'p1'])).toBe(false);
+    expect(shouldSkipGlobalQueryErrorToast(['inventory', 'detail', 'i1'])).toBe(false);
+    expect(shouldSkipGlobalQueryErrorToast(['production', 'detail', 'o1'])).toBe(false);
+  });
+});

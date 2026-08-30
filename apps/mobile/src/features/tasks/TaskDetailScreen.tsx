@@ -19,7 +19,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
-import { can, canAny } from '@maher/permissions';
+import { can, canAny, shouldFetchWorkerQueue } from '@maher/permissions';
 import { createRequestId } from '@/api/requestId';
 import { uploadFile } from '@/api/modules/uploads';
 import { useAuth } from '@/auth/AuthProvider';
@@ -116,7 +116,7 @@ export function TaskDetailScreen({
   /** Floating dock (~2 rows) sits above the tab bar. */
   const dockBottom = tabClearance;
 
-  const allowed = can(user, 'production-task.read');
+  const allowed = shouldFetchWorkerQueue(user);
   const canUpdate = canAny(user, [
     'production-task.update-own',
     'production-task.update-any',

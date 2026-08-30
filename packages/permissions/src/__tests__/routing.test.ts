@@ -5,6 +5,7 @@ import {
   resolveMobileHomeHref,
   resolveWebHomePath,
   shouldFetchSalesAdminHome,
+  shouldFetchWorkerQueue,
 } from '../routing';
 import { can } from '../access';
 import type { AuthUser } from '@maher/types';
@@ -57,12 +58,49 @@ describe('post-login routing', () => {
   it('sends production workers to the employee portal', () => {
     const user: AuthUser = {
       ...base,
-      permissions: ['production-task.update-own', 'production-task.complete', 'notification.read'],
+      permissions: [
+        'production-task.read',
+        'production-task.update-own',
+        'production-task.complete',
+        'notification.read',
+      ],
     };
     expect(resolveAppSurface(user)).toBe('employee');
     expect(resolveWebHomePath(user)).toBe('/dashboard');
     expect(resolveHomePersona(user)).toBe('production_worker');
     expect(resolveMobileHomeHref(user)).toBe('/(app)/(employee)/(tabs)');
+    expect(shouldFetchWorkerQueue(user)).toBe(true);
+  });
+
+  it('does not fetch the worker queue on admin or dealer surfaces', () => {
+    const admin: AuthUser = {
+      ...base,
+      permissions: [
+        'production-task.read',
+        'production-order.read',
+        'quotation.create',
+        'inventory.adjust',
+      ],
+    };
+    const dealer: AuthUser = {
+      ...base,
+      customerId: 'c1',
+      permissions: ['production-task.read', 'request.create', 'sales-order.read'],
+    };
+    expect(resolveAppSurface(admin)).toBe('admin');
+    expect(shouldFetchWorkerQueue(admin)).toBe(false);
+    expect(resolveAppSurface(dealer)).toBe('customer');
+    expect(shouldFetchWorkerQueue(dealer)).toBe(false);
+    expect(shouldFetchWorkerQueue(null)).toBe(false);
+  });
+
+  it('does not fetch the worker queue without production-task.read', () => {
+    const user: AuthUser = {
+      ...base,
+      permissions: ['production-task.update-own', 'production-task.complete'],
+    };
+    expect(resolveAppSurface(user)).toBe('employee');
+    expect(shouldFetchWorkerQueue(user)).toBe(false);
   });
 
   it('sends warehouse staff to the admin portal with a warehouse persona', () => {

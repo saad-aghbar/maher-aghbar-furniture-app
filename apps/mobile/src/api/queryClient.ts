@@ -12,18 +12,27 @@ import { isQueryDebugToastMessage } from '@/components/feedback/queryDebugToast'
 import { isTechnicalQueryError } from './toastErrors';
 
 export { isTechnicalQueryError, shouldToastApiError, sanitizeFeedbackCopy } from './toastErrors';
+export {
+  isWorkerQueueQueryKey,
+  shouldSkipGlobalQueryErrorToast,
+} from './queryErrorToast';
 
 export { createSafeAsyncStorage } from './safeAsyncStorage';
 export { shouldDehydrateQuery, stripPendingFromPersistedClient, QUERY_PERSIST_KEY } from './queryPersist';
 
+export type QueryErrorContext = {
+  queryKey: readonly unknown[];
+  meta?: unknown;
+};
+
 export type QueryClientHooks = {
   /** Mutation failures only. Query loads render ErrorState — do not toast those. */
-  onError?: (error: unknown) => void;
+  onError?: (error: unknown, query?: QueryErrorContext) => void;
 };
 
 export function createQueryClient(hooks: QueryClientHooks = {}): QueryClient {
-  const notify = (error: unknown) => {
-    hooks.onError?.(error);
+  const notify = (error: unknown, query?: QueryErrorContext) => {
+    hooks.onError?.(error, query);
   };
 
   return new QueryClient({
