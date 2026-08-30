@@ -214,11 +214,7 @@ export function AdminSettingsScreen() {
           <AppText
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
-            style={{
-              letterSpacing: locale === 'ar' ? 0 : 1.4,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              color: colors.brand,
-            }}
+            style={{ color: colors.brand }}
           >
             {t('mobile.adminSettings.eyebrow')}
           </AppText>
@@ -485,30 +481,24 @@ export function AdminSettingsScreen() {
 }
 
 /**
- * Settings is a long stacked form under the persistent floating tab bar.
- * Put clearance in a real trailing view (not only paddingBottom) so the last
- * fields and per-section Save fully clear the pill — Yoga can drop
- * paddingBottom when the scroll content also uses `gap`.
+ * Last-content inset so Currency, later fields, and per-section Save
+ * clear the floating tab bar. Do not restyle the pill — pad content only.
  */
 function SettingsScroll({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
+  const { colors } = useTheme();
+  const bottomInset = insets.bottom + SURFACE_TAB_BAR_CLEARANCE;
   return (
-    <ScrollableScreen
-      contentContainerStyle={{
-        paddingBottom: insets.bottom + theme.spacing['3xl'],
-      }}
-      scrollProps={{
-        scrollIndicatorInsets: { bottom: SURFACE_TAB_BAR_CLEARANCE },
-      }}
-    >
-      {children}
-      <View
-        pointerEvents="none"
-        accessible={false}
-        style={{ height: SURFACE_TAB_BAR_CLEARANCE }}
-      />
-    </ScrollableScreen>
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingBottom: bottomInset }}>
+      <ScrollableScreen
+        contentContainerStyle={{ paddingBottom: bottomInset }}
+        scrollProps={{
+          scrollIndicatorInsets: { bottom: bottomInset },
+        }}
+      >
+        {children}
+      </ScrollableScreen>
+    </View>
   );
 }
 
@@ -519,8 +509,6 @@ function SectionLabel({ label, locale }: { label: string; locale: string }) {
       variant="caption"
       weight={locale === 'ar' ? 'regular' : 'medium'}
       style={{
-        letterSpacing: locale === 'ar' ? 0 : 0.8,
-        textTransform: locale === 'ar' ? 'none' : 'uppercase',
         color: colors.brand,
         fontSize: 11,
       }}
