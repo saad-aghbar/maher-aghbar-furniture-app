@@ -1,7 +1,8 @@
 import {
   parseRfqWorkspaceStage,
+  rfqIncompleteGaps,
+  rfqPathReachedIndex,
   rfqPathTone,
-  rfqReachedIndex,
   rfqSegmentFilled,
   rfqStageFromData,
 } from '../rfqWorkspaceStage';
@@ -40,23 +41,51 @@ describe('rfqStageFromData', () => {
       }),
     ).toBe('request');
   });
+
+  it('keeps Needs information on Request — does not invent a quote', () => {
+    expect(
+      rfqStageFromData({
+        hasQuote: false,
+        hasOrder: false,
+        status: 'NEEDS_INFORMATION',
+      }),
+    ).toBe('request');
+  });
 });
 
 describe('rfq path honest to backend', () => {
-  it('does not paint Accepted / Order / Preparing as reached while Quoted', () => {
-    const reached = rfqReachedIndex({ hasQuote: true, hasOrder: false });
+  it('does not paint Accepted / Preparing as reached while Quoted', () => {
+    const reached = rfqPathReachedIndex({ hasQuote: true, hasOrder: false });
     expect(reached).toBe(1);
     expect(rfqPathTone('request', reached)).toBe('done');
     expect(rfqPathTone('quotation', reached)).toBe('current');
-    expect(rfqPathTone('order', reached)).toBe('upcoming');
-    expect(rfqSegmentFilled('request', reached)).toBe(true);
-    expect(rfqSegmentFilled('quotation', reached)).toBe(true);
-    expect(rfqSegmentFilled('order', reached)).toBe(false);
+    expect(rfqPathTone('accepted', reached)).toBe('upcoming');
+    expect(rfqPathTone('preparing', reached)).toBe('upcoming');
+    expect(rfqSegmentFilled('accepted', reached)).toBe(false);
+    expect(rfqSegmentFilled('preparing', reached)).toBe(false);
   });
 
-  it('does not fill later segments from visiting a tab', () => {
-    const reached = rfqReachedIndex({ hasQuote: false, hasOrder: false });
+  it('does not paint later path steps as done while Needs information', () => {
+    const reached = rfqPathReachedIndex({ hasQuote: false, hasOrder: false });
+    expect(reached).toBe(0);
+    expect(rfqPathTone('request', reached)).toBe('current');
+    expect(rfqPathTone('quotation', reached)).toBe('upcoming');
+    expect(rfqPathTone('accepted', reached)).toBe('upcoming');
+    expect(rfqPathTone('preparing', reached)).toBe('upcoming');
     expect(rfqSegmentFilled('quotation', reached)).toBe(false);
-    expect(rfqSegmentFilled('order', reached)).toBe(false);
+    expect(rfqSegmentFilled('accepted', reached)).toBe(false);
+    expect(rfqSegmentFilled('preparing', reached)).toBe(false);
+  });
+});
+
+describe('rfqIncompleteGaps', () => {
+  it('lists missing attachments and end-customer honestly', () => {
+    expect(
+      rfqIncompleteGaps({
+        documents: [],
+        deliveryAddress: '12 Main',
+        endCustomerName: '  ',
+      }),
+    ).toEqual(['attachments', 'endCustomer']);
   });
 });

@@ -6,10 +6,12 @@ import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme, type ThemeColors } from '@/theme';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
+  RFQ_PATH_STEPS,
   RFQ_WORKSPACE_STAGES,
+  rfqPathReachedIndex,
   rfqPathTone,
-  rfqReachedIndex,
   rfqSegmentFilled,
+  type RfqPathStep,
   type RfqWorkspaceStage,
 } from '../rfqWorkspaceStage';
 
@@ -58,7 +60,7 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const reached = rfqReachedIndex({ hasQuote, hasOrder });
+  const reached = rfqPathReachedIndex({ hasQuote, hasOrder });
 
   const labelFor = (key: RfqWorkspaceStage) => {
     switch (key) {
@@ -70,6 +72,8 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
         return t('mobile.adminRequest.stages.order');
     }
   };
+
+  const pathLabel = (key: RfqPathStep) => t(`mobile.adminRequest.path.${key}`);
 
   const available = (key: RfqWorkspaceStage) => {
     if (key === 'request' || key === 'quotation') return true;
@@ -158,7 +162,7 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
                 alignItems: 'center',
               }}
             >
-              {STAGES.map((key, index) => {
+              {RFQ_PATH_STEPS.map((key, index) => {
                 const tone = rfqPathTone(key, reached);
                 return (
                   <View
@@ -189,7 +193,7 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
                         opacity: tone === 'upcoming' ? 0.55 : 1,
                       }}
                     >
-                      {labelFor(key)}
+                      {pathLabel(key)}
                     </AppText>
                   </View>
                 );
@@ -211,9 +215,8 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
             borderColor: colors.border,
           }}
         >
-          {STAGES.map((key) => {
+          {RFQ_PATH_STEPS.map((key) => {
             const on = rfqSegmentFilled(key, reached);
-            const { tint } = stageTint(colors, key);
             return (
               <View
                 key={key}
@@ -221,8 +224,8 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
                   flex: 1,
                   minWidth: 6,
                   borderRadius: theme.radius.full,
-                  backgroundColor: on ? tint : 'transparent',
-                  opacity: stage === key ? 1 : on ? 0.5 : 1,
+                  backgroundColor: on ? colors.brand : 'transparent',
+                  opacity: on && rfqPathTone(key, reached) === 'current' ? 1 : on ? 0.55 : 1,
                 }}
               />
             );

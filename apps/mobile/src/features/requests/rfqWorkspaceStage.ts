@@ -2,7 +2,19 @@ export const RFQ_WORKSPACE_STAGES = ['request', 'quotation', 'order'] as const;
 
 export type RfqWorkspaceStage = (typeof RFQ_WORKSPACE_STAGES)[number];
 
+/** Factory path chrome — longer than the three workspace tabs. */
+export const RFQ_PATH_STEPS = [
+  'request',
+  'quotation',
+  'accepted',
+  'preparing',
+] as const;
+
+export type RfqPathStep = (typeof RFQ_PATH_STEPS)[number];
+
 export type RfqPathTone = 'done' | 'current' | 'upcoming';
+
+export type RfqIncompleteGap = 'attachments' | 'deliveryAddress' | 'endCustomer';
 
 export function parseRfqWorkspaceStage(
   value: string | string[] | undefined | null,
@@ -15,6 +27,7 @@ export function parseRfqWorkspaceStage(
 /**
  * Workspace tab that matches backend facts — not a leftover default of Request.
  * Quoted / existing quotation → Quotation. Sales order exists → Order.
+ * Needs information stays on Request — do not invent a quote.
  */
 export function rfqStageFromData(args: {
   hasQuote: boolean;
@@ -27,10 +40,11 @@ export function rfqStageFromData(args: {
 }
 
 /**
- * Farthest workspace index the record has actually reached.
- * Visiting a tab must not advance this — honest to quotations / sales order.
+ * Farthest factory-path index the record has actually reached.
+ * Accepted / Preparing stay upcoming until a sales order exists.
+ * Visiting a tab must not advance this.
  */
-export function rfqReachedIndex(args: {
+export function rfqPathReachedIndex(args: {
   hasQuote: boolean;
   hasOrder: boolean;
 }): number {
@@ -40,10 +54,10 @@ export function rfqReachedIndex(args: {
 }
 
 export function rfqPathTone(
-  stage: RfqWorkspaceStage,
+  step: RfqPathStep,
   reachedIndex: number,
 ): RfqPathTone {
-  const i = RFQ_WORKSPACE_STAGES.indexOf(stage);
+  const i = RFQ_PATH_STEPS.indexOf(step);
   if (i < 0) return 'upcoming';
   if (i < reachedIndex) return 'done';
   if (i === reachedIndex) return 'current';
@@ -51,9 +65,21 @@ export function rfqPathTone(
 }
 
 export function rfqSegmentFilled(
-  stage: RfqWorkspaceStage,
+  step: RfqPathStep,
   reachedIndex: number,
 ): boolean {
-  const i = RFQ_WORKSPACE_STAGES.indexOf(stage);
+  const i = RFQ_PATH_STEPS.indexOf(step);
   return i >= 0 && i <= reachedIndex;
+}
+
+export function rfqIncompleteGaps(detail: {
+  documents?: Array<unknown> | null;
+  deliveryAddress?: string | null;
+  endCustomerName?: string | null;
+}): RfqIncompleteGap[] {
+  const gaps: RfqIncompleteGap[] = [];
+  if (!(detail.documents?.length)) gaps.push('attachments');
+  if (!detail.deliveryAddress?.trim()) gaps.push('deliveryAddress');
+  if (!detail.endCustomerName?.trim()) gaps.push('endCustomer');
+  return gaps;
 }

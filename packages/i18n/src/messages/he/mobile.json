@@ -1496,6 +1496,19 @@
       "quotation": "הצעת מחיר",
       "order": "הזמנה"
     },
+    "path": {
+      "request": "בקשת הסוחר",
+      "quotation": "הצעת מחיר",
+      "accepted": "התקבל",
+      "preparing": "בהכנה"
+    },
+    "currentPhase": "שלב נוכחי",
+    "gaps": {
+      "title": "מידע חסר",
+      "attachments": "אין קבצים מצורפים עדיין",
+      "deliveryAddress": "חסרה כתובת משלוח",
+      "endCustomer": "חסר שם לקוח קצה"
+    },
     "noQuotationYet": "אין הצעת מחיר עדיין",
     "noQuotationHint": "כשהבקשה מוכנה, צרו הצעת מחיר כדי לקבוע מחירים ולשלוח לאישור.",
     "orderStageEmpty": "אין הזמנת מכירה עדיין",

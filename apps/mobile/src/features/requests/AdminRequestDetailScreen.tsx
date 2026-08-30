@@ -11,7 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
-import { localizedName } from '@maher/i18n';
+import { localizedName, statusLabel } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import { createQuotation } from '@/api/modules/quotations';
 import {
@@ -56,6 +56,8 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { AdminQuotationPanel } from '@/features/quotations/AdminQuotationDetailScreen';
 import { RfqStageRail } from '@/features/requests/components/RfqStageRail';
 import {
+  rfqIncompleteGaps,
+  rfqPathReachedIndex,
   rfqStageFromData,
   type RfqWorkspaceStage,
 } from '@/features/requests/rfqWorkspaceStage';
@@ -503,6 +505,18 @@ export function AdminRequestDetailScreen({
     pickedStage ??
     rfqStageFromData({ hasQuote, hasOrder, status: detail.status });
 
+  const pathReached = rfqPathReachedIndex({ hasQuote, hasOrder });
+  const currentPhaseLabel =
+    status === 'NEEDS_INFORMATION'
+      ? statusLabel(locale, 'NEEDS_INFORMATION')
+      : t(
+          `mobile.adminRequest.path.${
+            pathReached === 2 ? 'accepted' : pathReached === 1 ? 'quotation' : 'request'
+          }`,
+        );
+  const incompleteGaps = rfqIncompleteGaps(detail);
+  const needsInfoAsk = status === 'NEEDS_INFORMATION' ? detail.internalNotes?.trim() : '';
+
   const stageBadgeStatus =
     stage === 'order' && linkedSalesOrder
       ? linkedSalesOrder.status
@@ -531,6 +545,7 @@ export function AdminRequestDetailScreen({
           paddingBottom:
             theme.spacing['3xl'] +
             SURFACE_TAB_BAR_CLEARANCE +
+            theme.spacing.xl +
             Math.max(insets.bottom, theme.spacing.sm),
           gap: theme.spacing.md,
         }}
@@ -539,27 +554,26 @@ export function AdminRequestDetailScreen({
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             gap: theme.spacing.sm,
             minHeight: theme.sizes.touch.min,
           }}
         >
           <BackButton onPress={goBack} label={t('mobile.adminRequest.backToOrders')} />
-          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 2, paddingTop: 2 }}>
             <AppText
               variant="title"
               weight={titleWeight}
-              numberOfLines={1}
               dir="ltr"
             >
               {detail.number}
             </AppText>
-            <AppText variant="caption" color="muted" numberOfLines={1}>
+            <AppText variant="caption" color="muted" numberOfLines={2}>
               {dealerName}
             </AppText>
           </View>
           {stageBadgeStatus ? (
-            <View style={{ justifyContent: 'center', alignItems: 'center', maxWidth: '42%' }}>
+            <View style={{ justifyContent: 'flex-start', alignItems: 'center', maxWidth: '42%', paddingTop: 4 }}>
               <StatusBadge status={stageBadgeStatus} dot />
             </View>
           ) : null}
@@ -576,10 +590,49 @@ export function AdminRequestDetailScreen({
           }}
         />
 
+        <OrderBoardCard>
+          <AppText variant="caption" color="muted">
+            {t('mobile.adminRequest.currentPhase')}
+          </AppText>
+          <AppText variant="title" weight={titleWeight}>
+            {currentPhaseLabel}
+          </AppText>
+        </OrderBoardCard>
+
         {stage === 'request' && galleryUris.length > 0 ? (
           <View style={{ marginHorizontal: -theme.spacing.lg }}>
             <ImageCarousel uris={galleryUris} height={220} />
           </View>
+        ) : null}
+
+        {needsInfoAsk ? (
+          <OrderBoardCard accent={colors.brand}>
+            <OrderSectionHeader
+              icon="alert-circle-outline"
+              label={t('mobile.adminRequest.needsInfo')}
+              accent={colors.brand}
+            />
+            <AppText variant="label" weight="medium">
+              {needsInfoAsk}
+            </AppText>
+          </OrderBoardCard>
+        ) : null}
+
+        {incompleteGaps.length > 0 ? (
+          <OrderBoardCard accent={colors.warning}>
+            <OrderSectionHeader
+              icon="warning-outline"
+              label={t('mobile.adminRequest.gaps.title')}
+              accent={colors.warning}
+            />
+            <View style={{ gap: theme.spacing.xs }}>
+              {incompleteGaps.map((gap) => (
+                <AppText key={gap} variant="label" color="secondary">
+                  {`• ${t(`mobile.adminRequest.gaps.${gap}`)}`}
+                </AppText>
+              ))}
+            </View>
+          </OrderBoardCard>
         ) : null}
         {message ? (
           <View
