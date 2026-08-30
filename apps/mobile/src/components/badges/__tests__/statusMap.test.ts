@@ -17,6 +17,7 @@ describe('badge status / priority maps', () => {
     expect(resolveStatusVariant('QUOTED')).toBe('brand');
     expect(resolveStatusVariant('OPEN')).toBe('brand');
     expect(resolveStatusVariant('ISSUED')).toBe('brand');
+    expect(resolveStatusVariant('IN_PROGRESS')).toBe('brand');
     expect(resolveStatusVariant('UNKNOWN_XYZ')).toBe('default');
   });
 

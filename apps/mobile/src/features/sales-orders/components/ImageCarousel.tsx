@@ -53,45 +53,49 @@ export function ImageCarousel({ uris, height = 240, itemWidth }: ImageCarouselPr
 
   return (
     <View>
-      <FlatList
-        ref={listRef}
-        data={uris}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(uri, i) => `${uri}-${i}`}
-        onViewableItemsChanged={onViewable}
-        viewabilityConfig={{ viewAreaCoveragePercentThreshold: 60 }}
-        onScrollToIndexFailed={() => undefined}
-        getItemLayout={(_, i) => ({
-          length: pageW,
-          offset: pageW * i,
-          index: i,
-        })}
-        renderItem={({ item, index: itemIndex }) => (
-          <Pressable
-            onPress={() => {
-              void haptics.selection();
-              setViewerIndex(itemIndex);
-            }}
-            accessibilityRole="imagebutton"
-            accessibilityLabel={t('mobile.orderDetail.openImage')}
-          >
-            <Image
-              source={{ uri: item }}
-              style={{ width: pageW, height }}
-              resizeMode="cover"
-            />
-          </Pressable>
-        )}
-      />
+      <View style={{ height, overflow: 'hidden' }}>
+        <FlatList
+          ref={listRef}
+          data={uris}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(uri, i) => `${uri}-${i}`}
+          onViewableItemsChanged={onViewable}
+          viewabilityConfig={{ viewAreaCoveragePercentThreshold: 60 }}
+          onScrollToIndexFailed={() => undefined}
+          getItemLayout={(_, i) => ({
+            length: pageW,
+            offset: pageW * i,
+            index: i,
+          })}
+          renderItem={({ item, index: itemIndex }) => (
+            <Pressable
+              onPress={() => {
+                void haptics.selection();
+                setViewerIndex(itemIndex);
+              }}
+              accessibilityRole="imagebutton"
+              accessibilityLabel={t('mobile.orderDetail.openImage')}
+            >
+              <Image
+                source={{ uri: item }}
+                style={{ width: pageW, height }}
+                resizeMode="cover"
+              />
+            </Pressable>
+          )}
+        />
+      </View>
       {uris.length > 1 ? (
         <View
           style={{
             flexDirection: 'row',
             justifyContent: 'center',
+            alignItems: 'center',
             gap: theme.spacing.xs,
-            paddingVertical: theme.spacing.sm,
+            paddingTop: theme.spacing.sm,
+            paddingBottom: theme.spacing.lg,
           }}
         >
           {uris.map((uri, i) => (

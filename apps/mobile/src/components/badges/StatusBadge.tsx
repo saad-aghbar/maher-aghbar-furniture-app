@@ -20,7 +20,7 @@ type StatusBadgeProps = {
   ink?: 'semantic' | 'board';
   /** Cream fill + Army Camo border + Liquorice ink — readable on parchment. */
   branded?: boolean;
-  /** Override status-map fill (Staff Types Active → wood, not mint success). */
+  /** Override status-map fill (Staff Types Active / task-floor Ready → wood, not mint). */
   variant?: BadgeVariant;
 };
 
