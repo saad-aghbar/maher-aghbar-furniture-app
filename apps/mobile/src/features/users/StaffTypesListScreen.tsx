@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
@@ -15,7 +16,7 @@ import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceListBottomInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { StaffTypeBoardCard } from './components/StaffTypeBoardCard';
 import {
@@ -35,7 +36,10 @@ export function StaffTypesListScreen() {
   const { colors, theme, colorScheme } = useTheme();
   const { showToast } = useToast();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  /** Footer spacer so the last card's View/Duplicate row clears the floating tab bar. */
+  const listBottomInset = surfaceListBottomInset(theme.spacing['3xl'], insets.bottom);
   const query = useStaffTypesQuery(true, {});
   const duplicateMutation = useDuplicateStaffTypeMutation();
   const deactivateMutation = useDeactivateStaffTypeMutation();
@@ -97,9 +101,10 @@ export function StaffTypesListScreen() {
         }
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: theme.spacing.md,
           flexGrow: 1,
         }}
+        ListFooterComponent={<View pointerEvents="none" style={{ height: listBottomInset }} />}
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
             <View style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}>
