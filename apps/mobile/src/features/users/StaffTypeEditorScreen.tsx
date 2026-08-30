@@ -170,6 +170,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
       </View>
 
       <ScrollView
+        style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           gap: theme.spacing.md,
