@@ -386,11 +386,13 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
                       label={t('mobile.production.dealer')}
                       value={detail.dealerName}
                     />
-                    <MetaRow
-                      isRTL={isRTL}
-                      label={t('mobile.production.priorityLabel')}
-                      value={priorityText(detail.priority, t)}
-                    />
+                    {!urgent ? (
+                      <MetaRow
+                        isRTL={isRTL}
+                        label={t('mobile.production.priorityLabel')}
+                        value={priorityText(detail.priority, t)}
+                      />
+                    ) : null}
                     {detail.deliveryLabel ? (
                       <MetaRow
                         isRTL={isRTL}
@@ -400,7 +402,7 @@ export function ProductionDetailScreen({ orderId }: ProductionDetailScreenProps)
                       />
                     ) : null}
 
-                    <Divider compact />
+                    <Divider compact plain />
 
                     <WorkflowProgressHit
                       progressPercent={pct}
