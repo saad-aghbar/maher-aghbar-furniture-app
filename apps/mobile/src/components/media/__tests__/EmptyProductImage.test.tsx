@@ -37,22 +37,23 @@ function leafTexts(node: ReturnType<ReturnType<typeof render>['toJSON']>): strin
 }
 
 describe('EmptyProductImage', () => {
-  it('does not render a raw No image label', () => {
-    const view = render(<EmptyProductImage />, {
+  it('does not render a raw No image label', async () => {
+    const view = await render(<EmptyProductImage />, {
       wrapper: ({ children }) => <Wrapper locale="en">{children}</Wrapper>,
     });
     expect(leafTexts(view.toJSON()).join(' ')).not.toMatch(/no image/i);
     expect(view.getByLabelText('No image')).toBeTruthy();
   });
 
-  it('keeps Arabic and Hebrew a11y labels', () => {
-    const ar = render(<EmptyProductImage />, {
+  it('keeps the Arabic a11y label', async () => {
+    const ar = await render(<EmptyProductImage />, {
       wrapper: ({ children }) => <Wrapper locale="ar">{children}</Wrapper>,
     });
     expect(ar.getByLabelText('لا توجد صورة')).toBeTruthy();
-    ar.unmount();
+  });
 
-    const he = render(<EmptyProductImage />, {
+  it('keeps the Hebrew a11y label', async () => {
+    const he = await render(<EmptyProductImage />, {
       wrapper: ({ children }) => <Wrapper locale="he">{children}</Wrapper>,
     });
     expect(he.getByLabelText('אין תמונה')).toBeTruthy();
