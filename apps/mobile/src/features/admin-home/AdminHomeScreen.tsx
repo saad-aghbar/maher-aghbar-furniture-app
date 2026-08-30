@@ -22,6 +22,7 @@ import { AdminHomeLivingHero } from './components/AdminHomeLivingHero';
 import { AdminHomeLivingHome } from './components/AdminHomeLivingHome';
 import { AdminHomeOpsInventory } from './components/AdminHomeOpsInventory';
 import { AdminHomeQuickAccess } from './components/AdminHomeQuickAccess';
+import { AdminHomeSearchRow } from './components/AdminHomeSearchRow';
 import { AdminHomeSignatureHome } from './components/AdminHomeSignatureHome';
 import { AdminHomeSkeleton } from './components/AdminHomeSkeleton';
 import { ADMIN_HOME_COMPOSITION } from './homeComposition';
@@ -197,6 +198,7 @@ function AdminHomeScreenInner({ forceState, fixture }: AdminHomeScreenProps) {
       <AtelierScrollShell refreshControl={refresh}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         {hero}
+        <AdminHomeSearchRow />
         <AppText variant="heading" weight="semibold" style={{ marginTop: theme.spacing.md }}>
           {t('mobile.staffHome.restrictedTitle')}
         </AppText>
@@ -220,6 +222,7 @@ function AdminHomeScreenInner({ forceState, fixture }: AdminHomeScreenProps) {
     <AtelierScrollShell refreshControl={refresh}>
       {showOfflineBanner || forceState === 'offline' ? <OfflineBanner /> : null}
       {hero}
+      <AdminHomeSearchRow />
       {homeKind === 'sales' ? salesBody : null}
       {homeKind === 'warehouse' || (homeKind === 'sales' && !forceState) ? (
         <AdminHomeOpsInventory />
