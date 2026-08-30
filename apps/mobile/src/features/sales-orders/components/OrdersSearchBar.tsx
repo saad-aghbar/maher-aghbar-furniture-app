@@ -1,7 +1,7 @@
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppTextInput } from '@/components/forms/AppTextInput';
-import { useLocale } from '@/i18n';
+import { localeRow, textAlignFor, useLocale, writingDirectionFor } from '@/i18n';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 
 type Props = {
@@ -32,7 +32,7 @@ export function OrdersSearchBar({
         borderColor: colors.borderStrong,
         backgroundColor: colors.background,
         overflow: 'hidden',
-        flexDirection: isRTL ? 'row-reverse' : 'row',
+        flexDirection: localeRow(isRTL),
         alignItems: 'center',
         paddingHorizontal: theme.spacing.md,
         gap: theme.spacing.sm,
@@ -59,8 +59,8 @@ export function OrdersSearchBar({
           color: colors.textPrimary,
           fontSize: 15,
           lineHeight: 20,
-          textAlign: isRTL ? 'right' : 'left',
-          writingDirection: isRTL ? 'rtl' : 'ltr',
+          textAlign: textAlignFor(isRTL ? 'rtl' : 'ltr'),
+          writingDirection: writingDirectionFor(isRTL),
           ...resolveAppFontStyle(locale, { variant: 'body' }),
         }}
       />

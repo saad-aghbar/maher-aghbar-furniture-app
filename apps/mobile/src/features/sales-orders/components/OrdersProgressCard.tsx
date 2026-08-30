@@ -1,8 +1,15 @@
 import { Image, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { useLocale } from '@/i18n';
+import {
+  alignStart,
+  extraStartPadding,
+  localeRow,
+  pinStart,
+  useLocale,
+} from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
@@ -104,7 +111,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
           position: 'absolute',
           top: 0,
           bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
+          ...pinStart(isRTL),
           width: 3,
           backgroundColor: accent,
           opacity: urgent ? 1 : 0.5,
@@ -113,14 +120,12 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
 
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           gap: theme.spacing.md,
           paddingTop: theme.spacing.md,
           paddingBottom: theme.spacing.sm,
           paddingHorizontal: theme.spacing.md,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
+          ...extraStartPadding(isRTL, theme.spacing.md + 4),
           alignItems: 'flex-start',
         }}
       >
@@ -154,7 +159,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             flex: 1,
             minWidth: 0,
             gap: 4,
-            alignItems: isRTL ? 'flex-end' : 'flex-start',
+            alignItems: alignStart(isRTL),
           }}
         >
           {variant === 'admin' && order.dealerName ? (
@@ -162,6 +167,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
               variant="caption"
               color="muted"
               numberOfLines={1}
+              align="start"
               style={{
                 width: '100%',
                 letterSpacing: locale === 'ar' ? 0 : 0.4,
@@ -178,6 +184,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             variant="label"
             weight={titleWeight}
             numberOfLines={2}
+            align="start"
             style={{ width: '100%' }}
           >
             {order.title}
@@ -188,6 +195,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             color="secondary"
             numberOfLines={1}
             dir={order.kind === 'rfq' && variant === 'dealer' ? 'auto' : 'ltr'}
+            align="start"
             style={{ letterSpacing: 0.2 }}
           >
             {idLine}
@@ -195,7 +203,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
 
           <View
             style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: localeRow(isRTL),
               flexWrap: 'wrap',
               gap: theme.spacing.xs,
               width: '100%',
@@ -222,13 +230,14 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
               variant="caption"
               color="muted"
               dir="ltr"
+              align="start"
               style={{ width: '100%' }}
             >
               {formatCurrency(order.sellerPrice)}
             </AppText>
           ) : null}
           {order.deliveryDate ? (
-            <AppText variant="caption" color="muted" style={{ width: '100%' }}>
+            <AppText variant="caption" color="muted" align="start" style={{ width: '100%' }}>
               {formatDate(order.deliveryDate)}
             </AppText>
           ) : null}
@@ -242,11 +251,9 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             justifyContent: 'center',
           }}
         >
-          <Ionicons
-            name={isRTL ? 'chevron-back' : 'chevron-forward'}
-            size={18}
-            color={colors.textMuted}
-          />
+          <DirectionalIcon>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </DirectionalIcon>
         </View>
       </View>
 
@@ -262,7 +269,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
       >
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: localeRow(isRTL),
             justifyContent: 'space-between',
             alignItems: 'center',
             gap: theme.spacing.sm,

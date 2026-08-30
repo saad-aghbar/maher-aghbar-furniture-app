@@ -11,7 +11,14 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
+import {
+  alignStart,
+  extraStartPadding,
+  localeRow,
+  pinStart,
+  useLocale,
+} from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme, type ThemeColors } from '@/theme';
 import {
@@ -51,13 +58,17 @@ function StageIcon({
     case 'pending':
       return <Ionicons name="hourglass-outline" size={size} color={color} />;
     case 'ready':
-      return <Ionicons name="play-outline" size={size} color={color} />;
+      return (
+        <DirectionalIcon>
+          <Ionicons name="play-outline" size={size} color={color} />
+        </DirectionalIcon>
+      );
     case 'production':
       return <MaterialCommunityIcons name="hammer" size={size} color={color} />;
   }
 }
 
-/** 4-up: All · Preparing · Ready · Production — short labels, honest zeros. */
+/** 4-up: All · Prep · Ready · Line — short two-line-safe labels, honest zeros. */
 const JOURNEY: JourneyKey[] = ['all', 'pending', 'ready', 'production'];
 const STAGES: OrdersStageKey[] = ['pending', 'production', 'ready'];
 
@@ -115,7 +126,7 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
           position: 'absolute',
           top: 0,
           bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
+          ...pinStart(isRTL),
           width: 3,
           backgroundColor: colors.brand,
           opacity: 0.5,
@@ -126,54 +137,62 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
         style={{
           gap: theme.spacing.md,
           padding: theme.spacing.md,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
+          ...extraStartPadding(isRTL, theme.spacing.md + 4),
         }}
       >
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: localeRow(isRTL),
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: theme.spacing.sm,
           }}
         >
           <View
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
+              flexDirection: localeRow(isRTL),
               alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.surfaceSecondary,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.border,
+              gap: theme.spacing.sm,
+              flex: 1,
+              minWidth: 0,
             }}
           >
-            <Ionicons name="git-network-outline" size={16} color={colors.brand} />
-          </View>
-          <View style={{ flex: 1, gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-            <AppText
-              variant="caption"
-              weight={titleWeight}
+            <View
               style={{
-                color: colors.brand,
-                letterSpacing: locale === 'ar' ? 0 : 1.2,
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                fontSize: 11,
-                lineHeight: 14,
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.surfaceSecondary,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
               }}
             >
-              {t('mobile.orders.pipelineEyebrow')}
-            </AppText>
-            <AppText
-              variant="caption"
-              color="secondary"
-              maxFontSizeMultiplier={1.15}
-              style={isRTL ? { fontSize: 11, lineHeight: 15 } : undefined}
-            >
-              {t('mobile.orders.pipelineHint')}
-            </AppText>
+              <Ionicons name="git-network-outline" size={16} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1, gap: 2, minWidth: 0, alignItems: alignStart(isRTL) }}>
+              <AppText
+                variant="caption"
+                weight={titleWeight}
+                style={{
+                  color: colors.brand,
+                  letterSpacing: locale === 'ar' ? 0 : 1.2,
+                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                  fontSize: 11,
+                  lineHeight: 14,
+                }}
+              >
+                {t('mobile.orders.pipelineEyebrow')}
+              </AppText>
+              <AppText
+                variant="caption"
+                color="secondary"
+                maxFontSizeMultiplier={1.15}
+              >
+                {t('mobile.orders.pipelineHint')}
+              </AppText>
+            </View>
           </View>
           {total > 0 ? (
             <View
@@ -208,7 +227,7 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
               borderRadius: theme.radius.full,
               backgroundColor: colors.surfaceSecondary,
               overflow: 'hidden',
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: localeRow(isRTL),
               gap: 2,
               padding: 2,
               borderWidth: StyleSheet.hairlineWidth,
@@ -252,7 +271,7 @@ export function OrdersStageSpine({ counts, stageFocus, onStageFocusChange }: Pro
 
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: localeRow(isRTL),
             justifyContent: 'space-between',
             gap: theme.spacing.sm,
           }}
@@ -353,7 +372,7 @@ function StageNode({
               position: 'absolute',
               top: 0,
               bottom: 0,
-              ...(isRTL ? { right: 0 } : { left: 0 }),
+              ...pinStart(isRTL),
               width: 3,
               backgroundColor: tint,
               opacity: 0.9,
@@ -396,9 +415,9 @@ function StageNode({
           align="center"
           maxFontSizeMultiplier={1.1}
           style={{
-            fontSize: isRTL ? 10 : 11,
-            lineHeight: isRTL ? 13 : 14,
-            textAlign: 'center',
+            fontSize: 11,
+            lineHeight: 14,
+            width: '100%',
           }}
         >
           {label}

@@ -7,7 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { extraStartPadding, localeRow, pinStart, useLocale } from '@/i18n';
 import { AnimatedPressable, useReducedMotion } from '@/motion';
 import { durations, withMotionDuration } from '@/motion/presets';
 import { useTheme } from '@/theme';
@@ -101,7 +101,7 @@ export function OrdersDaySectionHeader({
           position: 'absolute',
           top: 0,
           bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
+          ...pinStart(isRTL),
           width: 3,
           backgroundColor: accent,
           opacity: expanded ? 0.9 : 0.45,
@@ -109,22 +109,20 @@ export function OrdersDaySectionHeader({
       />
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: theme.spacing.sm,
           minHeight: theme.sizes.touch.min,
           paddingVertical: theme.spacing.sm,
           paddingHorizontal: theme.spacing.md,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
+          ...extraStartPadding(isRTL, theme.spacing.md + 4),
           backgroundColor: expanded ? soft : 'transparent',
         }}
       >
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: localeRow(isRTL),
             alignItems: 'center',
             gap: theme.spacing.sm,
             flex: 1,

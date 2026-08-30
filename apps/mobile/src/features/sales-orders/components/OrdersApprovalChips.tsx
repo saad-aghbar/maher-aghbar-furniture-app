@@ -6,7 +6,7 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { useDraggablePillBar, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import type { OrdersApprovalFilter } from './OrdersFilterSheet';
@@ -107,7 +107,7 @@ export function OrdersApprovalChips({ value, onChange }: Props) {
     <GestureDetector gesture={gesture}>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           alignItems: 'center',
           height: shellH,
           borderRadius: shellH / 2,

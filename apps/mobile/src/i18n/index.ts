@@ -27,6 +27,11 @@ export {
 export {
   isRtlLocale,
   textAlignFor,
+  writingDirectionFor,
   flexDirectionFor,
+  localeRow,
+  pinStart,
+  extraStartPadding,
+  alignStart,
   mirrorStyle,
 } from './rtl';

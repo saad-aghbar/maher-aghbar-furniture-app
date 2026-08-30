@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
 import { statusLabel } from '@maher/i18n';
-import { useLocale } from '@/i18n';
+import { alignStart, localeRow, textAlignFor, useLocale, writingDirectionFor } from '@/i18n';
 import { resolveAppFontStyle, useTheme } from '@/theme';
 import {
   getBadgeContainerStyle,
@@ -40,7 +40,7 @@ export function StatusBadge({
       accessibilityLabel={display}
       style={[
         getBadgeContainerStyle(theme, variant),
-        { alignSelf: isRTL ? 'flex-end' : 'flex-start' },
+        { alignSelf: alignStart(isRTL), flexDirection: localeRow(isRTL) },
         board
           ? {
               backgroundColor: colors.brandSoft,
@@ -71,11 +71,8 @@ export function StatusBadge({
             systemWeight: theme.typography.weights.medium,
           }),
           {
-            textAlign: isRTL ? 'right' : 'left',
-            writingDirection: isRTL ? 'rtl' : 'ltr',
-            ...(isRTL
-              ? { fontSize: 10, lineHeight: 14 }
-              : null),
+            textAlign: textAlignFor(isRTL ? 'rtl' : 'ltr'),
+            writingDirection: writingDirectionFor(isRTL),
             ...(board ? { color: colors.textPrimary } : null),
           },
         ]}

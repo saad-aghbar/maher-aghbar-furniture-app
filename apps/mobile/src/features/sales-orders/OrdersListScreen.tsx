@@ -20,7 +20,7 @@ import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { useLocale } from '@/i18n';
+import { alignStart, localeRow, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { SalesOrderListItem } from './api';
@@ -649,16 +649,24 @@ function OrdersHeader({
     <View style={{ gap: theme.spacing.lg }}>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: theme.spacing.md,
         }}
       >
-        <View style={{ flex: 1, gap: theme.spacing.xs, minWidth: 0 }}>
+        <View
+          style={{
+            flex: 1,
+            gap: theme.spacing.xs,
+            minWidth: 0,
+            alignItems: alignStart(isRTL),
+          }}
+        >
           <AppText
             variant="caption"
             weight={locale === 'ar' ? 'regular' : 'medium'}
+            align="start"
             style={{
               letterSpacing: locale === 'ar' ? 0 : 1.4,
               textTransform: locale === 'ar' ? 'none' : 'uppercase',
@@ -667,12 +675,13 @@ function OrdersHeader({
           >
             {t('mobile.orders.pulseEyebrow')}
           </AppText>
-          <AppText variant="largeTitle" weight={titleWeight}>
+          <AppText variant="largeTitle" weight={titleWeight} align="start">
             {t('mobile.orders.title')}
           </AppText>
           <AppText
             variant="caption"
             numberOfLines={2}
+            align="start"
             style={{ fontSize: 12, lineHeight: 16, color: colors.brand }}
           >
             {t('mobile.orders.subtitle')}

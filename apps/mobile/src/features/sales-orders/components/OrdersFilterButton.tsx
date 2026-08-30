@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -35,7 +35,7 @@ export function OrdersFilterButton({ onPress, activeCount = 0 }: Props) {
         paddingVertical: theme.spacing.sm,
         borderRadius: theme.radius.full,
         backgroundColor: colors.brand,
-        flexDirection: isRTL ? 'row-reverse' : 'row',
+        flexDirection: localeRow(isRTL),
         alignItems: 'center',
         gap: theme.spacing.sm,
         ...theme.elevation.raised,

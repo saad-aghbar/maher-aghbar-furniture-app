@@ -6,7 +6,7 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { useDraggablePillBar, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 
@@ -192,7 +192,7 @@ export function OrdersFilterChips({ value, onChange }: OrdersFilterChipsProps) {
         <GestureDetector gesture={gesture}>
           <View
             style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexDirection: localeRow(isRTL),
               alignItems: 'center',
               gap: CHIP_GAP,
               minHeight: PILL_HEIGHT,

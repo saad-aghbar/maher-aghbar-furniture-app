@@ -1105,7 +1105,7 @@
     "dealerRailShowing": "מציג {dealer}",
     "stages": {
       "all": "הכל",
-      "pending": "בהכנה",
+      "pending": "הכנה",
       "production": "ייצור",
       "ready": "מוכן",
       "late": "באיחור"
