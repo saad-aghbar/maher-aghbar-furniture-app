@@ -13,12 +13,13 @@ type Props = {
 };
 
 /**
- * Dark charcoal ATTENTION card with gold-tan labels (image 4).
+ * Dark charcoal ATTENTION card with gold-tan IDs.
+ * The action is a filled chocolate pill + cream type so it stays tappable on charcoal.
  */
 export function AttentionCard({ eyebrow, title, actionLabel, onPress }: Props) {
   const { isRTL } = useLocale();
-  const { theme, colors } = useTheme();
-  const chrome = attentionChrome(colors);
+  const { theme, colors, colorScheme } = useTheme();
+  const chrome = attentionChrome(colors, colorScheme);
 
   const body = (
     <View style={{ gap: theme.spacing.sm }}>
@@ -47,19 +48,24 @@ export function AttentionCard({ eyebrow, title, actionLabel, onPress }: Props) {
       {actionLabel ? (
         <View
           style={{
+            alignSelf: isRTL ? 'flex-end' : 'flex-start',
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            gap: 6,
             marginTop: theme.spacing.xs,
+            paddingHorizontal: 12,
+            paddingVertical: 7,
+            borderRadius: 999,
+            backgroundColor: chrome.actionFill,
           }}
         >
-          <AppText variant="caption" weight="semibold" style={{ color: chrome.accent }}>
+          <AppText variant="caption" weight="semibold" style={{ color: chrome.on }}>
             {actionLabel}
           </AppText>
           <Ionicons
             name={isRTL ? 'arrow-back' : 'arrow-forward'}
-            size={16}
-            color={chrome.accent}
+            size={14}
+            color={chrome.on}
           />
         </View>
       ) : null}
@@ -80,7 +86,9 @@ export function AttentionCard({ eyebrow, title, actionLabel, onPress }: Props) {
       <AnimatedPressable
         variant="card"
         accessibilityRole="button"
-        accessibilityLabel={`${eyebrow}. ${title}`}
+        accessibilityLabel={
+          actionLabel ? `${eyebrow}. ${title}. ${actionLabel}` : `${eyebrow}. ${title}`
+        }
         onPress={() => {
           void haptics.confirmLight();
           onPress();
