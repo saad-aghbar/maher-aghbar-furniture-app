@@ -11,6 +11,7 @@ import type { WorkflowListItem } from '@/api/modules/workflow';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -106,6 +107,15 @@ export function WorkflowListScreen() {
             style={{ borderRadius: theme.radius.xl }}
           />
         ) : null}
+
+        <SecondaryButton
+          label={t('mobile.production.workflow.manageStages')}
+          onPress={() => {
+            void haptics.selection();
+            router.push('/(app)/(admin)/production/workflow/stages' as Href);
+          }}
+          style={{ borderRadius: theme.radius.xl }}
+        />
 
         {listQuery.isLoading ? (
           <AppText color="secondary">{t('mobile.production.loadingMore')}</AppText>

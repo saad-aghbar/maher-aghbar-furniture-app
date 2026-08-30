@@ -24,6 +24,8 @@ export type StageDefinition = {
   nameHe?: string | null;
   sortOrder: number;
   isActive: boolean;
+  /** Present on library payloads; used for the photo badge only. */
+  requiresPhotos?: boolean;
 };
 
 export type WorkflowNode = {
