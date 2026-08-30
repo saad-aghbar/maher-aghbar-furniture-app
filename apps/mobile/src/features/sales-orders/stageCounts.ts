@@ -98,6 +98,9 @@ export function toggleStageFocus(
   return current === next ? 'all' : next;
 }
 
+/** Empty journey cells show 0, never a dash. */
+export { honestJourneyCount as formatJourneyCount } from './honestJourneyCount';
+
 /** Map spine tap → status filter (same vocabulary as ON THE LINE). */
 export function stageKeyToChip(stage: OrdersStageKey): StatusChipKey {
   return stage;

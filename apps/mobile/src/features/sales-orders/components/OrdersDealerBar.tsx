@@ -103,6 +103,7 @@ export function OrdersDealerBar({ label, onPress, onClear }: Props) {
             color="muted"
             align="start"
             style={{
+              letterSpacing: locale === 'ar' ? 0 : 0.2,
               fontSize: 11,
               lineHeight: 14,
             }}
