@@ -14,23 +14,10 @@ import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { dealerTokens, useTheme } from '@/theme';
 import {
   NEW_ORDER_DOCK_BODY_HEIGHT,
-  NEW_ORDER_DOCK_SCROLL_EXTRA,
   type NewOrderDockMode,
   newOrderDockPrimaryKey,
   newOrderDockShowsSaveDraft,
 } from '../newOrderDockMode';
-
-export { NEW_ORDER_DOCK_BODY_HEIGHT, NEW_ORDER_DOCK_SCROLL_EXTRA };
-
-/** Scroll padding so wizard content clears dock + floating tab/FAB. */
-export function newOrderDockScrollPad(spacingMd: number): number {
-  return (
-    DEALER_TAB_BAR_CLEARANCE +
-    NEW_ORDER_DOCK_BODY_HEIGHT +
-    NEW_ORDER_DOCK_SCROLL_EXTRA +
-    spacingMd
-  );
-}
 
 type NewOrderFloatingDockProps = {
   mode: NewOrderDockMode;

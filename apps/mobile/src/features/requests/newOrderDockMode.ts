@@ -1,3 +1,4 @@
+import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { NewOrderStep } from './newOrderSteps';
 import { isFinalWizardStep } from './newOrderStageMath';
 
@@ -30,3 +31,18 @@ export const NEW_ORDER_DOCK_BODY_HEIGHT = 72;
 
 /** Extra air under the last field so the page can scroll past the dock. */
 export const NEW_ORDER_DOCK_SCROLL_EXTRA = 40;
+
+/**
+ * Bottom inset so wizard content is laid out above the floating dock
+ * (and the dealer tab/FAB it sits on). Apply to the screen shell, not only
+ * ScrollView content padding — content-only pad leaves short step-1 forms
+ * drawn under Back/Continue.
+ */
+export function newOrderDockScrollPad(spacingMd: number): number {
+  return (
+    DEALER_TAB_BAR_CLEARANCE +
+    NEW_ORDER_DOCK_BODY_HEIGHT +
+    NEW_ORDER_DOCK_SCROLL_EXTRA +
+    spacingMd
+  );
+}

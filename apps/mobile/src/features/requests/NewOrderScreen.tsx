@@ -53,10 +53,7 @@ import {
 import { LocationMapPicker } from './components/LocationMapPicker';
 import { NewOrderDeliveryAddressBlock } from './components/NewOrderDeliveryAddressBlock';
 import { NewOrderDimensionsEditor } from './components/NewOrderDimensionsEditor';
-import {
-  NewOrderFloatingDock,
-  newOrderDockScrollPad,
-} from './components/NewOrderFloatingDock';
+import { NewOrderFloatingDock } from './components/NewOrderFloatingDock';
 import { NewOrderQtyStepper } from './components/NewOrderQtyStepper';
 import { NewOrderPriorityBar } from './components/NewOrderPriorityBar';
 import { NewOrderStageRail } from './components/NewOrderStageRail';
@@ -71,7 +68,7 @@ import {
   saveLocalDraft,
   type NewOrderLocalDraft,
 } from './newOrderDraft';
-import { newOrderDockMode } from './newOrderDockMode';
+import { newOrderDockMode, newOrderDockScrollPad } from './newOrderDockMode';
 import {
   emptyDimensionFields,
   formatDimensionsNotes,
@@ -917,6 +914,7 @@ export function NewOrderScreen() {
   const successVisible = Boolean(submittedNumber || draftSavedNumber);
   const dockMode = newOrderDockMode({ step, submitted: successVisible });
   const scrollPad = newOrderDockScrollPad(theme.spacing.md);
+  const dockVisible = !keyboardOpen && !successVisible;
   const dockDisabled = busy || uploading;
 
   const onDockPrimary = () => {
@@ -943,12 +941,13 @@ export function NewOrderScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAwareScreen
+        style={dockVisible ? { paddingBottom: scrollPad } : undefined}
         contentContainerStyle={{
           paddingBottom: keyboardOpen
             ? theme.spacing.md
             : successVisible
               ? theme.spacing['3xl']
-              : scrollPad,
+              : theme.spacing.md,
         }}
         header={
           <View style={{ gap: theme.spacing.md }}>
