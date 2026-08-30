@@ -58,6 +58,22 @@ export type PurchaseOrderLine = {
   inventoryItem?: { id: string; sku: string; nameEn: string; nameAr: string; unit: string } | null;
 };
 
+export type GoodsReceiptLine = {
+  id?: string;
+  inventoryItemId: string;
+  orderedQty?: number | string;
+  receivedQty?: number | string;
+  rejectedQty?: number | string;
+};
+
+export type GoodsReceipt = {
+  id: string;
+  number?: string;
+  createdAt?: string;
+  receiptDate?: string;
+  lines?: GoodsReceiptLine[];
+};
+
 export type PurchaseOrder = {
   id: string;
   number: string;
@@ -71,7 +87,7 @@ export type PurchaseOrder = {
   warehouseId?: string | null;
   supplier?: Supplier | null;
   lines?: PurchaseOrderLine[];
-  goodsReceipts?: Array<{ id: string; number?: string; createdAt?: string }>;
+  goodsReceipts?: GoodsReceipt[];
 };
 
 export type PurchaseRequestLine = {
