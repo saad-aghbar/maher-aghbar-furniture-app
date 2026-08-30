@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -88,6 +89,7 @@ export function CatalogScreen({
   const { t, formatCurrency, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const searchParams = useLocalSearchParams();
   const isDealer = variant === 'dealer';
@@ -100,6 +102,12 @@ export function CatalogScreen({
   })();
   const fabSize = 56;
   const tabClearance = isDealer ? DEALER_TAB_BAR_CLEARANCE : SURFACE_TAB_BAR_CLEARANCE;
+  /** Admin grid: last row + chocolate + FAB must clear the floating tab (inset only). */
+  const listBottomPad = isDealer
+    ? theme.spacing['3xl'] + tabClearance
+    : insets.bottom +
+      SURFACE_TAB_BAR_CLEARANCE +
+      (canCreate ? fabSize + theme.spacing.md : 0);
 
   const [searchInput, setSearchInput] = useState('');
   const q = useDebouncedValue(searchInput.trim(), CATALOG_SEARCH_DEBOUNCE_MS);
@@ -402,7 +410,7 @@ export function CatalogScreen({
           alignItems: 'flex-start',
         }}
         contentContainerStyle={{
-          paddingBottom: theme.spacing['3xl'] + tabClearance,
+          paddingBottom: listBottomPad,
           flexGrow: 1,
         }}
         style={{ opacity: isFilterUpdating ? 0.72 : 1 }}
@@ -520,8 +528,8 @@ export function CatalogScreen({
               }}
               style={{
                 position: 'absolute',
-                bottom: SURFACE_TAB_BAR_CLEARANCE + theme.spacing.sm,
-                right: theme.spacing.lg,
+                bottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+                ...(isRTL ? { left: theme.spacing.lg } : { right: theme.spacing.lg }),
                 width: fabSize,
                 height: fabSize,
                 borderRadius: fabSize / 2,
