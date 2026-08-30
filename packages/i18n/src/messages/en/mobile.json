@@ -2149,8 +2149,8 @@
       "counts": "Stock counts"
     },
     "lifecycle": {
-      "materials": "RAW",
-      "semiFinished": "SEMI",
+      "materials": "Raw",
+      "semiFinished": "Semi",
       "finished": "Finished"
     },
     "semiHeading": "Semi-finished goods",

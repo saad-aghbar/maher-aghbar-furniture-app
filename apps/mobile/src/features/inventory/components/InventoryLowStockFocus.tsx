@@ -166,8 +166,6 @@ export function InventoryLowStockFocus({
             weight="semibold"
             style={{
               color: amber,
-              letterSpacing: 2,
-              textTransform: 'uppercase',
               writingDirection: isRTL ? 'rtl' : 'ltr',
             }}
           >
