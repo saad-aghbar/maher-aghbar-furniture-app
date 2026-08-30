@@ -309,14 +309,22 @@ export function PurchasingHubScreen() {
     <AppScreen>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
+        style={{ flex: 1 }}
         data={listData as Array<{ id: string }>}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom:
-            theme.spacing['3xl'] + LIST_BOTTOM_EXTRA + surfaceListBottomInset(insets.bottom),
         }}
+        ListFooterComponent={
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={{
+              height: theme.spacing['3xl'] + LIST_BOTTOM_EXTRA + surfaceListBottomInset(insets.bottom),
+            }}
+          />
+        }
         refreshControl={
           <RefreshControl
             refreshing={activeQuery.isRefetching && !activeQuery.isFetchingNextPage}
