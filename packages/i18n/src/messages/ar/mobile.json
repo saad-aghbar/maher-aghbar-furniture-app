@@ -1503,9 +1503,11 @@
       "preparing": "قيد التحضير"
     },
     "currentPhase": "المرحلة الحالية",
+    "waitingForReview": "بانتظار المراجعة",
     "gaps": {
       "title": "معلومات ناقصة",
       "attachments": "لا توجد مرفقات بعد",
+      "customLines": "البنود المخصصة أو المعدّلة تحتاج مراجعة",
       "deliveryAddress": "عنوان التسليم ناقص",
       "endCustomer": "اسم العميل النهائي ناقص"
     },

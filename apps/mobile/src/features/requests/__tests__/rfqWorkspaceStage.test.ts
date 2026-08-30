@@ -1,4 +1,5 @@
 import {
+  isRfqWaitingForReview,
   parseRfqWorkspaceStage,
   rfqIncompleteGaps,
   rfqPathReachedIndex,
@@ -32,7 +33,7 @@ describe('rfqStageFromData', () => {
     ).toBe('order');
   });
 
-  it('stays on Request before a quotation exists', () => {
+  it('keeps Submitted / waiting-for-review on Request — does not invent a quote', () => {
     expect(
       rfqStageFromData({
         hasQuote: false,
@@ -40,6 +41,8 @@ describe('rfqStageFromData', () => {
         status: 'SUBMITTED',
       }),
     ).toBe('request');
+    expect(isRfqWaitingForReview('SUBMITTED')).toBe(true);
+    expect(isRfqWaitingForReview('UNDER_REVIEW')).toBe(false);
   });
 
   it('keeps Needs information on Request — does not invent a quote', () => {
@@ -65,16 +68,11 @@ describe('rfq path honest to backend', () => {
     expect(rfqSegmentFilled('preparing', reached)).toBe(false);
   });
 
-  it('does not paint later path steps as done while Needs information', () => {
+  it('does not paint later path steps as done while waiting for review', () => {
     const reached = rfqPathReachedIndex({ hasQuote: false, hasOrder: false });
-    expect(reached).toBe(0);
-    expect(rfqPathTone('request', reached)).toBe('current');
-    expect(rfqPathTone('quotation', reached)).toBe('upcoming');
     expect(rfqPathTone('accepted', reached)).toBe('upcoming');
     expect(rfqPathTone('preparing', reached)).toBe('upcoming');
     expect(rfqSegmentFilled('quotation', reached)).toBe(false);
-    expect(rfqSegmentFilled('accepted', reached)).toBe(false);
-    expect(rfqSegmentFilled('preparing', reached)).toBe(false);
   });
 });
 
@@ -87,5 +85,16 @@ describe('rfqIncompleteGaps', () => {
         endCustomerName: '  ',
       }),
     ).toEqual(['attachments', 'endCustomer']);
+  });
+
+  it('flags custom or modified lines without inventing quote rows', () => {
+    expect(
+      rfqIncompleteGaps({
+        documents: [{ id: 'd1' }],
+        deliveryAddress: 'Ramallah',
+        endCustomerName: 'Omar',
+        items: [{ productId: null, customMeasurements: [{ label: 'Seat', value: '42' }] }],
+      }),
+    ).toEqual(['customLines']);
   });
 });

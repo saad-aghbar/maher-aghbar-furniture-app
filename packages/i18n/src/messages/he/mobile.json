@@ -1503,9 +1503,11 @@
       "preparing": "בהכנה"
     },
     "currentPhase": "שלב נוכחי",
+    "waitingForReview": "ממתין לבדיקה",
     "gaps": {
       "title": "מידע חסר",
       "attachments": "אין קבצים מצורפים עדיין",
+      "customLines": "שורות מותאמות או ששונו דורשות בדיקה",
       "deliveryAddress": "חסרה כתובת משלוח",
       "endCustomer": "חסר שם לקוח קצה"
     },

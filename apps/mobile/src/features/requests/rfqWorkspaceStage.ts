@@ -14,7 +14,11 @@ export type RfqPathStep = (typeof RFQ_PATH_STEPS)[number];
 
 export type RfqPathTone = 'done' | 'current' | 'upcoming';
 
-export type RfqIncompleteGap = 'attachments' | 'deliveryAddress' | 'endCustomer';
+export type RfqIncompleteGap =
+  | 'attachments'
+  | 'customLines'
+  | 'deliveryAddress'
+  | 'endCustomer';
 
 export function parseRfqWorkspaceStage(
   value: string | string[] | undefined | null,
@@ -25,9 +29,8 @@ export function parseRfqWorkspaceStage(
 }
 
 /**
- * Workspace tab that matches backend facts — not a leftover default of Request.
+ * Needs information / Submitted stay on Request — do not invent a quote.
  * Quoted / existing quotation → Quotation. Sales order exists → Order.
- * Needs information stays on Request — do not invent a quote.
  */
 export function rfqStageFromData(args: {
   hasQuote: boolean;
@@ -72,14 +75,35 @@ export function rfqSegmentFilled(
   return i >= 0 && i <= reachedIndex;
 }
 
+export function rfqHasCustomOrModifiedLines(
+  items?: Array<{
+    productId?: string | null;
+    customMeasurements?: unknown[] | null;
+  }> | null,
+): boolean {
+  return (items ?? []).some(
+    (item) => Boolean(item.customMeasurements?.length) || !item.productId,
+  );
+}
+
 export function rfqIncompleteGaps(detail: {
   documents?: Array<unknown> | null;
   deliveryAddress?: string | null;
   endCustomerName?: string | null;
+  items?: Array<{
+    productId?: string | null;
+    customMeasurements?: unknown[] | null;
+  }> | null;
 }): RfqIncompleteGap[] {
   const gaps: RfqIncompleteGap[] = [];
   if (!(detail.documents?.length)) gaps.push('attachments');
+  if (rfqHasCustomOrModifiedLines(detail.items)) gaps.push('customLines');
   if (!detail.deliveryAddress?.trim()) gaps.push('deliveryAddress');
   if (!detail.endCustomerName?.trim()) gaps.push('endCustomer');
   return gaps;
+}
+
+/** SUBMITTED is still waiting — do not label it as Under review (a later phase). */
+export function isRfqWaitingForReview(status?: string | null): boolean {
+  return status === 'SUBMITTED';
 }

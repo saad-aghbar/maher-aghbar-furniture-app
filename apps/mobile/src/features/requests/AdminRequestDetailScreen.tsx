@@ -56,8 +56,8 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { AdminQuotationPanel } from '@/features/quotations/AdminQuotationDetailScreen';
 import { RfqStageRail } from '@/features/requests/components/RfqStageRail';
 import {
+  isRfqWaitingForReview,
   rfqIncompleteGaps,
-  rfqPathReachedIndex,
   rfqStageFromData,
   type RfqWorkspaceStage,
 } from '@/features/requests/rfqWorkspaceStage';
@@ -71,16 +71,6 @@ type Props = {
 type WorkflowConfirm = 'needsInfo' | 'close' | null;
 
 type LinkedSalesOrder = { id: string; number: string; status: string };
-
-function sourceLabel(
-  source: string | null | undefined,
-  t: (k: string) => string,
-): string {
-  if (!source) return '—';
-  const key = `mobile.adminRequest.source.${source}`;
-  const label = t(key);
-  return label === key ? source : label;
-}
 
 function priorityLabel(
   priority: string | null | undefined,
@@ -505,15 +495,13 @@ export function AdminRequestDetailScreen({
     pickedStage ??
     rfqStageFromData({ hasQuote, hasOrder, status: detail.status });
 
-  const pathReached = rfqPathReachedIndex({ hasQuote, hasOrder });
+  const statusPhrase = isRfqWaitingForReview(status)
+    ? t('mobile.adminRequest.waitingForReview')
+    : statusLabel(locale, status);
   const currentPhaseLabel =
-    status === 'NEEDS_INFORMATION'
-      ? statusLabel(locale, 'NEEDS_INFORMATION')
-      : t(
-          `mobile.adminRequest.path.${
-            pathReached === 2 ? 'accepted' : pathReached === 1 ? 'quotation' : 'request'
-          }`,
-        );
+    status === 'QUOTED' || (hasQuote && !hasOrder)
+      ? t('mobile.adminRequest.path.quotation')
+      : statusPhrase;
   const incompleteGaps = rfqIncompleteGaps(detail);
   const needsInfoAsk = status === 'NEEDS_INFORMATION' ? detail.internalNotes?.trim() : '';
 
@@ -574,7 +562,15 @@ export function AdminRequestDetailScreen({
           </View>
           {stageBadgeStatus ? (
             <View style={{ justifyContent: 'flex-start', alignItems: 'center', maxWidth: '42%', paddingTop: 4 }}>
-              <StatusBadge status={stageBadgeStatus} dot />
+              <StatusBadge
+                status={stageBadgeStatus}
+                label={
+                  stageBadgeStatus === status && isRfqWaitingForReview(status)
+                    ? statusPhrase
+                    : undefined
+                }
+                dot
+              />
             </View>
           ) : null}
         </View>
@@ -615,23 +611,6 @@ export function AdminRequestDetailScreen({
             <AppText variant="label" weight="medium">
               {needsInfoAsk}
             </AppText>
-          </OrderBoardCard>
-        ) : null}
-
-        {incompleteGaps.length > 0 ? (
-          <OrderBoardCard accent={colors.warning}>
-            <OrderSectionHeader
-              icon="warning-outline"
-              label={t('mobile.adminRequest.gaps.title')}
-              accent={colors.warning}
-            />
-            <View style={{ gap: theme.spacing.xs }}>
-              {incompleteGaps.map((gap) => (
-                <AppText key={gap} variant="label" color="secondary">
-                  {`• ${t(`mobile.adminRequest.gaps.${gap}`)}`}
-                </AppText>
-              ))}
-            </View>
           </OrderBoardCard>
         ) : null}
         {message ? (
@@ -780,15 +759,6 @@ export function AdminRequestDetailScreen({
                 gap: theme.spacing.md,
               }}
             >
-              <MetaCell
-                label={t('mobile.adminRequest.factoryOrder')}
-                value={detail.number}
-                ltr
-              />
-              <MetaCell
-                label={t('mobile.adminRequest.sourceLabel')}
-                value={sourceLabel(detail.source, t)}
-              />
               <MetaCell
                 label={t('mobile.adminRequest.priority')}
                 value={priorityLabel(detail.priority, t)}
@@ -1199,6 +1169,23 @@ export function AdminRequestDetailScreen({
           </OrderBoardCard>
         </ListItemEnter>
           </>
+        ) : null}
+
+        {incompleteGaps.length > 0 ? (
+          <OrderBoardCard accent={colors.warning}>
+            <OrderSectionHeader
+              icon="warning-outline"
+              label={t('mobile.adminRequest.gaps.title')}
+              accent={colors.warning}
+            />
+            <View style={{ gap: theme.spacing.xs }}>
+              {incompleteGaps.map((gap) => (
+                <AppText key={gap} variant="label" color="secondary">
+                  {`• ${t(`mobile.adminRequest.gaps.${gap}`)}`}
+                </AppText>
+              ))}
+            </View>
+          </OrderBoardCard>
         ) : null}
       </ScrollView>
 
