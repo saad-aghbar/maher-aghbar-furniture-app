@@ -1,10 +1,12 @@
 import {
   grandTotal,
   lineTotal,
+  purchaseLineQtyLabel,
   resolvePurchaseRequestSupplier,
   selectPurchaseCard,
   selectPurchaseRequestCard,
   selectSupplierInvoiceCard,
+  warehouseFieldCount,
 } from '../selectPurchase';
 import type { PurchaseOrder, PurchaseRequest, SupplierInvoice } from '../api';
 
@@ -28,6 +30,31 @@ describe('lineTotal / grandTotal', () => {
 
   it('returns 0 for invalid qty', () => {
     expect(lineTotal('x', '10')).toBe(0);
+  });
+});
+
+describe('warehouseFieldCount', () => {
+  it('is one when a warehouse is present', () => {
+    expect(warehouseFieldCount({ id: 'w1', nameEn: 'Raw Materials' })).toBe(1);
+    expect(warehouseFieldCount(null)).toBe(0);
+  });
+});
+
+describe('purchaseLineQtyLabel', () => {
+  it('pluralizes block in English, Arabic, and Hebrew', () => {
+    expect(purchaseLineQtyLabel('en', 24, 'block')).toBe('24 blocks');
+    expect(purchaseLineQtyLabel('en', 1, 'block')).toBe('1 block');
+    expect(purchaseLineQtyLabel('ar', 24, 'block')).toBe('24 بلوك');
+    expect(purchaseLineQtyLabel('ar', 1, 'block')).toBe('بلوك واحد');
+    expect(purchaseLineQtyLabel('ar', 2, 'block')).toBe('بلوكين');
+    expect(purchaseLineQtyLabel('ar', 5, 'block')).toBe('5 بلوكات');
+    expect(purchaseLineQtyLabel('he', 24, 'block')).toBe('24 בלוקים');
+    expect(purchaseLineQtyLabel('he', 1, 'block')).toBe('בלוק אחד');
+  });
+
+  it('keeps the backend number and unknown units as-is', () => {
+    expect(purchaseLineQtyLabel('en', 24, 'm')).toBe('24 m');
+    expect(purchaseLineQtyLabel('en', '24', 'block')).toBe('24 blocks');
   });
 });
 

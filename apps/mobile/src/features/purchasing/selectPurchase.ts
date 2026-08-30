@@ -1,5 +1,7 @@
+import { pickPluralKey } from '@maher/i18n';
 import type { Locale } from '@maher/types';
 import { formatDate, formatNumber } from '@/i18n/format';
+import { translatePlural } from '@/i18n/translate';
 import type {
   NamedRef,
   PurchaseOrder,
@@ -54,6 +56,34 @@ function toNum(v: number | string | null | undefined): number {
 
 function moneyLabel(locale: string, value: number): string {
   return formatNumber(asLocale(locale), value, { maximumFractionDigits: 2 });
+}
+
+/** Field label: Warehouse when there is one (or none), Warehouses when several. */
+export function warehouseFieldCount(warehouse: NamedRef | null | undefined): number {
+  return warehouse ? 1 : 0;
+}
+
+/**
+ * Qty + unit copy. Known units use catalog.qtyWithUnit plurals (en/ar/he).
+ * Unknown units stay honest to the backend code, e.g. `24 m`.
+ */
+export function purchaseLineQtyLabel(
+  locale: string,
+  quantity: number | string | null | undefined,
+  unit?: string | null,
+): string {
+  const qtyText = quantity == null || quantity === '' ? '—' : String(quantity);
+  const unitKey = unit?.trim() || 'pcs';
+  const n = Number(quantity);
+  const count = Number.isFinite(n) ? n : 0;
+  const catalogUnit = unitKey.replace(/[^A-Za-z0-9_]/g, '');
+  if (!catalogUnit) return `${qtyText} ${unitKey}`;
+  const baseKey = `catalog.qtyWithUnit.${catalogUnit}`;
+  const label = translatePlural(asLocale(locale), baseKey, count, { n: qtyText });
+  if (label === baseKey || label === pickPluralKey(baseKey, count)) {
+    return `${qtyText} ${unitKey}`;
+  }
+  return label;
 }
 
 export function localizedNamed(

@@ -23,13 +23,18 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { usePurchaseRequestActionMutation, usePurchaseRequestQuery } from './query';
-import { localizedNamed, resolvePurchaseRequestSupplier } from './selectPurchase';
+import {
+  localizedNamed,
+  purchaseLineQtyLabel,
+  resolvePurchaseRequestSupplier,
+  warehouseFieldCount,
+} from './selectPurchase';
 
 type Props = { requestId: string };
 
 export function PurchaseRequestDetailScreen({ requestId }: Props) {
   const { user } = useAuth();
-  const { t, locale, isRTL } = useLocale();
+  const { t, tPlural, locale, isRTL } = useLocale();
   const { theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
@@ -109,7 +114,7 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
             value={resolvePurchaseRequestSupplier(pr, locale)}
           />
           <Meta
-            label={t('catalog.warehouses')}
+            label={tPlural('catalog.warehouses', warehouseFieldCount(pr.warehouse))}
             value={pr.warehouse ? localizedNamed(locale, pr.warehouse) : '—'}
           />
           {pr.purchaseOrder?.number ? (
@@ -127,7 +132,7 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
                 {line.description}
               </AppText>
               <AppText variant="caption" color="secondary" dir="ltr">
-                {`${String(line.quantity)} ${line.unit || 'pcs'}`}
+                {purchaseLineQtyLabel(locale, line.quantity, line.unit)}
               </AppText>
             </View>
           ))}
