@@ -2,7 +2,6 @@ import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { Divider } from '@/components/layout/Divider';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -25,7 +24,7 @@ export function InvoiceBoardCard({
   invoice,
   onPress,
   onPdf,
-  currencySuffix = 'ILS',
+  currencySuffix = '₪',
   dealerFacing = false,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -255,7 +254,7 @@ export function InvoiceBoardCard({
             ) : null}
           </View>
 
-          <Divider compact />
+          <View style={{ height: 1, alignSelf: 'stretch', backgroundColor: colors.border }} />
 
           <MoneyRow
             label={t('accounting.total')}
@@ -264,7 +263,9 @@ export function InvoiceBoardCard({
           />
           {invoice.dueDateLabel ? (
             <>
-              <Divider compact />
+              <View
+                style={{ height: 1, alignSelf: 'stretch', backgroundColor: colors.border }}
+              />
               <MoneyRow
                 label={t('accounting.dueDate')}
                 value={invoice.dueDateLabel}

@@ -126,7 +126,7 @@ export function InvoiceDetailHero({ model }: Props) {
           </View>
         </View>
 
-        {model.factoryOrderNumber || model.dealerOrderNumber ? (
+        {model.factoryOrderNumber || model.dealerChip ? (
           <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -139,9 +139,13 @@ export function InvoiceDetailHero({ model }: Props) {
                 label={`${t('accounting.factoryOrderShort')} ${model.factoryOrderNumber}`}
               />
             ) : null}
-            {model.dealerOrderNumber ? (
+            {model.dealerChip ? (
               <RefChip
-                label={`${t('accounting.dealerOrderShort')} ${model.dealerOrderNumber}`}
+                label={
+                  model.dealerChip.prefixDealer
+                    ? `${t('accounting.dealerOrderShort')} ${model.dealerChip.value}`
+                    : model.dealerChip.value
+                }
               />
             ) : null}
           </View>
@@ -162,6 +166,7 @@ function RefChip({ label }: { label: string }) {
         backgroundColor: colors.brandSoft,
         borderWidth: 1,
         borderColor: colors.brand,
+        flexShrink: 0,
       }}
     >
       <AppText variant="caption" weight="semibold" dir="ltr" style={{ color: colors.brand }}>

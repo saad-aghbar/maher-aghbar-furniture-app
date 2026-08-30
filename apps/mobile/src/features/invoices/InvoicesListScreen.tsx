@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { useAuth } from '@/auth/AuthProvider';
@@ -96,6 +97,7 @@ export function InvoicesListScreen({
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -190,7 +192,7 @@ export function InvoicesListScreen({
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
         }}
         refreshControl={
           <RefreshControl

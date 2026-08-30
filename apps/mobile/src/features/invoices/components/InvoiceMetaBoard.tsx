@@ -1,6 +1,5 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
-import { Divider } from '@/components/layout/Divider';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import type { InvoiceDetailModel } from '../selectInvoice';
@@ -13,30 +12,22 @@ type Props = {
 /** Slim dates & order refs board. */
 export function InvoiceMetaBoard({ model }: Props) {
   const { t } = useLocale();
-  const { theme } = useTheme();
+  const { theme, colors } = useTheme();
 
   return (
     <InvoiceFloorBoard quiet contentStyle={{ gap: theme.spacing.sm }}>
       <MetaRow label={t('accounting.invoiceDate')} value={model.invoiceDateLabel} />
-      <Divider compact />
+      <View style={{ height: 1, alignSelf: 'stretch', backgroundColor: colors.border }} />
       <MetaRow
         label={t('accounting.dueDate')}
         value={model.dueDateLabel ?? '—'}
         hint={model.isOverdue ? t('accounting.overdueHint') : null}
         danger={model.isOverdue}
       />
-      {model.factoryOrderNumber || model.dealerOrderNumber ? (
+      {model.factoryOrderNumber ? (
         <>
-          <Divider compact />
-          <MetaRow
-            label={t('accounting.salesOrder')}
-            value={model.factoryOrderNumber ?? '—'}
-            hint={
-              model.dealerOrderNumber
-                ? `${t('accounting.dealerOrderShort')} ${model.dealerOrderNumber}`
-                : null
-            }
-          />
+          <View style={{ height: 1, alignSelf: 'stretch', backgroundColor: colors.border }} />
+          <MetaRow label={t('accounting.salesOrder')} value={model.factoryOrderNumber} />
         </>
       ) : null}
     </InvoiceFloorBoard>
