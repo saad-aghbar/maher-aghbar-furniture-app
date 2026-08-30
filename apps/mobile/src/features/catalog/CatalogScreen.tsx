@@ -51,6 +51,7 @@ import {
 } from './query';
 import { toProductCard } from './selectProductCard';
 import { CATALOG_SEARCH_DEBOUNCE_MS } from './catalogSearchDebounce';
+import { adminCatalogFabBottom, adminCatalogListBottomPad } from './catalogGridInsets';
 import { type CatalogBrowseMode } from './catalogBrowseMode';
 import { isCatalogPickForOrder } from './catalogPickForOrder';
 import { navigateToNewOrderWithProduct } from './newOrderDeepLink';
@@ -105,9 +106,10 @@ export function CatalogScreen({
   /** Admin grid: last row + chocolate + FAB must clear the floating tab (inset only). */
   const listBottomPad = isDealer
     ? theme.spacing['3xl'] + tabClearance
-    : insets.bottom +
-      SURFACE_TAB_BAR_CLEARANCE +
-      (canCreate ? fabSize + theme.spacing.md : 0);
+    : adminCatalogListBottomPad(
+        insets.bottom,
+        canCreate ? fabSize + theme.spacing.md : 0,
+      );
 
   const [searchInput, setSearchInput] = useState('');
   const q = useDebouncedValue(searchInput.trim(), CATALOG_SEARCH_DEBOUNCE_MS);
@@ -528,7 +530,7 @@ export function CatalogScreen({
               }}
               style={{
                 position: 'absolute',
-                bottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+                bottom: adminCatalogFabBottom(insets.bottom),
                 ...(isRTL ? { left: theme.spacing.lg } : { right: theme.spacing.lg }),
                 width: fabSize,
                 height: fabSize,
