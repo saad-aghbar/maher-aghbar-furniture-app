@@ -62,11 +62,15 @@ export function QueryProvider({ children }: { children: ReactNode }) {
       client,
       persistOptions: {
         persister,
-        buster: 'no-mobile-fixtures-v1',
+        // Flush caches that dehydrated in-flight queries (TanStack debug banner).
+        buster: 'no-pending-dehydrate-v1',
         dehydrateOptions: {
           shouldDehydrateQuery,
         },
         maxAge: 1000 * 60 * 60 * 24, // 24h
+      },
+      onError: () => {
+        // Restore failed — drop silently. Never surface persist internals.
       },
     },
     children,

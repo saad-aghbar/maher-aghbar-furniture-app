@@ -364,17 +364,24 @@ export function CatalogScreen({
   if (forceState === 'error' || (listError && !forceState)) {
     return (
       <AppScreen>
-        {showOfflineBanner ? <OfflineBanner /> : null}
         {chrome}
-        <ErrorState
-          title={t('mobile.catalog.errorTitle')}
-          description={t('mobile.catalog.errorBody')}
-          retryLabel={t('mobile.catalog.retry')}
-          onRetry={() => {
-            if (browseMode === 'ordered') void orderedQuery.refetch();
-            else void productsQuery.refetch();
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            paddingBottom: tabClearance,
           }}
-        />
+        >
+          <ErrorState
+            title={t('mobile.catalog.errorTitle')}
+            description={t('mobile.catalog.errorBody')}
+            retryLabel={t('mobile.catalog.retry')}
+            onRetry={() => {
+              if (browseMode === 'ordered') void orderedQuery.refetch();
+              else void productsQuery.refetch();
+            }}
+          />
+        </View>
       </AppScreen>
     );
   }
