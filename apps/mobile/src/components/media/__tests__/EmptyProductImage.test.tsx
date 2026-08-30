@@ -45,6 +45,15 @@ describe('EmptyProductImage', () => {
     expect(view.getByLabelText('No image')).toBeTruthy();
   });
 
+  it('renders a muted caption without leftover No image copy', async () => {
+    const view = await render(<EmptyProductImage caption="Photo coming soon" />, {
+      wrapper: ({ children }) => <Wrapper locale="en">{children}</Wrapper>,
+    });
+    const visible = leafTexts(view.toJSON()).join(' ');
+    expect(visible).not.toMatch(/no image/i);
+    expect(visible).toMatch(/Photo coming soon/);
+  });
+
   it('keeps the Arabic a11y label', async () => {
     const ar = await render(<EmptyProductImage />, {
       wrapper: ({ children }) => <Wrapper locale="ar">{children}</Wrapper>,
