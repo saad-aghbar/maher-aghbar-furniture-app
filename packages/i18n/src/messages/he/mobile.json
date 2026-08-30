@@ -2562,7 +2562,16 @@
     "confirm": "אישור",
     "cancel": "ביטול",
     "updateSuccess": "עודכן",
-    "updateFailed": "לא ניתן לעדכן"
+    "updateFailed": "לא ניתן לעדכן",
+    "needsToBuy": "צריך לרכוש",
+    "addToPurchase": "הוסף לרכש",
+    "incomingQty": "נכנס: {qty}",
+    "lineCount": "{count} שורות",
+    "lineCountZero": "0 שורות",
+    "lineCountOne": "שורה אחת",
+    "lineCountTwo": "2 שורות",
+    "lineCountFew": "{count} שורות",
+    "lineCountMany": "{count} שורות"
   },
   "invoices": {
     "title": "חשבוניות",

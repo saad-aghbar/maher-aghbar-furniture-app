@@ -2528,7 +2528,16 @@
     "confirm": "Confirm",
     "cancel": "Cancel",
     "updateSuccess": "Updated",
-    "updateFailed": "Couldn’t update"
+    "updateFailed": "Couldn’t update",
+    "needsToBuy": "Needs to buy",
+    "addToPurchase": "Add to purchase",
+    "incomingQty": "Incoming: {qty}",
+    "lineCount": "{count} lines",
+    "lineCountZero": "0 lines",
+    "lineCountOne": "1 line",
+    "lineCountTwo": "2 lines",
+    "lineCountFew": "{count} lines",
+    "lineCountMany": "{count} lines"
   },
   "invoices": {
     "title": "Invoices",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { isApiError } from '@/api/errors';
@@ -33,9 +33,16 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onCreated: (id: string) => void;
+  /** Prefill from Needs to buy — one backend line, no invented supplier. */
+  seedLines?: DraftMaterialLine[];
 };
 
-export function CreatePurchaseOrderSheet({ open, onClose, onCreated }: Props) {
+export function CreatePurchaseOrderSheet({
+  open,
+  onClose,
+  onCreated,
+  seedLines,
+}: Props) {
   const { t, formatCurrency, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
@@ -59,6 +66,7 @@ export function CreatePurchaseOrderSheet({ open, onClose, onCreated }: Props) {
     enabled: open,
   });
   const createMutation = useCreatePurchaseMutation();
+  const wasOpen = useRef(false);
 
   useEffect(() => {
     if (!open) {
@@ -66,8 +74,14 @@ export function CreatePurchaseOrderSheet({ open, onClose, onCreated }: Props) {
       setSupplierName(null);
       setWarehouseId('');
       setLines([]);
+      wasOpen.current = false;
+      return;
     }
-  }, [open]);
+    if (!wasOpen.current) {
+      setLines(seedLines && seedLines.length ? seedLines : []);
+    }
+    wasOpen.current = true;
+  }, [open, seedLines]);
 
   const warehouses: Warehouse[] = warehousesQuery.data ?? [];
   useEffect(() => {

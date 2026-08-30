@@ -1,12 +1,15 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { Divider } from '@/components/layout/Divider';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import type { PurchaseCardModel } from '../selectPurchase';
+import {
+  humanizeWarehouseLabel,
+  purchaseLineSummary,
+  type PurchaseCardModel,
+} from '../selectPurchase';
 
 type Props = {
   order: PurchaseCardModel;
@@ -14,9 +17,14 @@ type Props = {
 };
 
 export function PurchaseOrderBoardCard({ order, onPress }: Props) {
-  const { t, isRTL, locale } = useLocale();
+  const { t, tPlural, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const lineSummary = purchaseLineSummary(
+    order.lineCount,
+    humanizeWarehouseLabel(order.warehouseLabel, t),
+    tPlural,
+  );
 
   return (
     <AnimatedPressable
@@ -99,29 +107,14 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
           </AppText>
         </View>
 
-        <View
-          style={{
-            borderRadius: theme.radius.lg,
-            backgroundColor: colors.surfaceSecondary,
-            borderWidth: 1,
-            borderColor: colors.border,
-            overflow: 'hidden',
-          }}
+        <AppText
+          variant="caption"
+          color="secondary"
+          numberOfLines={2}
+          style={{ textAlign: isRTL ? 'right' : 'left', lineHeight: 18 }}
         >
-          <MetaRow
-            label={t('catalog.linesShort')}
-            value={String(order.lineCount)}
-            valueLtr
-            isRTL={isRTL}
-          />
-          <Divider compact />
-          <MetaRow
-            label={t('catalog.warehouseShort')}
-            value={order.warehouseLabel ?? '—'}
-            isRTL={isRTL}
-            multiline
-          />
-        </View>
+          {lineSummary}
+        </AppText>
 
         <View
           style={{
@@ -160,63 +153,5 @@ export function PurchaseOrderBoardCard({ order, onPress }: Props) {
         </View>
       </View>
     </AnimatedPressable>
-  );
-}
-
-function MetaRow({
-  label,
-  value,
-  isRTL,
-  valueLtr,
-  multiline,
-}: {
-  label: string;
-  value: string;
-  isRTL: boolean;
-  valueLtr?: boolean;
-  multiline?: boolean;
-}) {
-  const { colors, theme } = useTheme();
-
-  return (
-    <View
-      style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        alignItems: multiline ? 'flex-start' : 'center',
-        justifyContent: 'space-between',
-        gap: theme.spacing.md,
-        paddingHorizontal: theme.spacing.md,
-        paddingVertical: theme.spacing.sm + 2,
-      }}
-    >
-      <AppText
-        variant="caption"
-        color="muted"
-        style={{
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          fontSize: 10,
-          flexShrink: 0,
-          textAlign: isRTL ? 'right' : 'left',
-          paddingTop: multiline ? 2 : 0,
-        }}
-      >
-        {label}
-      </AppText>
-      <AppText
-        weight="semibold"
-        dir={valueLtr ? 'ltr' : undefined}
-        numberOfLines={multiline ? 3 : 1}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          color: colors.textPrimary,
-          textAlign: isRTL ? 'left' : 'right',
-          lineHeight: multiline ? 20 : undefined,
-        }}
-      >
-        {value}
-      </AppText>
-    </View>
   );
 }

@@ -1,8 +1,13 @@
 import {
   grandTotal,
+  humanizeWarehouseLabel,
+  incomingQtyFromOrders,
   lineTotal,
   purchaseLineQtyLabel,
+  needsToBuyDraftLine,
+  purchaseLineSummary,
   resolvePurchaseRequestSupplier,
+  selectNeedsToBuyItem,
   selectPurchaseCard,
   selectPurchaseDetail,
   selectPurchaseRequestCard,
@@ -80,6 +85,67 @@ describe('selectPurchaseCard', () => {
     expect(selectPurchaseCard(po, 'en', 'Raw Materials').warehouseLabel).toBe(
       'Raw Materials',
     );
+  });
+});
+
+describe('purchaseLineSummary / humanizeWarehouseLabel', () => {
+  const t = (key: string) =>
+    key === 'mobile.inventory.warehouseTypes.RAW_MATERIALS' ? 'Raw materials' : key;
+  const tPlural = (key: string, count: number) =>
+    count === 1 ? '1 line' : `${count} lines`;
+
+  it('humanizes a warehouse type enum', () => {
+    expect(humanizeWarehouseLabel('RAW_MATERIALS', t)).toBe('Raw materials');
+    expect(humanizeWarehouseLabel('Raw Materials', t)).toBe('Raw Materials');
+  });
+
+  it('joins honest line count with warehouse', () => {
+    expect(purchaseLineSummary(1, 'Raw Materials', tPlural)).toBe(
+      '1 line · Raw Materials',
+    );
+    expect(purchaseLineSummary(2, null, tPlural)).toBe('2 lines');
+  });
+});
+
+describe('incomingQtyFromOrders / selectNeedsToBuyItem', () => {
+  it('sums open PO qty for one sku and does not invent extra lines', () => {
+    expect(
+      incomingQtyFromOrders('vel-1', [
+        {
+          status: 'SENT',
+          lines: [{ inventoryItemId: 'vel-1', quantity: 64 }],
+        },
+        {
+          status: 'RECEIVED',
+          lines: [{ inventoryItemId: 'vel-1', quantity: 999 }],
+        },
+        {
+          status: 'SENT',
+          lines: [{ inventoryItemId: 'other', quantity: 10 }],
+        },
+      ]),
+    ).toBe(64);
+  });
+
+  it('maps low-stock qty from backend on-hand and incoming', () => {
+    const item = selectNeedsToBuyItem(
+      {
+        id: 'vel-1',
+        sku: 'MAT-ITAL-VEL',
+        nameEn: 'Italian velvet reserved',
+        nameAr: 'مخمل إيطالي محجوز',
+        unit: 'm',
+        onHandQty: 444,
+        reservedQty: 0,
+        standardCost: 24,
+      },
+      'en',
+      64,
+    );
+    expect(item.qtyLabel).toBe('444 m');
+    expect(item.incomingQty).toBe(64);
+    expect(needsToBuyDraftLine(item).quantity).toBe('444');
+    expect(needsToBuyDraftLine(item).inventoryItemId).toBe('vel-1');
   });
 });
 

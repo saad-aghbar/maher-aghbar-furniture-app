@@ -97,6 +97,7 @@ export const queryKeys = {
     countsList: (filters: unknown = {}) =>
       [...queryKeys.inventory.counts(), filters] as const,
     overview: () => [...queryKeys.inventory.all, 'overview'] as const,
+    lowStock: () => [...queryKeys.inventory.all, 'low-stock'] as const,
     semiFinished: (filters: unknown = {}) =>
       [...queryKeys.inventory.all, 'semi-finished', filters] as const,
     finishedGoods: (filters: unknown = {}) =>

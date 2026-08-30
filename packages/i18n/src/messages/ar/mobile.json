@@ -2562,7 +2562,16 @@
     "confirm": "تأكيد",
     "cancel": "إلغاء",
     "updateSuccess": "تم التحديث",
-    "updateFailed": "تعذّر التحديث"
+    "updateFailed": "تعذّر التحديث",
+    "needsToBuy": "يلزم شراؤه",
+    "addToPurchase": "أضف للشراء",
+    "incomingQty": "وارد: {qty}",
+    "lineCount": "{count} بنود",
+    "lineCountZero": "لا بنود",
+    "lineCountOne": "بند واحد",
+    "lineCountTwo": "بندَان",
+    "lineCountFew": "{count} بنود",
+    "lineCountMany": "{count} بنداً"
   },
   "invoices": {
     "title": "الفواتير",

@@ -159,6 +159,129 @@ export function selectPurchaseCard(
   };
 }
 
+/** Humanize a warehouse name or type enum (RAW_MATERIALS → Raw materials). */
+export function humanizeWarehouseLabel(
+  label: string | null | undefined,
+  t: (key: string) => string,
+): string | null {
+  const raw = label?.trim();
+  if (!raw) return null;
+  const typeKey = `mobile.inventory.warehouseTypes.${raw}`;
+  const typed = t(typeKey);
+  if (typed !== typeKey) return typed;
+  return raw;
+}
+
+/** e.g. "1 line · Raw Materials" — never dumps LINES as an enum. */
+export function purchaseLineSummary(
+  lineCount: number,
+  warehouseLabel: string | null,
+  tPlural: (key: string, count: number) => string,
+): string {
+  const lines = tPlural('mobile.purchasing.lineCount', Math.max(0, lineCount));
+  const warehouse = warehouseLabel?.trim();
+  if (!warehouse) return lines;
+  return `${lines} · ${warehouse}`;
+}
+
+const INCOMING_PO_STATUSES = new Set(['SENT', 'APPROVED', 'PARTIALLY_RECEIVED']);
+
+/** Open inbound qty for one SKU from POs already on the hub. Does not invent lines. */
+export function incomingQtyFromOrders(
+  inventoryItemId: string,
+  orders: Array<{
+    status?: string;
+    lines?: Array<{ inventoryItemId?: string | null; quantity?: number | string }>;
+  }>,
+): number {
+  let sum = 0;
+  for (const po of orders) {
+    if (!INCOMING_PO_STATUSES.has(po.status ?? '')) continue;
+    for (const line of po.lines ?? []) {
+      if (line.inventoryItemId !== inventoryItemId) continue;
+      const n = toNum(line.quantity);
+      if (n > 0) sum += n;
+    }
+  }
+  return sum;
+}
+
+export type NeedsToBuySource = {
+  id: string;
+  sku: string;
+  nameEn: string;
+  nameAr: string;
+  unit?: string | null;
+  onHandQty?: number | string | null;
+  reservedQty?: number | string | null;
+  minStock?: number | string | null;
+  standardCost?: number | string | null;
+  balances?: Array<{ availableQty?: number | string; reservedQty?: number | string }>;
+};
+
+export type NeedsToBuyItem = {
+  id: string;
+  sku: string;
+  name: string;
+  unit: string;
+  qty: number;
+  qtyLabel: string;
+  incomingQty: number;
+  unitCost: string;
+};
+
+function formatQty(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function stockFromItem(item: NeedsToBuySource): { onHand: number; reserved: number } {
+  if (item.onHandQty != null || item.reservedQty != null) {
+    return { onHand: toNum(item.onHandQty), reserved: toNum(item.reservedQty) };
+  }
+  let onHand = 0;
+  let reserved = 0;
+  for (const b of item.balances ?? []) {
+    onHand += toNum(b.availableQty);
+    reserved += toNum(b.reservedQty);
+  }
+  return { onHand, reserved };
+}
+
+export function selectNeedsToBuyItem(
+  item: NeedsToBuySource,
+  locale: string,
+  incomingQty: number,
+): NeedsToBuyItem {
+  const { onHand, reserved } = stockFromItem(item);
+  const qty = onHand > 0 ? onHand : reserved;
+  const unit = item.unit?.trim() || 'pcs';
+  const name =
+    locale === 'ar' ? item.nameAr || item.nameEn : item.nameEn || item.nameAr;
+  const cost = item.standardCost != null ? toNum(item.standardCost) : 0;
+  return {
+    id: item.id,
+    sku: item.sku,
+    name,
+    unit,
+    qty,
+    qtyLabel: `${formatQty(qty)} ${unit}`,
+    incomingQty: incomingQty > 0 ? incomingQty : 0,
+    unitCost: Number.isFinite(cost) ? String(cost) : '0',
+  };
+}
+
+export function needsToBuyDraftLine(item: NeedsToBuyItem): DraftMaterialLine {
+  return {
+    key: `${item.id}-need`,
+    inventoryItemId: item.id,
+    description: item.name,
+    unit: item.unit,
+    quantity: formatQty(item.qty),
+    unitCost: item.unitCost,
+  };
+}
+
 export function selectPurchaseRequestCard(
   pr: PurchaseRequest,
   locale: string,
