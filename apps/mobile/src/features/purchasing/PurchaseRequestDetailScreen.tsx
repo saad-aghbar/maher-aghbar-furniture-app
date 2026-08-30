@@ -2,6 +2,7 @@ import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
@@ -23,7 +24,12 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { usePurchaseRequestActionMutation, usePurchaseRequestQuery } from './query';
-import { localizedNamed, resolvePurchaseRequestSupplier } from './selectPurchase';
+import {
+  localizedNamed,
+  purchaseLineQtyLabel,
+  resolvePurchaseRequestSupplier,
+  warehouseFieldCount,
+} from './selectPurchase';
 
 type Props = { requestId: string };
 
@@ -31,6 +37,7 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -79,10 +86,11 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
     <AppScreen backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
         }}
+        scrollIndicatorInsets={{ bottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE }}
       >
         <View
           style={{
@@ -109,7 +117,11 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
             value={resolvePurchaseRequestSupplier(pr, locale)}
           />
           <Meta
-            label={t('catalog.warehouses')}
+            label={
+              warehouseFieldCount(pr.warehouse) > 1
+                ? t('catalog.warehouses')
+                : t('catalog.warehouseShort')
+            }
             value={pr.warehouse ? localizedNamed(locale, pr.warehouse) : '—'}
           />
           {pr.purchaseOrder?.number ? (
@@ -127,7 +139,11 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
                 {line.description}
               </AppText>
               <AppText variant="caption" color="secondary" dir="ltr">
-                {`${String(line.quantity)} ${line.unit || 'pcs'}`}
+                {purchaseLineQtyLabel(
+                  locale,
+                  line.quantity,
+                  line.unit || line.inventoryItem?.unit,
+                )}
               </AppText>
             </View>
           ))}
@@ -153,14 +169,20 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
           <PrimaryButton
             label={t('mobile.purchasing.approve')}
             onPress={() => setConfirm('approve')}
-            style={{ borderRadius: theme.radius.xl }}
+            style={{
+              borderRadius: theme.radius.xl,
+              marginBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+            }}
           />
         ) : null}
         {canConvert && pr.status === 'APPROVED' && !pr.purchaseOrderId ? (
           <SecondaryButton
             label={t('mobile.purchasing.convertToPo')}
             onPress={() => setConfirm('convert')}
-            style={{ borderRadius: theme.radius.xl }}
+            style={{
+              borderRadius: theme.radius.xl,
+              marginBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
+            }}
           />
         ) : null}
       </ScrollView>

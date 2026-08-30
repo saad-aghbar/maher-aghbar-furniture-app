@@ -109,4 +109,23 @@ describe('translatePlural', () => {
     expect(translatePlural('en', 'mobile.dealerHome.dueInDays', 1)).toBe('Due in 1 day');
     expect(translatePlural('en', 'mobile.dealerHome.dueInDays', 4)).toBe('Due in 4 days');
   });
+
+  it('uses Warehouse when there is one, Warehouses when several', () => {
+    expect(translate('en', 'catalog.warehouseShort')).toBe('Warehouse');
+    expect(translate('en', 'catalog.warehouses')).toBe('Warehouses');
+    expect(translatePlural('en', 'catalog.warehouses', 1)).toBe('Warehouse');
+    expect(translatePlural('en', 'catalog.warehouses', 2)).toBe('Warehouses');
+    expect(translatePlural('ar', 'catalog.warehouses', 1)).toBe('المستودع');
+    expect(translatePlural('ar', 'catalog.warehouses', 2)).toBe('المستودعان');
+    expect(translatePlural('he', 'catalog.warehouses', 1)).toBe('מחסן');
+    expect(translatePlural('he', 'catalog.warehouses', 3)).toBe('מחסנים');
+  });
+
+  it('pluralizes foam block qty in en, ar, and he', () => {
+    expect(translatePlural('en', 'catalog.qtyWithUnit.block', 24)).toBe('24 blocks');
+    expect(translatePlural('en', 'catalog.qtyWithUnit.block', 1)).toBe('1 block');
+    expect(translatePlural('en', 'mobile.purchasing.qtyBlock', 24)).toBe('24 blocks');
+    expect(translatePlural('ar', 'catalog.qtyWithUnit.block', 24)).toBe('24 بلوك');
+    expect(translatePlural('he', 'catalog.qtyWithUnit.block', 24)).toBe('24 בלוקים');
+  });
 });
