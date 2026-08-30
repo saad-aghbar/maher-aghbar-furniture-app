@@ -27,8 +27,10 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { useLocale } from '@/i18n';
+import { isolateLtr } from '@/i18n/format';
 import { displayRolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { MoreBoard } from './components/MoreBoard';
 import { useAuth } from '@/auth/AuthProvider';
@@ -45,7 +47,17 @@ import {
 } from '@/auth/biometrics';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Linking, Pressable, Switch, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+
+function looksLatinValue(value: string): boolean {
+  return !/[\u0600-\u06FF\u0590-\u05FF]/.test(value);
+}
+
+function latinValue(isRTL: boolean, value: string): string {
+  if (!isRTL || !value || !looksLatinValue(value)) return value;
+  return isolateLtr(value);
+}
 
 function splitName(name: string): { first: string; last: string } {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -69,6 +81,7 @@ export function MoreAccountScreen({
   const { user, logout, applyUser, refreshUser } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const router = useRouter();
@@ -291,7 +304,12 @@ export function MoreAccountScreen({
   const setupActive = Boolean(mfaSecret);
 
   return (
-    <ScrollableScreen>
+    <ScrollableScreen
+      contentContainerStyle={{
+        flexGrow: 0,
+        paddingBottom: 0,
+      }}
+    >
       {showOfflineBanner ? <OfflineBanner /> : null}
 
       <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
@@ -335,6 +353,41 @@ export function MoreAccountScreen({
               {subtitle}
             </AppText>
           </View>
+        ) : isRTL ? (
+          <View>
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                zIndex: 1,
+              }}
+            >
+              <BackButton
+                onPress={() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace(backFallback);
+                }}
+                label={backLabel}
+              />
+            </View>
+            <View
+              style={{
+                gap: theme.spacing.xs,
+                paddingRight: theme.sizes.touch.min + theme.spacing.sm,
+              }}
+            >
+              <AppText variant="caption" color="brand" weight="regular" align="start">
+                {eyebrow}
+              </AppText>
+              <AppText variant="title" weight={titleWeight} align="start">
+                {title}
+              </AppText>
+              <AppText variant="caption" color="muted" weight="regular" align="start">
+                {subtitle}
+              </AppText>
+            </View>
+          </View>
         ) : (
           <>
             <BackButton
@@ -345,15 +398,7 @@ export function MoreAccountScreen({
               label={backLabel}
             />
             <View style={{ gap: theme.spacing.xs }}>
-              <AppText
-                variant="caption"
-                weight={locale === 'ar' ? 'regular' : 'medium'}
-                style={{
-                  letterSpacing: locale === 'ar' ? 0 : 1.4,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                  color: colors.brand,
-                }}
-              >
+              <AppText variant="caption" color="brand" weight="regular">
                 {eyebrow}
               </AppText>
               <AppText variant="title" weight={titleWeight}>
@@ -369,7 +414,7 @@ export function MoreAccountScreen({
 
       <View style={{ gap: theme.spacing.lg }}>
         <Animated.View entering={enter(40)} style={{ gap: theme.spacing.sm }}>
-          <SectionLabel label={t('mobile.more.profileSection')} locale={locale} />
+          <SectionLabel label={t('mobile.more.profileSection')} />
           <MoreBoard
             style={{
               padding: theme.spacing.lg,
@@ -382,6 +427,7 @@ export function MoreAccountScreen({
               label={t('users.username')}
               value={`@${user.username}`}
               isRTL={isRTL}
+              isolateValue
             />
             <ProfileRow label={t('users.roles')} value={roles} isRTL={isRTL} />
             {profileLocked ? (
@@ -390,17 +436,29 @@ export function MoreAccountScreen({
                   label={t('users.firstName')}
                   value={firstName || '—'}
                   isRTL={isRTL}
+                  isolateValue={looksLatinValue(firstName)}
                 />
                 <ProfileRow
                   label={t('users.lastName')}
                   value={lastName || '—'}
                   isRTL={isRTL}
+                  isolateValue={looksLatinValue(lastName)}
                 />
                 {email ? (
-                  <ProfileRow label={t('users.email')} value={email} isRTL={isRTL} />
+                  <ProfileRow
+                    label={t('users.email')}
+                    value={email}
+                    isRTL={isRTL}
+                    isolateValue
+                  />
                 ) : null}
                 {phone ? (
-                  <ProfileRow label={t('users.phone')} value={phone} isRTL={isRTL} />
+                  <ProfileRow
+                    label={t('users.phone')}
+                    value={phone}
+                    isRTL={isRTL}
+                    isolateValue
+                  />
                 ) : null}
                 <AppText variant="caption" color="muted" weight="regular">
                   {t('mobile.more.profileManagedHint')}
@@ -413,12 +471,14 @@ export function MoreAccountScreen({
                   value={firstName}
                   onChangeText={setFirstName}
                   autoCapitalize="words"
+                  dir={looksLatinValue(firstName) ? 'ltr' : 'auto'}
                 />
                 <TextField
                   label={t('users.lastName')}
                   value={lastName}
                   onChangeText={setLastName}
                   autoCapitalize="words"
+                  dir={looksLatinValue(lastName) ? 'ltr' : 'auto'}
                 />
                 <TextField
                   label={t('users.email')}
@@ -427,11 +487,13 @@ export function MoreAccountScreen({
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  dir="ltr"
                 />
                 <PhoneField
                   label={t('users.phone')}
                   value={phone}
                   onChangeText={setPhone}
+                  chipAtStart
                 />
                 <PrimaryButton
                   label={t('mobile.more.saveProfile')}
@@ -446,7 +508,7 @@ export function MoreAccountScreen({
         </Animated.View>
 
         <Animated.View entering={enter(100)} style={{ gap: theme.spacing.sm }}>
-          <SectionLabel label={t('mobile.more.appearanceSection')} locale={locale} />
+          <SectionLabel label={t('mobile.more.appearanceSection')} />
           <MoreBoard
             style={{
               padding: theme.spacing.lg,
@@ -474,7 +536,7 @@ export function MoreAccountScreen({
         </Animated.View>
 
         <Animated.View entering={enter(160)} style={{ gap: theme.spacing.sm }}>
-          <SectionLabel label={t('mobile.more.securitySection')} locale={locale} />
+          <SectionLabel label={t('mobile.more.securitySection')} />
           <MoreBoard
             style={{
               padding: theme.spacing.lg,
@@ -669,23 +731,17 @@ export function MoreAccountScreen({
           />
         </Animated.View>
       </View>
+      <View
+        pointerEvents="none"
+        style={{ height: insets.bottom + SURFACE_TAB_BAR_CLEARANCE }}
+      />
     </ScrollableScreen>
   );
 }
 
-function SectionLabel({ label, locale }: { label: string; locale: string }) {
-  const { colors } = useTheme();
+function SectionLabel({ label }: { label: string }) {
   return (
-    <AppText
-      variant="caption"
-      weight={locale === 'ar' ? 'regular' : 'medium'}
-      style={{
-        letterSpacing: locale === 'ar' ? 0 : 0.8,
-        textTransform: locale === 'ar' ? 'none' : 'uppercase',
-        color: colors.brand,
-        fontSize: 11,
-      }}
-    >
+    <AppText variant="caption" color="brand" weight="regular" align="start">
       {label}
     </AppText>
   );
@@ -695,18 +751,26 @@ function ProfileRow({
   label,
   value,
   isRTL,
+  isolateValue = false,
 }: {
   label: string;
   value: string;
   isRTL: boolean;
+  isolateValue?: boolean;
 }) {
   return (
     <View style={{ gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-      <AppText variant="caption" color="muted" weight="regular">
+      <AppText variant="caption" color="muted" weight="regular" align="start">
         {label}
       </AppText>
-      <AppText variant="body" weight="medium" numberOfLines={2}>
-        {value}
+      <AppText
+        variant="body"
+        weight="medium"
+        numberOfLines={2}
+        align="start"
+        dir={isolateValue ? 'ltr' : 'auto'}
+      >
+        {isolateValue ? latinValue(isRTL, value) : value}
       </AppText>
     </View>
   );
