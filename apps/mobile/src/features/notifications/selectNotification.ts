@@ -10,6 +10,166 @@ export type NotificationCardModel = {
   linkUrl: string | null;
 };
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HUMAN_ORDER_CODE_RE = /^(?:[A-Za-z]{1,8}-?\d[\w-]*|[A-Z]{2,}\d+)$/;
+/** Leftover interpolation slots: `(v)`, `{v}`, `{{v}}`, empty version parens. */
+const LEFTOVER_SLOT_RE =
+  /\(\s*(?:v|version|نسخة|גרסה)\s*\)|（\s*(?:v|version)\s*）|\{\{\s*v\s*\}\}|\{v\}/gi;
+
+const VAR_KEYS = [
+  'orderNumber',
+  'orderCode',
+  'orderNo',
+  'number',
+  'orderId',
+  'version',
+  'date',
+  'reason',
+  'total',
+  'taskName',
+  'amount',
+  'jobNumber',
+] as const;
+
+const ORDER_REF_KEYS = new Set(['orderNumber', 'orderCode', 'orderNo', 'number', 'orderId']);
+
+function asTrimmedString(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function collectVars(source: Record<string, unknown>, into: Record<string, string>) {
+  for (const key of VAR_KEYS) {
+    const value = asTrimmedString(source[key]);
+    if (value && into[key] == null) into[key] = value;
+  }
+}
+
+function orderCodeFromLink(linkUrl?: string | null): string | null {
+  if (!linkUrl) return null;
+  const last = linkUrl.split('/').filter(Boolean).pop() ?? '';
+  let decoded = last.split('?')[0] ?? '';
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // keep raw segment
+  }
+  decoded = decoded.trim();
+  if (!decoded || UUID_RE.test(decoded)) return null;
+  return HUMAN_ORDER_CODE_RE.test(decoded) ? decoded : null;
+}
+
+function displayOrderRef(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (UUID_RE.test(value)) return null;
+  return value;
+}
+
+function fillTemplateTokens(text: string, vars: Record<string, string>): string {
+  return text
+    .replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => vars[key] ?? '')
+    .replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? '');
+}
+
+function dropLeftoverSlots(text: string): string {
+  LEFTOVER_SLOT_RE.lastIndex = 0;
+  return text.replace(LEFTOVER_SLOT_RE, '');
+}
+
+/**
+ * Pull interpolation values from the notification payload when the API includes them.
+ * Never invents ids — empty when the row has none.
+ */
+export function notificationTemplateVars(row: AppNotification): Record<string, string> {
+  const vars: Record<string, string> = {};
+  const rec = row as AppNotification & Record<string, unknown>;
+  collectVars(rec, vars);
+  for (const nestedKey of ['vars', 'data', 'metadata', 'payload'] as const) {
+    const nested = rec[nestedKey];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      collectVars(nested as Record<string, unknown>, vars);
+    }
+  }
+  const fromLink = orderCodeFromLink(row.linkUrl);
+  if (fromLink) {
+    if (!vars.orderNumber) vars.orderNumber = fromLink;
+    if (!vars.number) vars.number = fromLink;
+  }
+  if (vars.orderNumber && !vars.number) vars.number = vars.orderNumber;
+  if (vars.number && !vars.orderNumber) vars.orderNumber = vars.number;
+  if (vars.version && vars.v == null) vars.v = vars.version;
+  for (const key of [...Object.keys(vars)]) {
+    if (!ORDER_REF_KEYS.has(key)) continue;
+    if (displayOrderRef(vars[key]) == null) delete vars[key];
+  }
+  return vars;
+}
+
+function insertOrderRef(text: string, orderRef: string): string {
+  if (text.includes(orderRef)) return text;
+  let out = text;
+  out = out.replace(/\bfor order(?=\s+is\b)/i, `for order ${orderRef}`);
+  out = out.replace(/لأمر الإنتاج(?=\s+وينتظر)/, `لأمر الإنتاج ${orderRef}`);
+  out = out.replace(/להזמנה(?=\s+ממתין)/, `להזמנה ${orderRef}`);
+  return out;
+}
+
+function collapseCopy(text: string): string {
+  return text
+    .replace(/\(\s*\)/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .trim();
+}
+
+function rewriteAnonymousOrder(text: string, anonymousOrder: string): string {
+  let out = text;
+  out = out.replace(/\bfor order(?=\s+is\b)/i, `for ${anonymousOrder}`);
+  out = out.replace(/لأمر الإنتاج(?=\s+وينتظر)/, anonymousOrder);
+  return out;
+}
+
+export type PolishNotificationCopyOptions = {
+  /** Honest fallback when the payload has no order id/name. EN: "an order". */
+  anonymousOrder?: string;
+};
+
+/**
+ * Fill leftover `{{var}}` / `{var}` / `(v)` from the payload only.
+ * Never invents SO-/PO- numbers. Never leaves raw `(v)`.
+ */
+export function polishNotificationCopy(
+  text: string,
+  vars: Record<string, string>,
+  options: PolishNotificationCopyOptions = {},
+): string {
+  if (!text) return '';
+  const anonymousOrder = options.anonymousOrder ?? 'an order';
+  const orderRef =
+    displayOrderRef(vars.orderNumber) ||
+    displayOrderRef(vars.number) ||
+    displayOrderRef(vars.orderCode) ||
+    displayOrderRef(vars.orderId);
+
+  let out = fillTemplateTokens(text, vars);
+  if (orderRef) {
+    out = out.replace(/\border\s+(?=\(\s*(?:v|version)\s*\))/gi, `order ${orderRef} `);
+    out = dropLeftoverSlots(out);
+    out = collapseCopy(out);
+    out = insertOrderRef(out, orderRef);
+  } else {
+    out = dropLeftoverSlots(out);
+    out = collapseCopy(out);
+    out = rewriteAnonymousOrder(out, anonymousOrder);
+  }
+
+  out = dropLeftoverSlots(out);
+  return collapseCopy(out);
+}
+
 export type NotificationDaySection = {
   key: string;
   label: string;
@@ -31,13 +191,19 @@ export type NotificationIconName =
 export function selectNotificationCard(
   row: AppNotification,
   locale: string,
+  anonymousOrder = 'an order',
 ): NotificationCardModel {
   const ar = locale === 'ar' || locale === 'he';
+  const vars = notificationTemplateVars(row);
+  const rawTitle = ar
+    ? row.titleAr || row.titleEn || row.type
+    : row.titleEn || row.titleAr || row.type;
+  const rawBody = ar ? row.bodyAr || row.bodyEn || '' : row.bodyEn || row.bodyAr || '';
   return {
     id: row.id,
     type: row.type,
-    title: ar ? row.titleAr || row.titleEn || row.type : row.titleEn || row.titleAr || row.type,
-    body: ar ? row.bodyAr || row.bodyEn || '' : row.bodyEn || row.bodyAr || '',
+    title: polishNotificationCopy(rawTitle, vars, { anonymousOrder }),
+    body: polishNotificationCopy(rawBody, vars, { anonymousOrder }),
     unread: !row.readAt,
     createdAt: row.createdAt,
     linkUrl: row.linkUrl ?? null,

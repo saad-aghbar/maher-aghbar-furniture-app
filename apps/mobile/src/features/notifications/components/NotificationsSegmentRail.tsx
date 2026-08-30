@@ -9,6 +9,10 @@ import { AppText } from '@/components/AppText';
 import { useLocale } from '@/i18n';
 import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+import {
+  NOTIFICATION_LTR_TREE,
+  notificationRowDirection,
+} from '../notificationLayout';
 
 export type NotificationsSegment = 'all' | 'unread';
 
@@ -107,7 +111,7 @@ export function NotificationsSegmentRail({
     <GestureDetector gesture={gesture}>
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: notificationRowDirection(isRTL),
           alignItems: 'center',
           height: shellH,
           borderRadius: shellH / 2,
@@ -116,6 +120,7 @@ export function NotificationsSegmentRail({
           borderColor: colors.borderStrong,
           paddingVertical: SHELL_PAD_Y,
           paddingHorizontal: SHELL_PAD_X,
+          ...NOTIFICATION_LTR_TREE,
           shadowColor: dark ? '#000000' : '#1E1A1B',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: dark ? 0.22 : 0.07,
@@ -166,7 +171,7 @@ export function NotificationsSegmentRail({
                 flex: 1,
                 height: PILL_HEIGHT,
                 paddingHorizontal: 4,
-                flexDirection: isRTL ? 'row-reverse' : 'row',
+                flexDirection: notificationRowDirection(isRTL),
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 6,

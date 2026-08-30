@@ -9,6 +9,13 @@ import {
   notificationIconFor,
   type NotificationCardModel,
 } from '../selectNotification';
+import {
+  NOTIFICATION_LTR_TREE,
+  notificationLeadEdge,
+  notificationRowDirection,
+  notificationStartAlign,
+  notificationStartBandPad,
+} from '../notificationLayout';
 
 type Props = {
   item: NotificationCardModel;
@@ -41,6 +48,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
         borderColor: item.unread ? colors.brand : colors.borderStrong,
         backgroundColor: colors.surface,
         overflow: 'hidden',
+        ...NOTIFICATION_LTR_TREE,
         ...orderBoardShadow(colorScheme),
       }}
     >
@@ -50,7 +58,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
           position: 'absolute',
           top: 0,
           bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
+          ...notificationLeadEdge(isRTL),
           width: 3,
           backgroundColor: item.unread ? colors.brand : colors.textMuted,
           opacity: item.unread ? 0.65 : 0.28,
@@ -59,15 +67,13 @@ export function NotificationBoardCard({ item, onPress }: Props) {
 
       <View
         style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: notificationRowDirection(isRTL),
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: theme.spacing.sm,
           paddingHorizontal: theme.spacing.lg,
           paddingVertical: theme.spacing.sm + 2,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.lg + 4 }
-            : { paddingLeft: theme.spacing.lg + 4 }),
+          ...notificationStartBandPad(isRTL, theme.spacing.lg + 4),
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
           backgroundColor: colors.surfaceSecondary,
@@ -75,7 +81,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
       >
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            flexDirection: notificationRowDirection(isRTL),
             alignItems: 'center',
             gap: theme.spacing.sm,
             flex: 1,
@@ -104,12 +110,13 @@ export function NotificationBoardCard({ item, onPress }: Props) {
             variant="caption"
             weight={item.unread ? titleWeight : 'medium'}
             color={item.unread ? 'brand' : 'muted'}
+            align="start"
             numberOfLines={1}
             style={{
               flexShrink: 1,
               letterSpacing: locale === 'ar' ? 0 : 0.45,
-              textTransform: locale === 'ar' ? 'none' : 'uppercase',
               fontSize: 11,
+              textTransform: 'none',
             }}
           >
             {item.unread ? t('mobile.notifications.unread') : t('mobile.notifications.read')}
@@ -119,6 +126,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
         <AppText
           variant="caption"
           color="muted"
+          align="end"
           numberOfLines={1}
           style={{ flexShrink: 0, fontSize: 11 }}
         >
@@ -131,17 +139,17 @@ export function NotificationBoardCard({ item, onPress }: Props) {
           paddingHorizontal: theme.spacing.lg,
           paddingVertical: theme.spacing.md,
           gap: theme.spacing.sm,
-          ...(isRTL
-            ? { paddingRight: theme.spacing.lg + 4 }
-            : { paddingLeft: theme.spacing.lg + 4 }),
+          ...notificationStartBandPad(isRTL, theme.spacing.lg + 4),
         }}
       >
         <AppText
           variant="label"
           weight={titleWeight}
+          align="start"
           numberOfLines={2}
           style={{
-            textAlign: isRTL ? 'right' : 'left',
+            width: '100%',
+            textAlign: notificationStartAlign(isRTL),
             fontSize: 16,
             lineHeight: 22,
           }}
@@ -152,9 +160,11 @@ export function NotificationBoardCard({ item, onPress }: Props) {
           <AppText
             variant="caption"
             color="secondary"
+            align="start"
             numberOfLines={3}
             style={{
-              textAlign: isRTL ? 'right' : 'left',
+              width: '100%',
+              textAlign: notificationStartAlign(isRTL),
               lineHeight: 18,
               fontSize: 13,
             }}
@@ -168,8 +178,11 @@ export function NotificationBoardCard({ item, onPress }: Props) {
             variant="caption"
             color="brand"
             weight="semibold"
+            align="start"
             style={{
-              textAlign: isRTL ? 'right' : 'left',
+              width: '100%',
+              alignSelf: 'stretch',
+              textAlign: notificationStartAlign(isRTL),
               marginTop: 2,
               fontSize: 12,
             }}
