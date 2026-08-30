@@ -81,8 +81,7 @@ export function CalendarLegend({ variant = 'admin', compact = false }: Props) {
               weight={locale === 'ar' ? 'regular' : 'medium'}
               style={{
                 color: colors.textSecondary,
-                letterSpacing: locale === 'ar' ? 0 : 0.4,
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                letterSpacing: locale === 'ar' ? 0 : 0.2,
                 fontSize: compact ? 9 : 10,
               }}
             >
