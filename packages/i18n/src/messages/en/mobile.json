@@ -21,7 +21,7 @@
   "toast": {
     "success": "Done",
     "warning": "Needs a look",
-    "error": "Couldn’t connect",
+    "error": "Couldn’t load",
     "info": "Notice",
     "dismiss": "Dismiss"
   },
@@ -2089,8 +2089,10 @@
   },
   "inventory": {
     "title": "Inventory",
-    "subtitle": "Materials by group — balances from the warehouse",
-    "signatureSubtitle": "Category focus, low stock, and materials in one place",
+    "subtitle": "Raw materials by category — warehouse balances",
+    "signatureSubtitle": "Raw materials by category — warehouse balances",
+    "signatureSubtitleSemi": "Semi-finished — warehouse balances",
+    "signatureSubtitleFinished": "Finished goods — warehouse balances",
     "pulseEyebrow": "Material floor",
     "categoryRail": "Categories",
     "materialsHeading": "{group}",
@@ -2102,8 +2104,8 @@
       "counts": "Stock counts"
     },
     "lifecycle": {
-      "materials": "Materials",
-      "semiFinished": "Semi-finished",
+      "materials": "RAW",
+      "semiFinished": "SEMI",
       "finished": "Finished"
     },
     "semiHeading": "Semi-finished goods",
@@ -2353,8 +2355,8 @@
     "emptySearchBody": "Try a different search.",
     "emptyHistoryTitle": "No movements yet",
     "emptyHistoryBody": "Receipts, issues, and adjustments will appear here.",
-    "errorTitle": "Couldn’t reach the warehouse",
-    "errorBody": "Balances will show here once we’re connected again.",
+    "errorTitle": "Couldn’t load inventory",
+    "errorBody": "Check your connection and try again.",
     "retry": "Try again",
     "txType": {
       "PURCHASE_RECEIPT": "Purchase receipt",

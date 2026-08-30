@@ -13,6 +13,7 @@ import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
+import { ToastClearance } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { Divider } from '@/components/layout/Divider';
@@ -141,6 +142,7 @@ export function ProductionOverviewScreen() {
     return (
       <AppScreen>
         {showOfflineBanner ? <OfflineBanner /> : null}
+        <ToastClearance />
         <ErrorState
           title={t('mobile.production.errorTitle')}
           description={t('mobile.production.errorBody')}
@@ -236,6 +238,7 @@ export function ProductionOverviewScreen() {
             style={{ gap: theme.spacing.lg, marginBottom: theme.spacing.sm }}
           >
             <View style={{ gap: theme.spacing.xs }}>
+              <ToastClearance />
               <AppText
                 variant="caption"
                 weight={locale === 'ar' ? 'regular' : 'medium'}

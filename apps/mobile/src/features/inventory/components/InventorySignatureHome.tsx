@@ -358,7 +358,13 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
       <InventoryCompositionChrome
         title={t('mobile.inventory.title')}
-        subtitle={t('mobile.inventory.signatureSubtitle')}
+        subtitle={
+          lifecycle === 'semiFinished'
+            ? t('mobile.inventory.signatureSubtitleSemi')
+            : lifecycle === 'finished'
+              ? t('mobile.inventory.signatureSubtitleFinished')
+              : t('mobile.inventory.signatureSubtitle')
+        }
         lifecycle={lifecycle}
         onLifecycleChange={onLifecycleChange}
         section={section}
@@ -369,6 +375,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
         searchPlaceholder={searchPlaceholder}
         canSync={lifecycle === 'materials' && section === 'items' && canSync}
         syncing={syncMutation.isPending}
+        onRefresh={() => void onRefresh()}
         onSync={
           lifecycle === 'materials' && section === 'items'
             ? () => {
@@ -460,7 +467,6 @@ export function InventorySignatureHome({ initialGroup }: Props) {
     empty = (
       <ErrorState
         title={t('mobile.inventory.errorTitle')}
-        description={t('mobile.inventory.errorBody')}
         retryLabel={t('mobile.inventory.retry')}
         onRetry={() => void activeQuery.refetch()}
       />

@@ -21,7 +21,7 @@
   "toast": {
     "success": "בוצע",
     "warning": "דורש תשומת לב",
-    "error": "לא ניתן להתחבר",
+    "error": "לא ניתן לטעון",
     "info": "הודעה",
     "dismiss": "סגור"
   },
@@ -2089,8 +2089,10 @@
   },
   "inventory": {
     "title": "מלאי",
-    "subtitle": "חומרים לפי קבוצה — יתרות מהמחסן",
-    "signatureSubtitle": "מיקוד קטגוריה, מלאי נמוך וחומרים במקום אחד",
+    "subtitle": "חומרי גלם לפי קטגוריה — יתרות מחסן",
+    "signatureSubtitle": "חומרי גלם לפי קטגוריה — יתרות מחסן",
+    "signatureSubtitleSemi": "חצי מוגמר — יתרות מחסן",
+    "signatureSubtitleFinished": "מוצרים גמורים — יתרות מחסן",
     "pulseEyebrow": "רצפת חומרים",
     "categoryRail": "קטגוריות",
     "materialsHeading": "{group}",
@@ -2353,8 +2355,8 @@
     "emptySearchBody": "נסו חיפוש אחר.",
     "emptyHistoryTitle": "אין תנועות עדיין",
     "emptyHistoryBody": "קבלות, ניפוקים והתאמות יופיעו כאן.",
-    "errorTitle": "לא ניתן להגיע למחסן",
-    "errorBody": "היתרות יופיעו כאן כשהחיבור יחזור.",
+    "errorTitle": "לא ניתן לטעון מלאי",
+    "errorBody": "בדקו את החיבור ונסו שוב.",
     "retry": "נסה שוב",
     "txType": {
       "PURCHASE_RECEIPT": "קבלת רכש",

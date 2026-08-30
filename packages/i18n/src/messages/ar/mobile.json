@@ -21,7 +21,7 @@
   "toast": {
     "success": "تم",
     "warning": "يلزم الانتباه",
-    "error": "تعذّر الاتصال",
+    "error": "تعذّر التحميل",
     "info": "تنبيه",
     "dismiss": "إغلاق"
   },
@@ -2089,8 +2089,10 @@
   },
   "inventory": {
     "title": "المخزون",
-    "subtitle": "المواد حسب المجموعة — الأرصدة من المستودع",
-    "signatureSubtitle": "تركيز الفئة والمخزون المنخفض والمواد في مكان واحد",
+    "subtitle": "مواد خام حسب الفئة — أرصدة المستودع",
+    "signatureSubtitle": "مواد خام حسب الفئة — أرصدة المستودع",
+    "signatureSubtitleSemi": "نصف مصنّعة — أرصدة المستودع",
+    "signatureSubtitleFinished": "بضائع جاهزة — أرصدة المستودع",
     "pulseEyebrow": "أرضية المواد",
     "categoryRail": "الفئات",
     "materialsHeading": "{group}",
@@ -2353,8 +2355,8 @@
     "emptySearchBody": "جرّب بحثاً مختلفاً.",
     "emptyHistoryTitle": "لا حركات بعد",
     "emptyHistoryBody": "ستظهر هنا سندات الاستلام والصرف والتعديلات.",
-    "errorTitle": "تعذّر الوصول إلى المستودع",
-    "errorBody": "ستظهر الأرصدة هنا عند عودة الاتصال.",
+    "errorTitle": "تعذّر تحميل المخزون",
+    "errorBody": "تحقق من الاتصال وحاول مرة أخرى.",
     "retry": "إعادة المحاولة",
     "txType": {
       "PURCHASE_RECEIPT": "سند استلام",

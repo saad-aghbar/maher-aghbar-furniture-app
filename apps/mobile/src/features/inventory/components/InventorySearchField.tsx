@@ -25,13 +25,12 @@ export function InventorySearchField({ value, onChangeText, placeholder }: Props
         minHeight: theme.sizes.touch.min,
         borderRadius: theme.radius.full,
         borderWidth: 1,
-        borderColor: colors.borderStrong,
+        borderColor: colors.brand,
         backgroundColor: oatmeal,
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
         paddingHorizontal: theme.spacing.md,
         gap: theme.spacing.sm,
-        ...theme.elevation.rest,
       }}
     >
       <Ionicons name="search-outline" size={18} color={colors.brand} />

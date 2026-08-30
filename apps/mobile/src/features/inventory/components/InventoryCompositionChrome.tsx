@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { ToastClearance } from '@/components/feedback/Toast';
 import { Divider } from '@/components/layout/Divider';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -30,6 +31,7 @@ type Props = {
   onSync?: () => void;
   syncing?: boolean;
   canSync?: boolean;
+  onRefresh?: () => void;
   createLabel?: string;
   onCreate?: () => void;
   canCreate?: boolean;
@@ -54,6 +56,7 @@ export function InventoryCompositionChrome({
   onSync,
   syncing,
   canSync,
+  onRefresh,
   createLabel,
   onCreate,
   canCreate,
@@ -73,6 +76,7 @@ export function InventoryCompositionChrome({
 
   return (
     <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}>
+      <ToastClearance />
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -97,7 +101,11 @@ export function InventoryCompositionChrome({
             {title}
           </AppText>
           {subtitle ? (
-            <AppText variant="caption" color="muted" weight="regular">
+            <AppText
+              variant="caption"
+              weight={locale === 'ar' ? 'regular' : 'medium'}
+              style={{ color: colors.brand, textAlign: isRTL ? 'right' : 'left' }}
+            >
               {subtitle}
             </AppText>
           ) : null}
@@ -153,21 +161,75 @@ export function InventoryCompositionChrome({
                 placeholder={searchPlaceholder}
               />
             </View>
-            {syncVisible ? (
-              <FloorActionButton
-                label={t('mobile.inventory.sync')}
-                accessibilityLabel={t('mobile.inventory.syncFromMaterials')}
-                icon="sync-outline"
-                tone="soft"
-                loading={syncing}
-                onPress={() => onSync?.()}
-              />
-            ) : null}
+            <FloorIconButton
+              icon="qr-code-outline"
+              accessibilityLabel={t('mobile.inventory.scanBarcode')}
+              onPress={() => {
+                if (section === 'items' && canCreate) onCreate?.();
+              }}
+            />
+            <FloorIconButton
+              icon="sync-outline"
+              accessibilityLabel={
+                syncVisible
+                  ? t('mobile.inventory.syncFromMaterials')
+                  : t('mobile.inventory.sync')
+              }
+              loading={syncing}
+              onPress={() => {
+                if (syncVisible) onSync?.();
+                else onRefresh?.();
+              }}
+            />
           </View>
         </View>
       ) : null}
       {children}
     </View>
+  );
+}
+
+function FloorIconButton({
+  icon,
+  accessibilityLabel,
+  loading,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  accessibilityLabel: string;
+  loading?: boolean;
+  onPress: () => void;
+}) {
+  const { colors, theme } = useTheme();
+  const size = theme.sizes.touch.min;
+
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      disabled={loading}
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 1,
+        borderColor: colors.brand,
+        backgroundColor: colors.background,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.brand} />
+      ) : (
+        <Ionicons name={icon} size={18} color={colors.brand} />
+      )}
+    </AnimatedPressable>
   );
 }
 
