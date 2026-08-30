@@ -28,6 +28,8 @@ type Props = {
   preview?: boolean;
   /** Extra space below the last node (e.g. tab-bar clearance). */
   bottomInset?: number;
+  /** Product-times editor may show estimates; order flow leaves pending nodes empty. */
+  showEstimatedDuration?: boolean;
 };
 
 function toOrderStages(stages: ProductionFlowStage[]): OrderStageView[] {
@@ -148,6 +150,7 @@ export function ProductionFlowMap({
   onStagePress,
   preview = false,
   bottomInset = 0,
+  showEstimatedDuration = false,
 }: Props) {
   const { width: winW } = useWindowDimensions();
   const { colors } = useTheme();
@@ -307,6 +310,7 @@ export function ProductionFlowMap({
             top={top}
             reduceMotion={reduceMotion}
             preview={preview}
+            showEstimatedDuration={showEstimatedDuration}
             onPress={onStagePress ? () => onStagePress(stage) : undefined}
           />
         );

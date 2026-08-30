@@ -158,6 +158,7 @@ export function ProductWorkflowTimesScreen({
         ) : (
           <ProductionFlowMap
             stages={stages}
+            showEstimatedDuration
             onStagePress={(stage) => setSelected(stage)}
           />
         )}
