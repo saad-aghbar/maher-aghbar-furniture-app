@@ -88,6 +88,7 @@ export function CatalogScreen({
 }: CatalogScreenProps = {}) {
   const { user } = useAuth();
   const { t, formatCurrency, locale, isRTL } = useLocale();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const { colors, theme, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
@@ -363,8 +364,10 @@ export function CatalogScreen({
 
   if (forceState === 'error' || (listError && !forceState)) {
     return (
-      <AppScreen>
-        {chrome}
+      <AppScreen backFallback={showBack ? backFallback : undefined}>
+        <AppText variant="title" weight={titleWeight}>
+          {t(titleKey)}
+        </AppText>
         <View
           style={{
             flex: 1,
