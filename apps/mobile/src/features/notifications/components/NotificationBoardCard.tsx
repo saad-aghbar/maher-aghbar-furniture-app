@@ -116,6 +116,7 @@ export function NotificationBoardCard({ item, onPress }: Props) {
               flexShrink: 1,
               letterSpacing: locale === 'ar' ? 0 : 0.45,
               fontSize: 11,
+              textTransform: 'none',
             }}
           >
             {item.unread ? t('mobile.notifications.unread') : t('mobile.notifications.read')}

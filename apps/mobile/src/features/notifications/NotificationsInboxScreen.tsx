@@ -267,6 +267,7 @@ export function NotificationsInboxScreen({
                     letterSpacing: locale === 'ar' ? 0 : 0.45,
                     fontSize: 11,
                     color: colors.brand,
+                    textTransform: 'none',
                   }}
                 >
                   {statusLine}
@@ -325,6 +326,7 @@ export function NotificationsInboxScreen({
               marginTop: theme.spacing.xs,
               marginBottom: theme.spacing.xs,
               letterSpacing: locale === 'ar' ? 0 : 0.6,
+              textTransform: 'none',
             }}
           >
             {section.label}
