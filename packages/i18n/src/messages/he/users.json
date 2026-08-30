@@ -96,7 +96,7 @@
   "optional": "אופציונלי",
   "icon": "סמל",
   "systemPreset": "קבוע מערכת",
-  "systemPresetReadOnly": "קבוע מערכת זה קבוע. ניתן לצפות בו אך לא לערוך או למחוק. שכפלו אותו כדי להתאים הרשאות.",
+  "systemPresetReadOnly": "קבוע מערכת זה קבוע. ניתן לצפות בו אך לא לערוך או למחוק.",
   "custom": "מותאם",
   "permissions": "הרשאות",
   "searchPermissions": "חיפוש הרשאות…",

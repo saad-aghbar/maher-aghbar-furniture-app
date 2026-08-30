@@ -96,7 +96,7 @@
   "optional": "Optional",
   "icon": "Icon",
   "systemPreset": "System preset",
-  "systemPresetReadOnly": "This system preset is permanent. You can view it, but you cannot edit or delete it. Duplicate it to customize permissions.",
+  "systemPresetReadOnly": "This system preset is permanent. You can view it, but you cannot edit or delete it.",
   "custom": "Custom",
   "permissions": "Permissions",
   "searchPermissions": "Search permissions…",
