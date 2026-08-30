@@ -246,8 +246,12 @@ export function localizedBody(
 export function statusLabel(locale: string, status: string): string {
   const typed = isValidLocale(locale) ? locale : defaultLocale;
   const map = getMessages(typed).statuses;
-  const value = map[status];
-  return typeof value === 'string' ? value : status.replace(/_/g, ' ');
+  const value = (map as Record<string, string | undefined>)[status];
+  if (typeof value === 'string') return value;
+  return status
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /** Translate an API error code for the active locale (falls back to English message). */

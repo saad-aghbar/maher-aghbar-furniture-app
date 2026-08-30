@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
-import { TextField } from '@/components/forms/TextField';
 import { DealerSearchBar } from '@/features/dealer-ui';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { OrdersFilterButton } from './OrdersFilterButton';
+import { OrdersSearchBar } from './OrdersSearchBar';
 
 type Props = {
   title?: string;
@@ -46,7 +46,7 @@ export function OrdersCompositionChrome({
   const searchPlaceholder = t('mobile.orders.searchPlaceholder');
 
   return (
-    <View style={{ gap: theme.spacing.lg, paddingBottom: theme.spacing.sm }}>
+    <View style={{ gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}>
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -89,13 +89,10 @@ export function OrdersCompositionChrome({
           placeholder={searchPlaceholder}
         />
       ) : (
-        <TextField
+        <OrdersSearchBar
           value={searchInput}
           onChangeText={setSearchInput}
           placeholder={searchPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
         />
       )}
       {children}

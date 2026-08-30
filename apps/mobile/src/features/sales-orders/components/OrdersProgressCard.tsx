@@ -6,6 +6,11 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
+import {
+  chipsLookLikeSameLabel,
+  humanizeOrderChip,
+  normalizeChipKey,
+} from '../humanizeOrderChip';
 import { resolveOrderMediaUri } from './OrderCardMedia';
 import { orderBoardShadow } from './orderFloorStyle';
 
@@ -33,10 +38,30 @@ type Props = {
   onProgressPress?: () => void;
 };
 
-const MEDIA = 88;
+const MEDIA = 80;
+
+function resolveOrderChips(
+  order: OrdersProgressCardModel,
+  locale: string,
+  t: (key: string) => string,
+) {
+  const statusLabel = humanizeOrderChip(locale, order.status);
+  const stageRaw = order.progressLabel?.trim() || '';
+  const showStage =
+    Boolean(stageRaw) && !chipsLookLikeSameLabel(stageRaw, order.status);
+  const stageKey = showStage ? normalizeChipKey(stageRaw) || order.status : '';
+  const stageLabel = showStage ? humanizeOrderChip(locale, stageRaw) : '';
+
+  return {
+    statusLabel,
+    stageKey,
+    stageLabel,
+    progressCaption: stageLabel || t('mobile.orders.progress'),
+  };
+}
 
 /**
- * Floor-list order card — soft elevation, accent strip, progress row.
+ * Floor-list order card — cream board, humanized pills, directional chevron.
  */
 export function OrdersProgressCard({ order, variant, onPress, onProgressPress }: Props) {
   const { t, formatCurrency, formatDate, isRTL, locale } = useLocale();
@@ -47,6 +72,13 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
     (order.priority ?? '').toUpperCase() === 'HIGH';
   const accent = urgent ? colors.warning : colors.brand;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const chips = resolveOrderChips(order, locale, t);
+  const idLine =
+    order.kind === 'rfq'
+      ? variant === 'dealer'
+        ? t('mobile.orders.rfqLabel')
+        : `${t('mobile.orders.unapprovedLabel')} · ${order.number}`
+      : order.number;
 
   return (
     <AnimatedPressable
@@ -125,25 +157,31 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             alignItems: isRTL ? 'flex-end' : 'flex-start',
           }}
         >
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              gap: theme.spacing.sm,
-              width: '100%',
-            }}
-          >
+          {variant === 'admin' && order.dealerName ? (
             <AppText
-              variant="label"
-              weight={titleWeight}
-              numberOfLines={2}
-              style={{ flex: 1 }}
+              variant="caption"
+              color="muted"
+              numberOfLines={1}
+              style={{
+                width: '100%',
+                letterSpacing: locale === 'ar' ? 0 : 0.4,
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                fontSize: 11,
+                lineHeight: 14,
+              }}
             >
-              {order.title}
+              {order.dealerName}
             </AppText>
-            <StatusBadge status={order.status} dot />
-          </View>
+          ) : null}
+
+          <AppText
+            variant="label"
+            weight={titleWeight}
+            numberOfLines={2}
+            style={{ width: '100%' }}
+          >
+            {order.title}
+          </AppText>
 
           <AppText
             variant="caption"
@@ -152,18 +190,31 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             dir={order.kind === 'rfq' && variant === 'dealer' ? 'auto' : 'ltr'}
             style={{ letterSpacing: 0.2 }}
           >
-            {order.kind === 'rfq'
-              ? variant === 'dealer'
-                ? t('mobile.orders.rfqLabel')
-                : `${t('mobile.orders.unapprovedLabel')} · ${order.number}`
-              : order.number}
+            {idLine}
           </AppText>
 
-          {variant === 'admin' && order.dealerName ? (
-            <AppText variant="caption" color="muted" style={{ width: '100%' }}>
-              {`${t('mobile.orders.dealer')}: ${order.dealerName}`}
-            </AppText>
-          ) : null}
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexWrap: 'wrap',
+              gap: theme.spacing.xs,
+              width: '100%',
+              marginTop: 2,
+            }}
+          >
+            <StatusBadge
+              status={order.status}
+              label={chips.statusLabel}
+              dot
+            />
+            {chips.stageLabel ? (
+              <StatusBadge
+                status={chips.stageKey || order.status}
+                label={chips.stageLabel}
+              />
+            ) : null}
+          </View>
+
           {variant === 'dealer' && order.sellerPrice != null ? (
             <AppText
               variant="caption"
@@ -179,6 +230,21 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
               {formatDate(order.deliveryDate)}
             </AppText>
           ) : null}
+        </View>
+
+        <View
+          style={{
+            alignSelf: 'center',
+            width: 22,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons
+            name={isRTL ? 'chevron-back' : 'chevron-forward'}
+            size={18}
+            color={colors.textMuted}
+          />
         </View>
       </View>
 
@@ -206,7 +272,7 @@ export function OrdersProgressCard({ order, variant, onPress, onProgressPress }:
             numberOfLines={1}
             style={{ flex: 1 }}
           >
-            {order.progressLabel?.trim() || t('mobile.orders.progress')}
+            {chips.progressCaption}
           </AppText>
           <AppText
             variant="caption"

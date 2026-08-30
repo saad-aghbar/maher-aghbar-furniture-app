@@ -7,6 +7,7 @@ import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import { adminOrderFlowHref } from '@/features/production-flow/flowRoutes';
+import { humanizeOrderChip } from '../humanizeOrderChip';
 import type { AdminOrderCardModel } from '../selectOrderCard';
 import { OrderCardMedia } from './OrderCardMedia';
 import { orderBoardShadow } from './orderFloorStyle';
@@ -130,7 +131,11 @@ export function AdminOrderCard({ order, index = 0, onPress }: AdminOrderCardProp
               >
                 {order.title}
               </AppText>
-              <StatusBadge status={order.status} dot />
+              <StatusBadge
+                status={order.status}
+                label={humanizeOrderChip(locale, order.status)}
+                dot
+              />
             </View>
             <AppText
               variant="caption"
@@ -187,7 +192,9 @@ export function AdminOrderCard({ order, index = 0, onPress }: AdminOrderCardProp
               numberOfLines={1}
               style={{ flex: 1 }}
             >
-              {order.progressLabel?.trim() || t('mobile.orders.progress')}
+              {order.progressLabel?.trim()
+                ? humanizeOrderChip(locale, order.progressLabel)
+                : t('mobile.orders.progress')}
             </AppText>
             <AppText
               variant="caption"

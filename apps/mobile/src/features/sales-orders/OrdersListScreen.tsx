@@ -18,7 +18,6 @@ import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
@@ -31,6 +30,7 @@ import {
   type StatusChipKey,
 } from './components/OrdersFilterChips';
 import { OrdersFilterButton } from './components/OrdersFilterButton';
+import { OrdersSearchBar } from './components/OrdersSearchBar';
 import {
   countActiveOrderFilters,
   defaultOrdersFilterDraft,
@@ -681,13 +681,10 @@ function OrdersHeader({
         </View>
         <OrdersFilterButton onPress={onOpenFilters} activeCount={filterActiveCount} />
       </View>
-      <TextField
+      <OrdersSearchBar
         value={searchInput}
         onChangeText={setSearchInput}
         placeholder={t('mobile.orders.searchPlaceholder')}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
       />
       <OrdersFilterChips value={statusChip} onChange={onChipChange} />
     </View>

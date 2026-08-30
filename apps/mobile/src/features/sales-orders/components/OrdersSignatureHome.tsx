@@ -7,11 +7,11 @@ import {
   UIManager,
   View,
 } from 'react-native';
-import Animated, { LinearTransition } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { useLocale } from '@/i18n';
-import { haptics, useReducedMotion } from '@/motion';
+import { haptics, ListItemEnter, useReducedMotion } from '@/motion';
 import { durations, withMotionDuration } from '@/motion/presets';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
@@ -78,8 +78,8 @@ type Props = {
   banner?: ReactNode;
 };
 
-/** Extra beige clearance under the list so the last cards clear the tab bar. */
-const LIST_BOTTOM_EXTRA = 48;
+/** Extra beige clearance under the list so the last lane + cards clear the tab bar. */
+const LIST_BOTTOM_EXTRA = 72;
 
 type Section = {
   key: FloorBoardSectionKey;
@@ -181,6 +181,7 @@ export function OrdersSignatureHome({
 }: Props) {
   const { t } = useLocale();
   const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const reduce = useReducedMotion();
   const router = useRouter();
   const [expanded, setExpanded] = useState<ExpandedMap>(DEFAULT_EXPANDED);
@@ -298,7 +299,10 @@ export function OrdersSignatureHome({
       contentContainerStyle={{
         paddingHorizontal: theme.spacing.lg,
         paddingBottom:
-          theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + LIST_BOTTOM_EXTRA,
+          theme.spacing['3xl'] +
+          SURFACE_TAB_BAR_CLEARANCE +
+          Math.max(insets.bottom, theme.spacing.sm) +
+          LIST_BOTTOM_EXTRA,
         flexGrow: 1,
       }}
       refreshControl={
@@ -342,7 +346,11 @@ export function OrdersSignatureHome({
             .slice(0, sections.findIndex((s) => s.key === section.key))
             .reduce((n, s) => n + s.data.length, 0) + index;
         return (
-          <OrderRowMotion index={globalIndex} reduce={reduce}>
+          <ListItemEnter
+            index={Math.min(globalIndex, 10)}
+            durationMs={durations.cardEnter}
+            enabled={!reduce && globalIndex <= 10}
+          >
             <OrdersProgressCard
               order={item}
               variant={variant}
@@ -358,28 +366,9 @@ export function OrdersSignatureHome({
                       )
               }
             />
-          </OrderRowMotion>
+          </ListItemEnter>
         );
       }}
     />
-  );
-}
-
-function OrderRowMotion({
-  children,
-  index,
-  reduce,
-}: {
-  children: ReactNode;
-  index: number;
-  reduce: boolean;
-}) {
-  if (reduce || index > 10) {
-    return <View>{children}</View>;
-  }
-  return (
-    <Animated.View layout={LinearTransition.duration(220)}>
-      {children}
-    </Animated.View>
   );
 }

@@ -148,7 +148,11 @@ export function OrdersDaySectionHeader({
             {title}
           </AppText>
           <Animated.View style={chevronStyle}>
-            <Ionicons name="chevron-forward" size={16} color={accent} />
+            <Ionicons
+              name={isRTL ? 'chevron-back' : 'chevron-forward'}
+              size={16}
+              color={accent}
+            />
           </Animated.View>
         </View>
         <View

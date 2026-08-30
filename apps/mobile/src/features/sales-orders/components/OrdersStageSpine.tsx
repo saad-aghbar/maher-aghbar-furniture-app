@@ -7,6 +7,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
@@ -298,10 +299,24 @@ function StageNode({
 }) {
   const { isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const reduce = useReducedMotion();
+  const selected = useSharedValue(active ? 1 : 0);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
+  useEffect(() => {
+    if (reduce) {
+      selected.value = active ? 1 : 0;
+      return;
+    }
+    selected.value = withSpring(active ? 1 : 0, theme.motion.spring.snappy);
+  }, [active, reduce, selected, theme.motion.spring.snappy]);
+
+  const selectStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(selected.value, [0, 1], [1, 1.03]) }],
+  }));
+
   return (
-    <View style={{ flex: 1 }}>
+    <Animated.View style={[{ flex: 1 }, selectStyle]}>
       <AnimatedPressable
         variant="button"
         onPress={onPress}
@@ -372,6 +387,6 @@ function StageNode({
           {label}
         </AppText>
       </AnimatedPressable>
-    </View>
+    </Animated.View>
   );
 }
