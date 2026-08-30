@@ -3,6 +3,7 @@ import { ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { localizedName } from '@maher/i18n';
 import { expandPermissionDependencies, groupedPermissionCatalog } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
@@ -51,6 +52,9 @@ const empty = (): FormState => ({
   permissionCodes: [],
 });
 
+const ltrField = { writingDirection: 'ltr' as const, textAlign: 'left' as const };
+const rtlField = { writingDirection: 'rtl' as const, textAlign: 'right' as const };
+
 /**
  * Mobile staff-type editor — names plus grouped assignable permissions.
  */
@@ -88,6 +92,15 @@ export function StaffTypeEditorScreen({ id }: Props) {
   const canSave = !readOnly && Boolean(form.nameEn.trim() && form.nameAr.trim());
   const leadPad = leadSize + theme.spacing.sm;
   const trailPad = (!readOnly ? leadSize + theme.spacing['2xl'] : leadSize) + theme.spacing.sm;
+  const named = detailQuery.data ?? (form.nameEn ? form : null);
+  const headerTitle = isNew
+    ? t('users.newStaffType')
+    : localizedName(
+        locale,
+        named,
+        form.nameEn || (readOnly ? t('users.view') : t('users.editStaffType')),
+      );
+  const descriptionMinHeight = theme.sizes.touch.min;
 
   const catalog = useMemo(() => groupedPermissionCatalog({ assignableToStaffOnly: true }), []);
   const needle = search.trim().toLowerCase();
@@ -176,7 +189,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
             paddingRight: isRTL ? leadPad : trailPad,
           }}
         >
-          {isNew ? t('users.newStaffType') : readOnly ? t('users.view') : t('users.editStaffType')}
+          {headerTitle}
         </AppText>
         {!readOnly ? (
           <View
@@ -212,7 +225,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: insets.bottom + theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
         }}
       >
         <AppText
@@ -222,41 +235,58 @@ export function StaffTypeEditorScreen({ id }: Props) {
         >
           {readOnly ? t('users.systemPresetReadOnly') : t('users.staffTypesDescription')}
         </AppText>
-        <UserFormSection icon="text-outline" label={t('users.name')} titleWeight={titleWeight}>
+        <UserFormSection
+          icon="text-outline"
+          label={t('users.name')}
+          titleWeight={titleWeight}
+          uppercase={false}
+        >
           <TextField
             label={t('users.nameEn')}
             value={form.nameEn}
             editable={!readOnly}
+            style={ltrField}
             onChangeText={(v) => setForm((f) => ({ ...f, nameEn: v }))}
           />
           <TextField
             label={t('users.nameAr')}
             value={form.nameAr}
             editable={!readOnly}
+            style={rtlField}
             onChangeText={(v) => setForm((f) => ({ ...f, nameAr: v }))}
           />
           <TextField
             label={`${t('users.nameHe')} (${t('users.optional')})`}
             value={form.nameHe}
             editable={!readOnly}
+            style={rtlField}
             onChangeText={(v) => setForm((f) => ({ ...f, nameHe: v }))}
           />
           <TextField
             label={`${t('users.descriptionEn')} (${t('users.optional')})`}
             value={form.descriptionEn}
             editable={!readOnly}
+            multiline
+            growMinHeight={descriptionMinHeight}
+            style={ltrField}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionEn: v }))}
           />
           <TextField
             label={`${t('users.descriptionAr')} (${t('users.optional')})`}
             value={form.descriptionAr}
             editable={!readOnly}
+            multiline
+            growMinHeight={descriptionMinHeight}
+            style={rtlField}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionAr: v }))}
           />
           <TextField
             label={`${t('users.descriptionHe')} (${t('users.optional')})`}
             value={form.descriptionHe}
             editable={!readOnly}
+            multiline
+            growMinHeight={descriptionMinHeight}
+            style={rtlField}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionHe: v }))}
           />
         </UserFormSection>
