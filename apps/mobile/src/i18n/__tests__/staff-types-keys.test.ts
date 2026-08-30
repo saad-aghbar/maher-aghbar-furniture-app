@@ -79,6 +79,7 @@ describe('staff-types i18n keys', () => {
     expect(leaks).toEqual([]);
   });
 
+<<<<<<< HEAD
   it('uses sentence-case English labels (Empty/Light family, not ALL CAPS)', () => {
     expect(translate('en', 'users.staffTypesEyebrow')).toBe('Job presets');
     expect(translate('en', 'users.systemPreset')).toBe('System preset');
@@ -86,4 +87,13 @@ describe('staff-types i18n keys', () => {
     expect(translate('en', 'users.permissions')).toBe('Permissions');
     expect(translate('en', 'users.custom')).toBe('Custom');
   });
+=======
+  it.each(['en', 'ar', 'he'] as const)(
+    'systemPresetReadOnly stays view-only in %s (no Duplicate instruction)',
+    (locale) => {
+      const value = translate(locale, 'users.systemPresetReadOnly');
+      expect(value).not.toMatch(/duplicate|انسخه|שכפלו/i);
+    },
+  );
+>>>>>>> ea4eac9 (fix(i18n): drop dishonest Duplicate line from system staff-type copy)
 });

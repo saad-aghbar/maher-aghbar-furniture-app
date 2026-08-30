@@ -13,11 +13,14 @@ export function UserFormSection({
   icon,
   label,
   titleWeight,
+  uppercase = true,
   children,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   titleWeight: 'medium' | 'semibold';
+  /** When false, keep the translated kicker as sentence case. */
+  uppercase?: boolean;
   children: ReactNode;
 }) {
   const { isRTL, locale } = useLocale();
@@ -67,7 +70,7 @@ export function UserFormSection({
             flex: 1,
             textAlign: isRTL ? 'right' : 'left',
             letterSpacing: locale === 'ar' ? 0 : 0.55,
-            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+            textTransform: locale === 'ar' || !uppercase ? 'none' : 'uppercase',
             fontSize: 11,
             color: colors.brand,
           }}

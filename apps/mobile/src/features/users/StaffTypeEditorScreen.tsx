@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { localizedName } from '@maher/i18n';
 import { expandPermissionDependencies, groupedPermissionCatalog } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { useToast } from '@/components/feedback/Toast';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { TextField } from '@/components/forms/TextField';
@@ -49,6 +52,9 @@ const empty = (): FormState => ({
   permissionCodes: [],
 });
 
+const ltrField = { writingDirection: 'ltr' as const, textAlign: 'left' as const };
+const rtlField = { writingDirection: 'rtl' as const, textAlign: 'right' as const };
+
 /**
  * Mobile staff-type editor — names plus grouped assignable permissions.
  */
@@ -56,9 +62,11 @@ export function StaffTypeEditorScreen({ id }: Props) {
   const isNew = id === 'new';
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const router = useRouter();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const leadSize = theme.sizes.touch.min;
   const detailQuery = useStaffTypeQuery(isNew ? undefined : id, !isNew);
   const createMutation = useCreateStaffTypeMutation();
   const updateMutation = useUpdateStaffTypeMutation();
@@ -80,6 +88,19 @@ export function StaffTypeEditorScreen({ id }: Props) {
   }, [detailQuery.data]);
 
   const readOnly = Boolean(!isNew && detailQuery.data?.isSystem);
+  const saving = createMutation.isPending || updateMutation.isPending;
+  const canSave = !readOnly && Boolean(form.nameEn.trim() && form.nameAr.trim());
+  const leadPad = leadSize + theme.spacing.sm;
+  const trailPad = (!readOnly ? leadSize + theme.spacing['2xl'] : leadSize) + theme.spacing.sm;
+  const named = detailQuery.data ?? (form.nameEn ? form : null);
+  const headerTitle = isNew
+    ? t('users.newStaffType')
+    : localizedName(
+        locale,
+        named,
+        form.nameEn || (readOnly ? t('users.view') : t('users.editStaffType')),
+      );
+  const descriptionMinHeight = theme.sizes.touch.min;
 
   const catalog = useMemo(() => groupedPermissionCatalog({ assignableToStaffOnly: true }), []);
   const needle = search.trim().toLowerCase();
@@ -145,7 +166,7 @@ export function StaffTypeEditorScreen({ id }: Props) {
 
   return (
     <AppScreen>
-      <View style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}>
+      <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
         <View
           style={{
             position: 'absolute',
@@ -163,10 +184,39 @@ export function StaffTypeEditorScreen({ id }: Props) {
           weight={titleWeight}
           align="center"
           numberOfLines={1}
-          style={{ paddingHorizontal: theme.sizes.touch.min + theme.spacing.sm }}
+          style={{
+            paddingLeft: isRTL ? trailPad : leadPad,
+            paddingRight: isRTL ? leadPad : trailPad,
+          }}
         >
-          {isNew ? t('users.newStaffType') : readOnly ? t('users.view') : t('users.editStaffType')}
+          {headerTitle}
         </AppText>
+        {!readOnly ? (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              ...(isRTL ? { left: 0 } : { right: 0 }),
+              zIndex: 1,
+              justifyContent: 'center',
+            }}
+          >
+            <PrimaryButton
+              label={t('common.save')}
+              loading={saving}
+              disabled={!canSave}
+              onPress={() => void onSubmit()}
+              haptic="light"
+              style={{
+                minHeight: 36,
+                paddingVertical: 0,
+                paddingHorizontal: theme.spacing.md,
+                borderRadius: theme.radius.full,
+              }}
+            />
+          </View>
+        ) : null}
       </View>
 
       <ScrollView
@@ -174,7 +224,8 @@ export function StaffTypeEditorScreen({ id }: Props) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           gap: theme.spacing.md,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          flexGrow: 1,
+          paddingBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
         }}
       >
         <AppText
@@ -184,41 +235,58 @@ export function StaffTypeEditorScreen({ id }: Props) {
         >
           {readOnly ? t('users.systemPresetReadOnly') : t('users.staffTypesDescription')}
         </AppText>
-        <UserFormSection icon="text-outline" label={t('users.name')} titleWeight={titleWeight}>
+        <UserFormSection
+          icon="text-outline"
+          label={t('users.name')}
+          titleWeight={titleWeight}
+          uppercase={false}
+        >
           <TextField
             label={t('users.nameEn')}
             value={form.nameEn}
             editable={!readOnly}
+            style={ltrField}
             onChangeText={(v) => setForm((f) => ({ ...f, nameEn: v }))}
           />
           <TextField
             label={t('users.nameAr')}
             value={form.nameAr}
             editable={!readOnly}
+            style={rtlField}
             onChangeText={(v) => setForm((f) => ({ ...f, nameAr: v }))}
           />
           <TextField
             label={`${t('users.nameHe')} (${t('users.optional')})`}
             value={form.nameHe}
             editable={!readOnly}
+            style={rtlField}
             onChangeText={(v) => setForm((f) => ({ ...f, nameHe: v }))}
           />
           <TextField
             label={`${t('users.descriptionEn')} (${t('users.optional')})`}
             value={form.descriptionEn}
             editable={!readOnly}
+            multiline
+            growMinHeight={descriptionMinHeight}
+            style={ltrField}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionEn: v }))}
           />
           <TextField
             label={`${t('users.descriptionAr')} (${t('users.optional')})`}
             value={form.descriptionAr}
             editable={!readOnly}
+            multiline
+            growMinHeight={descriptionMinHeight}
+            style={rtlField}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionAr: v }))}
           />
           <TextField
             label={`${t('users.descriptionHe')} (${t('users.optional')})`}
             value={form.descriptionHe}
             editable={!readOnly}
+            multiline
+            growMinHeight={descriptionMinHeight}
+            style={rtlField}
             onChangeText={(v) => setForm((f) => ({ ...f, descriptionHe: v }))}
           />
         </UserFormSection>
@@ -339,7 +407,8 @@ export function StaffTypeEditorScreen({ id }: Props) {
             confirmLabel={t('common.save')}
             onConfirm={() => void onSubmit()}
             onCancel={() => router.back()}
-            loading={createMutation.isPending || updateMutation.isPending}
+            loading={saving}
+            disabled={!canSave}
           />
         ) : null}
       </ScrollView>
