@@ -31,6 +31,8 @@ export type TextFieldProps = TextInputProps & {
   growMinHeight?: number;
   /** Small clipboard control beside the label (notes fields). */
   copyable?: boolean;
+  /** Search pill icon. Defaults to brand in SearchBarShell. */
+  iconColor?: string;
 };
 
 export function TextField({
@@ -42,6 +44,7 @@ export function TextField({
   growMaxHeight,
   growMinHeight,
   copyable = false,
+  iconColor,
   multiline,
   value,
   onContentSizeChange,
@@ -120,7 +123,9 @@ export function TextField({
         </View>
       ) : null}
       {rounded ? (
-        <SearchBarShell error={Boolean(error)}>{input}</SearchBarShell>
+        <SearchBarShell error={Boolean(error)} iconColor={iconColor}>
+          {input}
+        </SearchBarShell>
       ) : (
         <View
           style={{

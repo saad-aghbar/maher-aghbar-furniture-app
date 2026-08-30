@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocale } from '@/i18n';
+import { localeRow, useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
 /** Soft lift for search pills — gentle, not a hard drop shadow. */
@@ -61,7 +61,7 @@ export function SearchBarShell({
           borderColor: error ? colors.error : colors.borderStrong,
           backgroundColor: colors.surfaceSecondary,
           overflow: 'hidden',
-          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexDirection: localeRow(isRTL),
           alignItems: 'center',
           paddingHorizontal: theme.spacing.md,
           gap: theme.spacing.sm,
