@@ -41,7 +41,7 @@ export function FloorStatus({
           flexGrow: 1,
           justifyContent: 'center',
           paddingTop: theme.spacing.md,
-          paddingBottom: theme.spacing['2xl'] + SURFACE_TAB_BAR_CLEARANCE + insets.bottom,
+          paddingBottom: SURFACE_TAB_BAR_CLEARANCE + insets.bottom,
           alignItems: isRTL ? 'flex-end' : 'flex-start',
           gap: theme.spacing.md,
         }}

@@ -614,7 +614,7 @@ export function InventorySignatureHome({ initialGroup }: Props) {
               animateEnter={false}
               onPress={() =>
                 router.push(
-                  `/(app)/(admin)/inventory/items/${item.model.id}` as Href,
+                  `/(app)/(admin)/inventory/items/${item.model.id}?lifecycle=finished` as Href,
                 )
               }
             />

@@ -1,4 +1,4 @@
-import type { Href } from 'expo-router';
+import { useLocalSearchParams, type Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, RefreshControl, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +11,7 @@ import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { useToast } from '@/components/feedback/Toast';
+import { ToastClearance, useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
@@ -89,6 +89,14 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   const { theme, colors } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
+  const params = useLocalSearchParams<{ lifecycle?: string }>();
+  const lifecycleHint = String(params.lifecycle ?? '');
+  const finishedDeepLink =
+    lifecycleHint === 'finished' || lifecycleHint === 'FINISHED_GOOD';
+  const semiDeepLink =
+    lifecycleHint === 'semi' ||
+    lifecycleHint === 'semiFinished' ||
+    lifecycleHint === 'SEMI_FINISHED_GOOD';
   const reduce = useReducedMotion();
   const allowed = can(user, 'inventory.read');
   const canReceive = can(user, 'inventory.receive');
@@ -218,12 +226,32 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   }
 
   if ((itemQuery.isError && !itemQuery.data) || !detail) {
+    const itemClass = itemQuery.data?.itemClass;
+    const finished =
+      finishedDeepLink || itemClass === 'FINISHED_GOOD';
+    const semi =
+      semiDeepLink || itemClass === 'SEMI_FINISHED_GOOD';
+    const landmark = finished
+      ? t('mobile.inventory.finishedOrderTitle')
+      : semi
+        ? t('mobile.inventory.groupLandmark.semi')
+        : undefined;
     return (
       <AppScreen backFallback={'/(app)/(admin)/(tabs)/inventory' as Href}>
         {showOfflineBanner ? <OfflineBanner /> : null}
+        <ToastClearance />
         <ErrorState
-          title={t('mobile.inventory.errorTitle')}
-          description={t('mobile.inventory.errorBody')}
+          landmark={landmark}
+          title={
+            finished
+              ? t('mobile.inventory.finishedOrderErrorTitle')
+              : t('mobile.inventory.errorTitle')
+          }
+          description={
+            finished
+              ? t('mobile.inventory.finishedOrderErrorBody')
+              : t('mobile.inventory.errorBody')
+          }
           retryLabel={t('mobile.inventory.retry')}
           onRetry={() => void itemQuery.refetch()}
         />
