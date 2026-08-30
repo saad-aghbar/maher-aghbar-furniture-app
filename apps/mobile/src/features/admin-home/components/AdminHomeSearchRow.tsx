@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter, type Href } from 'expo-router';
 import { AppText } from '@/components/AppText';
-import { SearchBarShell } from '@/components/forms/SearchBarShell';
+import { searchBarShadow } from '@/components/forms/SearchBarShell';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
@@ -12,11 +12,16 @@ type Props = {
   enterDelay?: number;
 };
 
+/**
+ * Admin Home search + filter — cream paper pill + wood-brown icon,
+ * matching the filter chip (not the cool UIKit search look).
+ */
 export function AdminHomeSearchRow({ enterDelay = 160 }: Props) {
   const { t, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
   const reduce = useReducedMotion();
+  const dark = colorScheme === 'dark';
 
   const Wrapper = reduce ? View : Animated.View;
   const wrapperProps = reduce
@@ -42,11 +47,25 @@ export function AdminHomeSearchRow({ enterDelay = 160 }: Props) {
         }}
         style={{ flex: 1 }}
       >
-        <SearchBarShell>
+        <View
+          style={{
+            minHeight: theme.sizes.touch.min,
+            borderRadius: theme.radius.full,
+            borderWidth: 1,
+            borderColor: dark ? colors.borderStrong : colors.border,
+            backgroundColor: colors.surface,
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            paddingHorizontal: theme.spacing.md,
+            gap: theme.spacing.sm,
+            ...searchBarShadow(dark),
+          }}
+        >
+          <Ionicons name="search-outline" size={18} color={colors.brand} />
           <AppText variant="body" color="muted" style={{ flex: 1 }} numberOfLines={1}>
             {t('mobile.adminHome.searchPlaceholder')}
           </AppText>
-        </SearchBarShell>
+        </View>
       </Pressable>
       <AnimatedPressable
         variant="button"
