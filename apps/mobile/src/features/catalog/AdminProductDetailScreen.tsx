@@ -285,17 +285,9 @@ export function AdminProductDetailScreen({ productId }: Props) {
   const productionCost = num(productQuery.data?.productionCost ?? productQuery.data?.manufacturingCost);
   const categories = categoriesQuery.data?.data ?? [];
   const dealerPrices = pricesQuery.data ?? [];
-<<<<<<< HEAD
-  /** Same stack inset as order detail so SPEC / materials clear the floating pill. */
+  /** Scroll content must clear the floating pill — leftover stack inset plus extra last-card pad. */
   const footerPad =
-    theme.spacing['3xl'] +
-    surfaceTabBarStackInset(insets.bottom, theme.spacing.sm) +
-    theme.spacing['2xl'];
-=======
-  /** Scroll content must clear the floating pill — do not pad/restyle the tab bar. */
-  const footerPad =
-    theme.spacing['5xl'] + SURFACE_TAB_BAR_CLEARANCE + Math.max(insets.bottom, theme.spacing.md);
->>>>>>> 07be4ab (Fix admin product detail leftover chrome (title, photos, SKU, inset).)
+    theme.spacing['5xl'] + surfaceTabBarStackInset(insets.bottom, theme.spacing.md);
   const sheetLocksPageScroll =
     measureSheet ||
     materialSheet ||
