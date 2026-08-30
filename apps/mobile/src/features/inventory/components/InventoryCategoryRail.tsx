@@ -37,6 +37,7 @@ type Props = {
 
 /**
  * Floor category boards — soft shell, compact equal tiles.
+ * Zero counts stay visible: a failed load really is 0 on hand.
  */
 export function InventoryCategoryRail({ groups, active, onChange }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -86,7 +87,11 @@ export function InventoryCategoryRail({ groups, active, onChange }: Props) {
         >
           {t('mobile.inventory.categoryRail')}
         </AppText>
-        <AppText variant="caption" color="muted" dir="ltr" style={{ fontSize: 11 }}>
+        <AppText
+          variant="caption"
+          dir="ltr"
+          style={{ fontSize: 11, color: colors.textPrimary }}
+        >
           {String(totalMaterials)}
         </AppText>
       </View>
@@ -302,10 +307,10 @@ function CategoryChip({
           </AppText>
           <AppText
             variant="caption"
-            color="muted"
             weight="regular"
             numberOfLines={1}
             style={{
+              color: colors.textPrimary,
               textAlign: isRTL ? 'right' : 'left',
               fontSize: 10,
               lineHeight: 13,
