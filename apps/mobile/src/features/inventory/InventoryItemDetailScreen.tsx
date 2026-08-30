@@ -43,6 +43,7 @@ import {
 } from './query';
 import {
   formatInventoryMaterialType,
+  inventoryItemLifecycleEyebrow,
   selectInventoryItemDetail,
   selectInventoryTransaction,
 } from './selectInventory';
@@ -50,15 +51,6 @@ import {
 type InventoryItemDetailScreenProps = {
   itemId: string;
 };
-
-function lifecycleEyebrow(
-  itemClass: string | null | undefined,
-  t: (key: string) => string,
-): string {
-  if (itemClass === 'FINISHED_GOOD') return t('mobile.inventory.finishedHeading');
-  if (itemClass === 'SEMI_FINISHED_GOOD') return t('mobile.inventory.semiHeading');
-  return t('mobile.inventory.pulseEyebrow');
-}
 
 function txIcon(type: string): keyof typeof Ionicons.glyphMap {
   switch (type) {
@@ -278,6 +270,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
         ? 'READY'
         : 'ACTIVE';
   const materialTypeLabel = formatInventoryMaterialType(detail.materialType, t);
+  const eyebrow = inventoryItemLifecycleEyebrow(detail.itemClass, t);
   const showBreakdown =
     detail.itemClass === 'FINISHED_GOOD' ||
     detail.itemClass === 'SEMI_FINISHED_GOOD' ||
@@ -335,17 +328,15 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
             }}
           >
             <View style={{ gap: theme.spacing.sm }}>
-              <AppText
-                variant="caption"
-                weight={locale === 'ar' ? 'regular' : 'medium'}
-                style={{
-                  letterSpacing: locale === 'ar' ? 0 : 1.4,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                  color: colors.brand,
-                }}
-              >
-                {lifecycleEyebrow(detail.itemClass, t)}
-              </AppText>
+              {eyebrow ? (
+                <AppText
+                  variant="caption"
+                  weight={locale === 'ar' ? 'regular' : 'medium'}
+                  style={{ color: colors.brand }}
+                >
+                  {eyebrow}
+                </AppText>
+              ) : null}
               <View
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -533,15 +524,12 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               </View>
             ) : null}
 
-            <View style={{ gap: theme.spacing['2xs'], marginTop: theme.spacing.xs }}>
+            <View style={{ marginTop: theme.spacing.xs }}>
               <InventorySectionHeader
                 icon="time-outline"
                 label={t('mobile.inventory.adjustmentHistory')}
                 accent={colors.info}
               />
-              <AppText variant="caption" color="muted">
-                {t('mobile.inventory.adjustmentHistoryHint')}
-              </AppText>
             </View>
           </HeaderShell>
         }
@@ -551,10 +539,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               {t('mobile.inventory.loadingHistory')}
             </AppText>
           ) : (
-            <EmptyState
-              title={t('mobile.inventory.emptyHistoryTitle')}
-              description={t('mobile.inventory.emptyHistoryBody')}
-            />
+            <EmptyState title={t('mobile.inventory.emptyHistoryTitle')} />
           )
         }
         renderItem={({ item, index }) => {

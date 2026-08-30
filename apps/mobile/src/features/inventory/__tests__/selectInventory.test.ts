@@ -1,4 +1,6 @@
 import {
+  humanizeInventoryEnumLabel,
+  inventoryItemLifecycleEyebrow,
   selectInventoryItemCard,
   selectInventoryItemDetail,
   selectInventoryTransaction,
@@ -35,6 +37,17 @@ describe('selectInventory cost visibility', () => {
     expect(card.showCost).toBe(true);
     expect(card.costLabel).toBeTruthy();
     expect(card.costLabel).not.toMatch(/undefined|null/i);
+    expect(card.costLabel).toMatch(/₪/);
+    expect(card.costLabel).toMatch(/42\.50/);
+  });
+
+  it('formats zero standardCost as shekel money, not a bare 0', () => {
+    const zeroCost: InventoryItem = { ...baseItem, standardCost: 0 };
+    const card = selectInventoryItemCard(zeroCost, 'en');
+    expect(card.showCost).toBe(true);
+    expect(card.standardCost).toBe(0);
+    expect(card.costLabel).toMatch(/₪0\.00/);
+    expect(card.costLabel).not.toBe('0');
   });
 
   it('hides accessory photo flags for fabric items', () => {
@@ -146,5 +159,34 @@ describe('inventoryItemUnitCost', () => {
     expect(inventoryItemUnitCost({})).toBe(0);
     expect(inventoryItemUnitCost({ standardCost: 0 })).toBe(0);
     expect(inventoryItemUnitCost({ standardCost: '0' })).toBe(0);
+  });
+});
+
+describe('inventoryItemLifecycleEyebrow', () => {
+  const LABELS: Record<string, string> = {
+    'mobile.inventory.lifecycle.finished': 'Finished',
+    'mobile.inventory.lifecycle.semiFinished': 'Semi-finished',
+    'mobile.inventory.lifecycle.materials': 'Materials',
+  };
+  const t = (key: string) => LABELS[key] ?? key;
+
+  it('humanizes known item classes without leaking enums', () => {
+    expect(inventoryItemLifecycleEyebrow('FINISHED_GOOD', t)).toBe('Finished');
+    expect(inventoryItemLifecycleEyebrow('SEMI_FINISHED_GOOD', t)).toBe('Semi-finished');
+    expect(inventoryItemLifecycleEyebrow('RAW_MATERIAL', t)).toBe('Materials');
+  });
+
+  it('humanizes FINISHED_OUTBOUND as Finished / outbound', () => {
+    expect(humanizeInventoryEnumLabel('FINISHED_OUTBOUND')).toBe('Finished / outbound');
+    expect(inventoryItemLifecycleEyebrow('FINISHED_OUTBOUND', t)).toBe('Finished / outbound');
+    expect(inventoryItemLifecycleEyebrow('FINISHED_OUTBOUND', t)).not.toMatch(
+      /FINISHED_OUTBOUND|FINISHED OUTBOUND/,
+    );
+  });
+
+  it('drops warehouse codes instead of inventing a warehouse', () => {
+    expect(inventoryItemLifecycleEyebrow('FIN', t)).toBeNull();
+    expect(inventoryItemLifecycleEyebrow('FIN-2', t)).toBeNull();
+    expect(inventoryItemLifecycleEyebrow(null, t)).toBeNull();
   });
 });

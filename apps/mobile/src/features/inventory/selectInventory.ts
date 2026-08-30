@@ -261,15 +261,64 @@ export function formatInventoryMaterialType(
   return type;
 }
 
+/**
+ * Item-detail kicker. Known lifecycle classes use i18n; unknown SCREAMING_SNAKE
+ * is humanized (FINISHED_OUTBOUND → "Finished / outbound"). Short warehouse codes
+ * (FIN, FIN-2) are dropped rather than invented into a warehouse name.
+ */
+export function inventoryItemLifecycleEyebrow(
+  itemClass: string | null | undefined,
+  t: (key: string) => string,
+): string | null {
+  const raw = (itemClass ?? '').trim();
+  if (!raw) return null;
+
+  const upper = raw.toUpperCase().replace(/[\s-]+/g, '_');
+
+  if (upper === 'FINISHED_GOOD' || upper === 'FINISHED_GOODS' || upper === 'FINISHED') {
+    return t('mobile.inventory.lifecycle.finished');
+  }
+  if (upper === 'SEMI_FINISHED_GOOD' || upper === 'SEMI_FINISHED' || upper === 'SEMI') {
+    return t('mobile.inventory.lifecycle.semiFinished');
+  }
+  if (upper === 'RAW_MATERIAL' || upper === 'RAW_MATERIALS' || upper === 'RAW') {
+    return t('mobile.inventory.lifecycle.materials');
+  }
+
+  if (/^(RAW|SEMI|FIN)(-\d+)?$/i.test(raw)) return null;
+
+  if (/_/.test(raw) || raw === raw.toUpperCase()) {
+    return humanizeInventoryEnumLabel(raw);
+  }
+
+  return raw;
+}
+
+/** FINISHED_OUTBOUND → "Finished / outbound". */
+export function humanizeInventoryEnumLabel(value: string): string {
+  const parts = value.trim().split(/[_-\s]+/).filter(Boolean);
+  return parts
+    .map((part, i) => {
+      const word = part.toLowerCase();
+      if (!word) return '';
+      if (i === 0) return word.charAt(0).toUpperCase() + word.slice(1);
+      return word;
+    })
+    .filter(Boolean)
+    .join(' / ');
+}
+
 function formatQty(n: number): string {
   if (Number.isInteger(n)) return String(n);
   return n.toFixed(2).replace(/\.?0+$/, '');
 }
 
+/** ILS — same chrome as `formatCurrency` elsewhere on mobile. */
 function formatMoney(n: number): string {
-  return n.toLocaleString('en-JO', {
-    minimumFractionDigits: 0,
+  return new Intl.NumberFormat('en-JO-u-nu-latn', {
+    style: 'currency',
+    currency: 'ILS',
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-    numberingSystem: 'latn',
-  });
+  }).format(n);
 }
