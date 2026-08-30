@@ -2680,6 +2680,10 @@
     "cancel": "ביטול",
     "resolveSuccess": "ההחזרה עודכנה",
     "resolveFailed": "לא ניתן לעדכן",
+    "nextAction": "הפעולה הבאה",
+    "receiveDisposition": "קליטה וקביעת יעד",
+    "dispositionTitle": "קביעת יעד",
+    "beingResolved": "בטיפול",
     "reasons": {
       "MANUFACTURING_DEFECT": "פגם ייצור",
       "INCORRECT_MEASUREMENT": "מדידה שגויה",
@@ -2689,7 +2693,8 @@
       "CUSTOMER_REQUEST": "בקשת לקוח",
       "OTHER": "אחר"
     },
-    "subtitle": "בקשו החזרה לפריטים שסופקו בעת הצורך."
+    "subtitle": "בקשו החזרה לפריטים שסופקו בעת הצורך.",
+    "adminSubtitle": "החזרות במפעל להזמנות שסופקו."
   },
   "notifications": {
     "title": "התראות",

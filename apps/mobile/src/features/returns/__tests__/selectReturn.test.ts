@@ -2,7 +2,7 @@ import {
   filterDealersByQuery,
   isReturnStatusFilterActive,
 } from '../returnFilters';
-import { returnReasonLabelKey, selectReturnCard } from '../selectReturn';
+import { returnFateLabelKey, returnReasonLabelKey, selectReturnCard } from '../selectReturn';
 import type { ReturnRequest } from '../api';
 
 describe('returnFilters', () => {
@@ -57,7 +57,31 @@ describe('selectReturnCard', () => {
     expect(card.dealerOrderNumber).toBe('EXT-4390');
     expect(card.quantityLabel).toBe('1');
     expect(card.isPending).toBe(false);
+    expect(card.fatePending).toBe(true);
+    expect(card.beingResolved).toBe(true);
+    expect(card.inventoryFate).toBe('PENDING');
     expect(card.reasonLabelKey).toContain('MANUFACTURING_DEFECT');
+  });
+
+  it('does not mark pending returns as being resolved', () => {
+    const card = selectReturnCard({ ...row, approvalStatus: 'PENDING' }, 'en');
+    expect(card.isPending).toBe(true);
+    expect(card.beingResolved).toBe(false);
+  });
+
+  it('treats applied fate as no longer being resolved', () => {
+    const card = selectReturnCard(
+      { ...row, inventoryFate: 'RETURN_TO_STOCK' },
+      'en',
+    );
+    expect(card.beingResolved).toBe(false);
+    expect(card.fatePending).toBe(false);
+    expect(card.inventoryFate).toBe('RETURN_TO_STOCK');
+  });
+
+  it('maps fate label keys', () => {
+    expect(returnFateLabelKey('REWORK')).toBe('inventory.fateRework');
+    expect(returnFateLabelKey('DAMAGED')).toBe('inventory.fateDamaged');
   });
 
   it('uses Arabic dealer name', () => {

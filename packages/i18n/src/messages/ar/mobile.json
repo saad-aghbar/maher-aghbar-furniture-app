@@ -2680,6 +2680,10 @@
     "cancel": "إلغاء",
     "resolveSuccess": "تم تحديث المرتجع",
     "resolveFailed": "تعذّر تحديث المرتجع",
+    "nextAction": "الإجراء التالي",
+    "receiveDisposition": "استلام وتحديد المصير",
+    "dispositionTitle": "تحديد المصير",
+    "beingResolved": "قيد المعالجة",
     "reasons": {
       "MANUFACTURING_DEFECT": "عيب تصنيع",
       "INCORRECT_MEASUREMENT": "قياس غير صحيح",
@@ -2689,7 +2693,8 @@
       "CUSTOMER_REQUEST": "طلب العميل",
       "OTHER": "أخرى"
     },
-    "subtitle": "اطلب إرجاعاً للعناصر المسلّمة عند الحاجة."
+    "subtitle": "اطلب إرجاعاً للعناصر المسلّمة عند الحاجة.",
+    "adminSubtitle": "مرتجعات المصنع للطلبات المسلّمة."
   },
   "notifications": {
     "title": "الإشعارات",

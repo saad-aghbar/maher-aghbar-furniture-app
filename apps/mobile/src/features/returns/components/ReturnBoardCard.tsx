@@ -52,6 +52,10 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
     const v = t('mobile.returns.order');
     return v === 'mobile.returns.order' ? 'Order' : v;
   })();
+  const beingResolvedLabel = (() => {
+    const v = t('mobile.returns.beingResolved');
+    return v === 'mobile.returns.beingResolved' ? 'Being resolved' : v;
+  })();
 
   return (
     <AnimatedPressable
@@ -100,7 +104,11 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
           backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <StatusBadge status={item.approvalStatus} dot />
+        <StatusBadge
+          status={item.approvalStatus}
+          label={item.beingResolved ? beingResolvedLabel : undefined}
+          dot
+        />
         <AppText variant="caption" color="brand" weight="semibold">
           {t('common.details')}
         </AppText>
@@ -291,8 +299,9 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
             })()}
             value={reasonLabel}
             isRTL={isRTL}
+            sentenceCase
           />
-          <Divider compact />
+          <Divider compact plain />
           <MetaRow
             icon="layers-outline"
             label={qtyLabel}
@@ -302,7 +311,7 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
           />
           {item.salesOrderNumber ? (
             <>
-              <Divider compact />
+              <Divider compact plain />
               <MetaRow
                 icon="cube-outline"
                 label={orderLabel}
@@ -315,7 +324,7 @@ export function ReturnBoardCard({ item, onPress, dealerFacing = false }: Props) 
           ) : null}
           {item.dealerOrderNumber ? (
             <>
-              <Divider compact />
+              <Divider compact plain />
               <MetaRow
                 icon="pricetag-outline"
                 label={dealerOrderLabel}
@@ -380,6 +389,7 @@ function MetaRow({
   isRTL,
   valueLtr,
   emphasize,
+  sentenceCase,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -387,6 +397,7 @@ function MetaRow({
   isRTL: boolean;
   valueLtr?: boolean;
   emphasize?: boolean;
+  sentenceCase?: boolean;
 }) {
   const { colors, theme } = useTheme();
 
@@ -423,8 +434,8 @@ function MetaRow({
         variant="caption"
         color="muted"
         style={{
-          textTransform: 'uppercase',
-          letterSpacing: 0.45,
+          textTransform: sentenceCase ? 'none' : 'uppercase',
+          letterSpacing: sentenceCase ? 0 : 0.45,
           fontSize: 10,
           flexShrink: 0,
           maxWidth: '34%',

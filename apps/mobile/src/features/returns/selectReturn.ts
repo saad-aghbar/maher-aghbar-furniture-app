@@ -1,6 +1,6 @@
 import type { Locale } from '@maher/types';
 import { localizedName } from '@maher/i18n';
-import type { ReturnReason, ReturnRequest } from './api';
+import type { ReturnInventoryFate, ReturnReason, ReturnRequest } from './api';
 
 export type ReturnCardModel = {
   id: string;
@@ -11,6 +11,7 @@ export type ReturnCardModel = {
   reasonLabelKey: string;
   description: string | null;
   approvalStatus: string;
+  inventoryFate: string;
   dealerName: string;
   salesOrderId: string | null;
   salesOrderNumber: string | null;
@@ -21,7 +22,31 @@ export type ReturnCardModel = {
   reasonPhotoUrls: string[];
   issuePhotoUrls: string[];
   isPending: boolean;
+  fatePending: boolean;
+  /** Approved and still in quarantine — not resolved until disposition is set. */
+  beingResolved: boolean;
 };
+
+export const RETURN_FATE_OPTIONS: Exclude<ReturnInventoryFate, 'PENDING'>[] = [
+  'RETURN_TO_STOCK',
+  'REWORK',
+  'DAMAGED',
+  'SCRAP',
+];
+
+const FATE_LABEL_KEYS: Record<Exclude<ReturnInventoryFate, 'PENDING'>, string> = {
+  RETURN_TO_STOCK: 'inventory.fateReturnToStock',
+  REWORK: 'inventory.fateRework',
+  DAMAGED: 'inventory.fateDamaged',
+  SCRAP: 'inventory.fateScrap',
+};
+
+export function returnFateLabelKey(fate: string): string {
+  if (fate in FATE_LABEL_KEYS) {
+    return FATE_LABEL_KEYS[fate as Exclude<ReturnInventoryFate, 'PENDING'>];
+  }
+  return `inventory.fate${fate}`;
+}
 
 function asLocale(locale: string): Locale {
   return locale === 'ar' || locale === 'he' || locale === 'en' ? locale : 'en';
@@ -57,6 +82,9 @@ export function selectReturnCard(row: ReturnRequest, locale: string): ReturnCard
   const typed = asLocale(locale);
   const qty = Number(row.quantity);
   const status = row.approvalStatus || 'PENDING';
+  const inventoryFate = (row.inventoryFate || 'PENDING').toUpperCase();
+  const fatePending = inventoryFate === 'PENDING';
+  const isPending = status === 'PENDING';
   const reasonPhotoUrls = photoList(row.reasonPhotoUrls, row.reasonPhotoUrl);
   const issuePhotoUrls = photoList(row.issuePhotoUrls, row.issuePhotoUrl);
   return {
@@ -68,6 +96,7 @@ export function selectReturnCard(row: ReturnRequest, locale: string): ReturnCard
     reasonLabelKey: returnReasonLabelKey(row.reason),
     description: row.description?.trim() || null,
     approvalStatus: status,
+    inventoryFate,
     dealerName: localizedName(
       typed,
       {
@@ -86,7 +115,9 @@ export function selectReturnCard(row: ReturnRequest, locale: string): ReturnCard
     issuePhotoUrl: issuePhotoUrls[0] ?? null,
     reasonPhotoUrls,
     issuePhotoUrls,
-    isPending: status === 'PENDING',
+    isPending,
+    fatePending,
+    beingResolved: status === 'APPROVED' && fatePending,
   };
 }
 

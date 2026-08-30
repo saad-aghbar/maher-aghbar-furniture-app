@@ -11,6 +11,13 @@ export type ReturnReason =
   | 'CUSTOMER_REQUEST'
   | 'OTHER';
 
+export type ReturnInventoryFate =
+  | 'PENDING'
+  | 'RETURN_TO_STOCK'
+  | 'REWORK'
+  | 'DAMAGED'
+  | 'SCRAP';
+
 export type ReturnRequest = {
   id: string;
   number: string;
@@ -20,6 +27,7 @@ export type ReturnRequest = {
   description?: string | null;
   approvalStatus: string;
   resolution?: string | null;
+  inventoryFate?: ReturnInventoryFate | string | null;
   reasonPhotoUrl?: string | null;
   issuePhotoUrl?: string | null;
   /** Multi-photo galleries (preferred). */
@@ -83,4 +91,14 @@ export async function resolveReturn(
   return apiPatch<ReturnRequest>(`/returns/${encodeURIComponent(id)}/resolve`, {
     approvalStatus,
   });
+}
+
+export async function setReturnInventoryFate(
+  id: string,
+  inventoryFate: Exclude<ReturnInventoryFate, 'PENDING'>,
+) {
+  return apiPatch<ReturnRequest>(
+    `/returns/${encodeURIComponent(id)}/inventory-fate`,
+    { inventoryFate },
+  );
 }

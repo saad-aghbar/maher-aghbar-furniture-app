@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
@@ -47,15 +48,19 @@ type Props = {
 function ReturnsScreenTitle({
   backFallback,
   titleWeight,
+  adminControls,
 }: {
   backFallback: Href;
   titleWeight: 'medium' | 'semibold';
+  adminControls?: boolean;
 }) {
   const { t, isRTL } = useLocale();
   const { theme } = useTheme();
   const leadSize = theme.sizes.touch.min;
   const title = t('mobile.returns.title');
-  const subtitle = t('mobile.returns.subtitle');
+  const subtitle = adminControls
+    ? t('mobile.returns.adminSubtitle')
+    : t('mobile.returns.subtitle');
 
   return (
     <View style={{ gap: theme.spacing.xs }}>
@@ -104,6 +109,7 @@ export function ReturnsListScreen({
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const router = useRouter();
   const allowed = can(user, 'sales-order.read');
@@ -175,7 +181,11 @@ export function ReturnsListScreen({
   if (!allowed) {
     return (
       <AppScreen>
-        <ReturnsScreenTitle backFallback={backFallback} titleWeight={titleWeight} />
+        <ReturnsScreenTitle
+          backFallback={backFallback}
+          titleWeight={titleWeight}
+          adminControls={adminControls}
+        />
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -184,7 +194,11 @@ export function ReturnsListScreen({
   if (query.isError && !query.data) {
     return (
       <AppScreen>
-        <ReturnsScreenTitle backFallback={backFallback} titleWeight={titleWeight} />
+        <ReturnsScreenTitle
+          backFallback={backFallback}
+          titleWeight={titleWeight}
+          adminControls={adminControls}
+        />
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ErrorState
           title={t('mobile.returns.errorTitle')}
@@ -202,10 +216,12 @@ export function ReturnsListScreen({
       <FlatList
         data={cards}
         keyExtractor={(item) => item.id}
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom:
+            insets.bottom + SURFACE_TAB_BAR_CLEARANCE + theme.spacing['3xl'],
         }}
         refreshControl={
           <RefreshControl
@@ -219,7 +235,11 @@ export function ReturnsListScreen({
         }}
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
-            <ReturnsScreenTitle backFallback={backFallback} titleWeight={titleWeight} />
+            <ReturnsScreenTitle
+          backFallback={backFallback}
+          titleWeight={titleWeight}
+          adminControls={adminControls}
+        />
 
             {canCreate && createHref ? (
               <PrimaryButton
