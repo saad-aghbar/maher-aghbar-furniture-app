@@ -2017,6 +2017,7 @@
       "stageDurationSaved": "تم حفظ مدة المرحلة",
       "awaitingTimeApprovalTitle": "بانتظار اعتماد الأزمنة",
       "awaitingTimeApprovalBody": "حدّد مدة كل مرحلة (اضغط دائرة معلّمة بـ !). تبقى الجدولة أولية حتى اعتماد الأزمنة.",
+      "awaitingTimeApprovalBadge": "مبدئي",
       "workflowAssignedSetTimes": "تم تعيين سير الإنتاج — اضغط المراحل المعلّمة بـ ! لتحديد الأزمنة",
       "workerAssignmentRequired": "يجب إسناد عامل قبل بدء هذه المرحلة.",
       "canRunInParallel": "يمكن تنفيذها بالتوازي مع مراحل أخرى في هذا المستوى",

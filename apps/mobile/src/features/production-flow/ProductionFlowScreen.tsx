@@ -12,6 +12,7 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ProgressBar } from '@/motion';
 import { useTheme } from '@/theme';
+import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useSalesOrderQuery } from '@/features/sales-orders/query';
 import { useProductionOrderQuery } from '@/features/production/query';
 import { useProductionOrderWorkflowQuery } from '@/features/workflow/query';
@@ -20,6 +21,7 @@ import { DealerStageSheet } from './components/DealerStageSheet';
 import { ProductionFlowMap } from './components/ProductionFlowMap';
 import {
   selectProductionFlow,
+  selectProductionFlowStatusBadge,
   type ProductionFlowRole,
   type ProductionFlowStage,
 } from './selectProductionFlow';
@@ -70,6 +72,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
     Boolean(productionOrderId) && role === 'admin',
   );
   const customizeMinutes = useCustomizeOrderWorkflowMinutesMutation(productionOrderId ?? '');
+  const flowScrollBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
 
   const awaitingTimeApproval = useMemo(() => {
     if (role !== 'admin') return false;
@@ -201,9 +204,10 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
       <AppScreen backFallback={backFallback}>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ScrollView
+          style={{ flex: 1 }}
           contentContainerStyle={{
             gap: theme.spacing.lg,
-            paddingBottom: theme.spacing['6xl'] + 48,
+            paddingBottom: flowScrollBottomPad,
           }}
           refreshControl={
             <RefreshControl
@@ -232,6 +236,12 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
   }
 
   const model = flow.model;
+  const headerBadge = selectProductionFlowStatusBadge({
+    awaitingTimeApproval,
+    role,
+    status: model.status,
+    promiseState: model.promiseState,
+  });
   const pct = Math.max(0, Math.min(100, Math.round(model.progressPercent || 0)));
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const late =
@@ -250,9 +260,10 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
     <AppScreen backFallback={backFallback}>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={{
           gap: theme.spacing.lg,
-          paddingBottom: theme.spacing['6xl'] + 48,
+          paddingBottom: flowScrollBottomPad,
         }}
         refreshControl={
           <RefreshControl
@@ -328,11 +339,11 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
               >
                 {t('mobile.productionFlow.title')}
               </AppText>
-              {role === 'dealer' && model.promiseState ? (
-                <StatusBadge status={model.promiseState} dot />
-              ) : (
-                <StatusBadge status={model.status} dot />
-              )}
+              <StatusBadge
+                status={headerBadge.status}
+                label={headerBadge.labelKey ? t(headerBadge.labelKey) : undefined}
+                dot
+              />
             </View>
 
             <AppText variant="title" weight={titleWeight} numberOfLines={2}>
@@ -419,6 +430,7 @@ export function ProductionFlowScreen({ role, source, id, backFallback }: Props) 
           >
             <ProductionFlowMap
               stages={model.stages}
+              bottomInset={SURFACE_TAB_BAR_CLEARANCE}
               onStagePress={(stage) => {
                 if (
                   role === 'admin' &&

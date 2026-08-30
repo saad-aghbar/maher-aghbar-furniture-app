@@ -2036,6 +2036,7 @@
       "stageDurationSaved": "משך השלב נשמר",
       "awaitingTimeApprovalTitle": "ממתין לאישור זמנים",
       "awaitingTimeApprovalBody": "הגדירו כמה זמן כל שלב לוקח (לחצו על עיגול עם !). התזמון נשאר ראשוני עד לאישור הזמנים.",
+      "awaitingTimeApprovalBadge": "ראשוני",
       "workflowAssignedSetTimes": "התהליך שויך — לחצו על שלבים עם ! כדי להגדיר זמנים",
       "searchWorkflows": "חיפוש תהליכים…",
       "noWorkflowMatches": "אין תהליכים התואמים לחיפוש",

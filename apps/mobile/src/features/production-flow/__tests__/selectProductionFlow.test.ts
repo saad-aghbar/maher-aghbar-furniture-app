@@ -2,6 +2,7 @@ import {
   enforceDealerStageStrip,
   nextStageAfter,
   selectProductionFlow,
+  selectProductionFlowStatusBadge,
   type ProductionFlowStage,
 } from '../selectProductionFlow';
 import type { SalesOrderDetail } from '@/api/modules/sales-orders';
@@ -189,5 +190,38 @@ describe('selectProductionFlow', () => {
     ];
     expect(nextStageAfter(stages, 'A')?.code).toBe('B');
     expect(nextStageAfter(stages, 'B')).toBeNull();
+  });
+});
+
+describe('selectProductionFlowStatusBadge', () => {
+  it('does not show order READY while times are still awaiting approval', () => {
+    const badge = selectProductionFlowStatusBadge({
+      awaitingTimeApproval: true,
+      role: 'admin',
+      status: 'READY',
+      promiseState: null,
+    });
+    expect(badge.status).toBe('AWAITING_APPROVAL');
+    expect(badge.labelKey).toBe('mobile.production.workflow.awaitingTimeApprovalBadge');
+  });
+
+  it('keeps the order status once times are approved', () => {
+    const badge = selectProductionFlowStatusBadge({
+      awaitingTimeApproval: false,
+      role: 'admin',
+      status: 'READY',
+      promiseState: null,
+    });
+    expect(badge).toEqual({ status: 'READY' });
+  });
+
+  it('still prefers dealer promise state when times are not awaiting approval', () => {
+    const badge = selectProductionFlowStatusBadge({
+      awaitingTimeApproval: false,
+      role: 'dealer',
+      status: 'READY',
+      promiseState: 'ESTIMATED',
+    });
+    expect(badge).toEqual({ status: 'ESTIMATED' });
   });
 });

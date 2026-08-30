@@ -421,3 +421,25 @@ export function nextStageAfter(
     null
   );
 }
+
+/**
+ * Header badge for the production-flow card.
+ * When stage times still need approval, do not show order READY — same truth as the banner.
+ */
+export function selectProductionFlowStatusBadge(input: {
+  awaitingTimeApproval: boolean;
+  role: ProductionFlowRole;
+  status: string;
+  promiseState: string | null;
+}): { status: string; labelKey?: string } {
+  if (input.awaitingTimeApproval) {
+    return {
+      status: 'AWAITING_APPROVAL',
+      labelKey: 'mobile.production.workflow.awaitingTimeApprovalBadge',
+    };
+  }
+  if (input.role === 'dealer' && input.promiseState) {
+    return { status: input.promiseState };
+  }
+  return { status: input.status };
+}

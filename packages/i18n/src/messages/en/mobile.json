@@ -2017,6 +2017,7 @@
       "stageDurationSaved": "Stage duration saved",
       "awaitingTimeApprovalTitle": "Awaiting time approval",
       "awaitingTimeApprovalBody": "Set how long each stage takes (tap a circle marked !). Scheduling stays preliminary until times are approved.",
+      "awaitingTimeApprovalBadge": "Preliminary",
       "workflowAssignedSetTimes": "Workflow assigned — tap stages marked ! to set times",
       "workerAssignmentRequired": "Assign a worker before this stage can start.",
       "canRunInParallel": "Can run in parallel with other stages at this level",
