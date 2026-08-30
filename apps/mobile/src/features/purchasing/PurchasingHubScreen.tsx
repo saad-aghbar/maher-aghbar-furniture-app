@@ -56,6 +56,9 @@ import {
   selectSupplierInvoiceCard,
 } from './selectPurchase';
 
+/** Extra clearance under the list so the last cards clear the floating tab bar. */
+const LIST_BOTTOM_EXTRA = 48;
+
 function PurchasingTitle({
   backFallback,
   titleWeight,
@@ -290,7 +293,8 @@ export function PurchasingHubScreen() {
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
-          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          paddingBottom:
+            theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE + LIST_BOTTOM_EXTRA,
         }}
         refreshControl={
           <RefreshControl
