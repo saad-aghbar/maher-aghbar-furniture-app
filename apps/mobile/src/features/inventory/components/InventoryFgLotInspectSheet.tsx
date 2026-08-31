@@ -1,4 +1,4 @@
-import { Image, Pressable, ScrollView, View } from 'react-native';
+import { Image, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import { localizedName } from '@maher/i18n';
@@ -7,9 +7,10 @@ import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { fgDeliveryStatusLabel } from '../fgFilters';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
   open: boolean;
@@ -35,7 +36,7 @@ function FactRow({
   last?: boolean;
 }) {
   const { isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
 
   return (
     <View
@@ -86,10 +87,11 @@ function ActionChip({
   primary?: boolean;
 }) {
   const { isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
 
   return (
-    <Pressable
+    <AnimatedPressable
+      variant="button"
       accessibilityRole="button"
       onPress={() => {
         void haptics.selection();
@@ -114,7 +116,7 @@ function ActionChip({
       <AppText variant="caption" weight="semibold" color={primary ? 'brand' : 'secondary'} numberOfLines={2}>
         {label}
       </AppText>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -130,7 +132,7 @@ export function InventoryFgLotInspectSheet({
   onReport,
 }: Props) {
   const { t, locale, isRTL, formatDate, formatDateTime } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
   if (!lot) return null;
 
@@ -175,7 +177,7 @@ export function InventoryFgLotInspectSheet({
             borderColor: colors.borderStrong,
             backgroundColor: colors.surface,
             overflow: 'hidden',
-            ...theme.elevation.card,
+            ...orderBoardShadow(colorScheme),
           }}
         >
           <View

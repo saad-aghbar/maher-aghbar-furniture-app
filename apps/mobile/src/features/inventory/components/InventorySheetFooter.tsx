@@ -1,5 +1,6 @@
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -115,7 +116,7 @@ export function InventorySheetFooter({
             borderWidth: 1,
             borderColor: colors.borderStrong,
             opacity: busy ? 0.6 : 1,
-            ...theme.elevation.card,
+            ...orderBoardShadow(colorScheme),
           }}
         >
           <AppText

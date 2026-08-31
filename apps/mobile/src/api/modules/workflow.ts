@@ -348,6 +348,7 @@ export type ProductionSetupStage = {
     imageUrl?: string | null;
     nameEn?: string | null;
     nameAr?: string | null;
+    inventoryItemId?: string | null;
   }>;
   output: {
     id: string | null;

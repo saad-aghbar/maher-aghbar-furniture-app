@@ -1,6 +1,8 @@
 /**
  * Single admin Order Journey classifier — chips, counts, list filter, card CTA.
- * Attention is a cross-cut queue with reasons, not a domain status.
+ * Attention is a soft badge on the home bucket — not its own chip/section.
+ *
+ * Preparing ↔ Production boundary = Release to factory (not setup RELEASED / plan-save).
  */
 
 import type { AdminOrderLifecycle } from './adminOrderLifecycle';
@@ -49,17 +51,26 @@ export type JourneyPrimaryCta =
   | 'release'
   | 'assign_workers'
   | 'open_order'
-  | 'review_request';
+  | 'review_request'
+  | 'edit_plan';
 
 export type AdminOrderJourneyInput = {
   status: string;
   deliveryStatus?: string | null;
   requiredDeliveryDate?: string | null;
   isRfq?: boolean;
-  /** True when SO is DRAFT with 0 POs / setup not RELEASED */
+  /** True when SO is DRAFT with 0 POs / setup not complete */
   productionSetupRequired?: boolean;
   productionSetupStatus?: string | null;
   productionOrderCount?: number;
+  /** Hard boundary: Release to factory crossed (plan locked; may still be Ready to start). */
+  releasedToFactory?: boolean;
+  releasedToFactoryAt?: string | null;
+  /**
+   * True when at least one executable factory task has actually started
+   * (PO actualStartDate / IN_PROGRESS+). Drives Orders In Production presentation.
+   */
+  executionStarted?: boolean;
   productionReadinessSummary?: {
     canStart?: boolean;
     needsSetup?: boolean;
@@ -94,13 +105,39 @@ function isOverdue(date: string | null | undefined, status: string, now: Date): 
   return t < now.getTime();
 }
 
-function isPreparing(input: AdminOrderJourneyInput): boolean {
+function isFactoryReleased(input: AdminOrderJourneyInput): boolean {
+  if (input.releasedToFactory === true) return true;
+  if (input.releasedToFactoryAt) return true;
+  return false;
+}
+
+/** Actual floor execution underway — not merely Released / Ready to start. */
+function isExecutionStarted(input: AdminOrderJourneyInput): boolean {
+  if (input.executionStarted === true) return true;
   const so = String(input.status ?? '').toUpperCase();
-  if (so !== 'DRAFT') return false;
-  if (input.productionSetupStatus === 'RELEASED') return false;
-  if ((input.productionOrderCount ?? 0) > 0) return false;
-  if (input.productionSetupRequired === false) return false;
-  return true;
+  return so === 'IN_PRODUCTION';
+}
+
+/**
+ * Orders → Preparing until Release to factory.
+ * Setup may be RELEASED and POs may exist as PLANNED — still Preparing.
+ * READY_FOR_PRODUCTION without releasedToFactory is still Preparing (post-setup, pre-release).
+ * ON_HOLD stays in Preparing when not yet released (soft badge).
+ */
+function isPreparing(input: AdminOrderJourneyInput): boolean {
+  if (isFactoryReleased(input) || isExecutionStarted(input)) return false;
+  const so = String(input.status ?? '').toUpperCase();
+  if (DONE.has(so)) return false;
+  if (so === 'READY_FOR_DELIVERY') return false;
+  if (so === 'IN_PRODUCTION') return false;
+  return (
+    so === 'DRAFT' ||
+    so === 'CONFIRMED' ||
+    so === 'WAITING_FOR_PAYMENT' ||
+    so === 'WAITING_FOR_MATERIALS' ||
+    so === 'READY_FOR_PRODUCTION' ||
+    so === 'ON_HOLD'
+  );
 }
 
 function resolveAttention(input: AdminOrderJourneyInput, now: Date): JourneyAttention | undefined {
@@ -144,7 +181,8 @@ function resolveAttention(input: AdminOrderJourneyInput, now: Date): JourneyAtte
       actionLabelKey: 'mobile.orders.attentionAction.view_hold',
     };
   }
-  if (so === 'WAITING_FOR_MATERIALS') {
+  // Materials hold after factory release → soft badge on Ready to start / In production.
+  if (so === 'WAITING_FOR_MATERIALS' && isFactoryReleased(input)) {
     return {
       reasonCode: 'WAITING_FOR_MATERIALS',
       reasonLabelKey: 'mobile.orders.attention.WAITING_FOR_MATERIALS',
@@ -162,19 +200,16 @@ function resolveAttention(input: AdminOrderJourneyInput, now: Date): JourneyAtte
       actionLabelKey: 'mobile.orders.attentionAction.review_overdue',
     };
   }
-  if (readiness?.needsSetup || isPreparing(input)) {
-    // Only attention when setup is incomplete AND not just sitting in Preparing bucket
-    if (readiness?.needsSetup && !isPreparing(input)) {
-      return {
-        reasonCode: 'SETUP_INCOMPLETE',
-        reasonLabelKey: 'mobile.orders.attention.SETUP_INCOMPLETE',
-        severity: 'warning',
-        action: 'fix_setup',
-        actionLabelKey: 'mobile.orders.attentionAction.fix_setup',
-      };
-    }
+  if (readiness?.needsSetup && !isPreparing(input)) {
+    return {
+      reasonCode: 'SETUP_INCOMPLETE',
+      reasonLabelKey: 'mobile.orders.attention.SETUP_INCOMPLETE',
+      severity: 'warning',
+      action: 'fix_setup',
+      actionLabelKey: 'mobile.orders.attentionAction.fix_setup',
+    };
   }
-  if ((readiness?.assignment?.missingCount ?? 0) > 0) {
+  if ((readiness?.assignment?.missingCount ?? 0) > 0 && isFactoryReleased(input)) {
     return {
       reasonCode: 'WORKERS_MISSING',
       reasonLabelKey: 'mobile.orders.attention.WORKERS_MISSING',
@@ -194,16 +229,22 @@ function primaryCtaFor(
   if (input.isRfq) return 'review_request';
   if (attention?.action === 'fix_setup') return 'continue_setup';
   if (attention?.action === 'assign_workers') return 'assign_workers';
+  if (bucket === 'ready_to_start') return 'edit_plan';
   if (bucket === 'preparing') {
-    if (input.productionSetupStatus === 'READY_FOR_RELEASE') return 'release';
-    return 'continue_setup';
+    if (input.productionSetupRequired || input.productionSetupStatus !== 'RELEASED') {
+      if (input.productionSetupStatus === 'READY_FOR_RELEASE') return 'release';
+      return 'continue_setup';
+    }
+    if (input.productionReadinessSummary?.canStart) return 'release';
+    return 'assign_workers';
   }
-  if (bucket === 'ready_to_start') return 'assign_workers';
+  if (bucket === 'in_production') return 'open_order';
   return 'open_order';
 }
 
 /**
  * Authoritative journey classification for admin Orders desk.
+ * Never returns `needs_attention` as a bucket — attention rides as a soft badge.
  */
 export function classifyAdminOrderJourney(input: AdminOrderJourneyInput): AdminOrderJourney {
   const so = String(input.status ?? '').toUpperCase();
@@ -230,136 +271,68 @@ export function classifyAdminOrderJourney(input: AdminOrderJourneyInput): AdminO
   }
 
   if (so === 'DELIVERED' || so === 'COMPLETED' || del === 'DELIVERED') {
-    return { journeyBucket: 'delivered', readiness, primaryCta: 'open_order' };
+    return {
+      journeyBucket: 'delivered',
+      attention: resolveAttention(input, now),
+      readiness,
+      primaryCta: 'open_order',
+    };
   }
   if (del === 'OUT_FOR_DELIVERY') {
-    return { journeyBucket: 'shipped', readiness, primaryCta: 'open_order' };
+    return {
+      journeyBucket: 'shipped',
+      attention: resolveAttention(input, now),
+      readiness,
+      primaryCta: 'open_order',
+    };
   }
   if (so === 'READY_FOR_DELIVERY' || del === 'PLANNED' || del === 'READY') {
-    return { journeyBucket: 'ready_to_ship', readiness, primaryCta: 'open_order' };
-  }
-  if (so === 'IN_PRODUCTION') {
-    const attention = resolveAttention(input, now);
     return {
-      journeyBucket: attention ? 'needs_attention' : 'in_production',
-      attention,
+      journeyBucket: 'ready_to_ship',
+      attention: resolveAttention(input, now),
       readiness,
-      primaryCta: primaryCtaFor(attention ? 'needs_attention' : 'in_production', attention, input),
+      primaryCta: 'open_order',
     };
   }
 
-  // Attention before Preparing so hold/materials/overdue/workers surface
-  const attentionEarly = resolveAttention(input, now);
-  if (
-    attentionEarly &&
-    (so === 'ON_HOLD' ||
-      so === 'WAITING_FOR_MATERIALS' ||
-      attentionEarly.reasonCode === 'OVERDUE' ||
-      attentionEarly.reasonCode === 'WORKERS_MISSING' ||
-      attentionEarly.reasonCode === 'SETUP_INCOMPLETE')
-  ) {
-    // Preparing orders stay in Preparing (not Attention) unless overdue/hold/materials
-    if (isPreparing(input) && attentionEarly.reasonCode === 'SETUP_INCOMPLETE') {
-      // fall through to preparing
-    } else if (isPreparing(input) && attentionEarly.reasonCode === 'WORKERS_MISSING') {
-      // no workers yet pre-release — stay preparing
-    } else if (
-      isPreparing(input) &&
-      attentionEarly.reasonCode !== 'OVERDUE' &&
-      so !== 'ON_HOLD' &&
-      so !== 'WAITING_FOR_MATERIALS'
-    ) {
-      // fall through
-    } else {
-      return {
-        journeyBucket: 'needs_attention',
-        attention: attentionEarly,
-        readiness,
-        primaryCta: primaryCtaFor('needs_attention', attentionEarly, input),
-      };
-    }
+  // Released to factory but no executable task started yet → Ready to start
+  if (isFactoryReleased(input) && !isExecutionStarted(input)) {
+    const attention = resolveAttention(input, now);
+    return {
+      journeyBucket: 'ready_to_start',
+      attention,
+      readiness,
+      primaryCta: primaryCtaFor('ready_to_start', attention, input),
+    };
+  }
+
+  // First real task started → Orders In Production
+  if (isExecutionStarted(input)) {
+    const attention = resolveAttention(input, now);
+    return {
+      journeyBucket: 'in_production',
+      attention,
+      readiness,
+      primaryCta: 'open_order',
+    };
   }
 
   if (isPreparing(input)) {
+    const attention = resolveAttention(input, now);
     return {
       journeyBucket: 'preparing',
+      attention,
       readiness,
-      primaryCta: primaryCtaFor('preparing', undefined, input),
-    };
-  }
-
-  // Released setup / open POs leave Preparing for worker assignment or floor
-  if (
-    input.productionSetupStatus === 'RELEASED' ||
-    (input.productionOrderCount ?? 0) > 0
-  ) {
-    const attention = resolveAttention(input, now);
-    if (attention) {
-      return {
-        journeyBucket: 'needs_attention',
-        attention,
-        readiness,
-        primaryCta: primaryCtaFor('needs_attention', attention, input),
-      };
-    }
-    return {
-      journeyBucket: 'ready_to_start',
-      readiness,
-      primaryCta: 'assign_workers',
-    };
-  }
-
-  if (
-    readinessSummary?.canStart &&
-    (so === 'CONFIRMED' || so === 'READY_FOR_PRODUCTION')
-  ) {
-    const attention = resolveAttention(input, now);
-    if (attention) {
-      return {
-        journeyBucket: 'needs_attention',
-        attention,
-        readiness,
-        primaryCta: primaryCtaFor('needs_attention', attention, input),
-      };
-    }
-    return {
-      journeyBucket: 'ready_to_start',
-      readiness,
-      primaryCta: 'assign_workers',
-    };
-  }
-
-  if (so === 'CONFIRMED' || so === 'READY_FOR_PRODUCTION' || so === 'WAITING_FOR_PAYMENT') {
-    const attention = resolveAttention(input, now);
-    if (attention) {
-      return {
-        journeyBucket: 'needs_attention',
-        attention,
-        readiness,
-        primaryCta: primaryCtaFor('needs_attention', attention, input),
-      };
-    }
-    return {
-      journeyBucket: 'ready_to_start',
-      readiness,
-      primaryCta: 'assign_workers',
+      primaryCta: primaryCtaFor('preparing', attention, input),
     };
   }
 
   const attention = resolveAttention(input, now);
-  if (attention) {
-    return {
-      journeyBucket: 'needs_attention',
-      attention,
-      readiness,
-      primaryCta: primaryCtaFor('needs_attention', attention, input),
-    };
-  }
-
   return {
     journeyBucket: 'preparing',
+    attention,
     readiness,
-    primaryCta: 'continue_setup',
+    primaryCta: primaryCtaFor('preparing', attention, input),
   };
 }
 

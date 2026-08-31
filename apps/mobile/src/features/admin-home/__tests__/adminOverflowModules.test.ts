@@ -1,5 +1,9 @@
 import type { AuthUser } from '@maher/types';
-import { filterAdminOverflowModules } from '../adminOverflowModules';
+import {
+  ADMIN_OVERFLOW_MODULES,
+  filterAdminOverflowModules,
+  packOverflowPlaceRows,
+} from '../adminOverflowModules';
 
 const baseUser = {
   id: 'u1',
@@ -37,6 +41,22 @@ describe('filterAdminOverflowModules', () => {
     expect(more.some((m) => m.key === 'scheduling')).toBe(true);
   });
 
+  it('keeps overflow module keys unique', () => {
+    const keys = ADMIN_OVERFLOW_MODULES.map((m) => m.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('dedupes the same module key on a surface', () => {
+    const user = withPerms(
+      'report.sales.read',
+      'report.production.read',
+      'report.financial.read',
+      'report.inventory.read',
+    );
+    const moreKeys = filterAdminOverflowModules(user, 'more').map((m) => m.key);
+    expect(moreKeys.filter((k) => k === 'reports')).toEqual(['reports']);
+  });
+
   it('shows reports when staff has any report permission', () => {
     const user = withPerms('report.sales.read');
     const more = filterAdminOverflowModules(user, 'more');
@@ -48,5 +68,18 @@ describe('filterAdminOverflowModules', () => {
     const worker = withPerms('production-task.update-own');
     expect(filterAdminOverflowModules(dealer, 'more').some((m) => m.key === 'scheduling')).toBe(false);
     expect(filterAdminOverflowModules(worker, 'more').some((m) => m.key === 'scheduling')).toBe(false);
+  });
+});
+
+describe('packOverflowPlaceRows', () => {
+  it('pairs consecutive tiles two-up', () => {
+    expect(packOverflowPlaceRows(['a', 'b', 'c', 'd'])).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+  });
+
+  it('puts a leftover tile on its own row so flex can fill the width', () => {
+    expect(packOverflowPlaceRows(['a', 'b', 'c'])).toEqual([['a', 'b'], ['c']]);
   });
 });

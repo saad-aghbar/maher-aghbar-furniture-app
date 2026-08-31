@@ -149,6 +149,7 @@ export const SYSTEM_STAFF_PRESETS = {
       'purchase-order.approve',
       'supplier-invoice.read',
       'supplier-invoice.create',
+      'supplier-invoice.update',
       'inventory.read',
       'inventory.receive',
       'notification.read',

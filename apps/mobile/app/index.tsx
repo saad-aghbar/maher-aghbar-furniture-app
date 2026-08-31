@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import * as Linking from 'expo-linking';
 import { useRootNavigationState, useRouter, type Href } from 'expo-router';
 import { useAuth } from '@/auth/AuthProvider';
 import { BrandMark } from '@/components/BrandMark';

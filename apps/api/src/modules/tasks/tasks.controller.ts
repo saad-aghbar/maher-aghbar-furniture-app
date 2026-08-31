@@ -39,7 +39,7 @@ export class TasksController {
   @RequirePermissions('production-order.assign')
   @Post(':id/assign')
   assign(@Param('id') id: string, @Body() dto: AssignTaskDto, @CurrentUser() user: AuthUser) {
-    return this.tasks.assign(id, dto, user.permissions);
+    return this.tasks.assign(id, dto, user.permissions, user.id);
   }
 
   @RequireAnyPermissions('production-task.update-own', 'production-task.update-any')

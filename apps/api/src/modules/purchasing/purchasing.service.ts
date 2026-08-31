@@ -1,10 +1,12 @@
 import { BadRequestException, Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
 import { PurchaseOrderStatus, PurchaseRequestStatus, Prisma } from '@maher/database';
+import type { WhatsAppProvider } from '@maher/integrations';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { roundMoney } from '../../common/helpers/money.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingQueueService } from '../scheduling/scheduling-queue';
+import { WHATSAPP_PROVIDER } from '../../integrations/integrations.module';
 import { classifyMaterialDemand } from './material-demand';
 import { scaleMaterialQty } from '../scheduling/domain/material-readiness';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
@@ -15,6 +17,37 @@ const OPEN_PR_STATUSES: PurchaseRequestStatus[] = [
   PurchaseRequestStatus.APPROVED,
 ];
 
+export type PurchaseWhatsAppResult = {
+  ok: boolean;
+  to: string | null;
+  body: string;
+  error?: string;
+};
+
+export type PurchaseOrderSendResult = {
+  purchaseOrder: {
+    id: string;
+    number: string;
+    status: PurchaseOrderStatus;
+    supplierId: string;
+    whatsappSentAt: Date | null;
+    whatsappLastBody: string | null;
+    whatsappLastTo: string | null;
+    supplier: {
+      id: string;
+      name: string;
+      phone: string | null;
+      whatsappPhone: string | null;
+    };
+    lines: Array<{
+      description: string;
+      quantity: Prisma.Decimal | number | string;
+      unit: string;
+    }>;
+  };
+  whatsapp: PurchaseWhatsAppResult;
+};
+
 @Injectable()
 export class PurchasingService {
   private readonly logger = new Logger(PurchasingService.name);
@@ -23,6 +56,7 @@ export class PurchasingService {
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
     private readonly notifications: NotificationsService,
+    @Inject(WHATSAPP_PROVIDER) private readonly whatsapp: WhatsAppProvider,
     @Optional()
     @Inject(forwardRef(() => SchedulingQueueService))
     private readonly schedulingQueue?: SchedulingQueueService,
@@ -269,6 +303,314 @@ export class PurchasingService {
       });
     }
     return supplier;
+  }
+
+  /** Prefer WhatsApp number; fall back to phone. */
+  supplierWhatsAppTo(supplier: {
+    whatsappPhone?: string | null;
+    phone?: string | null;
+  }): string | null {
+    const raw = (supplier.whatsappPhone ?? supplier.phone ?? '').trim();
+    return raw || null;
+  }
+
+  buildPurchaseOrderWhatsAppBody(po: {
+    number: string;
+    lines: Array<{ description: string; quantity: unknown; unit?: string | null }>;
+  }): string {
+    const lines = po.lines
+      .map((l) => {
+        const qty = Number(l.quantity);
+        const qtyLabel = Number.isFinite(qty) ? String(qty) : String(l.quantity);
+        const unit = l.unit?.trim() ? ` ${l.unit.trim()}` : '';
+        return `• ${l.description}: ${qtyLabel}${unit}`;
+      })
+      .join('\n');
+    return `Purchase order ${po.number}\nPlease supply:\n${lines}\nThank you.`;
+  }
+
+  /**
+   * Convert an APPROVED PR into a DRAFT PO.
+   * Uses selected/cheapest offer when present; otherwise preferredSupplier + standardCost.
+   * Does not require certification (supplier was already chosen on the request).
+   */
+  async convertRequestToPo(prId: string, userId?: string) {
+    const pr = await this.prisma.purchaseRequest.findUniqueOrThrow({
+      where: { id: prId },
+      include: {
+        lines: { include: { inventoryItem: { select: { id: true, standardCost: true, unit: true } } } },
+        offers: true,
+      },
+    });
+    if (pr.status !== PurchaseRequestStatus.APPROVED) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Purchase request must be approved before conversion.',
+      });
+    }
+    if (pr.purchaseOrderId) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Purchase request already converted.',
+      });
+    }
+
+    const selectedOffer =
+      pr.offers.find((o) => o.isSelected) ??
+      [...pr.offers].sort((a, b) => {
+        const priceDiff = Number(a.unitPrice) - Number(b.unitPrice);
+        if (priceDiff !== 0) return priceDiff;
+        return Number(b.qualityScore ?? 0) - Number(a.qualityScore ?? 0);
+      })[0];
+
+    let supplierId: string;
+    let unitPriceForAll: number | null = null;
+    let selectedOfferId: string | null = null;
+
+    if (selectedOffer) {
+      supplierId = selectedOffer.supplierId;
+      unitPriceForAll = Number(selectedOffer.unitPrice);
+      selectedOfferId = selectedOffer.id;
+    } else if (pr.preferredSupplierId) {
+      supplierId = pr.preferredSupplierId;
+    } else {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message:
+          'Choose a preferred supplier on the request, or add a supplier offer, before converting.',
+      });
+    }
+
+    const number = await this.sequences.next('PORD', 'PORD');
+    const lines = pr.lines.map((l) => {
+      const unitPrice =
+        unitPriceForAll != null && Number.isFinite(unitPriceForAll)
+          ? unitPriceForAll
+          : Number(l.inventoryItem?.standardCost ?? 0) || 0;
+      const lineTotal = Number(l.quantity) * unitPrice;
+      return {
+        description: l.description,
+        quantity: roundMoney(Number(l.quantity)),
+        unit: l.unit || l.inventoryItem?.unit || 'pcs',
+        unitPrice: roundMoney(unitPrice),
+        taxRate: roundMoney(0.16),
+        lineTotal: roundMoney(lineTotal * 1.16),
+        inventoryItemId: l.inventoryItemId ?? undefined,
+      };
+    });
+    const subtotal = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice), 0);
+    const taxAmount = subtotal * 0.16;
+
+    const po = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.purchaseOrder.create({
+        data: {
+          number,
+          supplierId,
+          warehouseId: pr.warehouseId ?? undefined,
+          status: PurchaseOrderStatus.DRAFT,
+          subtotal: roundMoney(subtotal),
+          taxAmount: roundMoney(taxAmount),
+          total: roundMoney(subtotal + taxAmount),
+          notes: pr.reason ?? undefined,
+          lines: { create: lines },
+        },
+        include: { lines: true, supplier: true },
+      });
+      await tx.purchaseRequest.update({
+        where: { id: prId },
+        data: {
+          status: PurchaseRequestStatus.ORDERED,
+          purchaseOrderId: created.id,
+        },
+      });
+      if (selectedOfferId) {
+        await tx.supplierQuoteOffer.update({
+          where: { id: selectedOfferId },
+          data: { isSelected: true },
+        });
+      }
+      return created;
+    });
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: userId,
+        action: 'purchase-request.convert',
+        entityType: 'PurchaseOrder',
+        entityId: po.id,
+        newValues: { purchaseRequestId: prId },
+      },
+    });
+    return po;
+  }
+
+  /**
+   * Mark PO SENT and WhatsApp the supplier. Always persists SENT even if WhatsApp fails.
+   */
+  async sendPurchaseOrder(
+    poId: string,
+    userId?: string,
+  ): Promise<PurchaseOrderSendResult> {
+    const existing = await this.prisma.purchaseOrder.findUniqueOrThrow({
+      where: { id: poId },
+      include: {
+        supplier: true,
+        lines: true,
+      },
+    });
+    if (
+      existing.status !== PurchaseOrderStatus.APPROVED &&
+      existing.status !== PurchaseOrderStatus.SENT
+    ) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Only approved or sent purchase orders can be messaged to the supplier.',
+      });
+    }
+
+    const body = this.buildPurchaseOrderWhatsAppBody(existing);
+    const to = this.supplierWhatsAppTo(existing.supplier);
+    let whatsapp: PurchaseWhatsAppResult = { ok: false, to, body };
+
+    if (!to) {
+      whatsapp = {
+        ok: false,
+        to: null,
+        body,
+        error: 'Supplier has no WhatsApp or phone number.',
+      };
+    } else {
+      try {
+        const result = await this.whatsapp.send({ to, body });
+        whatsapp = { ok: Boolean(result.ok), to, body };
+        if (!result.ok) {
+          whatsapp.error = 'WhatsApp provider reported failure.';
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'WhatsApp send failed.';
+        this.logger.warn(`PO ${existing.number} WhatsApp failed: ${message}`);
+        whatsapp = { ok: false, to, body, error: message };
+      }
+    }
+
+    const po = await this.prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: {
+        status: PurchaseOrderStatus.SENT,
+        whatsappSentAt: new Date(),
+        whatsappLastBody: body,
+        whatsappLastTo: to,
+      },
+      include: { supplier: true, lines: true },
+    });
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: userId,
+        action:
+          existing.status === PurchaseOrderStatus.SENT
+            ? 'purchase-order.resend-whatsapp'
+            : 'purchase-order.send',
+        entityType: 'PurchaseOrder',
+        entityId: poId,
+        newValues: {
+          whatsappOk: whatsapp.ok,
+          whatsappTo: to,
+        },
+      },
+    });
+
+    return { purchaseOrder: po, whatsapp };
+  }
+
+  /**
+   * One-shot: convert PR → approve PO → send + WhatsApp.
+   * Accepts APPROVED (not yet converted) or already-linked ORDERED with a draft/approved PO.
+   */
+  async sendRequestToSupplier(prId: string, userId?: string): Promise<PurchaseOrderSendResult> {
+    let pr = await this.prisma.purchaseRequest.findUniqueOrThrow({
+      where: { id: prId },
+      include: { purchaseOrder: true },
+    });
+
+    if (pr.status === PurchaseRequestStatus.APPROVED && !pr.purchaseOrderId) {
+      await this.convertRequestToPo(prId, userId);
+      pr = await this.prisma.purchaseRequest.findUniqueOrThrow({
+        where: { id: prId },
+        include: { purchaseOrder: true },
+      });
+    }
+
+    if (!pr.purchaseOrderId || !pr.purchaseOrder) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Purchase request must be approved before sending to the supplier.',
+      });
+    }
+
+    let poStatus = pr.purchaseOrder.status;
+    if (poStatus === PurchaseOrderStatus.DRAFT) {
+      await this.prisma.purchaseOrder.update({
+        where: { id: pr.purchaseOrderId },
+        data: { status: PurchaseOrderStatus.APPROVED },
+      });
+      await this.prisma.auditEvent.create({
+        data: {
+          userId: userId,
+          action: 'purchase-order.approve',
+          entityType: 'PurchaseOrder',
+          entityId: pr.purchaseOrderId,
+        },
+      });
+      poStatus = PurchaseOrderStatus.APPROVED;
+    }
+
+    if (poStatus === PurchaseOrderStatus.SENT) {
+      // Resend WhatsApp without flipping status again.
+      const po = await this.prisma.purchaseOrder.findUniqueOrThrow({
+        where: { id: pr.purchaseOrderId },
+        include: { supplier: true, lines: true },
+      });
+      const body = this.buildPurchaseOrderWhatsAppBody(po);
+      const to = this.supplierWhatsAppTo(po.supplier);
+      let whatsapp: PurchaseWhatsAppResult = { ok: false, to, body };
+      if (!to) {
+        whatsapp = {
+          ok: false,
+          to: null,
+          body,
+          error: 'Supplier has no WhatsApp or phone number.',
+        };
+      } else {
+        try {
+          const result = await this.whatsapp.send({ to, body });
+          whatsapp = { ok: Boolean(result.ok), to, body };
+          if (!result.ok) whatsapp.error = 'WhatsApp provider reported failure.';
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'WhatsApp send failed.';
+          whatsapp = { ok: false, to, body, error: message };
+        }
+      }
+      const updated = await this.prisma.purchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          whatsappSentAt: new Date(),
+          whatsappLastBody: body,
+          whatsappLastTo: to,
+        },
+        include: { supplier: true, lines: true },
+      });
+      return { purchaseOrder: updated, whatsapp };
+    }
+
+    if (poStatus !== PurchaseOrderStatus.APPROVED) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: `Cannot send purchase order in status ${poStatus}.`,
+      });
+    }
+
+    return this.sendPurchaseOrder(pr.purchaseOrderId, userId);
   }
 
   async materialDemand() {

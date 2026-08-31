@@ -68,7 +68,6 @@ export function CreatePurchaseOrderSheet({
     enabled: open,
   });
   const createMutation = useCreatePurchaseMutation();
-  const wasOpen = useRef(false);
 
   useEffect(() => {
     if (open && !wasOpen.current) {

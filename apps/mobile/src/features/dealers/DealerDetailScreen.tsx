@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -14,7 +14,13 @@ import { localizedName } from '@maher/i18n';
 import { useAuth } from '@/auth/AuthProvider';
 import { listAdminProducts } from '@/api/modules/catalogAdmin';
 import { listInvoices, openInvoicePdf } from '@/api/modules/invoices';
-import { getStatement, listPayments, openPaymentPdf, openStatementPdf } from '@/api/modules/payments';
+import {
+  getDealerFinanceSummary,
+  getStatement,
+  listPayments,
+  openPaymentPdf,
+  openStatementPdf,
+} from '@/api/modules/payments';
 import { listSalesOrders } from '@/api/modules/sales-orders';
 import { queryKeys } from '@/api/queryKeys';
 import { AppText } from '@/components/AppText';
@@ -46,6 +52,7 @@ import {
 } from './components/DealerCrmSheets';
 import type { CustomerAddress } from '@/api/modules/customers';
 import { DealerBoard } from './components/DealerBoard';
+import { DealerCreditBoard } from './components/DealerCreditBoard';
 import { DeleteDealerSheet } from './components/DeleteDealerSheet';
 import { DealerEmptyPanel } from './components/DealerEmptyPanel';
 import { DealerInvoicesList } from './components/DealerInvoicesList';
@@ -54,7 +61,9 @@ import { DealerPaymentsList } from './components/DealerPaymentsList';
 import { DealerPriceList } from './components/DealerPriceList';
 import { DealerSummaryRail } from './components/DealerSummaryRail';
 import { EditDealerSheet } from './components/EditDealerSheet';
+import { StatementRangeSheet } from './components/StatementRangeSheet';
 import { dealerIdentitySubtitle, hasVisibleContact } from './dealerDetailDisplay';
+import type { StatementPdfRange } from '@/features/account/selectStatement';
 import {
   dealerTypeLabel,
   filterCompletedOrders,
@@ -96,6 +105,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
   const canDelete = can(user, 'customer.delete');
   const canContact = can(user, 'contact.manage');
   const canAddress = can(user, 'address.manage');
+  const canFinance = can(user, 'payment.read');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const [tab, setTab] = useState<DealerTab>('orders');
@@ -106,6 +116,8 @@ export function DealerDetailScreen({ dealerId }: Props) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [priceOpen, setPriceOpen] = useState(false);
+  const [statementRangeOpen, setStatementRangeOpen] = useState(false);
+  const pendingStatementRange = useRef<StatementPdfRange | null>(null);
   const [viewNote, setViewNote] = useState<{
     body: string;
     noteId?: string | null;
@@ -143,6 +155,12 @@ export function DealerDetailScreen({ dealerId }: Props) {
     enabled: allowed && tab === 'soa',
   });
 
+  const financeQuery = useQuery({
+    queryKey: queryKeys.payments.dealerSummary(dealerId),
+    queryFn: () => getDealerFinanceSummary(dealerId),
+    enabled: allowed && canFinance,
+  });
+
   const productsQuery = useQuery({
     queryKey: ['products-pick'],
     queryFn: () => listAdminProducts({ pageSize: 200, isActive: 'true' }),
@@ -165,12 +183,21 @@ export function DealerDetailScreen({ dealerId }: Props) {
     { key: 'priceList', label: t('customers.priceList') },
   ];
 
-  const downloadStatementPdf = async () => {
+  const downloadStatementPdf = () => {
     void haptics.selection();
+    pendingStatementRange.current = null;
+    setStatementRangeOpen(true);
+  };
+
+  const continueStatementPdf = async (range: StatementPdfRange) => {
     const opts = await pickPdfOptions();
     if (!opts) return;
     try {
-      await openStatementPdf(dealerId, opts);
+      await openStatementPdf(dealerId, {
+        ...opts,
+        from: range.from,
+        to: range.to,
+      });
     } catch {
       showToast({ variant: 'error', message: t('mobile.account.pdfFailed') });
     }
@@ -208,6 +235,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
     void ordersQuery.refetch();
     void notesQuery.refetch();
     void pricesQuery.refetch();
+    void financeQuery.refetch();
   };
 
   if (!allowed) {
@@ -264,9 +292,16 @@ export function DealerDetailScreen({ dealerId }: Props) {
   const addresses = dealer.addresses ?? [];
   const notes = notesQuery.data ?? [];
   const prices = pricesQuery.data ?? [];
-  const outstanding = Number(dealer.outstandingTotal ?? 0);
+  const outstanding = Number(
+    financeQuery.data?.amountDue ?? dealer.outstandingTotal ?? 0,
+  );
   const paid = Number(dealer.paidTotal ?? 0);
-  const hasBalance = outstanding > 0.009;
+  const availableCredit = Number(
+    financeQuery.data?.availableCredit ??
+      dealer.availableCredit ??
+      statementQuery.data?.availableCredit ??
+      0,
+  );
   const status = String(dealer.status || 'ACTIVE');
   const code = dealer.code?.trim() || '';
 
@@ -572,96 +607,12 @@ export function DealerDetailScreen({ dealerId }: Props) {
         </View>
       </ListItemEnter>
 
-      {/* Money board */}
       <ListItemEnter index={2}>
-        <View
-          style={{
-            borderRadius: theme.radius.xl,
-            borderWidth: 1,
-            borderColor: hasBalance ? colors.warning : colors.borderStrong,
-            backgroundColor: colors.surface,
-            overflow: 'hidden',
-            ...orderBoardShadow(colorScheme),
-          }}
-        >
-          <View
-            style={{
-              paddingHorizontal: theme.spacing.lg,
-              paddingTop: theme.spacing.lg,
-              paddingBottom: theme.spacing.md,
-              gap: 4,
-              backgroundColor: hasBalance ? colors.warningSoft : colors.surfaceSecondary,
-              ...(isRTL
-                ? { paddingRight: theme.spacing.lg + 4 }
-                : { paddingLeft: theme.spacing.lg + 4 }),
-            }}
-          >
-            <AppText
-              variant="caption"
-              color="muted"
-              style={{
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                letterSpacing: locale === 'ar' ? 0 : 0.55,
-                fontSize: 10,
-                textAlign: isRTL ? 'right' : 'left',
-              }}
-            >
-              {t('customers.amountLeft')}
-            </AppText>
-            <AppText
-              weight={titleWeight}
-              dir="ltr"
-              style={{
-                fontSize: hasBalance ? 26 : 22,
-                lineHeight: hasBalance ? 30 : 26,
-                textAlign: isRTL ? 'right' : 'left',
-                color: hasBalance ? colors.warning : colors.textPrimary,
-              }}
-            >
-              {formatCurrency(outstanding)}
-            </AppText>
-          </View>
-          <Divider compact />
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: theme.spacing.md,
-              paddingHorizontal: theme.spacing.lg,
-              paddingVertical: theme.spacing.md,
-              ...(isRTL
-                ? { paddingRight: theme.spacing.lg + 4 }
-                : { paddingLeft: theme.spacing.lg + 4 }),
-            }}
-          >
-            <AppText
-              variant="caption"
-              color="muted"
-              style={{
-                textTransform: 'uppercase',
-                letterSpacing: 0.45,
-                fontSize: 10,
-                flexShrink: 0,
-              }}
-            >
-              {t('customers.amountPaid')}
-            </AppText>
-            <AppText
-              weight="semibold"
-              dir="ltr"
-              numberOfLines={1}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                textAlign: isRTL ? 'left' : 'right',
-                fontSize: 14,
-              }}
-            >
-              {formatCurrency(paid)}
-            </AppText>
-          </View>
-        </View>
+        <DealerCreditBoard
+          amountDue={outstanding}
+          availableCredit={availableCredit}
+          paidTotal={paid}
+        />
       </ListItemEnter>
 
       {/* Profile facts */}
@@ -801,9 +752,7 @@ export function DealerDetailScreen({ dealerId }: Props) {
                     <MetaRow
                       icon="cash-outline"
                       label={t('accounting.accountCredit')}
-                      value={formatCurrency(
-                        Number(statementQuery.data.availableCredit ?? 0),
-                      )}
+                      value={formatCurrency(availableCredit)}
                       valueLtr
                     />
                     {Math.abs(Number(statementQuery.data.openingBalance ?? 0)) >
@@ -1167,6 +1116,23 @@ export function DealerDetailScreen({ dealerId }: Props) {
         pricedProductIds={prices
           .map((row) => row.productId || row.product?.id)
           .filter((id): id is string => Boolean(id))}
+      />
+      <StatementRangeSheet
+        open={statementRangeOpen}
+        onClose={() => {
+          pendingStatementRange.current = null;
+          setStatementRangeOpen(false);
+        }}
+        onConfirm={(range) => {
+          pendingStatementRange.current = range;
+          setStatementRangeOpen(false);
+        }}
+        onClosed={() => {
+          const range = pendingStatementRange.current;
+          pendingStatementRange.current = null;
+          if (!range) return;
+          void continueStatementPdf(range);
+        }}
       />
       {pdfDownloadSheet}
     </ScrollableScreen>

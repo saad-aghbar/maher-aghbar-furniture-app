@@ -45,10 +45,10 @@ function localizedStage(kit: WipKitCard, locale: string): string {
 
 function kitAccent(
   status: string,
-  colors: { info: string; warning: string; success: string; textMuted: string },
+  colors: { brand: string; warning: string; success: string; textMuted: string },
 ): string {
   if (status === 'CLAIMED') return colors.warning;
-  if (status === 'READY') return colors.info;
+  if (status === 'READY') return colors.success;
   if (status === 'CONSUMED') return colors.success;
   return colors.textMuted;
 }

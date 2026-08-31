@@ -112,6 +112,21 @@ export async function closeRequest(id: string): Promise<RequestDetail> {
   return apiPost<RequestDetail>(`/requests/${encodeURIComponent(id)}/close`);
 }
 
+export async function confirmRequestDelivery(id: string, date: string): Promise<RequestDetail> {
+  return apiPost<RequestDetail>(`/requests/${encodeURIComponent(id)}/confirm-delivery`, { date });
+}
+
+export async function changeRequestDelivery(
+  id: string,
+  date: string,
+  reason: string,
+): Promise<RequestDetail> {
+  return apiPost<RequestDetail>(`/requests/${encodeURIComponent(id)}/change-delivery`, {
+    date,
+    reason,
+  });
+}
+
 export async function discardRequestDraft(id: string): Promise<{ id: string; discarded: boolean }> {
   return apiDelete<{ id: string; discarded: boolean }>(
     `/requests/${encodeURIComponent(id)}`,

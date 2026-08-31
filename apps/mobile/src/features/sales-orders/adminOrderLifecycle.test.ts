@@ -14,6 +14,7 @@ describe('adminOrderLifecycle', () => {
   it('exposes Piece 13 human label fallbacks', () => {
     expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.rfq).toBe('Customer Requests');
     expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.ready_to_ship).toBe('Ready');
+    expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.ready_to_start).toBe('Ready to start');
     expect(ADMIN_LIFECYCLE_LABEL_FALLBACK.needs_attention).toBe('Attention');
     expect(adminLifecycleHumanLabel('shipped')).toBe('Shipped');
   });
@@ -27,16 +28,32 @@ describe('adminOrderLifecycle', () => {
     ).toBe('shipped');
   });
 
-  it('flags missing workers as needs_attention', () => {
+  it('missing workers soft-badge on In production (no Attention bucket)', () => {
     expect(
       classifyAdminOrderLifecycle({
         status: 'CONFIRMED',
+        productionSetupStatus: 'RELEASED',
+        productionOrderCount: 1,
+        releasedToFactory: false,
+        executionStarted: false,
         productionReadinessSummary: {
           needsSetup: true,
           assignment: { missingCount: 2 },
         },
       }),
-    ).toBe('needs_attention');
+    ).toBe('preparing');
+    expect(
+      classifyAdminOrderLifecycle({
+        status: 'IN_PRODUCTION',
+        releasedToFactory: true,
+        executionStarted: true,
+        productionOrderCount: 1,
+        productionReadinessSummary: {
+          needsSetup: true,
+          assignment: { missingCount: 2 },
+        },
+      }),
+    ).toBe('in_production');
   });
 
   it('maps DRAFT with 0 POs to preparing only', () => {
@@ -50,13 +67,38 @@ describe('adminOrderLifecycle', () => {
     ).toBe('preparing');
   });
 
-  it('ready_to_start when canStart on confirmed SO', () => {
+  it('released not started → Ready to start; first start → In production', () => {
     expect(
       classifyAdminOrderLifecycle({
         status: 'READY_FOR_PRODUCTION',
+        productionSetupStatus: 'RELEASED',
+        productionOrderCount: 1,
+        releasedToFactory: true,
+        executionStarted: false,
         productionReadinessSummary: { canStart: true, needsSetup: false },
       }),
     ).toBe('ready_to_start');
+    expect(
+      classifyAdminOrderLifecycle({
+        status: 'IN_PRODUCTION',
+        releasedToFactory: true,
+        executionStarted: true,
+        productionOrderCount: 1,
+      }),
+    ).toBe('in_production');
+  });
+
+  it('plan-ready confirmed SO stays Preparing until Release to factory', () => {
+    expect(
+      classifyAdminOrderLifecycle({
+        status: 'READY_FOR_PRODUCTION',
+        productionSetupStatus: 'RELEASED',
+        productionOrderCount: 1,
+        releasedToFactory: false,
+        executionStarted: false,
+        productionReadinessSummary: { canStart: true, needsSetup: false },
+      }),
+    ).toBe('preparing');
   });
 
   it('builds action hints from readiness', () => {

@@ -97,6 +97,9 @@ export class PdfController {
       meta.push(`${m.validUntil}: ${q.expirationDate.toISOString().slice(0, 10)}`);
     }
     if (q.paymentTerms) meta.push(`${m.paymentTerms}: ${q.paymentTerms}`);
+    if (q.offeredDeliveryDate) {
+      meta.push(`${m.factoryDelivery}: ${q.offeredDeliveryDate.toISOString().slice(0, 10)}`);
+    }
     if (q.deliveryTerms) meta.push(`${m.deliveryTerms}: ${q.deliveryTerms}`);
     if (q.customerNotes) meta.push(`${m.notes}: ${q.customerNotes}`);
 

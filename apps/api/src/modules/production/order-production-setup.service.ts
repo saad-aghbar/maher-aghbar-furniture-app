@@ -525,6 +525,9 @@ export class OrderProductionSetupService {
       materialCosts,
     );
 
+    const factoryReleased = await this.isFactoryReleasedForSalesOrder(salesOrderId);
+    const planEditable = !factoryReleased;
+
     return {
       id: setup.id,
       salesOrderId: setup.salesOrderId,
@@ -536,10 +539,15 @@ export class OrderProductionSetupService {
       validation,
       materialReadiness: readiness.summary,
       costingHook: PIECE2_EXPECTED_MATERIAL_COSTING_HOOK,
+      /** True until Confirm / factory release — materials, packaging, path stay editable. */
+      planEditable,
+      factoryReleased,
       postReleaseEditing: {
-        locked: setup.status === SalesOrderProductionSetupStatus.RELEASED,
+        locked: factoryReleased,
         revisionSystem: false,
-        note: 'Released setups stay SETUP_LOCKED. No reopen/revision flow in Piece 4.',
+        note: factoryReleased
+          ? 'Setup is locked after Confirm / factory work starts.'
+          : 'Preparing: materials, packaging, and path can still be edited for this order.',
       },
       lines: setup.lines.map((line) => {
         const catalog = (line.catalogDimensions ?? null) as Dims | null;
@@ -1334,6 +1342,7 @@ export class OrderProductionSetupService {
     });
 
     await this.recomputeLineAndHeaderStatus(setup.id, line.id);
+    await this.syncLineMaterialsToProductionOrders(line.id);
     await this.prisma.auditEvent.create({
       data: {
         userId: user.id,
@@ -1771,6 +1780,32 @@ export class OrderProductionSetupService {
     };
   }
 
+  private async isFactoryReleasedForSalesOrder(salesOrderId: string): Promise<boolean> {
+    const released = await this.prisma.productionOrder.findFirst({
+      where: {
+        salesOrderId,
+        OR: [
+          { releasedToFactoryAt: { not: null } },
+          { actualStartDate: { not: null } },
+          {
+            status: {
+              in: [
+                'IN_PROGRESS',
+                'ON_HOLD',
+                'QUALITY_CHECK',
+                'READY_FOR_PACKAGING',
+                'READY_FOR_DELIVERY',
+                'COMPLETED',
+              ],
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    return Boolean(released);
+  }
+
   private async requireEditableSetup(salesOrderId: string) {
     let setup = await this.prisma.salesOrderProductionSetup.findUnique({
       where: { salesOrderId },
@@ -1790,10 +1825,11 @@ export class OrderProductionSetupService {
     if (!setup) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Production setup not found.' });
     }
-    if (setup.status === SalesOrderProductionSetupStatus.RELEASED) {
+    // Lock only after Confirm / factory release — Preparing may still edit materials & packaging.
+    if (await this.isFactoryReleasedForSalesOrder(salesOrderId)) {
       throw new BadRequestException({
         code: 'SETUP_LOCKED',
-        message: 'Production setup is released and cannot be edited.',
+        message: 'Production has started or been confirmed — setup can no longer be edited.',
       });
     }
     if (setup.status === SalesOrderProductionSetupStatus.SETUP_REQUIRED) {
@@ -1804,6 +1840,75 @@ export class OrderProductionSetupService {
       setup.status = SalesOrderProductionSetupStatus.SETUP_IN_PROGRESS;
     }
     return setup;
+  }
+
+  /** Push line material requirements into the PO workflow snapshot (Preparing edits). */
+  private async syncLineMaterialsToProductionOrders(lineSetupId: string) {
+    const line = await this.prisma.salesOrderLineSetup.findUnique({
+      where: { id: lineSetupId },
+      include: {
+        materialRequirements: { orderBy: { sortOrder: 'asc' } },
+        salesOrderLine: { select: { id: true } },
+      },
+    });
+    if (!line?.salesOrderLineId) return;
+
+    const pos = await this.prisma.productionOrder.findMany({
+      where: { salesOrderLineId: line.salesOrderLineId },
+      select: { id: true },
+    });
+    if (!pos.length) return;
+
+    const overrides = line.materialRequirements
+      .filter((m) => m.inventoryItemId && m.sku)
+      .map((m) => ({
+        inventoryItemId: m.inventoryItemId!,
+        sku: m.sku!,
+        qtyPerUnit: Number(m.expectedQty),
+        unit: m.unit || 'pcs',
+        required: true as const,
+        quantityMode: 'LINEAR' as const,
+      }));
+
+    for (const po of pos) {
+      const snapshot = await this.prisma.productionOrderWorkflowSnapshot.findUnique({
+        where: { productionOrderId: po.id },
+        include: {
+          nodes: {
+            orderBy: { sortOrder: 'asc' },
+            include: { materialInputs: true },
+          },
+        },
+      });
+      if (!snapshot?.nodes.length) continue;
+
+      const target =
+        snapshot.nodes.find((n) => n.materialInputs.length > 0) ??
+        snapshot.nodes[0];
+      if (!target) continue;
+
+      await this.prisma.$transaction(async (tx) => {
+        for (const node of snapshot.nodes) {
+          await tx.productionOrderWorkflowSnapshotMaterialInput.deleteMany({
+            where: { snapshotNodeId: node.id },
+          });
+        }
+        if (overrides.length) {
+          await tx.productionOrderWorkflowSnapshotMaterialInput.createMany({
+            data: overrides.map((row) => ({
+              snapshotNodeId: target.id,
+              stageCode: target.stageCode,
+              inventoryItemId: row.inventoryItemId,
+              sku: row.sku,
+              qtyPerUnit: row.qtyPerUnit,
+              quantityMode: row.quantityMode,
+              unit: row.unit,
+              required: row.required,
+            })),
+          });
+        }
+      });
+    }
   }
 
   private async recomputeLineAndHeaderStatus(setupId: string, lineSetupId: string) {

@@ -32,6 +32,7 @@ import { roundMoney } from '../../common/helpers/money.util';
 import type { AuthUser } from '@maher/types';
 import { PurchasingService } from './purchasing.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { SupplierInvoicesService } from '../supplier-invoices/supplier-invoices.service';
 import { InventoryTxType } from '@maher/database';
 import {
   classifyPurchaseOrder,
@@ -176,6 +177,7 @@ export class PurchasingController {
     private readonly sequences: SequenceService,
     private readonly purchasing: PurchasingService,
     private readonly inventory: InventoryService,
+    private readonly supplierInvoices: SupplierInvoicesService,
   ) {}
 
   private async assertPurchasableItems(ids: Array<string | undefined>) {
@@ -424,92 +426,13 @@ export class PurchasingController {
   @Post('purchase-requests/:id/convert')
   @RequirePermissions('purchase-order.create')
   async convertToPo(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const pr = await this.prisma.purchaseRequest.findUniqueOrThrow({
-      where: { id },
-      include: { lines: true, offers: true },
-    });
-    if (pr.status !== PurchaseRequestStatus.APPROVED) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'Purchase request must be approved before conversion.',
-      });
-    }
-    if (pr.purchaseOrderId) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'Purchase request already converted.',
-      });
-    }
-    const selected =
-      pr.offers.find((o) => o.isSelected) ??
-      [...pr.offers].sort((a, b) => {
-        const priceDiff = Number(a.unitPrice) - Number(b.unitPrice);
-        if (priceDiff !== 0) return priceDiff;
-        return Number(b.qualityScore ?? 0) - Number(a.qualityScore ?? 0);
-      })[0];
-    if (!selected) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'Add at least one supplier offer before converting.',
-      });
-    }
-    await this.purchasing.assertSupplierCertified(selected.supplierId);
-    const selectedUnitPrice = Number(selected.unitPrice);
+    return this.purchasing.convertRequestToPo(id, user.id);
+  }
 
-    const number = await this.sequences.next('PORD', 'PORD');
-    const lines = pr.lines.map((l) => {
-      const lineTotal = Number(l.quantity) * selectedUnitPrice;
-      return {
-        description: l.description,
-        quantity: roundMoney(Number(l.quantity)),
-        unitPrice: roundMoney(selectedUnitPrice),
-        taxRate: roundMoney(0.16),
-        lineTotal: roundMoney(lineTotal * 1.16),
-        inventoryItemId: l.inventoryItemId ?? undefined,
-      };
-    });
-    const subtotal = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice), 0);
-    const taxAmount = subtotal * 0.16;
-
-    const po = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.purchaseOrder.create({
-        data: {
-          number,
-          supplierId: selected.supplierId,
-          warehouseId: pr.warehouseId ?? undefined,
-          status: PurchaseOrderStatus.DRAFT,
-          subtotal: roundMoney(subtotal),
-          taxAmount: roundMoney(taxAmount),
-          total: roundMoney(subtotal + taxAmount),
-          notes: pr.reason ?? undefined,
-          lines: { create: lines },
-        },
-        include: { lines: true, supplier: true },
-      });
-      await tx.purchaseRequest.update({
-        where: { id },
-        data: {
-          status: PurchaseRequestStatus.ORDERED,
-          purchaseOrderId: created.id,
-        },
-      });
-      await tx.supplierQuoteOffer.update({
-        where: { id: selected.id },
-        data: { isSelected: true },
-      });
-      return created;
-    });
-
-    await this.prisma.auditEvent.create({
-      data: {
-        userId: user.id,
-        action: 'purchase-request.convert',
-        entityType: 'PurchaseOrder',
-        entityId: po.id,
-        newValues: { purchaseRequestId: id },
-      },
-    });
-    return po;
+  @Post('purchase-requests/:id/send-to-supplier')
+  @RequirePermissions('purchase-order.approve')
+  async sendRequestToSupplier(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.purchasing.sendRequestToSupplier(id, user.id);
   }
 
   @Post('purchase-requests/from-low-stock')
@@ -941,28 +864,7 @@ export class PurchasingController {
   @Post('purchase-orders/:id/send')
   @RequirePermissions('purchase-order.approve')
   async send(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const existing = await this.prisma.purchaseOrder.findUniqueOrThrow({ where: { id } });
-    if (existing.status !== PurchaseOrderStatus.APPROVED) {
-      throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'Only approved purchase orders can be sent.',
-      });
-    }
-    await this.purchasing.assertSupplierCertified(existing.supplierId);
-    const po = await this.prisma.purchaseOrder.update({
-      where: { id },
-      data: { status: PurchaseOrderStatus.SENT },
-      include: { supplier: true },
-    });
-    await this.prisma.auditEvent.create({
-      data: {
-        userId: user.id,
-        action: 'purchase-order.send',
-        entityType: 'PurchaseOrder',
-        entityId: id,
-      },
-    });
-    return po;
+    return this.purchasing.sendPurchaseOrder(id, user.id);
   }
 
   @Get('purchase-orders/:id')
@@ -1303,6 +1205,11 @@ export class PurchasingController {
     });
 
     await this.inventory.retryWaitingMaterialOrders(user.id).catch(() => undefined);
+
+    // Purchasing invoice only after confirmed receipt into warehouse.
+    await this.supplierInvoices
+      .ensureFromPurchaseOrder(po.id, user.id, receipt.id)
+      .catch(() => undefined);
 
     return receipt;
   }

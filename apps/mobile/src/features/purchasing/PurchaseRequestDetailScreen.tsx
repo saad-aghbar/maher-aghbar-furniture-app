@@ -10,7 +10,6 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
@@ -43,11 +42,10 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
   const router = useRouter();
   const canRead = can(user, 'purchase-request.read');
   const canApprove = can(user, 'purchase-order.approve');
-  const canConvert = can(user, 'purchase-order.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const backFallback = '/(app)/(admin)/purchasing' as Href;
 
-  const [confirm, setConfirm] = useState<'approve' | 'convert' | null>(null);
+  const [confirm, setConfirm] = useState<'approve' | 'sendToSupplier' | null>(null);
   const query = usePurchaseRequestQuery(requestId, canRead);
   const actions = usePurchaseRequestActionMutation(requestId);
 
@@ -175,10 +173,10 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
             }}
           />
         ) : null}
-        {canConvert && pr.status === 'APPROVED' && !pr.purchaseOrderId ? (
-          <SecondaryButton
-            label={t('mobile.purchasing.convertToPo')}
-            onPress={() => setConfirm('convert')}
+        {canApprove && pr.status === 'APPROVED' && !pr.purchaseOrderId ? (
+          <PrimaryButton
+            label={t('mobile.purchasing.sendToSupplier')}
+            onPress={() => setConfirm('sendToSupplier')}
             style={{
               borderRadius: theme.radius.xl,
               marginBottom: insets.bottom + SURFACE_TAB_BAR_CLEARANCE,
@@ -191,13 +189,15 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
         open={Boolean(confirm)}
         onClose={() => setConfirm(null)}
         title={
-          confirm === 'convert'
-            ? t('mobile.purchasing.convertToPo')
+          confirm === 'sendToSupplier'
+            ? t('mobile.purchasing.sendToSupplier')
             : t('mobile.purchasing.approve')
         }
         message={
-          confirm === 'convert'
-            ? t('mobile.purchasing.convertConfirm')
+          confirm === 'sendToSupplier'
+            ? t('mobile.purchasing.sendToSupplierConfirm', {
+                supplier: resolvePurchaseRequestSupplier(pr, locale),
+              })
             : t('mobile.purchasing.approveRequestConfirm')
         }
         confirmLabel={t('mobile.purchasing.confirm')}
@@ -220,15 +220,28 @@ export function PurchaseRequestDetailScreen({ requestId }: Props) {
                     : t('mobile.purchasing.updateFailed'),
                 }),
             });
-          } else if (confirm === 'convert') {
-            actions.convert.mutate(undefined, {
-              onSuccess: (po) => {
+          } else if (confirm === 'sendToSupplier') {
+            actions.sendToSupplier.mutate(undefined, {
+              onSuccess: (result) => {
                 void haptics.confirmMedium();
-                showToast({
-                  variant: 'success',
-                  message: t('catalog.purchaseOrderCreated'),
-                });
-                router.push(`/(app)/(admin)/purchasing/${po.id}` as Href);
+                const wa = result.whatsapp;
+                if (wa.ok && wa.to) {
+                  showToast({
+                    variant: 'success',
+                    message: t('mobile.purchasing.whatsappSentOk', { to: wa.to }),
+                  });
+                } else if (!wa.to) {
+                  showToast({
+                    variant: 'warning',
+                    message: t('mobile.purchasing.whatsappNoPhone'),
+                  });
+                } else {
+                  showToast({
+                    variant: 'warning',
+                    message: t('mobile.purchasing.whatsappSentFailed'),
+                  });
+                }
+                router.push(`/(app)/(admin)/purchasing/${result.purchaseOrder.id}` as Href);
               },
               onError: (err) =>
                 showToast({

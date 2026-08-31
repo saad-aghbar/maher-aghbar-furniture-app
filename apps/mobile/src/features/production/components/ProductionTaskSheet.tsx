@@ -11,6 +11,13 @@ import { StatusBadge } from '@/components/badges/StatusBadge';
 import { InlineDateCalendar } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { productionInsetStyle } from '../productionFloorStyle';
+import {
+  defaultAssignWindowParts,
+  parseScheduleConflicts,
+  parseSuggestedWindow,
+} from '../assignWindow';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -18,6 +25,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AssignableWorker, ProductionPriority } from '../api';
 import type { ProductionTaskRow } from '../selectProduction';
 import { workersForStage } from '../selectProduction';
+import type { AssignScheduleConflict } from './AssignWorkerSheet';
+import { AssignConflictBoard } from './AssignConflictBoard';
 import { PriorityTouchBar } from './PriorityTouchBar';
 import { HoursMinutesRow } from './HoursMinutesRow';
 import {
@@ -28,22 +37,25 @@ import {
 
 type SheetMode = 'detail' | 'workers' | 'block';
 
-function todayYmd(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 type ProductionTaskSheetProps = {
   open: boolean;
   onClose: () => void;
   task: ProductionTaskRow | null;
   workers: AssignableWorker[];
+  workersLoading?: boolean;
   canAssign: boolean;
   canUpdateTask: boolean;
+  canOverrideConflict?: boolean;
   assignLoading?: boolean;
   notesLoading?: boolean;
   holdLoading?: boolean;
   blockLoading?: boolean;
+  scheduleConflict?: AssignScheduleConflict | null;
+  onClearScheduleConflict?: () => void;
+  onWindowChange?: (window: {
+    plannedStart?: string;
+    plannedCompletion?: string;
+  }) => void;
   onAssign: (payload: {
     employeeId: string;
     priority: string;
@@ -153,12 +165,17 @@ export function ProductionTaskSheet({
   onClose,
   task,
   workers,
+  workersLoading = false,
   canAssign,
   canUpdateTask,
+  canOverrideConflict = false,
   assignLoading,
   notesLoading,
   holdLoading,
   blockLoading,
+  scheduleConflict = null,
+  onClearScheduleConflict,
+  onWindowChange,
   onAssign,
   onSaveNotes,
   onHold,
@@ -174,11 +191,17 @@ export function ProductionTaskSheet({
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [workerQ, setWorkerQ] = useState('');
   const [blockReason, setBlockReason] = useState('');
-  const [dueDate, setDueDate] = useState(todayYmd());
-  const [dueHour, setDueHour] = useState('17');
+  const [startDate, setStartDate] = useState(
+    defaultAssignWindowParts().start.ymd,
+  );
+  const [startHour, setStartHour] = useState('8');
+  const [startMinute, setStartMinute] = useState('00');
+  const [dueDate, setDueDate] = useState(defaultAssignWindowParts().due.ymd);
+  const [dueHour, setDueHour] = useState('10');
   const [dueMinute, setDueMinute] = useState('00');
   const [estHours, setEstHours] = useState('');
   const [estMinutes, setEstMinutes] = useState('');
+  const [overrideConflict, setOverrideConflict] = useState(false);
 
   useEffect(() => {
     if (!open || !task) return;
@@ -188,14 +211,54 @@ export function ProductionTaskSheet({
     setSelectedWorkerId(task.assigneeId ?? '');
     setWorkerQ('');
     setBlockReason('');
-    setDueDate(todayYmd());
-    setDueHour('17');
-    setDueMinute('00');
-    setEstHours('');
-    setEstMinutes('');
+    setOverrideConflict(false);
+    onClearScheduleConflict?.();
+    const parts = defaultAssignWindowParts({
+      plannedStart: task.plannedStart,
+      plannedCompletion: task.plannedCompletion,
+      estimatedMinutes: task.estimatedMinutes,
+    });
+    setStartDate(parts.start.ymd);
+    setStartHour(parts.start.hour);
+    setStartMinute(parts.start.minute);
+    setDueDate(parts.due.ymd);
+    setDueHour(parts.due.hour);
+    setDueMinute(parts.due.minute);
+    setEstHours(parts.estHours);
+    setEstMinutes(parts.estMinutes);
     // Only reset when the sheet opens or a different task is shown — not when the
     // same task refreshes after assign/notes (that was kicking users back to detail).
   }, [open, task?.id]);
+
+  useEffect(() => {
+    if (!open || !onWindowChange) return;
+    const id = setTimeout(() => {
+      const plannedStart = buildDueIso(
+        startDate.trim(),
+        Number(startHour) || 0,
+        Number(startMinute) || 0,
+      );
+      const plannedCompletion = buildDueIso(
+        dueDate.trim(),
+        Number(dueHour) || 0,
+        Number(dueMinute) || 0,
+      );
+      onWindowChange({
+        ...(plannedStart ? { plannedStart } : {}),
+        ...(plannedCompletion ? { plannedCompletion } : {}),
+      });
+    }, 250);
+    return () => clearTimeout(id);
+  }, [
+    open,
+    onWindowChange,
+    startDate,
+    startHour,
+    startMinute,
+    dueDate,
+    dueHour,
+    dueMinute,
+  ]);
 
   const stageWorkers = useMemo(
     () => workersForStage(workers, task?.responsibleDepartment),
@@ -228,6 +291,30 @@ export function ProductionTaskSheet({
     ? `${draftWorker.firstName} ${draftWorker.lastName}`.trim()
     : null;
 
+  const selectedIsConflict = draftWorker?.recommendBand === 'conflict';
+  const serverConflicts = parseScheduleConflicts(scheduleConflict?.conflicts);
+  const showConflictPanel = selectedIsConflict || serverConflicts.length > 0;
+  const suggested =
+    parseSuggestedWindow(scheduleConflict?.suggestedWindow) ??
+    draftWorker?.suggestedWindow ??
+    null;
+
+  const applySuggested = () => {
+    if (!suggested) return;
+    const parts = defaultAssignWindowParts({
+      plannedStart: suggested.plannedStart,
+      plannedCompletion: suggested.plannedCompletion,
+    });
+    setStartDate(parts.start.ymd);
+    setStartHour(parts.start.hour);
+    setStartMinute(parts.start.minute);
+    setDueDate(parts.due.ymd);
+    setDueHour(parts.due.hour);
+    setDueMinute(parts.due.minute);
+    setOverrideConflict(false);
+    onClearScheduleConflict?.();
+  };
+
   const listMaxHeight = Math.round(Dimensions.get('window').height * 0.32);
   const bodyMaxHeight = Math.round(Dimensions.get('window').height * 0.55);
 
@@ -249,6 +336,9 @@ export function ProductionTaskSheet({
   const showAssign = canAssign && task.canAssign;
   const displayedWorkerName =
     draftWorkerName ?? task.assigneeName ?? t('mobile.production.unassigned');
+  const conflictBlocksAssign =
+    (selectedIsConflict || serverConflicts.length > 0) &&
+    (!canOverrideConflict || !overrideConflict);
   const sheetTitle =
     mode === 'workers'
       ? t('mobile.production.assignWorker')
@@ -282,12 +372,9 @@ export function ProductionTaskSheet({
             keyboardShouldPersistTaps="handled"
             nestedScrollEnabled
           >
+            <DealerBoard title={t('mobile.production.workersForStage')} titleWeight={titleWeight} contentStyle={{ padding: 0, gap: 0 }}>
             <View
               style={{
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surfaceSecondary,
                 overflow: 'hidden',
               }}
             >
@@ -295,6 +382,7 @@ export function ProductionTaskSheet({
                 const selected = w.id === selectedWorkerId;
                 const name = `${w.firstName} ${w.lastName}`.trim();
                 const last = index === filteredWorkers.length - 1;
+                const conflict = w.recommendBand === 'conflict';
                 return (
                   <View key={w.id}>
                     <AnimatedPressable
@@ -304,6 +392,8 @@ export function ProductionTaskSheet({
                       onPress={() => {
                         void haptics.selection();
                         setSelectedWorkerId(w.id);
+                        setOverrideConflict(false);
+                        onClearScheduleConflict?.();
                       }}
                       style={{
                         minHeight: theme.sizes.touch.min,
@@ -312,9 +402,23 @@ export function ProductionTaskSheet({
                         flexDirection: isRTL ? 'row-reverse' : 'row',
                         alignItems: 'center',
                         gap: theme.spacing.md,
-                        backgroundColor: selected ? colors.surface : 'transparent',
+                        backgroundColor: selected ? colors.brandSoft : 'transparent',
+                        overflow: 'hidden',
                       }}
                     >
+                      {selected ? (
+                        <View
+                          pointerEvents="none"
+                          style={{
+                            position: 'absolute',
+                            top: 8,
+                            bottom: 8,
+                            width: 3,
+                            backgroundColor: conflict ? colors.warning : colors.brand,
+                            ...(isRTL ? { right: 0 } : { left: 0 }),
+                          }}
+                        />
+                      ) : null}
                       <View
                         style={{
                           width: 36,
@@ -324,26 +428,55 @@ export function ProductionTaskSheet({
                           justifyContent: 'center',
                           backgroundColor: selected ? colors.brandSoft : colors.surface,
                           borderWidth: 1,
-                          borderColor: selected ? colors.brand : colors.border,
+                          borderColor: selected
+                            ? conflict
+                              ? colors.warning
+                              : colors.brand
+                            : colors.border,
                         }}
                       >
                         <Ionicons
                           name="person"
                           size={16}
-                          color={selected ? colors.brand : colors.textMuted}
+                          color={
+                            selected
+                              ? conflict
+                                ? colors.warning
+                                : colors.brand
+                              : colors.textMuted
+                          }
                         />
                       </View>
-                      <View style={{ flex: 1 }}>
+                      <View style={{ flex: 1, gap: 2 }}>
                         <AppText
                           variant="label"
                           weight={selected ? (locale === 'ar' ? 'medium' : 'semibold') : 'medium'}
-                          style={{ color: selected ? colors.brand : colors.textPrimary }}
+                          style={{
+                            color: selected
+                              ? conflict
+                                ? colors.warning
+                                : colors.brand
+                              : colors.textPrimary,
+                          }}
                         >
                           {name}
                         </AppText>
+                        {w.recommendReason ? (
+                          <AppText
+                            variant="caption"
+                            color={conflict ? 'warning' : 'muted'}
+                            numberOfLines={2}
+                          >
+                            {w.recommendReason}
+                          </AppText>
+                        ) : null}
                       </View>
                       {selected ? (
-                        <Ionicons name="checkmark-circle" size={22} color={colors.brand} />
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={22}
+                          color={conflict ? colors.warning : colors.brand}
+                        />
                       ) : (
                         <View
                           style={{
@@ -372,11 +505,14 @@ export function ProductionTaskSheet({
               {filteredWorkers.length === 0 ? (
                 <View style={{ padding: theme.spacing.lg }}>
                   <AppText variant="caption" color="secondary">
-                    {t('mobile.production.noWorkersForStage')}
+                    {workersLoading
+                      ? t('mobile.production.loadingWorkers')
+                      : t('mobile.production.noWorkersForStage')}
                   </AppText>
                 </View>
               ) : null}
             </View>
+            </DealerBoard>
           </ScrollView>
 
           <View
@@ -413,15 +549,7 @@ export function ProductionTaskSheet({
           <AppText variant="caption" color="muted">
             {t('mobile.production.blockReasonPrompt')}
           </AppText>
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surfaceSecondary,
-              padding: theme.spacing.md,
-            }}
-          >
+          <DealerBoard title={t('mobile.production.block')} titleWeight={titleWeight}>
             <TextField
               value={blockReason}
               onChangeText={setBlockReason}
@@ -430,7 +558,7 @@ export function ProductionTaskSheet({
               numberOfLines={3}
               style={{ minHeight: 88, textAlignVertical: 'top' }}
             />
-          </View>
+          </DealerBoard>
           <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -471,18 +599,10 @@ export function ProductionTaskSheet({
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
-          <View
-            style={{
-              borderRadius: theme.radius.xl,
-              borderWidth: 1,
-              borderColor: colors.borderStrong,
-              backgroundColor: colors.surfaceSecondary,
-              padding: theme.spacing.md,
-              gap: theme.spacing.sm,
-            }}
-          >
+          <DealerBoard title={t('mobile.production.taskDetail')} titleWeight={titleWeight}>
             <View
               style={{
+                ...productionInsetStyle(theme, colors),
                 flexDirection: isRTL ? 'row-reverse' : 'row',
                 flexWrap: 'wrap',
                 alignItems: 'center',
@@ -490,7 +610,7 @@ export function ProductionTaskSheet({
               }}
             >
               <StatusBadge status={task.status} dot />
-              <AppText variant="label" weight="semibold">
+              <AppText variant="label" weight={titleWeight} dir="ltr">
                 {pct}%
               </AppText>
               <StatusBadge
@@ -499,52 +619,33 @@ export function ProductionTaskSheet({
                 dot
               />
             </View>
-          </View>
+          </DealerBoard>
 
           {task.isCompleted || task.elapsedMinutes > 0 ? (
-            <View
-              style={{
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surfaceSecondary,
-                padding: theme.spacing.md,
-                gap: theme.spacing.xs,
-              }}
-            >
-              <AppText variant="caption" color="muted">
-                {t('mobile.production.timeTaken')}
-              </AppText>
-              <AppText variant="label" weight={titleWeight}>
-                {task.elapsedMinutes > 0
-                  ? formatMinutesDuration(task.elapsedMinutes, {
+            <DealerBoard title={t('mobile.production.timeTaken')} titleWeight={titleWeight}>
+              <View style={productionInsetStyle(theme, colors)}>
+                <AppText variant="label" weight={titleWeight}>
+                  {task.elapsedMinutes > 0
+                    ? formatMinutesDuration(task.elapsedMinutes, {
+                        hour: t('mobile.workerHome.durationHour'),
+                        minute: t('mobile.workerHome.durationMinute'),
+                      })
+                    : t('mobile.production.timeTakenEmpty')}
+                </AppText>
+                {task.estimatedMinutes != null && task.estimatedMinutes > 0 ? (
+                  <AppText variant="caption" color="muted">
+                    {t('mobile.production.estimatedTime')}:{' '}
+                    {formatMinutesDuration(task.estimatedMinutes, {
                       hour: t('mobile.workerHome.durationHour'),
                       minute: t('mobile.workerHome.durationMinute'),
-                    })
-                  : t('mobile.production.timeTakenEmpty')}
-              </AppText>
-              {task.estimatedMinutes != null && task.estimatedMinutes > 0 ? (
-                <AppText variant="caption" color="muted">
-                  {t('mobile.production.estimatedTime')}:{' '}
-                  {formatMinutesDuration(task.estimatedMinutes, {
-                    hour: t('mobile.workerHome.durationHour'),
-                    minute: t('mobile.workerHome.durationMinute'),
-                  })}
-                </AppText>
-              ) : null}
-            </View>
+                    })}
+                  </AppText>
+                ) : null}
+              </View>
+            </DealerBoard>
           ) : null}
 
-            <View
-              style={{
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surfaceSecondary,
-                padding: theme.spacing.md,
-                gap: theme.spacing.sm,
-              }}
-            >
+            <DealerBoard title={t('mobile.production.assignedWorker')} titleWeight={titleWeight}>
               <AppText variant="caption" color="muted">
                 {t('mobile.production.assignedWorker')}
               </AppText>
@@ -603,6 +704,26 @@ export function ProductionTaskSheet({
                   </AppText>
                   <PriorityTouchBar value={priority} onChange={setPriority} />
                   <AppText variant="caption" color="muted" style={{ marginTop: theme.spacing.sm }}>
+                    {t('mobile.production.taskWindowHint')}
+                  </AppText>
+                  <AppText variant="caption" weight={titleWeight} color="secondary">
+                    {t('mobile.production.startDate')}
+                  </AppText>
+                  <InlineDateCalendar
+                    value={startDate}
+                    onSelect={setStartDate}
+                    resetKey={`${open}-start`}
+                  />
+                  <HoursMinutesRow
+                    sectionLabel={t('mobile.production.startTime')}
+                    hours={startHour}
+                    minutes={startMinute}
+                    onHoursChange={setStartHour}
+                    onMinutesChange={setStartMinute}
+                    hoursLabel={t('mobile.production.dueHour')}
+                    minutesLabel={t('mobile.production.dueMinute')}
+                  />
+                  <AppText variant="caption" weight={titleWeight} color="secondary">
                     {t('mobile.production.dueDate')}
                   </AppText>
                   <InlineDateCalendar value={dueDate} onSelect={setDueDate} resetKey={open} />
@@ -626,36 +747,40 @@ export function ProductionTaskSheet({
                   />
                 </View>
               ) : null}
-            </View>
+            </DealerBoard>
 
-            <View
-              style={{
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surfaceSecondary,
-                padding: theme.spacing.md,
-                gap: theme.spacing.sm,
-              }}
-            >
+            {showAssign && showConflictPanel ? (
+              <AssignConflictBoard
+                overlaps={draftWorker?.overlapWindows}
+                conflicts={serverConflicts}
+                reason={draftWorker?.recommendReason}
+                canOverride={canOverrideConflict}
+                overrideChecked={overrideConflict}
+                onToggleOverride={() => setOverrideConflict((v) => !v)}
+                hasSuggestedSlot={Boolean(suggested)}
+                onUseSuggestedSlot={applySuggested}
+              />
+            ) : null}
+
+            <DealerBoard title={t('mobile.production.workerInstructions')} titleWeight={titleWeight}>
               <AppText variant="caption" color="muted">
-                {t('mobile.production.notesOptional')}
+                {t('mobile.production.workerInstructionsHint')}
               </AppText>
-              {task.canEditNotes && canUpdateTask ? (
+              {task.canEditNotes ? (
                 <TextField
                   value={notes}
                   onChangeText={setNotes}
-                  placeholder={t('mobile.production.notesOptional')}
+                  placeholder={t('mobile.production.workerInstructionsPlaceholder')}
                   multiline
-                  numberOfLines={3}
-                  style={{ minHeight: 88, textAlignVertical: 'top' }}
+                  numberOfLines={4}
+                  style={{ minHeight: 110, textAlignVertical: 'top' }}
                 />
               ) : (
                 <AppText variant="body" color="secondary">
                   {notes.trim() || '—'}
                 </AppText>
               )}
-            </View>
+            </DealerBoard>
 
           <View style={{ gap: theme.spacing.sm }}>
             {showAssign ? (
@@ -663,24 +788,40 @@ export function ProductionTaskSheet({
                 label={
                   !selectedWorkerId
                     ? t('mobile.production.assignWorker')
-                    : task.assigneeName && selectedWorkerId === task.assigneeId
-                      ? t('mobile.production.reassignWorker')
-                      : t('mobile.production.assign')
+                    : conflictBlocksAssign
+                      ? t('mobile.production.fixWindowThenAssign')
+                      : task.assigneeName && selectedWorkerId === task.assigneeId
+                        ? t('mobile.production.reassignWorker')
+                        : t('mobile.production.assign')
                 }
                 variant="primary"
                 loading={assignLoading}
+                disabled={Boolean(selectedWorkerId) && conflictBlocksAssign}
                 icon="person-add-outline"
                 onPress={() => {
                   if (!selectedWorkerId) {
                     setMode('workers');
                     return;
                   }
-                  void haptics.confirmMedium();
+                  if (conflictBlocksAssign) {
+                    void haptics.error();
+                    return;
+                  }
+                  const plannedStart = buildDueIso(
+                    startDate.trim(),
+                    Number(startHour) || 0,
+                    Number(startMinute) || 0,
+                  );
                   const plannedCompletion = buildDueIso(
                     dueDate.trim(),
                     Number(dueHour) || 0,
                     Number(dueMinute) || 0,
                   );
+                  if (!plannedStart || !plannedCompletion) {
+                    void haptics.error();
+                    return;
+                  }
+                  void haptics.confirmMedium();
                   const eh = Number(estHours);
                   const em = Number(estMinutes);
                   const estimatedMinutes =
@@ -693,18 +834,22 @@ export function ProductionTaskSheet({
                   onAssign({
                     employeeId: selectedWorkerId,
                     priority,
-                    ...(plannedCompletion ? { plannedCompletion } : {}),
+                    plannedStart,
+                    plannedCompletion,
                     ...(estimatedMinutes != null && estimatedMinutes > 0
                       ? { estimatedMinutes }
+                      : {}),
+                    ...(selectedIsConflict && overrideConflict
+                      ? { overrideConflict: true }
                       : {}),
                   });
                 }}
               />
             ) : null}
 
-            {task.canEditNotes && canUpdateTask ? (
+            {task.canEditNotes ? (
               <PillButton
-                label={t('mobile.production.saveNotes')}
+                label={t('mobile.production.saveWorkerInstructions')}
                 variant="secondary"
                 loading={notesLoading}
                 icon="document-text-outline"

@@ -40,13 +40,13 @@ function statusLabel(
   }
 }
 
-/** Piece 5 — compact actual manufacturing cost card (usage-based, not catalog BOM). */
+/** Piece 5 — estimated / actual / variance board (usage-based, not catalog BOM). */
 export function ManufacturingCostCard({
   summary,
   formatCurrency,
   onViewBreakdown,
 }: Props) {
-  const { t } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   if (!summary) return null;
 
@@ -54,83 +54,122 @@ export function ManufacturingCostCard({
   const act = summary.actualTotal;
   const variance = summary.varianceCost;
   const incomplete = summary.incomplete || summary.status === 'INCOMPLETE';
+  const accent = incomplete ? colors.warning : colors.brand;
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
-    <OrderBoardCard accent={incomplete ? colors.warning : colors.brand}>
-      <OrderSectionHeader
-        icon="calculator-outline"
-        label={t('mobile.orderDetail.mfgCostTitle')}
-        accent={incomplete ? colors.warning : colors.brand}
-      />
-      <AppText variant="caption" color="secondary">
+    <OrderBoardCard
+      accent={accent}
+      header={
+        <OrderSectionHeader
+          icon="calculator-outline"
+          label={t('mobile.orderDetail.mfgCostTitle')}
+          accent={accent}
+        />
+      }
+    >
+      <AppText
+        variant="caption"
+        color="secondary"
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
         {statusLabel(t, summary.status)}
         {incomplete ? ` · ${t('mobile.orderDetail.mfgCostIncompleteHint')}` : ''}
       </AppText>
+
       <View
         style={{
-          marginTop: theme.spacing.sm,
-          gap: theme.spacing.xs,
+          borderRadius: theme.radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surfaceSecondary,
+          overflow: 'hidden',
         }}
       >
-        <Row
+        <MoneyRow
           label={t('mobile.orderDetail.mfgCostEstimated')}
           value={est != null ? formatCurrency(est) : t('mobile.orderDetail.mfgCostUnavailable')}
+          last={false}
+          titleWeight={titleWeight}
         />
-        <Row
-          label={t('mobile.orderDetail.mfgCostActual')}
+        <MoneyRow
+          label={
+            String(summary.status ?? '').toUpperCase() === 'IN_PROGRESS'
+              ? t('mobile.orderDetail.mfgCostStatusInProgress')
+              : t('mobile.orderDetail.mfgCostActual')
+          }
           value={act != null ? formatCurrency(act) : t('mobile.orderDetail.mfgCostUnavailable')}
+          last={false}
+          titleWeight={titleWeight}
         />
-        <Row
+        <MoneyRow
           label={t('mobile.orderDetail.mfgCostVariance')}
           value={
             variance != null
               ? `${variance >= 0 ? '+' : ''}${formatCurrency(variance)}`
               : t('mobile.orderDetail.mfgCostUnavailable')
           }
+          last
+          titleWeight={titleWeight}
           emphasize={variance != null && Math.abs(variance) > 0.009}
           warn={variance != null && variance > 0}
         />
       </View>
-      <View style={{ marginTop: theme.spacing.md }}>
-        <SecondaryButton
-          label={t('mobile.orderDetail.mfgCostViewBreakdown')}
-          onPress={onViewBreakdown}
-        />
-      </View>
+
+      <SecondaryButton
+        label={t('mobile.orderDetail.mfgCostViewBreakdown')}
+        onPress={onViewBreakdown}
+        style={{ borderRadius: theme.radius.xl }}
+      />
     </OrderBoardCard>
   );
 }
 
-function Row({
+function MoneyRow({
   label,
   value,
+  last,
+  titleWeight,
   emphasize,
   warn,
 }: {
   label: string;
   value: string;
+  last: boolean;
+  titleWeight: 'medium' | 'semibold';
   emphasize?: boolean;
   warn?: boolean;
 }) {
+  const { isRTL } = useLocale();
   const { colors, theme } = useTheme();
   return (
     <View
       style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
+        minHeight: theme.sizes.touch.min,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm + 2,
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: colors.border,
+        flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
         gap: theme.spacing.sm,
       }}
     >
-      <AppText variant="caption" color="muted">
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+      >
         {label}
       </AppText>
       <AppText
-        variant="body"
+        variant="label"
+        weight={emphasize ? titleWeight : 'regular'}
+        dir="ltr"
         style={{
           fontVariant: ['tabular-nums'],
-          fontWeight: emphasize ? '600' : '400',
-          color: warn ? colors.warning : colors.text,
+          color: warn ? colors.warning : colors.textPrimary,
         }}
       >
         {value}

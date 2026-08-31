@@ -222,7 +222,7 @@ export function ProductionFlowMap({
       Math.max(0, layout.levelCount - 1) * rowH +
       FLOW_NODE +
       labelBand +
-      padBottom,
+      24,
   );
   const centerX = contentW / 2;
 

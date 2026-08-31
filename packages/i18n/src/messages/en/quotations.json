@@ -33,6 +33,7 @@
   "tax": "VAT",
   "paymentTerms": "Payment terms",
   "deliveryTerms": "Delivery terms",
+  "factoryDelivery": "Factory delivery",
   "notes": "Notes",
   "specs": "Specifications",
   "awaitingRevision": "Waiting for a revised quotation",
@@ -58,5 +59,31 @@
   "deliveryCity": "Delivery city",
   "preferredDeliveryDate": "Preferred delivery date",
   "attachment": "Attachment",
-  "submitFailed": "Could not submit request"
+  "submitFailed": "Could not submit request",
+  "sendQuotation": "Send quotation",
+  "issueQuotation": "Issue quotation",
+  "priceRequired": "Price required",
+  "referencePrice": "Catalog / dealer reference",
+  "revised": "Revised",
+  "rejectionReason": "Rejection reason",
+  "rejectReasonPlaceholder": "Price, delivery time, specification, cancelled, or other",
+  "rejectReasonOptional": "Reason (optional)",
+  "expiredCannotAccept": "This quotation has expired.",
+  "cannotSendTitle": "Cannot send this quotation",
+  "complexityLabel": "Type",
+  "complexity": {
+    "STANDARD": "Standard",
+    "MODIFIED": "Modified",
+    "CUSTOM": "Custom"
+  },
+  "statusPresentment": {
+    "DRAFT": "Draft",
+    "READY_TO_SEND": "Ready to send",
+    "SENT_WAITING": "Sent / Waiting for dealer",
+    "ACCEPTED": "Accepted",
+    "REJECTED": "Rejected",
+    "EXPIRED": "Expired",
+    "REVISION_REQUESTED": "Revision requested",
+    "CANCELLED": "Cancelled"
+  }
 }

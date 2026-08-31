@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { ActionSheet } from '@/components/sheets/ActionSheet';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
 export type InventoryWarehouseOption = {
@@ -45,7 +44,8 @@ export function InventoryWarehousePickerControl({
 
   return (
     <>
-      <Pressable
+      <AnimatedPressable
+        variant="button"
         accessibilityRole="button"
         accessibilityLabel={label}
         onPress={() => {
@@ -79,7 +79,7 @@ export function InventoryWarehousePickerControl({
           {label}
         </AppText>
         <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
-      </Pressable>
+      </AnimatedPressable>
 
       <ActionSheet
         open={open}

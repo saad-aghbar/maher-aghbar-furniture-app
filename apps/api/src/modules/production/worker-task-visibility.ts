@@ -64,9 +64,36 @@ export function workerExcludeNonFloorStagesWhere(): Prisma.ProductionTaskWhereIn
   };
 }
 
-/** Flat AND clauses for floor open lists (actionable + non-DELIVERY). */
+export function workerReleasedToFactoryWhere(): Prisma.ProductionTaskWhereInput {
+  return {
+    productionOrder: {
+      OR: [
+        { releasedToFactoryAt: { not: null } },
+        { actualStartDate: { not: null } },
+        {
+          status: {
+            in: [
+              'IN_PROGRESS',
+              'ON_HOLD',
+              'QUALITY_CHECK',
+              'READY_FOR_PACKAGING',
+              'READY_FOR_DELIVERY',
+              'COMPLETED',
+            ],
+          },
+        },
+      ],
+    },
+  };
+}
+
+/** Flat AND clauses for floor open lists (actionable + non-DELIVERY + released). */
 export function workerFloorOpenClauses(): Prisma.ProductionTaskWhereInput[] {
-  return [...workerOpenActionableClauses(), workerExcludeNonFloorStagesWhere()];
+  return [
+    ...workerOpenActionableClauses(),
+    workerExcludeNonFloorStagesWhere(),
+    workerReleasedToFactoryWhere(),
+  ];
 }
 
 /**

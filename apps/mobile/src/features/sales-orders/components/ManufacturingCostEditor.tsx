@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -8,17 +8,15 @@ import {
 } from '@/api/modules/inventory';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import Animated from 'react-native-reanimated';
-import type { OrderCostMaterial } from '../selectOrderDetail';
+import type { OrderCostMaterial, OrderCostMaterialLine } from '../selectOrderDetail';
 import { MaterialPickerSheet } from './MaterialPickerSheet';
 import { OrderBoardCard, OrderSectionHeader } from './OrderBoardCard';
-import { orderBoardShadow } from './orderFloorStyle';
 
 export type CostBreakdownEdit = {
   fabricQty: string;
@@ -127,6 +125,22 @@ export function costEditToPayload(edit: CostBreakdownEdit): {
   };
 }
 
+export function seedLinesFromOrder(
+  seed: OrderCostMaterialLine[] | null | undefined,
+): CostMaterialLine[] {
+  if (!seed?.length) return [];
+  return seed.map((line, index) => ({
+    id: `seed-${line.category}-${line.sku}-${index}`,
+    inventoryItemId: line.inventoryItemId ?? '',
+    sku: line.sku,
+    name: line.name || line.sku,
+    category: line.category,
+    qty: line.qty,
+    unitCost: line.unitCost,
+    lineCost: line.lineCost,
+  }));
+}
+
 function categoryToKey(item: InventoryItem): CostKey {
   const raw = (item.category || item.materialType || '').toUpperCase();
   if (raw.includes('FABRIC') || raw.includes('FAB')) return 'fabric';
@@ -145,39 +159,46 @@ export function inventoryGroupToCostKey(
   return 'accessories';
 }
 
-function accentFor(
-  key: CostKey,
-  colors: { brand: string; info: string; warning: string; success: string },
-): string {
-  if (key === 'fabric') return colors.brand;
-  if (key === 'wood') return colors.warning;
-  if (key === 'foam') return colors.info;
-  return colors.success;
-}
-
 type Props = {
   edit: CostBreakdownEdit;
   onChange: (next: CostBreakdownEdit) => void;
   editable: boolean;
   formatCurrency: (n: number) => string;
+  /** Plan / catalog BOM lines — hydrates “Chosen materials”. */
+  seedLines?: OrderCostMaterialLine[] | null;
 };
 
 /**
- * Compact manufacturing-cost stamp board — 2×2 category tiles; tap opens materials sheet.
+ * Manufacturing cost board — hero total + inset category ledger (floor aesthetic).
  */
 export function ManufacturingCostEditor({
   edit,
   onChange,
   editable,
   formatCurrency,
+  seedLines,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { colors, theme } = useTheme();
   const reduce = useReducedMotion();
   const [activeKey, setActiveKey] = useState<CostKey | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerFor, setPickerFor] = useState<CostKey>('fabric');
-  const [lines, setLines] = useState<CostMaterialLine[]>([]);
+  const [lines, setLines] = useState<CostMaterialLine[]>(() => seedLinesFromOrder(seedLines));
+  const [localOnly, setLocalOnly] = useState(false);
+
+  const seedKey = useMemo(
+    () =>
+      (seedLines ?? [])
+        .map((l) => `${l.category}:${l.sku}:${l.qty}:${l.lineCost}`)
+        .join('|'),
+    [seedLines],
+  );
+
+  useEffect(() => {
+    if (localOnly) return;
+    setLines(seedLinesFromOrder(seedLines));
+  }, [seedKey, localOnly, seedLines]);
 
   const total = totalFromCostEdit(edit);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -207,6 +228,7 @@ export function ManufacturingCostEditor({
     categoryGroup: InventoryCategoryGroup;
     qty: number;
   }) {
+    setLocalOnly(true);
     const key =
       inventoryGroupToCostKey(payload.categoryGroup) || categoryToKey(payload.item);
     const unit = inventoryItemUnitCost(payload.item);
@@ -242,6 +264,7 @@ export function ManufacturingCostEditor({
   function removeLine(lineId: string) {
     const line = lines.find((l) => l.id === lineId);
     if (!line) return;
+    setLocalOnly(true);
     const qtyKey = `${line.category}Qty` as keyof CostBreakdownEdit;
     const costKey = `${line.category}Cost` as keyof CostBreakdownEdit;
     onChange({
@@ -253,94 +276,103 @@ export function ManufacturingCostEditor({
   }
 
   const activeLines = activeKey ? lines.filter((l) => l.category === activeKey) : [];
+  const activeCost = activeKey
+    ? num(edit[`${activeKey}Cost` as keyof CostBreakdownEdit])
+    : 0;
+  const activeQty = activeKey
+    ? num(edit[`${activeKey}Qty` as keyof CostBreakdownEdit])
+    : 0;
 
   return (
-    <OrderBoardCard accent={colors.brand} style={{ padding: 0, overflow: 'hidden' }}>
-      <View
-        style={{
-          paddingHorizontal: theme.spacing.md,
-          paddingTop: theme.spacing.md,
-          paddingBottom: theme.spacing.sm,
-          backgroundColor: colors.surfaceSecondary,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-          gap: theme.spacing.sm,
-        }}
-      >
+    <OrderBoardCard
+      header={
         <OrderSectionHeader
           icon="hammer-outline"
           label={t('mobile.orderDetail.manufacturingCost')}
           accent={colors.brand}
+          trailing={
+            editable ? (
+              <AnimatedPressable
+                variant="button"
+                accessibilityRole="button"
+                accessibilityLabel={t('mobile.orderDetail.addMaterial')}
+                onPress={() => {
+                  void haptics.selection();
+                  setPickerFor('fabric');
+                  setPickerOpen(true);
+                }}
+                style={{
+                  minHeight: 36,
+                  paddingHorizontal: theme.spacing.md,
+                  borderRadius: theme.radius.lg,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.brand,
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <Ionicons name="add" size={16} color={colors.brand} />
+                <AppText variant="caption" weight={titleWeight} color="brand">
+                  {t('mobile.orderDetail.addMaterial')}
+                </AppText>
+              </AnimatedPressable>
+            ) : null
+          }
         />
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            gap: theme.spacing.md,
-          }}
+      }
+    >
+      <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+        {(() => {
+          const v = t('sales.fromInventoryCosts');
+          return v === 'sales.fromInventoryCosts'
+            ? 'Auto from inventory material prices'
+            : v;
+        })()}
+      </AppText>
+
+      <View
+        style={{
+          borderRadius: theme.radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surfaceSecondary,
+          padding: theme.spacing.md,
+          gap: 4,
+        }}
+      >
+        <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
+          {t('mobile.orderDetail.manufacturingCostTotal')}
+        </AppText>
+        <AppText
+          variant="heading"
+          weight={titleWeight}
+          color="brand"
+          dir="ltr"
+          style={{ textAlign: isRTL ? 'right' : 'left' }}
         >
-          <View style={{ flex: 1, gap: 2 }}>
-            <AppText variant="caption" color="muted">
-              {(() => {
-                const v = t('sales.fromInventoryCosts');
-                return v === 'sales.fromInventoryCosts'
-                  ? 'Auto from inventory material prices'
-                  : v;
-              })()}
-            </AppText>
-            <AppText variant="heading" weight="semibold" color="brand" dir="ltr">
-              {formatCurrency(total)}
-            </AppText>
-          </View>
-          {editable ? (
-            <AnimatedPressable
-              variant="button"
-              accessibilityRole="button"
-              accessibilityLabel={t('mobile.orderDetail.addMaterial')}
-              onPress={() => {
-                void haptics.selection();
-                setPickerFor('fabric');
-                setPickerOpen(true);
-              }}
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                gap: 6,
-                paddingHorizontal: theme.spacing.md,
-                paddingVertical: 10,
-                borderRadius: theme.radius.full,
-                backgroundColor: colors.brandSoft,
-                borderWidth: 1,
-                borderColor: colors.brand,
-              }}
-            >
-              <Ionicons name="add" size={16} color={colors.brand} />
-              <AppText variant="label" weight="semibold" color="brand">
-                {t('mobile.orderDetail.addMaterial')}
-              </AppText>
-            </AnimatedPressable>
-          ) : null}
-        </View>
+          {formatCurrency(total)}
+        </AppText>
       </View>
 
       <View
         style={{
-          padding: theme.spacing.md,
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          flexWrap: 'wrap',
-          gap: theme.spacing.sm,
+          borderRadius: theme.radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surfaceSecondary,
+          overflow: 'hidden',
         }}
       >
         {tiles.map((tile, index) => {
-          const accent = accentFor(tile.key, colors);
-          const hot = tile.cost > 0 || tile.qty > 0;
-          const Tile = reduce || index > 3 ? View : Animated.View;
+          const last = index === tiles.length - 1;
+          const TileWrap = reduce || index > 3 ? View : Animated.View;
           const enter = reduce || index > 3 ? {} : { entering: softFadeDown(40 + index * 35) };
           return (
-            <Tile key={tile.key} {...enter} style={{ width: '47%', flexGrow: 1, minWidth: 140 }}>
+            <TileWrap key={tile.key} {...enter}>
               <AnimatedPressable
-                variant="card"
+                variant="button"
                 accessibilityRole="button"
                 accessibilityLabel={`${t(LABEL_KEY[tile.key])} ${formatCurrency(tile.cost)}`}
                 onPress={() => {
@@ -348,94 +380,78 @@ export function ManufacturingCostEditor({
                   setActiveKey(tile.key);
                 }}
                 style={{
-                  borderRadius: theme.radius.lg,
-                  borderWidth: 1,
-                  borderColor: hot ? accent : colors.borderStrong,
-                  backgroundColor: colors.surface,
-                  overflow: 'hidden',
-                  minHeight: 104,
-                  ...orderBoardShadow(colorScheme),
+                  minHeight: theme.sizes.touch.min,
+                  paddingHorizontal: theme.spacing.md,
+                  paddingVertical: theme.spacing.sm + 2,
+                  borderBottomWidth: last ? 0 : 1,
+                  borderBottomColor: colors.border,
+                  gap: 6,
                 }}
               >
-                <View style={{ height: 4, backgroundColor: accent }} />
-                <View style={{ padding: theme.spacing.md, gap: 8 }}>
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    gap: theme.spacing.sm,
+                  }}
+                >
                   <View
                     style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: colors.surface,
+                      borderWidth: 1,
+                      borderColor: colors.borderStrong,
                       alignItems: 'center',
-                      gap: 8,
+                      justifyContent: 'center',
                     }}
                   >
-                    <View
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 9,
-                        backgroundColor: hot ? `${accent}22` : colors.surfaceSecondary,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Ionicons name={ICON[tile.key]} size={15} color={accent} />
-                    </View>
+                    <Ionicons name={ICON[tile.key]} size={16} color={colors.brand} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
                     <AppText
-                      variant="caption"
+                      variant="label"
                       weight={titleWeight}
-                      style={{
-                        flex: 1,
-                        color: accent,
-                        letterSpacing: locale === 'ar' ? 0 : 0.8,
-                        textTransform: 'uppercase',
-                      }}
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
                       numberOfLines={1}
                     >
                       {t(LABEL_KEY[tile.key])}
                     </AppText>
-                    <Ionicons
-                      name={isRTL ? 'chevron-back' : 'chevron-forward'}
-                      size={14}
-                      color={colors.textMuted}
-                    />
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      style={{ textAlign: isRTL ? 'right' : 'left' }}
+                    >
+                      {tile.materialCount > 0
+                        ? t('mobile.orderDetail.materialLines', {
+                            count: tile.materialCount,
+                          })
+                        : `${t('mobile.orderDetail.qty')} ${tile.qty}`}
+                    </AppText>
                   </View>
-                  <AppText variant="title" weight="semibold" dir="ltr" style={{ color: accent }}>
+                  <AppText
+                    variant="label"
+                    weight={titleWeight}
+                    dir="ltr"
+                    style={{ fontVariant: ['tabular-nums'] }}
+                  >
                     {formatCurrency(tile.cost)}
                   </AppText>
-                  <View
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      gap: 6,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <MetaChip
-                      label={`${t('mobile.orderDetail.qty')} ${tile.qty}`}
-                      muted={!hot}
-                    />
-                    {tile.materialCount > 0 ? (
-                      <MetaChip
-                        label={t('mobile.orderDetail.materialLines', {
-                          count: tile.materialCount,
-                        })}
-                        muted={false}
-                      />
-                    ) : null}
-                  </View>
+                  <Ionicons
+                    name={isRTL ? 'chevron-back' : 'chevron-forward'}
+                    size={16}
+                    color={colors.textMuted}
+                  />
                 </View>
               </AnimatedPressable>
-            </Tile>
+            </TileWrap>
           );
         })}
       </View>
 
       {editable ? (
-        <AppText
-          variant="caption"
-          color="muted"
-          style={{
-            paddingHorizontal: theme.spacing.md,
-            paddingBottom: theme.spacing.md,
-          }}
-        >
+        <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
           {t('mobile.orderDetail.materialsTapHint')}
         </AppText>
       ) : null}
@@ -445,136 +461,194 @@ export function ManufacturingCostEditor({
         onClose={() => setActiveKey(null)}
         title={activeKey ? t(LABEL_KEY[activeKey]) : undefined}
         fitContent
-        maxHeight={560}
+        maxHeight={620}
       >
         {activeKey ? (
           <View style={{ gap: theme.spacing.md }}>
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                gap: theme.spacing.sm,
-              }}
-            >
-              <FieldInline
-                label={t('mobile.orderDetail.costAmount')}
-                value={edit[`${activeKey}Cost` as keyof CostBreakdownEdit]}
-                onChangeText={(v) => setField(activeKey, 'cost', v)}
-                editable={editable}
-                style={{ flex: 1.2 }}
-              />
-              <FieldInline
-                label={t('mobile.orderDetail.qty')}
-                value={edit[`${activeKey}Qty` as keyof CostBreakdownEdit]}
-                onChangeText={(v) => setField(activeKey, 'qty', v)}
-                editable={editable}
-                style={{ flex: 0.8 }}
-              />
-            </View>
-
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: theme.spacing.sm,
-              }}
-            >
-              <AppText variant="label" weight="semibold">
-                {t('mobile.orderDetail.chosenMaterials')}
-              </AppText>
-              {editable ? (
-                <SecondaryButton
-                  label={t('mobile.orderDetail.addMaterial')}
-                  onPress={() => {
-                    void haptics.selection();
-                    setPickerFor(activeKey);
-                    setPickerOpen(true);
-                  }}
-                  style={{ borderRadius: theme.radius.full }}
+            <OrderBoardCard
+              header={
+                <OrderSectionHeader
+                  icon={ICON[activeKey]}
+                  label={t(LABEL_KEY[activeKey])}
+                  accent={colors.brand}
                 />
-              ) : null}
-            </View>
-
-            {activeLines.length === 0 ? (
+              }
+            >
               <View
                 style={{
                   borderRadius: theme.radius.lg,
                   borderWidth: 1,
                   borderColor: colors.border,
                   backgroundColor: colors.surfaceSecondary,
-                  padding: theme.spacing.md,
-                  gap: 4,
+                  overflow: 'hidden',
                 }}
               >
-                <AppText variant="bodySecondary" color="secondary">
-                  {num(edit[`${activeKey}Cost` as keyof CostBreakdownEdit]) > 0
-                    ? t('mobile.orderDetail.rollupOnlyHint')
-                    : t('mobile.orderDetail.noMaterialsYet')}
-                </AppText>
+                <MetaMoneyRow
+                  label={t('mobile.orderDetail.costAmount')}
+                  value={
+                    editable
+                      ? edit[`${activeKey}Cost` as keyof CostBreakdownEdit]
+                      : formatCurrency(activeCost)
+                  }
+                  editable={editable}
+                  onChangeText={(v) => setField(activeKey, 'cost', v)}
+                  titleWeight={titleWeight}
+                />
+                <MetaMoneyRow
+                  label={t('mobile.orderDetail.qty')}
+                  value={String(activeQty)}
+                  editable={editable}
+                  onChangeText={(v) => setField(activeKey, 'qty', v)}
+                  titleWeight={titleWeight}
+                  last
+                />
               </View>
-            ) : (
-              <View style={{ gap: theme.spacing.sm }}>
-                {activeLines.map((line) => (
-                  <View
-                    key={line.id}
-                    style={{
-                      borderRadius: theme.radius.lg,
-                      borderWidth: 1,
-                      borderColor: colors.borderStrong,
-                      backgroundColor: colors.surface,
-                      padding: theme.spacing.md,
-                      gap: 6,
-                      ...orderBoardShadow(colorScheme),
-                    }}
+            </OrderBoardCard>
+
+            <OrderBoardCard
+              header={
+                <OrderSectionHeader
+                  icon="cube-outline"
+                  label={t('mobile.orderDetail.chosenMaterials')}
+                  trailing={
+                    editable ? (
+                      <AnimatedPressable
+                        variant="button"
+                        accessibilityRole="button"
+                        accessibilityLabel={t('mobile.orderDetail.addMaterial')}
+                        onPress={() => {
+                          void haptics.selection();
+                          setPickerFor(activeKey);
+                          setPickerOpen(true);
+                        }}
+                        style={{
+                          minHeight: 36,
+                          paddingHorizontal: theme.spacing.md,
+                          borderRadius: theme.radius.lg,
+                          backgroundColor: colors.surface,
+                          borderWidth: 1,
+                          borderColor: colors.brand,
+                          flexDirection: isRTL ? 'row-reverse' : 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <Ionicons name="add" size={16} color={colors.brand} />
+                        <AppText variant="caption" weight={titleWeight} color="brand">
+                          {t('mobile.orderDetail.addMaterial')}
+                        </AppText>
+                      </AnimatedPressable>
+                    ) : null
+                  }
+                />
+              }
+            >
+              {activeLines.length === 0 ? (
+                <View
+                  style={{
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    padding: theme.spacing.md,
+                    gap: 4,
+                  }}
+                >
+                  <AppText
+                    variant="bodySecondary"
+                    color="secondary"
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
                   >
-                    <View
-                      style={{
-                        flexDirection: isRTL ? 'row-reverse' : 'row',
-                        alignItems: 'flex-start',
-                        gap: theme.spacing.sm,
-                      }}
-                    >
-                      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
-                        <AppText variant="label" weight="semibold" numberOfLines={2}>
-                          {line.name}
-                        </AppText>
-                        <AppText variant="caption" color="muted" dir="ltr">
-                          {line.sku}
-                        </AppText>
-                      </View>
-                      {editable ? (
-                        <AnimatedPressable
-                          variant="button"
-                          accessibilityRole="button"
-                          accessibilityLabel={t('common.delete')}
-                          onPress={() => {
-                            void haptics.selection();
-                            removeLine(line.id);
+                    {activeCost > 0
+                      ? t('mobile.orderDetail.rollupOnlyHint')
+                      : t('mobile.orderDetail.noMaterialsYet')}
+                  </AppText>
+                </View>
+              ) : (
+                <View
+                  style={{
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {activeLines.map((line, index) => {
+                    const last = index === activeLines.length - 1;
+                    return (
+                      <View
+                        key={line.id}
+                        style={{
+                          paddingHorizontal: theme.spacing.md,
+                          paddingVertical: theme.spacing.sm + 2,
+                          borderBottomWidth: last ? 0 : 1,
+                          borderBottomColor: colors.border,
+                          gap: 6,
+                        }}
+                      >
+                        <View
+                          style={{
+                            flexDirection: isRTL ? 'row-reverse' : 'row',
+                            alignItems: 'flex-start',
+                            gap: theme.spacing.sm,
                           }}
-                          style={{ padding: 4 }}
                         >
-                          <Ionicons name="trash-outline" size={18} color={colors.error} />
-                        </AnimatedPressable>
-                      ) : null}
-                    </View>
-                    <View
-                      style={{
-                        flexDirection: isRTL ? 'row-reverse' : 'row',
-                        justifyContent: 'space-between',
-                        gap: theme.spacing.sm,
-                      }}
-                    >
-                      <AppText variant="caption" color="secondary">
-                        {t('mobile.orderDetail.qty')} {line.qty} · {formatCurrency(line.unitCost)}
-                      </AppText>
-                      <AppText variant="label" weight="semibold" dir="ltr" color="brand">
-                        {formatCurrency(line.lineCost)}
-                      </AppText>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
+                          <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                            <AppText
+                              variant="label"
+                              weight={titleWeight}
+                              numberOfLines={2}
+                              style={{ textAlign: isRTL ? 'right' : 'left' }}
+                            >
+                              {line.name}
+                            </AppText>
+                            <AppText variant="caption" color="muted" dir="ltr">
+                              {line.sku}
+                            </AppText>
+                          </View>
+                          {editable && !line.id.startsWith('seed-') ? (
+                            <AnimatedPressable
+                              variant="button"
+                              accessibilityRole="button"
+                              accessibilityLabel={t('common.delete')}
+                              onPress={() => {
+                                void haptics.selection();
+                                removeLine(line.id);
+                              }}
+                              style={{ padding: 4 }}
+                            >
+                              <Ionicons name="trash-outline" size={18} color={colors.error} />
+                            </AnimatedPressable>
+                          ) : null}
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: isRTL ? 'row-reverse' : 'row',
+                            justifyContent: 'space-between',
+                            gap: theme.spacing.sm,
+                          }}
+                        >
+                          <AppText variant="caption" color="secondary">
+                            {t('mobile.orderDetail.qty')} {line.qty} ·{' '}
+                            {formatCurrency(line.unitCost)}
+                          </AppText>
+                          <AppText
+                            variant="label"
+                            weight={titleWeight}
+                            dir="ltr"
+                            color="brand"
+                            style={{ fontVariant: ['tabular-nums'] }}
+                          >
+                            {formatCurrency(line.lineCost)}
+                          </AppText>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </OrderBoardCard>
 
             <PrimaryButton
               label={t('mobile.orderDetail.categoryDone')}
@@ -600,47 +674,35 @@ export function ManufacturingCostEditor({
   );
 }
 
-function MetaChip({ label, muted }: { label: string; muted: boolean }) {
-  const { colors, theme } = useTheme();
-  return (
-    <View
-      style={{
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: theme.radius.full,
-        backgroundColor: muted ? colors.surfaceSecondary : colors.brandSoft,
-        borderWidth: 1,
-        borderColor: muted ? colors.border : colors.borderStrong,
-      }}
-    >
-      <AppText
-        variant="caption"
-        style={{ color: muted ? colors.textMuted : colors.brand, fontSize: 11 }}
-      >
-        {label}
-      </AppText>
-    </View>
-  );
-}
-
-function FieldInline({
+function MetaMoneyRow({
   label,
   value,
-  onChangeText,
   editable,
-  style,
+  onChangeText,
+  titleWeight,
+  last,
 }: {
   label: string;
   value: string;
-  onChangeText: (v: string) => void;
   editable: boolean;
-  style?: object;
+  onChangeText: (v: string) => void;
+  titleWeight: 'medium' | 'semibold';
+  last?: boolean;
 }) {
   const { colors, theme } = useTheme();
   const { isRTL } = useLocale();
   return (
-    <View style={[{ gap: 4 }, style]}>
-      <AppText variant="caption" color="muted">
+    <View
+      style={{
+        minHeight: theme.sizes.touch.min,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: colors.border,
+        gap: 4,
+      }}
+    >
+      <AppText variant="caption" color="muted" style={{ textAlign: isRTL ? 'right' : 'left' }}>
         {label}
       </AppText>
       {editable ? (
@@ -656,12 +718,17 @@ function FieldInline({
             borderRadius: theme.radius.md,
             paddingHorizontal: theme.spacing.md,
             color: colors.textPrimary,
-            backgroundColor: colors.surfaceSecondary,
+            backgroundColor: colors.surface,
             textAlign: isRTL ? 'right' : 'left',
           }}
         />
       ) : (
-        <AppText variant="label" weight="semibold" dir="ltr">
+        <AppText
+          variant="label"
+          weight={titleWeight}
+          dir="ltr"
+          style={{ textAlign: isRTL ? 'right' : 'left', fontVariant: ['tabular-nums'] }}
+        >
           {value}
         </AppText>
       )}

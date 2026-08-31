@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsEnum,
@@ -13,7 +13,10 @@ import { PaymentMethod } from '@maher/database';
 import { SupplierInvoicesService } from './supplier-invoices.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ListSupplierInvoicesDto } from './dto/supplier-invoice.dto';
+import {
+  ListSupplierInvoicesDto,
+  UpdateSupplierInvoiceDto,
+} from './dto/supplier-invoice.dto';
 import type { AuthUser } from '@maher/types';
 
 class CreateSupplierInvoiceDto {
@@ -70,6 +73,16 @@ export class SupplierInvoicesController {
   @RequirePermissions('supplier-invoice.read')
   get(@Param('id') id: string) {
     return this.service.get(id);
+  }
+
+  @Patch('supplier-invoices/:id')
+  @RequirePermissions('supplier-invoice.update')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateSupplierInvoiceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.service.update(id, dto, user.id);
   }
 
   @Post('supplier-invoices')

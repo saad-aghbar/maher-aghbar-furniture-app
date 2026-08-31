@@ -49,7 +49,9 @@ export function useSalesOrderQuery(id: string | undefined, enabled: boolean) {
     queryKey: queryKeys.salesOrders.detail(id ?? ''),
     queryFn: () => getSalesOrder(id!),
     enabled: Boolean(id) && enabled,
-    staleTime: 30_000,
+    // Manufacturing actual/variance move as floor usage posts — keep the desk current.
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
   });
 }
 

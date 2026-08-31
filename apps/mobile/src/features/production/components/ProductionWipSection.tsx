@@ -137,64 +137,90 @@ export function ProductionWipSection({
         ...productionBoardShadow(colorScheme),
       }}
     >
-      <View style={{ height: 3, backgroundColor: colors.brand, opacity: 0.55 }} />
-      <View style={{ padding: theme.spacing.md, gap: theme.spacing.md }}>
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          width: 3,
+          backgroundColor: colors.brand,
+          opacity: 0.55,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+        }}
+      />
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.lg,
+          paddingVertical: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          backgroundColor: colors.surfaceSecondary,
+        }}
+      >
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            width: 36,
+            height: 36,
+            borderRadius: 18,
             alignItems: 'center',
-            gap: theme.spacing.sm,
+            justifyContent: 'center',
+            backgroundColor: colors.brandSoft,
+            borderWidth: 1,
+            borderColor: colors.border,
           }}
         >
+          <Ionicons name="cube-outline" size={18} color={colors.brand} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <AppText
+            variant="caption"
+            weight={titleWeight}
+            style={productionSectionLabelStyle(locale, colors.brand)}
+          >
+            {t('mobile.production.hubWipEyebrow')}
+          </AppText>
+          <AppText variant="label" weight={titleWeight} numberOfLines={1}>
+            {t('mobile.production.wipTitle')}
+          </AppText>
+        </View>
+        {totalKits > 0 ? (
           <View
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              alignItems: 'center',
-              justifyContent: 'center',
+              minWidth: 32,
+              paddingHorizontal: theme.spacing.sm,
+              paddingVertical: 6,
+              borderRadius: theme.radius.full,
               backgroundColor: colors.brandSoft,
-              borderWidth: 1,
-              borderColor: colors.borderMuted,
+              alignItems: 'center',
             }}
           >
-            <Ionicons name="cube-outline" size={18} color={colors.brand} />
-          </View>
-          <View style={{ flex: 1, gap: 2 }}>
             <AppText
               variant="caption"
-              weight="semibold"
-              style={productionSectionLabelStyle(locale, colors.brand)}
+              weight={titleWeight}
+              dir="ltr"
+              style={{ color: colors.brand, fontVariant: ['tabular-nums'] }}
             >
-              {t('mobile.production.hubWipEyebrow')}
-            </AppText>
-            <AppText variant="heading" weight={titleWeight}>
-              {t('mobile.production.wipTitle')}
+              {totalKits}
             </AppText>
           </View>
-          {totalKits > 0 ? (
-            <View
-              style={{
-                minWidth: 32,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: 6,
-                borderRadius: theme.radius.full,
-                backgroundColor: colors.brandSoft,
-                alignItems: 'center',
-              }}
-            >
-              <AppText
-                variant="caption"
-                weight="semibold"
-                dir="ltr"
-                style={{ color: colors.brand, fontVariant: ['tabular-nums'] }}
-              >
-                {totalKits}
-              </AppText>
-            </View>
-          ) : null}
-        </View>
-
+        ) : null}
+      </View>
+      <View
+        style={{
+          padding: theme.spacing.lg,
+          gap: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+        }}
+      >
         <AppText variant="caption" color="muted">
           {t('mobile.production.wipHint')}
         </AppText>
@@ -232,7 +258,7 @@ export function ProductionWipSection({
                 kit.status === 'CLAIMED'
                   ? colors.warning
                   : kit.status === 'READY'
-                    ? colors.info
+                    ? colors.success
                     : colors.brand;
               const chevron = isRTL ? 'chevron-back' : 'chevron-forward';
 
@@ -250,14 +276,13 @@ export function ProductionWipSection({
                     borderRadius: theme.radius.xl,
                     borderWidth: 1,
                     borderColor: colors.borderStrong,
-                    backgroundColor: colors.surfaceElevated,
-                    padding: theme.spacing.md,
-                    gap: theme.spacing.sm,
+                    backgroundColor: colors.surface,
                     overflow: 'hidden',
-                    ...theme.elevation.rest,
+                    ...productionBoardShadow(colorScheme),
                   }}
                 >
                   <View
+                    pointerEvents="none"
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -265,37 +290,48 @@ export function ProductionWipSection({
                       ...(isRTL ? { right: 0 } : { left: 0 }),
                       width: 3,
                       backgroundColor: accent,
-                      opacity: 0.85,
+                      opacity: 0.55,
                     }}
                   />
 
                   <View
                     style={{
                       flexDirection: isRTL ? 'row-reverse' : 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: theme.spacing.sm,
+                      paddingHorizontal: theme.spacing.md,
+                      paddingVertical: theme.spacing.sm,
+                      ...(isRTL ? { paddingRight: theme.spacing.md + 4 } : { paddingLeft: theme.spacing.md + 4 }),
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                      backgroundColor: colors.surfaceSecondary,
+                    }}
+                  >
+                    <StatusBadge status={kit.status} dot />
+                    <AppText variant="caption" color="brand" weight={titleWeight}>
+                      {t('mobile.production.wipTapForDetails')}
+                    </AppText>
+                  </View>
+
+                  <View
+                    style={{
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
                       gap: theme.spacing.md,
                       alignItems: 'center',
-                      ...(isRTL ? { paddingRight: 4 } : { paddingLeft: 4 }),
+                      padding: theme.spacing.md,
+                      ...(isRTL ? { paddingRight: theme.spacing.md + 4 } : { paddingLeft: theme.spacing.md + 4 }),
                     }}
                   >
                     <KitMedia kit={kit} />
                     <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
-                      <View
-                        style={{
-                          flexDirection: isRTL ? 'row-reverse' : 'row',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          gap: theme.spacing.sm,
-                        }}
-                      >
-                        <View style={{ flex: 1, gap: 2 }}>
-                          <AppText variant="caption" weight="semibold" style={{ color: accent }}>
-                            {stageLabel}
-                          </AppText>
-                          <AppText variant="label" weight={titleWeight} numberOfLines={2}>
-                            {name}
-                          </AppText>
-                        </View>
-                        <StatusBadge status={kit.status} />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <AppText variant="caption" weight={titleWeight} style={{ color: accent }}>
+                          {stageLabel}
+                        </AppText>
+                        <AppText variant="label" weight={titleWeight} numberOfLines={2}>
+                          {name}
+                        </AppText>
                       </View>
 
                       <AppText variant="caption" color="muted" numberOfLines={1} dir="ltr">
@@ -327,10 +363,6 @@ export function ProductionWipSection({
                     </View>
                     <Ionicons name={chevron} size={18} color={colors.textMuted} />
                   </View>
-
-                  <AppText variant="caption" color="brand" style={{ ...(isRTL ? { paddingRight: 4 } : { paddingLeft: 4 }) }}>
-                    {t('mobile.production.wipTapForDetails')}
-                  </AppText>
                 </AnimatedPressable>
               );
             })}

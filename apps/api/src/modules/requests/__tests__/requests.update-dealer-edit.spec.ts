@@ -80,6 +80,9 @@ describe('RequestsService.update dealer edit enforcement', () => {
       auditEvent: {
         create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
       },
+      factoryCalendar: {
+        findFirst: jest.fn().mockResolvedValue({ timezone: 'Asia/Amman' }),
+      },
       $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
         fn({
           requestItem: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },

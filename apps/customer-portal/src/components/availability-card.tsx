@@ -18,11 +18,17 @@ export interface AvailabilityResult {
   alternativeDates: string[];
   estimateConfidence: 'LOW' | 'MEDIUM' | 'HIGH';
   requiresAdminEstimateReview: boolean;
+  minimumRequestDate?: string | null;
 }
 
 function toDateOnly(value: string | null | undefined) {
   if (!value) return null;
   return value.slice(0, 10);
+}
+
+export function localDealerMinimumRequestYmd(now = new Date()): string {
+  const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 4);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
 /**
@@ -38,10 +44,13 @@ export function AvailabilityCard({
 }) {
   const tc = useTranslations('catalog');
   const validItems = items.filter((i) => i.productId && i.quantity > 0);
+  const minRequest = localDealerMinimumRequestYmd();
+  const requestedYmd = toDateOnly(requestedDeliveryDate);
+  const sendRequested = requestedYmd && requestedYmd >= minRequest ? requestedYmd : undefined;
   const queryKey = [
     'scheduling-availability',
     validItems.map((i) => `${i.productId}:${i.quantity}`).join(','),
-    requestedDeliveryDate ?? '',
+    sendRequested ?? '',
   ];
 
   const { data, isLoading, isError } = useQuery({
@@ -52,7 +61,7 @@ export function AvailabilityCard({
         method: 'POST',
         body: JSON.stringify({
           items: validItems,
-          requestedDeliveryDate: requestedDeliveryDate || undefined,
+          requestedDeliveryDate: sendRequested,
         }),
       }),
     staleTime: 30_000,
@@ -62,6 +71,7 @@ export function AvailabilityCard({
 
   return (
     <Card title={tc('availabilityTitle')} className="maher-form-section">
+      <p className="text-xs text-text-tertiary">{tc('deliveryLeadTimeNotice')}</p>
       {isLoading ? (
         <Skeleton className="h-16 w-full rounded-xl" />
       ) : isError || !data || data.estimateStatus === 'UNAVAILABLE' ? (
@@ -75,7 +85,7 @@ export function AvailabilityCard({
                 {toDateOnly(data.earliestAvailableDate) ?? '—'}
               </p>
             </div>
-            {requestedDeliveryDate ? (
+            {sendRequested ? (
               <div>
                 <p className="text-xs text-text-tertiary">{tc('availabilityRequestedFeasible')}</p>
                 <p className="mt-0.5 font-semibold tracking-tight">

@@ -279,6 +279,50 @@ export function statusLabel(locale: string, status: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** Quotation-only human status. Do not use for invoices/POs (shared APPROVED). */
+const QUOTATION_STATUS_PRESENTMENT: Record<string, string> = {
+  DRAFT: 'DRAFT',
+  INTERNAL_REVIEW: 'READY_TO_SEND',
+  APPROVED: 'READY_TO_SEND',
+  SENT: 'SENT_WAITING',
+  VIEWED: 'SENT_WAITING',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED',
+  EXPIRED: 'EXPIRED',
+  REVISION_REQUESTED: 'REVISION_REQUESTED',
+  CANCELLED: 'CANCELLED',
+};
+
+const QUOTATION_EXPIRED_FROM = new Set([
+  'DRAFT',
+  'INTERNAL_REVIEW',
+  'APPROVED',
+  'SENT',
+  'VIEWED',
+]);
+
+export function quotationStatusPresentmentKey(
+  status: string,
+  commerciallyExpired?: boolean,
+): string {
+  if (commerciallyExpired && QUOTATION_EXPIRED_FROM.has(status)) return 'EXPIRED';
+  return QUOTATION_STATUS_PRESENTMENT[status] ?? status;
+}
+
+export function presentQuotationStatus(
+  locale: string,
+  status: string,
+  commerciallyExpired?: boolean,
+): string {
+  const typed = isValidLocale(locale) ? locale : defaultLocale;
+  const key = quotationStatusPresentmentKey(status, commerciallyExpired);
+  const map = (getMessages(typed).quotations as { statusPresentment?: Record<string, string> })
+    .statusPresentment;
+  const labeled = map?.[key];
+  if (typeof labeled === 'string' && labeled.trim()) return labeled;
+  return statusLabel(typed, status);
+}
+
 /** Translate an API error code for the active locale (falls back to English message). */
 export function translateErrorCode(
   locale: string,

@@ -61,6 +61,7 @@ export function OrderProductionSetupHomeScreen({ salesOrderId }: Props) {
 
   const setup = query.data;
   const released = setup?.status === 'RELEASED';
+  const planEditable = setup?.planEditable !== false && !setup?.factoryReleased;
   const stickyPad = stickyCtaBottomInset(insets.bottom, theme.spacing.md) + 88;
 
   const headerStatusLabel = useMemo(() => {
@@ -190,7 +191,33 @@ export function OrderProductionSetupHomeScreen({ salesOrderId }: Props) {
           gap: theme.spacing.md,
         }}
       >
-        {released ? (
+        {released && planEditable ? (
+          <ListItemEnter index={nextIndex()}>
+            <OrderBoardCard
+              accent={colors.brand}
+              style={{ backgroundColor: colors.brandSoft }}
+            >
+              <OrderSectionHeader
+                icon="construct-outline"
+                label={t('mobile.productionSetup.preparingEditBanner')}
+                accent={colors.brand}
+              />
+              <AppText variant="caption" color="secondary">
+                {t('mobile.productionSetup.preparingEditBannerHint')}
+              </AppText>
+              <SecondaryButton
+                label={t('mobile.productionSetup.openPlanCta')}
+                onPress={() => {
+                  void haptics.selection();
+                  router.push(
+                    `/(app)/(admin)/orders/${salesOrderId}/production-plan` as Href,
+                  );
+                }}
+                style={{ marginTop: theme.spacing.sm }}
+              />
+            </OrderBoardCard>
+          </ListItemEnter>
+        ) : released ? (
           <ListItemEnter index={nextIndex()}>
             <OrderBoardCard
               accent={colors.success}

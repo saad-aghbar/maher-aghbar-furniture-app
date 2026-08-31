@@ -83,4 +83,24 @@ export class RequestsController {
   close(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.requests.close(id, user);
   }
+
+  @RequirePermissions('request.update')
+  @Post(':id/confirm-delivery')
+  confirmDelivery(
+    @Param('id') id: string,
+    @Body() body: { date: string; reason?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.requests.setOfferedDeliveryDate(id, user, body.date, body.reason);
+  }
+
+  @RequirePermissions('request.update')
+  @Post(':id/change-delivery')
+  changeDelivery(
+    @Param('id') id: string,
+    @Body() body: { date: string; reason?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.requests.setOfferedDeliveryDate(id, user, body.date, body.reason);
+  }
 }

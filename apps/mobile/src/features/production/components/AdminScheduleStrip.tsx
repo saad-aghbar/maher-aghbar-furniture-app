@@ -6,7 +6,7 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
-import { SurfaceCard } from '@/components/surfaces/SurfaceCard';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -21,32 +21,35 @@ type Props = {
 export function AdminScheduleStrip({ productionOrderId }: Props) {
   const { user } = useAuth();
   const canRead = can(user, 'schedule.read');
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
   const query = useOrderScheduleQuery(productionOrderId, canRead);
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   if (!canRead || !query.data || isOwnOrderSchedule(query.data)) return null;
 
   const snapshot = query.data.schedule;
 
   return (
-    <SurfaceCard>
-      <View style={{ gap: theme.spacing.sm }}>
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: theme.spacing.sm,
-          }}
-        >
-          <AppText variant="label" weight="semibold">
-            {t('mobile.adminScheduling.orderStrip.title')}
-          </AppText>
-          {query.data.promiseState ? <StatusBadge status={String(query.data.promiseState)} dot /> : null}
-        </View>
-
+    <DealerBoard
+      title={t('mobile.adminScheduling.orderStrip.title')}
+      titleWeight={titleWeight}
+      trailing={
+        query.data.promiseState ? (
+          <StatusBadge status={String(query.data.promiseState)} dot />
+        ) : null
+      }
+    >
+      <View
+        style={{
+          borderRadius: theme.radius.lg,
+          backgroundColor: colors.surfaceSecondary,
+          borderWidth: 1,
+          borderColor: colors.border,
+          padding: theme.spacing.md,
+        }}
+      >
         <ScheduleExplanation
           source={{
             requestedDeliveryDate:
@@ -71,29 +74,29 @@ export function AdminScheduleStrip({ productionOrderId }: Props) {
           }}
           variant="detail"
         />
-
-        <AnimatedPressable
-          variant="button"
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.adminScheduling.orderStrip.viewOnBoard')}
-          onPress={() => {
-            void haptics.selection();
-            router.push('/(app)/(admin)/scheduling' as Href);
-          }}
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            gap: 6,
-            alignSelf: isRTL ? 'flex-end' : 'flex-start',
-            minHeight: 36,
-          }}
-        >
-          <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
-            {t('mobile.adminScheduling.orderStrip.viewOnBoard')}
-          </AppText>
-          <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={14} color={colors.brand} />
-        </AnimatedPressable>
       </View>
-    </SurfaceCard>
+
+      <AnimatedPressable
+        variant="button"
+        accessibilityRole="button"
+        accessibilityLabel={t('mobile.adminScheduling.orderStrip.viewOnBoard')}
+        onPress={() => {
+          void haptics.selection();
+          router.push('/(app)/(admin)/scheduling' as Href);
+        }}
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          gap: 6,
+          alignSelf: isRTL ? 'flex-end' : 'flex-start',
+          minHeight: 40,
+        }}
+      >
+        <AppText variant="caption" weight={titleWeight} style={{ color: colors.brand }}>
+          {t('mobile.adminScheduling.orderStrip.viewOnBoard')}
+        </AppText>
+        <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={14} color={colors.brand} />
+      </AnimatedPressable>
+    </DealerBoard>
   );
 }

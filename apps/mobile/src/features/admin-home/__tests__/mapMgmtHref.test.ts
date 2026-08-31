@@ -157,7 +157,7 @@ describe('mapMgmtHref', () => {
 
     it('maps overdue orders late flag', () => {
       expect(mapMgmtHref('/sales-orders', 'late=true')).toBe(
-        '/(app)/(admin)/(tabs)/orders?late=true&chip=needs_attention',
+        '/(app)/(admin)/(tabs)/orders?late=true',
       );
     });
 

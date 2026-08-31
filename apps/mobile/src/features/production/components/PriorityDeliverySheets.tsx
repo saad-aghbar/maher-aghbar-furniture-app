@@ -169,10 +169,22 @@ export function PrioritySheet({
             borderRadius: theme.radius.xl,
             borderWidth: 1,
             borderColor: colors.borderStrong,
-            backgroundColor: colors.surfaceSecondary,
+            backgroundColor: colors.surface,
             overflow: 'hidden',
           }}
         >
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              width: 3,
+              backgroundColor: colors.brand,
+              opacity: 0.55,
+              ...(isRTL ? { right: 0 } : { left: 0 }),
+            }}
+          />
           {PRIORITIES.map((p, index) => {
             const active = p === selected;
             const key = `mobile.production.priority.${p}`;
@@ -337,11 +349,24 @@ export function DeliveryDateSheet({
             borderRadius: theme.radius.xl,
             borderWidth: 1,
             borderColor: colors.borderStrong,
-            backgroundColor: colors.surfaceSecondary,
+            backgroundColor: colors.surface,
             padding: theme.spacing.md,
             gap: theme.spacing.sm,
+            overflow: 'hidden',
           }}
         >
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              width: 3,
+              backgroundColor: colors.brand,
+              opacity: 0.55,
+              ...(isRTL ? { right: 0 } : { left: 0 }),
+            }}
+          />
           <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',

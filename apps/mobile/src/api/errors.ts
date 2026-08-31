@@ -6,6 +6,10 @@ export type ApiErrorBody = {
   fieldErrors?: ApiFieldErrors;
   requestId?: string | null;
   runId?: string;
+  reasons?: unknown;
+  conflicts?: unknown;
+  suggestedWindow?: unknown;
+  [key: string]: unknown;
 };
 
 export class ApiError extends Error {
@@ -17,6 +21,8 @@ export class ApiError extends Error {
   readonly isOffline: boolean;
   readonly isAborted: boolean;
   readonly isTimeout: boolean;
+  /** Extra payload from the API error body (conflicts, suggestedWindow, reasons, …). */
+  readonly details: Record<string, unknown>;
 
   constructor(
     message: string,
@@ -26,6 +32,7 @@ export class ApiError extends Error {
       fieldErrors?: ApiFieldErrors;
       requestId?: string | null;
       runId?: string | null;
+      details?: Record<string, unknown>;
     },
   ) {
     super(message);
@@ -35,6 +42,7 @@ export class ApiError extends Error {
     this.fieldErrors = options.fieldErrors ?? {};
     this.requestId = options.requestId ?? null;
     this.runId = options.runId ?? null;
+    this.details = options.details ?? {};
     this.isOffline = options.code === 'OFFLINE';
     this.isAborted = options.code === 'ABORTED';
     this.isTimeout = options.code === 'TIMEOUT';
@@ -76,12 +84,19 @@ export function apiErrorFromResponse(
 ): ApiError {
   const parsed = extractErrorBody(body);
   const code = normalizeStatusCode(status, parsed?.code);
+  const details: Record<string, unknown> = {};
+  if (parsed) {
+    for (const key of ['conflicts', 'suggestedWindow', 'reasons', 'overrideRequires'] as const) {
+      if (parsed[key] != null) details[key] = parsed[key];
+    }
+  }
   return new ApiError(parsed?.message ?? `Request failed (${status})`, {
     status,
     code,
     fieldErrors: normalizeFieldErrors(parsed?.fieldErrors),
     requestId: parsed?.requestId ?? fallbackRequestId ?? null,
-    runId: parsed?.runId ?? null,
+    runId: typeof parsed?.runId === 'string' ? parsed.runId : null,
+    details,
   });
 }
 

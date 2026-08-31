@@ -110,7 +110,7 @@ export function InventoryFinishedOrderCard({
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: 0.85,
+            opacity: urgency === 'overdue' || urgency === 'leavingToday' ? 0.9 : 0.55,
           }}
         />
 
@@ -320,7 +320,7 @@ export function InventoryFinishedOrderCard({
               </AppText>
             ) : null}
             {loadLine ? (
-              <AppText variant="caption" weight="medium" style={{ color: colors.info }}>
+              <AppText variant="caption" weight="medium" style={{ color: colors.brand }}>
                 {loadLine}
               </AppText>
             ) : null}

@@ -14,6 +14,9 @@ export type {
   ProductionMaterialTransaction,
   ProductionMaterialUsageLine,
   ProductionMaterialUsageStatus,
+  OrderPlanSetupResponse,
+  OrderPlanBomLine,
+  OrderPlanSetupTask,
 } from '@/api/modules/production';
 export {
   assignTask,
@@ -28,7 +31,10 @@ export {
   pauseProductionTask,
   returnProductionUnusedMaterial,
   startProductionOrder,
+  returnProductionOrderToPreparing,
   unblockTask,
   updateProductionOrder,
   updateProductionTaskNotes,
+  getOrderPlanSetup,
+  putOrderPlanSetup,
 } from '@/api/modules/production';

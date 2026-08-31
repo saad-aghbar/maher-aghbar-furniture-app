@@ -91,6 +91,8 @@ export type RequestDetail = {
   deliveryLng?: number | null;
   /** ISO date the dealer requested delivery by. */
   requiredDeliveryDate?: string | null;
+  /** Admin confirmed or changed factory delivery. */
+  offeredDeliveryDate?: string | null;
   submittedAt?: string | null;
   createdAt: string;
   imageUrl?: string | null;

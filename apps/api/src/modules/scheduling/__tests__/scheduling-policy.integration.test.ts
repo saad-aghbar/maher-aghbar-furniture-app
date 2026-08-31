@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { AuthUser } from '@maher/types';
 import { SchedulingService } from '../scheduling.service';
 
@@ -28,6 +28,10 @@ function makeService(prismaOverrides: Record<string, unknown> = {}) {
     productionOrder: { findFirst: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
     productionSchedule: { findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
     auditEvent: { create: jest.fn().mockResolvedValue(undefined) },
+    factoryCalendar: {
+      findFirst: jest.fn().mockResolvedValue({ timezone: 'Asia/Amman' }),
+    },
+    productionStageDefinition: { findMany: jest.fn().mockResolvedValue([]) },
     ...prismaOverrides,
   } as any;
 
@@ -164,9 +168,32 @@ describe('SchedulingService.dealerDateChange', () => {
     );
     expect(prisma.auditEvent.create).toHaveBeenCalled();
   });
+
+  it('rejects a dealer date before the 4-day factory-local cutoff', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-10T05:00:00.000Z') });
+    const { service, prisma } = makeService();
+    prisma.productionOrder.findFirst.mockResolvedValue({
+      id: 'po-1',
+      customerId: 'customer-1',
+      status: 'PLANNED',
+      number: 'PO-1',
+      salesOrder: null,
+    });
+    prisma.productionSchedule.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.dealerDateChange('po-1', { requestedDeliveryDate: '2026-09-13' }, makeUser()),
+    ).rejects.toMatchObject({ response: { code: 'DELIVERY_DATE_TOO_SOON' } });
+    expect(prisma.productionOrder.update).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
 });
 
 describe('SchedulingService.availability', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('returns a dealer-safe UNAVAILABLE shape with no capacity/worker internals when products are unknown', async () => {
     const { service } = makeService({
       product: { findMany: jest.fn().mockResolvedValue([]) },
@@ -186,10 +213,89 @@ describe('SchedulingService.availability', () => {
       alternativeDates: [],
       estimateConfidence: 'LOW',
       requiresAdminEstimateReview: true,
+      minimumRequestDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     });
     // Dealer-safe: no worker/capacity/employee fields ever leak into the response.
     expect(Object.keys(response)).not.toEqual(
       expect.arrayContaining(['workers', 'employeeId', 'allocations']),
     );
+  });
+
+  it('rejects dealer requested dates before factory-local today + 4 calendar days', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-10T05:00:00.000Z') });
+    const { service, prisma } = makeService({
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+    });
+    const dealer = makeUser();
+    const tooSoon = ['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13'];
+    for (const date of tooSoon) {
+      await expect(
+        service.availability(
+          { items: [{ productId: '00000000-0000-0000-0000-000000000001', quantity: 1 }], requestedDeliveryDate: date },
+          dealer,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.availability(
+          { items: [{ productId: '00000000-0000-0000-0000-000000000001', quantity: 1 }], requestedDeliveryDate: date },
+          dealer,
+        ),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'DELIVERY_DATE_TOO_SOON',
+          message: 'Choose a delivery date at least 4 days from today.',
+        },
+      });
+    }
+    expect(prisma.product.findMany).not.toHaveBeenCalled();
+  });
+
+  it('lets Sep 14 pass the lead-time gate even when factory estimate is still unavailable', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-10T05:00:00.000Z') });
+    const { service, prisma } = makeService({
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+    });
+    const response = await service.availability(
+      {
+        items: [{ productId: '00000000-0000-0000-0000-000000000001', quantity: 1 }],
+        requestedDeliveryDate: '2026-09-14',
+      },
+      makeUser(),
+    );
+    expect(prisma.product.findMany).toHaveBeenCalled();
+    expect(response.minimumRequestDate).toBe('2026-09-14');
+    expect(response.estimateStatus).toBe('UNAVAILABLE');
+  });
+
+  it('uses Asia/Amman local date rather than UTC midnight around the cutoff', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-09T21:30:00.000Z') });
+    const { service } = makeService({
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+    });
+    await expect(
+      service.availability(
+        {
+          items: [{ productId: '00000000-0000-0000-0000-000000000001', quantity: 1 }],
+          requestedDeliveryDate: '2026-09-13',
+        },
+        makeUser(),
+      ),
+    ).rejects.toMatchObject({ response: { code: 'DELIVERY_DATE_TOO_SOON' } });
+  });
+
+  it('does not apply the dealer cutoff to admin availability checks', async () => {
+    jest.useFakeTimers({ now: new Date('2026-09-10T05:00:00.000Z') });
+    const { service } = makeService({
+      product: { findMany: jest.fn().mockResolvedValue([]) },
+    });
+    const response = await service.availability(
+      {
+        items: [{ productId: '00000000-0000-0000-0000-000000000001', quantity: 1 }],
+        requestedDeliveryDate: '2026-09-10',
+      },
+      makeUser({ customerId: undefined, roles: ['SYSTEM_ADMINISTRATOR'] }),
+    );
+    expect(response.estimateStatus).toBe('UNAVAILABLE');
+    expect(response.minimumRequestDate).toBe('2026-09-14');
   });
 });

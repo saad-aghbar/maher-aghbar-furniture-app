@@ -1,8 +1,14 @@
 import { dealerCanDecideQuotation } from '../dealerQuotationUi';
 
 describe('dealerCanDecideQuotation', () => {
-  it('allows decisions only on SENT', () => {
+  it('allows decisions on SENT and VIEWED', () => {
     expect(dealerCanDecideQuotation('SENT')).toBe(true);
+    expect(dealerCanDecideQuotation('VIEWED')).toBe(true);
+  });
+
+  it('hides decisions when the quotation is commercially expired', () => {
+    expect(dealerCanDecideQuotation('SENT', true)).toBe(false);
+    expect(dealerCanDecideQuotation('VIEWED', true)).toBe(false);
   });
 
   it('hides decisions on internal and terminal statuses', () => {

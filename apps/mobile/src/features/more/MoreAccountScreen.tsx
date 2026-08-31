@@ -23,7 +23,6 @@ import { useToast } from '@/components/feedback/Toast';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { Divider } from '@/components/layout/Divider';
-import { DevTestsEntryRow } from '@/dev/component-lab/screens/DevTestsEntryRow';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ExpandableLocaleSwitcher } from '@/components/ExpandableLocaleSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
@@ -723,8 +722,6 @@ export function MoreAccountScreen({
         </Animated.View>
 
         <Animated.View entering={enter(220)}>
-          <DevTestsEntryRow />
-          <View style={{ height: 8 }} />
           <DestructiveButton
             label={t('auth.logout')}
             onPress={() => {

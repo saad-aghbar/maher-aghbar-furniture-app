@@ -36,6 +36,7 @@
   "tax": "מע״מ",
   "paymentTerms": "תנאי תשלום",
   "deliveryTerms": "תנאי אספקה",
+  "factoryDelivery": "אספקת המפעל",
   "notes": "הערות",
   "specs": "מפרט",
   "awaitingRevision": "ממתין להצעה מתוקנת",
@@ -58,5 +59,31 @@
   "deliveryCity": "עיר משלוח",
   "preferredDeliveryDate": "תאריך משלוח מועדף",
   "attachment": "קובץ מצורף",
-  "submitFailed": "לא ניתן לשלוח את הבקשה"
+  "submitFailed": "לא ניתן לשלוח את הבקשה",
+  "sendQuotation": "שלח הצעת מחיר",
+  "issueQuotation": "הנפק הצעת מחיר",
+  "priceRequired": "נדרש מחיר",
+  "referencePrice": "מחיר קטלוג / מחירון סוחר",
+  "revised": "עודכן",
+  "rejectionReason": "סיבת דחייה",
+  "rejectReasonPlaceholder": "מחיר, זמן אספקה, מפרט, הלקוח ביטל, או אחר",
+  "rejectReasonOptional": "סיבה (אופציונלי)",
+  "expiredCannotAccept": "תוקף הצעת המחיר פג.",
+  "cannotSendTitle": "לא ניתן לשלוח את הצעת המחיר",
+  "complexityLabel": "סוג",
+  "complexity": {
+    "STANDARD": "סטנדרטי",
+    "MODIFIED": "משונה",
+    "CUSTOM": "מותאם"
+  },
+  "statusPresentment": {
+    "DRAFT": "טיוטה",
+    "READY_TO_SEND": "מוכן לשליחה",
+    "SENT_WAITING": "נשלח / ממתין לסוחר",
+    "ACCEPTED": "התקבל",
+    "REJECTED": "נדחה",
+    "EXPIRED": "פג תוקף",
+    "REVISION_REQUESTED": "נתבקש תיקון",
+    "CANCELLED": "בוטל"
+  }
 }

@@ -12,6 +12,8 @@ export type AdminBomLine = {
   nameEn: string;
   nameAr: string;
   materialId?: string | null;
+  /** Inventory item id (not Material.id). */
+  inventoryItemId?: string | null;
   imageUrl?: string | null;
 };
 

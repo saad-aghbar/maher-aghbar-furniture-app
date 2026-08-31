@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DiscountType, QuotationStatus } from '@maher/database';
+import { DiscountType, ManufacturingComplexity, QuotationStatus } from '@maher/database';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -109,6 +109,11 @@ export class QuotationLineDto {
   @IsNumber()
   @Min(0)
   depth?: number;
+
+  @ApiPropertyOptional({ enum: ManufacturingComplexity })
+  @IsOptional()
+  @IsEnum(ManufacturingComplexity)
+  manufacturingComplexity?: ManufacturingComplexity;
 }
 
 export class CreateQuotationDto {
@@ -125,6 +130,11 @@ export class CreateQuotationDto {
   @IsOptional()
   @IsDateString()
   expirationDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  offeredDeliveryDate?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -175,6 +185,16 @@ export class RequestRevisionDto {
 }
 
 export class UpdateQuotationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  expirationDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  offeredDeliveryDate?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

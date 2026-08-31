@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { FlatList, Pressable, RefreshControl, View } from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { localizedName } from '@maher/i18n';
@@ -7,6 +7,7 @@ import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
@@ -17,7 +18,8 @@ import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
+import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { FinishedLot, SemiFinishedLot, WipKitCard } from '@/api/modules/inventory';
 import { queryKeys } from '@/api/queryKeys';
 import {
@@ -167,6 +169,7 @@ export function InventorySignatureHome({
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
   const { theme, colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
@@ -744,7 +747,7 @@ export function InventorySignatureHome({
         {showOfflineBanner ? <OfflineBanner /> : null}
         <InventoryGroupLoadError
           groupTitle={inventoryGroupRouteTitle(landmarkKey, t)}
-          onRetry={() => void activeQuery.refetch()}
+          onRetry={() => void (activeQuery as { refetch: () => Promise<unknown> }).refetch()}
         />
       </AppScreen>
     );
@@ -917,7 +920,7 @@ export function InventorySignatureHome({
           <AppText
             variant="body"
             weight={locale === 'ar' ? 'medium' : 'semibold'}
-            style={{ textAlign: isRTL ? 'right' : 'left', color: colors.info }}
+            style={{ textAlign: isRTL ? 'right' : 'left', color: colors.brand }}
           >
             {t('mobile.inventory.semiHeading')}
           </AppText>
@@ -995,7 +998,7 @@ export function InventorySignatureHome({
         description={t('mobile.inventory.errorBody')}
         retryLabel={t('mobile.inventory.retry')}
         onRetry={() => {
-          void activeQuery.refetch();
+          void (activeQuery as { refetch: () => Promise<unknown> }).refetch();
         }}
       />
     );

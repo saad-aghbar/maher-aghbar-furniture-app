@@ -105,6 +105,7 @@ describe('Piece 2 order production setup', () => {
         create: jest.fn().mockResolvedValue({ id: 'po-1' }),
         updateMany: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       document: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -392,7 +393,11 @@ describe('Piece 4 manufacturing specification', () => {
         findUniqueOrThrow: jest.fn(),
       },
       salesOrderLineMaterialRequirement: { deleteMany: jest.fn(), createMany: jest.fn() },
-      productionOrder: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn() },
+      productionOrder: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       document: { findMany: jest.fn().mockResolvedValue([]) },
       inventoryItem: {
         findMany: jest.fn().mockResolvedValue([{ sku: 'WOOD-1', standardCost: 10 }]),
@@ -598,7 +603,35 @@ describe('Piece 4 manufacturing specification', () => {
     expect(result.lines[0].estimatedCostSummary.estimateIncomplete).toBe(true);
   });
 
-  it('released setup reports postReleaseEditing locked', async () => {
+  it('released setup stays editable until factory Confirm', async () => {
+    const setup = {
+      id: 'setup-1',
+      salesOrderId: 'so-1',
+      status: SalesOrderProductionSetupStatus.RELEASED,
+      releasedAt: new Date(),
+      releasedById: 'admin-1',
+      salesOrder: {
+        id: 'so-1',
+        number: 'SO-P4-H',
+        status: 'READY_FOR_PRODUCTION',
+        projectName: null,
+        customerId: 'c1',
+        customer: null,
+      },
+      lines: [modifiedSetupLine({ status: 'READY' })],
+    };
+    const { service } = makeService({ setup });
+    const result = (await service.getSetup('so-1', staff)) as any;
+    expect(result.planEditable).toBe(true);
+    expect(result.postReleaseEditing).toEqual(
+      expect.objectContaining({
+        locked: false,
+        revisionSystem: false,
+      }),
+    );
+  });
+
+  it('factory-released setup locks postReleaseEditing', async () => {
     const setup = {
       id: 'setup-1',
       salesOrderId: 'so-1',
@@ -615,8 +648,10 @@ describe('Piece 4 manufacturing specification', () => {
       },
       lines: [modifiedSetupLine({ status: 'READY' })],
     };
-    const { service } = makeService({ setup });
+    const { service, prisma } = makeService({ setup });
+    (prisma.productionOrder.findFirst as jest.Mock).mockResolvedValue({ id: 'po-1' });
     const result = (await service.getSetup('so-1', staff)) as any;
+    expect(result.planEditable).toBe(false);
     expect(result.postReleaseEditing).toEqual(
       expect.objectContaining({
         locked: true,

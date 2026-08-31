@@ -22,7 +22,7 @@ export function pickHomeFocus(data: AdminHomePayload): HomeFocus | null {
       count: data.delayedOrders,
       titleKey: 'mobile.adminHome.queue.late.title',
       actionKey: 'mobile.adminHome.queue.late.action',
-      href: '/(app)/(admin)/(tabs)/orders?focus=needs_attention' as Href,
+      href: '/(app)/(admin)/(tabs)/orders?late=true' as Href,
       kind: 'blocker',
     },
     {

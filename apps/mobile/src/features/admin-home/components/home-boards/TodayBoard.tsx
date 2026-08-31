@@ -3,7 +3,7 @@ import Animated from 'react-native-reanimated';
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, CountUp, ListItemEnter, softFadeDown, useReducedMotion } from '@/motion';
+import { AnimatedPressable, CountUp, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 import { barFill, tileTotal, useMgmtNav, type LabeledTile } from './boardShared';
 
@@ -78,45 +78,43 @@ export function TodayBoard({ tiles }: Props) {
           const enter = reduce || index > 2 ? {} : { entering: softFadeDown(40 + index * 40) };
           return (
             <Stamp key={tile.key} {...enter} style={{ width: '47%', flexGrow: 1, minWidth: 140 }}>
-              <ListItemEnter index={Math.min(index, 2)}>
-                <AnimatedPressable
-                  variant="card"
-                  accessibilityRole="button"
-                  accessibilityLabel={`${label} ${tile.count}`}
-                  onPress={() => nav(tile.href, tile.filter)}
+              <AnimatedPressable
+                variant="card"
+                accessibilityRole="button"
+                accessibilityLabel={`${label} ${tile.count}`}
+                onPress={() => nav(tile.href, tile.filter)}
+                style={{
+                  borderRadius: theme.radius.lg,
+                  borderWidth: 1,
+                  borderColor: colors.borderStrong,
+                  backgroundColor: colors.surface,
+                  padding: theme.spacing.md,
+                  gap: 8,
+                  ...orderBoardShadow(colorScheme),
+                }}
+              >
+                <AppText variant="caption" color="secondary" numberOfLines={1}>
+                  {label}
+                </AppText>
+                <CountUp value={tile.count} variant="title" color={colors.brand} />
+                <View
                   style={{
-                    borderRadius: theme.radius.lg,
-                    borderWidth: 1,
-                    borderColor: colors.borderStrong,
-                    backgroundColor: colors.surface,
-                    padding: theme.spacing.md,
-                    gap: 8,
-                    ...orderBoardShadow(colorScheme),
+                    height: 4,
+                    borderRadius: 2,
+                    backgroundColor: colors.border,
+                    overflow: 'hidden',
                   }}
                 >
-                  <AppText variant="caption" color="secondary" numberOfLines={1}>
-                    {label}
-                  </AppText>
-                  <CountUp value={tile.count} variant="title" color={colors.brand} />
                   <View
                     style={{
-                      height: 4,
-                      borderRadius: 2,
-                      backgroundColor: colors.border,
-                      overflow: 'hidden',
+                      width: `${Math.round(barFill(tile.count, max) * 100)}%`,
+                      height: '100%',
+                      backgroundColor: colors.brand,
+                      alignSelf: isRTL ? 'flex-end' : 'flex-start',
                     }}
-                  >
-                    <View
-                      style={{
-                        width: `${Math.round(barFill(tile.count, max) * 100)}%`,
-                        height: '100%',
-                        backgroundColor: colors.brand,
-                        alignSelf: isRTL ? 'flex-end' : 'flex-start',
-                      }}
-                    />
-                  </View>
-                </AnimatedPressable>
-              </ListItemEnter>
+                  />
+                </View>
+              </AnimatedPressable>
             </Stamp>
           );
         })}

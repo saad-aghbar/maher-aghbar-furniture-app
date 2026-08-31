@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Image, RefreshControl, ScrollView, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
+import { presentQuotationStatus } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import {
   acceptQuotation,
@@ -24,14 +25,13 @@ import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
-import {
-  OrderBoardCard,
-  OrderSectionHeader,
-} from '@/features/sales-orders/components/OrderBoardCard';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { useLocale } from '@/i18n';
+import { formatNumber } from '@/i18n/format';
 import { haptics, ListItemEnter } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
+import { quotationComplexity, quotationLineNet } from './presentAdminQuotation';
 import { dealerCanDecideQuotation } from './dealerQuotationUi';
 
 type Props = {
@@ -72,7 +72,12 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
     enabled: allowed && Boolean(quotationId),
   });
   const detail = query.data;
-  const canDecide = Boolean(detail && dealerCanDecideQuotation(detail.status));
+  const canDecide = Boolean(
+    detail && dealerCanDecideQuotation(detail.status, detail.commerciallyExpired),
+  );
+  const statusLabel = detail
+    ? presentQuotationStatus(locale, detail.status, detail.commerciallyExpired)
+    : '';
   const taxValue = Number(detail?.taxAmount ?? detail?.taxTotal ?? 0);
   const so = detail?.salesOrders?.[0];
 
@@ -98,7 +103,7 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
     onError: fail,
   });
   const rejectMutation = useMutation({
-    mutationFn: () => rejectQuotation(quotationId),
+    mutationFn: (comment?: string) => rejectQuotation(quotationId, comment),
     onSuccess: async () => {
       void haptics.confirmLight();
       await invalidate();
@@ -192,13 +197,11 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
           {detail ? (
             <>
               <ListItemEnter index={0}>
-                <OrderBoardCard accent={colors.brand}>
-                  <OrderSectionHeader
-                    icon="receipt-outline"
-                    label={t('mobile.adminQuotation.detail')}
-                    accent={colors.brand}
-                    trailing={<StatusBadge status={detail.status} dot />}
-                  />
+                <DealerBoard
+                  title={t('mobile.adminQuotation.detail')}
+                  titleWeight={titleWeight}
+                  trailing={<StatusBadge status={detail.status} label={statusLabel} dot />}
+                >
                   <View style={{ gap: theme.spacing.md }}>
                     {detail.expirationDate ? (
                       <AppText variant="caption" color="muted">
@@ -274,19 +277,34 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
                         style={{ alignSelf: 'stretch', width: '100%' }}
                       />
                     ) : null}
+                    {(detail.version ?? 1) > 1 ? (
+                      <AppText variant="caption" color="secondary">
+                        {t('mobile.dealerQuotations.revisedBanner')}
+                      </AppText>
+                    ) : null}
+                    {detail.commerciallyExpired ? (
+                      <AppText variant="caption" color="secondary">
+                        {t('mobile.dealerQuotations.expired')}
+                      </AppText>
+                    ) : null}
+                    {detail.rejectionReason ? (
+                      <AppText variant="caption" color="secondary">
+                        {t('mobile.adminQuotation.rejectionReason')}: {detail.rejectionReason}
+                      </AppText>
+                    ) : null}
                   </View>
-                </OrderBoardCard>
+                </DealerBoard>
               </ListItemEnter>
 
               <ListItemEnter index={1}>
-                <OrderBoardCard>
-                  <OrderSectionHeader
-                    icon="list-outline"
-                    label={t('mobile.adminQuotation.lines')}
-                    accent={colors.brand}
-                  />
+                <DealerBoard title={t('mobile.adminQuotation.lines')} titleWeight={titleWeight}>
                   <View style={{ gap: theme.spacing.md }}>
-                    {(detail.lines ?? []).map((line, i) => (
+                    {(detail.lines ?? []).map((line, i) => {
+                      const complexity = quotationComplexity(line.manufacturingComplexity);
+                      const net = quotationLineNet(line.unitPrice, line.quantity);
+                      const photo = line.product?.imageUrl;
+                      const sku = line.product?.sku;
+                      return (
                       <View
                         key={line.id}
                         style={{
@@ -296,19 +314,43 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
                           borderTopColor: colors.border,
                         }}
                       >
+                        <View
+                          style={{
+                            flexDirection: isRTL ? 'row-reverse' : 'row',
+                            gap: theme.spacing.sm,
+                          }}
+                        >
+                          {photo ? (
+                            <Image
+                              source={{ uri: photo }}
+                              style={{ width: 56, height: 56, borderRadius: theme.radius.md }}
+                            />
+                          ) : null}
+                          <View style={{ flex: 1, gap: 4 }}>
                         <AppText variant="body" weight={titleWeight}>
                           {line.description}
                         </AppText>
+                        <StatusBadge
+                          status={complexity}
+                          label={t(`mobile.adminQuotation.complexity.${complexity}`)}
+                        />
+                        {sku ? (
+                          <AppText variant="caption" color="muted" dir="ltr">
+                            {t('mobile.adminQuotation.sku')} {sku}
+                          </AppText>
+                        ) : null}
                         {lineSpecs(line) ? (
                           <AppText variant="caption" color="muted">
-                            {t('mobile.adminQuotation.specs')}: {lineSpecs(line)}
+                            {lineSpecs(line)}
                           </AppText>
                         ) : null}
                         {lineDims(line) ? (
-                          <AppText variant="caption" color="muted">
-                            {t('mobile.adminQuotation.dimensions')}: {lineDims(line)}
+                          <AppText variant="caption" color="muted" dir="ltr">
+                            {lineDims(line)}
                           </AppText>
                         ) : null}
+                          </View>
+                        </View>
                         <View
                           style={{
                             flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -316,16 +358,20 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
                           }}
                         >
                           <AppText variant="caption" color="muted" dir="ltr">
-                            {String(line.quantity)} × {formatCurrency(Number(line.unitPrice))}
+                            {t('mobile.adminQuotation.qty')} {String(line.quantity)} ·{' '}
+                            {`${formatNumber(locale, Number(line.unitPrice), { maximumFractionDigits: 2 })} ₪`}
                           </AppText>
                           <AppText variant="body" weight="medium" dir="ltr">
-                            {formatCurrency(Number(line.lineTotal ?? 0))}
+                            {net == null
+                              ? '—'
+                              : `${formatNumber(locale, net, { maximumFractionDigits: 2 })} ₪`}
                           </AppText>
                         </View>
                       </View>
-                    ))}
+                      );
+                    })}
                   </View>
-                </OrderBoardCard>
+                </DealerBoard>
               </ListItemEnter>
 
               {detail.status === 'ACCEPTED' ? (
@@ -400,9 +446,10 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
         confirmLabel={t('mobile.dealerQuotations.rejectCta')}
         cancelLabel={t('mobile.adminQuotation.cancel')}
         destructive
-        onConfirm={() => {
+        reasonLabel={t('mobile.dealerQuotations.rejectReasonOptional')}
+        onConfirm={(reason) => {
           setConfirm(null);
-          rejectMutation.mutate();
+          rejectMutation.mutate(reason);
         }}
       />
       <ConfirmationSheet

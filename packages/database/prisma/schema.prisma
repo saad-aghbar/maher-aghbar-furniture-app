@@ -900,6 +900,8 @@ model Supplier {
   registrationNo  String?
   taxNumber       String?
   phone           String?
+  /** WhatsApp destination; falls back to phone when unset. */
+  whatsappPhone   String?
   email           String?
   address         String?
   paymentTermsDays Int      @default(30)
@@ -1012,6 +1014,10 @@ model PurchaseOrder {
   shippingAmount       Decimal             @default(0) @db.Decimal(18, 3)
   total                Decimal             @default(0) @db.Decimal(18, 3)
   notes                String?
+  /** Last WhatsApp send attempt (order stays SENT even if messaging failed). */
+  whatsappSentAt       DateTime?
+  whatsappLastBody     String?
+  whatsappLastTo       String?
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   archivedAt           DateTime?
@@ -1518,6 +1524,8 @@ model RequestForQuotation {
   assignedSales        User?         @relation("RequestAssignee", fields: [assignedSalesId], references: [id])
   requestDate          DateTime      @default(now())
   requiredDeliveryDate DateTime?
+  /// Admin confirmed or changed factory delivery (null until review).
+  offeredDeliveryDate  DateTime?
   status               RequestStatus @default(DRAFT)
   priority             Priority      @default(NORMAL)
   projectName          String?
@@ -1599,6 +1607,8 @@ model Quotation {
   request              RequestForQuotation? @relation(fields: [requestId], references: [id])
   issueDate            DateTime        @default(now())
   expirationDate       DateTime?
+  /// Factory delivery printed on the quotation. Copied from RFQ on create.
+  offeredDeliveryDate  DateTime?
   currency             String          @default("ILS")
   salesRepId           String?
   salesRep             User?           @relation("QuotationSalesRep", fields: [salesRepId], references: [id])
@@ -1694,6 +1704,8 @@ model SalesOrder {
   quotation            Quotation?       @relation(fields: [quotationId], references: [id])
   orderDate            DateTime         @default(now())
   requiredDeliveryDate DateTime?
+  /// Commercial promise copied from quotation offeredDeliveryDate at accept. Never factory-rewritten.
+  committedDeliveryDate DateTime?
   deliveryAddress      String?
   /// Dealer's own / end-customer PO reference (copied from RFQ at accept)
   externalOrderNumber  String?
@@ -1731,6 +1743,7 @@ model SalesOrder {
 
   @@index([customerId])
   @@index([status])
+  @@index([committedDeliveryDate])
   @@map("sales_orders")
 }
 
@@ -1932,6 +1945,9 @@ model ProductionOrder {
   status                ProductionOrderStatus @default(DRAFT)
   supervisorId          String?
   notes                 String?
+  /// Hard Preparing → Production boundary. Null = still Orders Preparing (plan editable).
+  releasedToFactoryAt   DateTime?
+  releasedToFactoryById String?
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
   createdById           String?
@@ -1952,6 +1968,7 @@ model ProductionOrder {
 
   @@index([salesOrderId])
   @@index([status])
+  @@index([releasedToFactoryAt])
   @@index([requiredDeliveryDate])
   @@index([committedDeliveryDate])
   @@index([plannedStartDate])
@@ -2806,6 +2823,9 @@ model FactoryCalendarException {
   shiftStart String?
   shiftEnd   String?
   note       String?
+  /// Owner target load for this date (100 = full shift, 120 = intentional overload, 0 = closed intent).
+  targetLoadPercent Int?
+  overtimeEmployeeIds Json?
   createdAt  DateTime                     @default(now())
 
   @@unique([calendarId, date])
@@ -2899,6 +2919,10 @@ model ScheduleAllocation {
   estimatedMinutes  Int
   isPinned          Boolean              @default(false)
   manuallyAdjusted  Boolean              @default(false)
+  /// FACTORY_CLOSED, WORKER_UNAVAILABLE, DEPENDENCY_CONFLICT, … — warnings only, never a move.
+  attentionCode     String?
+  /// Admin-owned order of work within a day.
+  sortOrder         Int                  @default(0)
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
@@ -2908,6 +2932,33 @@ model ScheduleAllocation {
   @@index([plannedStart, plannedEnd])
   @@index([departmentId, plannedStart])
   @@map("schedule_allocations")
+}
+
+model ScheduleChangeHistory {
+  id                String   @id @default(uuid())
+  productionOrderId String?
+  allocationId      String?
+  salesOrderId      String?
+  requestId         String?
+  quotationId       String?
+  kind              String
+  oldEmployeeId     String?
+  newEmployeeId     String?
+  oldStart          DateTime?
+  newStart          DateTime?
+  oldEnd            DateTime?
+  newEnd            DateTime?
+  oldDate           DateTime?
+  newDate           DateTime?
+  actorId           String
+  reason            String?
+  payload           Json?
+  createdAt         DateTime @default(now())
+
+  @@index([productionOrderId, createdAt])
+  @@index([salesOrderId, createdAt])
+  @@index([requestId, createdAt])
+  @@map("schedule_change_history")
 }
 
 model WorkerSkill {

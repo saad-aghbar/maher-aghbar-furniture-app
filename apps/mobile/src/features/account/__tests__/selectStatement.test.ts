@@ -5,6 +5,7 @@ import {
   paymentMethodKey,
   selectStatementRows,
   selectStatementSummary,
+  statementRangeFromDraft,
 } from '../selectStatement';
 import type { AccountStatement } from '@/api/modules/payments';
 
@@ -136,5 +137,21 @@ describe('statement helpers', () => {
   it('formats debit/credit with RTL-safe signs', () => {
     expect(formatStatementDelta('10', 'debit', false)).toBe('−10');
     expect(formatStatementDelta('10', 'credit', true)).toBe('+10');
+  });
+
+  it('builds statement PDF range from the date sheet draft', () => {
+    expect(statementRangeFromDraft('all', '2026-01-01', '2026-02-01')).toEqual({});
+    expect(statementRangeFromDraft('custom', '2026-03-01', '2026-03-20')).toEqual({
+      from: '2026-03-01',
+      to: '2026-03-20',
+    });
+    expect(statementRangeFromDraft('custom', '2026-03-20', '2026-03-01')).toEqual({
+      from: '2026-03-01',
+      to: '2026-03-20',
+    });
+    expect(statementRangeFromDraft('custom', '2026-03-08', '')).toEqual({
+      from: '2026-03-08',
+      to: '2026-03-08',
+    });
   });
 });

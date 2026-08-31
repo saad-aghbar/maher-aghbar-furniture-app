@@ -21,7 +21,7 @@ export type OptimizeScheduleStats = {
   stillAttention: number;
   emptyDays: Array<{ ymd: string; causeKey: string }>;
   blockedItems: Array<{ number: string; blockerKind?: string | null }>;
-  previewMoves: Array<{ number: string; daysEarlier: number }>;
+  previewMoves: Array<{ productionOrderId: string; number: string; daysEarlier: number }>;
 };
 
 export function optimizeBlockerI18nKey(kind?: string | null): string {
@@ -51,6 +51,7 @@ export function optimizeStatsFromResult(result?: ReplanRunResult | null): Optimi
     .slice(0, 8)
     .map((d) => ({ ymd: d.ymd, causeKey: d.causeKey as string }));
   const previewMoves = (result?.previewMoves ?? []).slice(0, 8).map((m) => ({
+    productionOrderId: m.productionOrderId,
     number: m.number ?? m.productionOrderId,
     daysEarlier: m.daysEarlier ?? 0,
   }));

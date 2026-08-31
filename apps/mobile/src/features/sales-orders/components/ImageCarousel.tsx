@@ -3,14 +3,13 @@ import {
   Dimensions,
   FlatList,
   Image,
-  Pressable,
   View,
   type ViewToken,
 } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { ImageViewer } from '@/components/media/ImageViewer';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -70,7 +69,8 @@ export function ImageCarousel({ uris, height = 240, itemWidth }: ImageCarouselPr
             index: i,
           })}
           renderItem={({ item, index: itemIndex }) => (
-            <Pressable
+            <AnimatedPressable
+              variant="card"
               onPress={() => {
                 void haptics.selection();
                 setViewerIndex(itemIndex);
@@ -83,7 +83,7 @@ export function ImageCarousel({ uris, height = 240, itemWidth }: ImageCarouselPr
                 style={{ width: pageW, height }}
                 resizeMode="cover"
               />
-            </Pressable>
+            </AnimatedPressable>
           )}
         />
       </View>

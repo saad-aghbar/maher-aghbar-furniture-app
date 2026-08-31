@@ -1,7 +1,7 @@
-import { Text, View } from 'react-native';
-import { useLocale } from '@/i18n';
-import { presentStatus } from '@/lib/presentStatus';
-import { resolveAppFontStyle, useTheme } from '@/theme';
+import { View } from 'react-native';
+import { AppText } from '@/components/AppText';
+import { alignStart, localeRow, textAlignFor, useLocale, writingDirectionFor } from '@/i18n';
+import { useTheme } from '@/theme';
 import {
   brandedPillChrome,
   getBadgeContainerStyle,
@@ -24,16 +24,22 @@ type StatusBadgeProps = {
   variant?: BadgeVariant;
 };
 
-function normalizeStatusKey(status: string): string {
-  return status.trim().toUpperCase().replace(/\s+/g, '_');
-}
-
-export function StatusBadge({ status, label, dot = false }: StatusBadgeProps) {
-  const { theme } = useTheme();
-  const { t, locale, isRTL } = useLocale();
+export function StatusBadge({
+  status,
+  label,
+  dot = false,
+  ink = 'semantic',
+  branded = false,
+  variant: variantOverride,
+}: StatusBadgeProps) {
+  const { theme, colors } = useTheme();
+  const { locale, isRTL } = useLocale();
   const key = normalizeStatusKey(status);
-  const variant = resolveStatusVariant(key);
-  const display = label ?? presentStatus(status, t);
+  const variant = variantOverride ?? resolveStatusVariant(key);
+  const display =
+    label && !looksLikeStatusEnum(label) ? label : displayStatusLabel(locale, label ?? status);
+  const board = ink === 'board' || branded;
+  const chrome = board ? brandedPillChrome(theme) : null;
 
   return (
     <View

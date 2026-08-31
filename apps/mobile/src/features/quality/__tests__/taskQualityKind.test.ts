@@ -1,5 +1,8 @@
 import {
+  classifyTaskQualityKind,
+  countPriorFails,
   isLastStageQualityFloor,
+  isQcFailResult,
   resolveTaskQualityKind,
 } from '../taskQualityKind';
 
@@ -37,5 +40,40 @@ describe('isLastStageQualityFloor', () => {
     expect(isLastStageQualityFloor('reinspection')).toBe(true);
     expect(isLastStageQualityFloor('packaging')).toBe(true);
     expect(isLastStageQualityFloor(null)).toBe(false);
+  });
+});
+
+describe('classifyTaskQualityKind', () => {
+  it('marks rework first', () => {
+    expect(
+      classifyTaskQualityKind({ stageCode: 'INSPECTION', isRework: true }),
+    ).toBe('rework');
+  });
+
+  it('marks reinspection when prior fails exist', () => {
+    expect(
+      classifyTaskQualityKind({
+        executionKind: 'QUALITY',
+        priorFailCount: 1,
+      }),
+    ).toBe('reinspection');
+  });
+
+  it('falls back to production for middle stages', () => {
+    expect(classifyTaskQualityKind({ stageCode: 'CARPENTRY' })).toBe('production');
+  });
+});
+
+describe('countPriorFails', () => {
+  it('counts failed and blocked inspections', () => {
+    expect(isQcFailResult('FAILED_REWORK_REQUIRED')).toBe(true);
+    expect(isQcFailResult('PASSED')).toBe(false);
+    expect(
+      countPriorFails([
+        { result: 'PASSED' },
+        { result: 'FAILED_REWORK_REQUIRED' },
+        { result: 'BLOCKED' },
+      ]),
+    ).toBe(2);
   });
 });

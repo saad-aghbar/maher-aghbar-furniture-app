@@ -1,10 +1,10 @@
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 
 export type SemiStageOption = {
@@ -66,7 +66,8 @@ export function InventorySemiStagePickerSheet({
           {t('mobile.inventory.semiStagePickerHint')}
         </AppText>
 
-        <Pressable
+        <AnimatedPressable
+          variant="card"
           accessibilityRole="button"
           onPress={() => pick(null)}
           style={{
@@ -86,20 +87,21 @@ export function InventorySemiStagePickerSheet({
             isRTL={isRTL}
             titleWeight={titleWeight}
           />
-        </Pressable>
+        </AnimatedPressable>
 
         {stages.map((stage) => {
           const selected = selectedCode === stage.code;
           return (
-            <Pressable
+            <AnimatedPressable
               key={stage.code}
+              variant="card"
               accessibilityRole="button"
               onPress={() => pick(stage.code)}
               style={{
                 borderRadius: theme.radius.xl,
                 borderWidth: 1,
-                borderColor: selected ? colors.info : colors.borderStrong,
-                backgroundColor: selected ? colors.infoSoft : colors.surface,
+                borderColor: selected ? colors.brand : colors.borderStrong,
+                backgroundColor: selected ? colors.brandSoft : colors.surface,
                 overflow: 'hidden',
                 ...orderBoardShadow(colorScheme),
               }}
@@ -111,9 +113,9 @@ export function InventorySemiStagePickerSheet({
                 selected={selected}
                 isRTL={isRTL}
                 titleWeight={titleWeight}
-                accent={colors.info}
+                accent={colors.brand}
               />
-            </Pressable>
+            </AnimatedPressable>
           );
         })}
       </ScrollView>

@@ -118,6 +118,7 @@ type PdfMessages = {
   rfq: string;
   paymentTerms: string;
   deliveryTerms: string;
+  factoryDelivery: string;
   discount: string;
   validUntil: string;
   specs: string;
@@ -126,11 +127,11 @@ type PdfMessages = {
 const QUOTATION_STATUS: Record<PdfLocale, Record<string, string>> = {
   en: {
     DRAFT: 'Draft',
-    INTERNAL_REVIEW: 'Internal review',
-    APPROVED: 'Approved',
-    SENT: 'Sent to dealer',
-    VIEWED: 'Viewed',
-    ACCEPTED: 'Accepted by dealer',
+    INTERNAL_REVIEW: 'Ready to send',
+    APPROVED: 'Ready to send',
+    SENT: 'Sent / Waiting for dealer',
+    VIEWED: 'Sent / Waiting for dealer',
+    ACCEPTED: 'Accepted',
     REJECTED: 'Rejected',
     REVISION_REQUESTED: 'Revision requested',
     EXPIRED: 'Expired',
@@ -138,11 +139,11 @@ const QUOTATION_STATUS: Record<PdfLocale, Record<string, string>> = {
   },
   ar: {
     DRAFT: 'مسودة',
-    INTERNAL_REVIEW: 'مراجعة داخلية',
-    APPROVED: 'معتمد داخلياً',
-    SENT: 'مُرسل للتاجر',
-    VIEWED: 'تمت المشاهدة',
-    ACCEPTED: 'مقبول من التاجر',
+    INTERNAL_REVIEW: 'جاهز للإرسال',
+    APPROVED: 'جاهز للإرسال',
+    SENT: 'مُرسل / بانتظار التاجر',
+    VIEWED: 'مُرسل / بانتظار التاجر',
+    ACCEPTED: 'مقبول',
     REJECTED: 'مرفوض',
     REVISION_REQUESTED: 'طُلب تعديل',
     EXPIRED: 'منتهي',
@@ -150,11 +151,11 @@ const QUOTATION_STATUS: Record<PdfLocale, Record<string, string>> = {
   },
   he: {
     DRAFT: 'טיוטה',
-    INTERNAL_REVIEW: 'בדיקה פנימית',
-    APPROVED: 'אושר פנימית',
-    SENT: 'נשלח לסוחר',
-    VIEWED: 'נצפה',
-    ACCEPTED: 'התקבל על ידי הסוחר',
+    INTERNAL_REVIEW: 'מוכן לשליחה',
+    APPROVED: 'מוכן לשליחה',
+    SENT: 'נשלח / ממתין לסוחר',
+    VIEWED: 'נשלח / ממתין לסוחר',
+    ACCEPTED: 'התקבל',
     REJECTED: 'נדחה',
     REVISION_REQUESTED: 'נתבקש תיקון',
     EXPIRED: 'פג תוקף',
@@ -280,6 +281,7 @@ const EN: PdfMessages = {
   rfq: 'Request',
   paymentTerms: 'Payment terms',
   deliveryTerms: 'Delivery terms',
+  factoryDelivery: 'Factory delivery',
   discount: 'Discount',
   validUntil: 'Valid until',
   specs: 'Specifications',
@@ -403,6 +405,7 @@ const AR: PdfMessages = {
   rfq: 'الطلب',
   paymentTerms: 'شروط الدفع',
   deliveryTerms: 'شروط التسليم',
+  factoryDelivery: 'تسليم المصنع',
   discount: 'الخصم',
   validUntil: 'صالح حتى',
   specs: 'المواصفات',
@@ -526,6 +529,7 @@ const HE: PdfMessages = {
   rfq: 'בקשה',
   paymentTerms: 'תנאי תשלום',
   deliveryTerms: 'תנאי אספקה',
+  factoryDelivery: 'אספקת המפעל',
   discount: 'הנחה',
   validUntil: 'בתוקף עד',
   specs: 'מפרטים',

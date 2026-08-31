@@ -12,6 +12,7 @@ import {
   returnLifecycleBadgeStatus,
   returnLifecycleLabelKey,
 } from '@/features/returns/selectReturn';
+import { resolveOrderManufacturingKind } from './orderManufacturingKind';
 
 export type OrderGalleryImage = {
   key: string;
@@ -40,6 +41,16 @@ export type OrderCostMaterial = {
   key: 'fabric' | 'wood' | 'foam' | 'accessories';
   qty: number | null;
   cost: number | null;
+};
+
+export type OrderCostMaterialLine = {
+  sku: string;
+  name: string;
+  category: 'fabric' | 'wood' | 'foam' | 'accessories';
+  qty: number;
+  unitCost: number;
+  lineCost: number;
+  inventoryItemId?: string | null;
 };
 
 export type OrderStageView = {
@@ -82,6 +93,7 @@ export type OrderDetailViewModel = {
   profit: number | null;
   costBreakdown: Record<string, number | string | null> | null;
   costMaterials: OrderCostMaterial[];
+  costMaterialLines: OrderCostMaterialLine[];
   endCustomerName: string | null;
   endCustomerPhone: string | null;
   endCustomerFax: string | null;
@@ -128,8 +140,12 @@ export type OrderDetailViewModel = {
   isDraft: boolean;
   /** Admin — commercially accepted SO still needs Prepare production. */
   productionSetupRequired: boolean;
+  needsProductionSetup: boolean;
+  setupProductId: string | null;
   /** Admin — Piece 2 released; workers still need assignment. */
   workerAssignmentRequired: boolean;
+  /** Hard Preparing → Production boundary. */
+  releasedToFactory: boolean;
   showCosts: boolean;
   showStages: boolean;
   showEndCustomer: boolean;
@@ -139,6 +155,8 @@ export type OrderDetailViewModel = {
   lifecycle: AdminOrderLifecycle | null;
   actionHint: string | null;
   totalQuantity: number | null;
+  /** Commercial kind: standard | modified | custom */
+  manufacturingKind: 'standard' | 'modified' | 'custom' | null;
 };
 
 function toNumber(value: unknown): number | null {
@@ -201,6 +219,24 @@ function mapItems(order: SalesOrderDetail): OrderLineItemView[] {
     accessories: item.accessories ?? null,
     notes: item.notes ?? null,
   }));
+}
+
+function mapCostMaterialLines(
+  lines: SalesOrderDetail['costMaterialLines'],
+): OrderCostMaterialLine[] {
+  if (!Array.isArray(lines)) return [];
+  return lines
+    .filter((l) => l && typeof l.sku === 'string')
+    .map((l) => ({
+      sku: l.sku,
+      name: l.name || l.sku,
+      category: l.category,
+      qty: toNumber(l.qty) ?? 0,
+      unitCost: toNumber(l.unitCost) ?? 0,
+      lineCost: toNumber(l.lineCost) ?? 0,
+      inventoryItemId: l.inventoryItemId ?? null,
+    }))
+    .filter((l) => l.qty > 0 || l.lineCost > 0);
 }
 
 function mapCostMaterials(
@@ -296,10 +332,54 @@ export function selectOrderDetail(
     order.workerAssignmentRequired ??
       (!productionSetupRequired &&
         (order.productionOrders?.length ?? 0) > 0 &&
+        !order.releasedToFactory &&
+        !(order.productionOrders ?? []).some((po) =>
+          Boolean(
+            (po as { releasedToFactoryAt?: string | null }).releasedToFactoryAt,
+          ),
+        ) &&
         ((order.productionReadinessSummary?.assignment?.missingCount ??
           order.productionReadinessSummary?.assignment?.missing?.length ??
           0) > 0 ||
           Boolean(order.productionReadinessSummary?.needsSetup))),
+  );
+  const releasedToFactory = Boolean(
+    order.releasedToFactory ??
+      ((order.productionOrders ?? []).some((po) =>
+        Boolean(
+          (po as { releasedToFactoryAt?: string | null }).releasedToFactoryAt,
+        ),
+      ) ||
+        (order.productionOrders ?? []).some((po) =>
+          Boolean((po as { actualStartDate?: string | null }).actualStartDate),
+        ) ||
+        (order.productionOrders ?? []).some((po) =>
+          [
+            'IN_PROGRESS',
+            'ON_HOLD',
+            'QUALITY_CHECK',
+            'READY_FOR_PACKAGING',
+            'READY_FOR_DELIVERY',
+            'COMPLETED',
+          ].includes(String(po.status ?? '').toUpperCase()),
+        )),
+  );
+  const executionStarted = Boolean(
+    order.executionStarted ??
+      ((order.productionOrders ?? []).some((po) =>
+        Boolean((po as { actualStartDate?: string | null }).actualStartDate),
+      ) ||
+        (order.productionOrders ?? []).some((po) =>
+          [
+            'IN_PROGRESS',
+            'ON_HOLD',
+            'QUALITY_CHECK',
+            'READY_FOR_PACKAGING',
+            'READY_FOR_DELIVERY',
+            'COMPLETED',
+          ].includes(String(po.status ?? '').toUpperCase()),
+        ) ||
+        String(order.status).toUpperCase() === 'IN_PRODUCTION'),
   );
   const { flat: stages, productionOrders } = mapStages(order, locale);
   const items = mapItems(order);
@@ -365,7 +445,6 @@ export function selectOrderDetail(
     null;
   const originalText = order.customerRequest?.originalText ?? null;
 
-  const items = mapItems(order);
   const totalQuantity = items.reduce((sum, row) => sum + (row.quantity ?? 0), 0);
   const deliveryStatus =
     order.deliveryStatus ??
@@ -385,6 +464,11 @@ export function selectOrderDetail(
     status: order.status,
     deliveryStatus,
     requiredDeliveryDate: deliveryDate,
+    productionSetupRequired,
+    productionSetupStatus: order.productionSetupStatus ?? null,
+    productionOrderCount: order.productionOrders?.length ?? 0,
+    releasedToFactory,
+    executionStarted,
     productionReadinessSummary,
     progressPercent: order.progressPercent,
     currentStageLabel: progressLabelAdmin ?? null,
@@ -456,7 +540,10 @@ export function selectOrderDetail(
     heroImageUrls,
     isDraft,
     productionSetupRequired,
+    needsProductionSetup,
+    setupProductId,
     workerAssignmentRequired,
+    releasedToFactory,
     showCosts: isAdmin,
     showStages: isAdmin || productionOrders.some((po) => po.stages.length > 0),
     showEndCustomer: isAdmin,
@@ -466,6 +553,12 @@ export function selectOrderDetail(
     lifecycle,
     actionHint,
     totalQuantity: totalQuantity > 0 ? totalQuantity : null,
+    manufacturingKind: isAdmin
+      ? resolveOrderManufacturingKind([
+          order.manufacturingComplexity,
+          ...(order.commercialSummary?.lines ?? []).map((l) => l.manufacturingComplexity),
+        ])
+      : null,
   };
 
   if (!isAdmin) {
@@ -475,6 +568,7 @@ export function selectOrderDetail(
       profit: null,
       costBreakdown: null,
       costMaterials: [],
+      costMaterialLines: [],
       endCustomerName: null,
       endCustomerPhone: null,
       endCustomerFax: null,
@@ -496,6 +590,7 @@ export function selectOrderDetail(
     profit,
     costBreakdown: order.costBreakdown ?? null,
     costMaterials: mapCostMaterials(order.costBreakdown),
+    costMaterialLines: mapCostMaterialLines(order.costMaterialLines),
     endCustomerName: order.customerRequest?.endCustomerName ?? null,
     endCustomerPhone,
     endCustomerFax,
@@ -523,6 +618,9 @@ export function assertDealerDetailSafe(vm: OrderDetailViewModel): void {
   }
   if (vm.costMaterials.length > 0) {
     throw new Error('Dealer detail leaked cost materials');
+  }
+  if (vm.costMaterialLines.length > 0) {
+    throw new Error('Dealer detail leaked cost material lines');
   }
   if (vm.canEdit) {
     throw new Error('Dealer detail must not be editable');

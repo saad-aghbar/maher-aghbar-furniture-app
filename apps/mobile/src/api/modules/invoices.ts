@@ -1,5 +1,5 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet, apiPost } from '../client';
+import { apiGet, apiPatch, apiPost } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
 import { openAuthedPdf, withPdfOptions } from '../openPdf';
 import type { PdfDownloadOptions } from '@/features/pdf/pdfDownloadTypes';
@@ -9,6 +9,7 @@ export type InvoiceLine = {
   description: string;
   quantity: number | string;
   unitPrice: number | string;
+  taxRate?: number | string | null;
   lineTotal: number | string;
 };
 
@@ -53,6 +54,7 @@ export type Invoice = {
   status: string;
   invoiceDate: string;
   dueDate?: string | null;
+  notes?: string | null;
   subtotal?: number | string | null;
   taxAmount?: number | string | null;
   taxTotal?: number | string | null;
@@ -136,6 +138,24 @@ export async function applyCredit(body: {
 /** Idempotent ensure — creates or returns existing invoice for the sales order. */
 export async function createInvoiceFromSalesOrder(salesOrderId: string) {
   return apiPost<Invoice>('/invoices', { salesOrderId });
+}
+
+export async function updateInvoice(
+  id: string,
+  body: {
+    notes?: string | null;
+    dueDate?: string | null;
+    invoiceDate?: string;
+    lines?: Array<{
+      id?: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate?: number;
+    }>;
+  },
+) {
+  return apiPatch<Invoice>(`/invoices/${encodeURIComponent(id)}`, body);
 }
 
 /** Fetch invoice PDF with Bearer auth and open via data URL / share sheet. */

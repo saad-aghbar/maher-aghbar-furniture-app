@@ -1,5 +1,5 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet, apiPost } from '../client';
+import { apiGet, apiPatch, apiPost } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
 
 export type Supplier = {
@@ -11,6 +11,7 @@ export type Supplier = {
   nameHe?: string | null;
   companyName?: string | null;
   phone?: string | null;
+  whatsappPhone?: string | null;
   email?: string | null;
   address?: string | null;
   paymentTermsDays?: number | null;
@@ -29,6 +30,24 @@ export type CreateSupplierInput = {
   nameHe?: string;
   companyName?: string;
   phone?: string;
+  whatsappPhone?: string;
+  email?: string;
+  address?: string;
+  paymentTermsDays?: number;
+  leadTimeDays?: number;
+  rating?: number;
+  isCertified?: boolean;
+  notes?: string;
+};
+
+export type UpdateSupplierInput = {
+  name?: string;
+  nameAr?: string;
+  nameEn?: string;
+  nameHe?: string;
+  companyName?: string;
+  phone?: string;
+  whatsappPhone?: string;
   email?: string;
   address?: string;
   paymentTermsDays?: number;
@@ -103,22 +122,6 @@ export type PurchaseOrderAttachment = {
   createdAt: string;
 };
 
-export type GoodsReceiptLine = {
-  id?: string;
-  inventoryItemId: string;
-  orderedQty?: number | string;
-  receivedQty?: number | string;
-  rejectedQty?: number | string;
-};
-
-export type GoodsReceipt = {
-  id: string;
-  number?: string;
-  createdAt?: string;
-  receiptDate?: string;
-  lines?: GoodsReceiptLine[];
-};
-
 export type PurchaseOrder = {
   id: string;
   number: string;
@@ -138,6 +141,9 @@ export type PurchaseOrder = {
   orderedQty?: number | string;
   receivedAcceptedQty?: number | string;
   attachments?: PurchaseOrderAttachment[];
+  whatsappSentAt?: string | null;
+  whatsappLastBody?: string | null;
+  whatsappLastTo?: string | null;
 };
 
 export type SupplierLastPurchase = {
@@ -215,6 +221,7 @@ export type SupplierInvoice = {
     description: string;
     quantity: number | string;
     unitPrice: number | string;
+    taxRate?: number | string | null;
     lineTotal: number | string;
   }>;
   payments?: Array<{
@@ -285,6 +292,14 @@ export async function createSupplier(body: CreateSupplierInput) {
   return apiPost<Supplier>('/suppliers', body);
 }
 
+export async function updateSupplier(id: string, body: UpdateSupplierInput) {
+  return apiPatch<Supplier>(`/suppliers/${encodeURIComponent(id)}`, body);
+}
+
+export async function archiveSupplier(id: string) {
+  return apiPost<Supplier>(`/suppliers/${encodeURIComponent(id)}/archive`);
+}
+
 export async function listPurchaseOrders(params: PurchasingListFilters = {}) {
   const qs = toSearchParams({
     page: params.page,
@@ -311,7 +326,25 @@ export async function approvePurchaseOrder(id: string) {
 }
 
 export async function sendPurchaseOrder(id: string) {
-  return apiPost<PurchaseOrder>(`/purchase-orders/${encodeURIComponent(id)}/send`);
+  return apiPost<PurchaseOrderSendResponse>(`/purchase-orders/${encodeURIComponent(id)}/send`);
+}
+
+export type PurchaseWhatsAppResult = {
+  ok: boolean;
+  to: string | null;
+  body: string;
+  error?: string;
+};
+
+export type PurchaseOrderSendResponse = {
+  purchaseOrder: PurchaseOrder;
+  whatsapp: PurchaseWhatsAppResult;
+};
+
+export async function sendPurchaseRequestToSupplier(id: string) {
+  return apiPost<PurchaseOrderSendResponse>(
+    `/purchase-requests/${encodeURIComponent(id)}/send-to-supplier`,
+  );
 }
 
 export async function receivePurchaseOrder(id: string, body: GoodsReceiptInput) {
@@ -366,6 +399,23 @@ export async function listSupplierInvoices(params: PurchasingListFilters = {}) {
 
 export async function getSupplierInvoice(id: string) {
   return apiGet<SupplierInvoice>(`/supplier-invoices/${encodeURIComponent(id)}`);
+}
+
+export async function updateSupplierInvoice(
+  id: string,
+  body: {
+    notes?: string | null;
+    dueDate?: string | null;
+    lines?: Array<{
+      id?: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate?: number;
+    }>;
+  },
+) {
+  return apiPatch<SupplierInvoice>(`/supplier-invoices/${encodeURIComponent(id)}`, body);
 }
 
 export type MaterialDemandIncoming = {

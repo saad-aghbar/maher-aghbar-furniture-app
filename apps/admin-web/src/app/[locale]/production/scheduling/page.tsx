@@ -137,6 +137,11 @@ type ReplanRunPayload = {
     manualAttention?: number;
     conflictsResolved?: number;
     emptyDays?: Array<{ ymd: string; causeKey?: string | null }>;
+    previewMoves?: Array<{
+      productionOrderId: string;
+      number?: string | null;
+      daysEarlier?: number;
+    }>;
     failures?: unknown[];
     alreadyValid?: number;
     generated?: number;

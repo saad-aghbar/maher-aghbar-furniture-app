@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, Switch, useWindowDimensions, View } from 'react-native';
 import { isApiError } from '@/api/errors';
+import type { Supplier } from '@/api/modules/purchasing';
 import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
@@ -11,14 +12,17 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { useCreateSupplierMutation } from '../query';
+import { useCreateSupplierMutation, useUpdateSupplierMutation } from '../query';
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onCreated?: (supplier: { id: string; name: string }) => void;
+  onUpdated?: (supplier: { id: string; name: string }) => void;
   /** Stack on top of another sheet (e.g. New PO). */
   overlay?: boolean;
+  mode?: 'create' | 'edit';
+  supplier?: Supplier | null;
 };
 
 const empty = () => ({
@@ -27,6 +31,7 @@ const empty = () => ({
   nameHe: '',
   companyName: '',
   phone: '',
+  whatsappPhone: '',
   email: '',
   address: '',
   paymentTermsDays: '30',
@@ -36,18 +41,52 @@ const empty = () => ({
   notes: '',
 });
 
-export function CreateSupplierSheet({ open, onClose, onCreated, overlay = false }: Props) {
+function formFromSupplier(supplier: Supplier) {
+  return {
+    nameEn: supplier.nameEn ?? '',
+    nameAr: supplier.nameAr ?? '',
+    nameHe: supplier.nameHe ?? '',
+    companyName: supplier.companyName ?? '',
+    phone: supplier.phone ?? '',
+    whatsappPhone: supplier.whatsappPhone ?? '',
+    email: supplier.email ?? '',
+    address: supplier.address ?? '',
+    paymentTermsDays: String(supplier.paymentTermsDays ?? 30),
+    leadTimeDays: String(supplier.leadTimeDays ?? 7),
+    rating: supplier.rating != null ? String(supplier.rating) : '',
+    isCertified: supplier.isCertified !== false,
+    notes: supplier.notes ?? '',
+  };
+}
+
+export function CreateSupplierSheet({
+  open,
+  onClose,
+  onCreated,
+  onUpdated,
+  overlay = false,
+  mode = 'create',
+  supplier = null,
+}: Props) {
   const { t, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const { height } = useWindowDimensions();
   const createMutation = useCreateSupplierMutation();
+  const updateMutation = useUpdateSupplierMutation();
   const [form, setForm] = useState(empty);
   const sheetHeight = Math.min(Math.round(height * 0.88), 720);
+  const isEdit = mode === 'edit' && Boolean(supplier?.id);
+  const pending = createMutation.isPending || updateMutation.isPending;
 
   useEffect(() => {
-    if (!open) setForm(empty());
-  }, [open]);
+    if (!open) {
+      setForm(empty());
+      return;
+    }
+    if (mode === 'edit' && supplier) setForm(formFromSupplier(supplier));
+    else setForm(empty());
+  }, [open, mode, supplier?.id]);
 
   const set = <K extends keyof ReturnType<typeof empty>>(key: K, value: ReturnType<typeof empty>[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -62,22 +101,34 @@ export function CreateSupplierSheet({ open, onClose, onCreated, overlay = false 
       showToast({ variant: 'error', message: t('catalog.nameEn') });
       return;
     }
+    const body = {
+      name: form.nameEn.trim() || form.nameAr.trim() || form.nameHe.trim(),
+      nameEn: form.nameEn.trim() || undefined,
+      nameAr: form.nameAr.trim() || undefined,
+      nameHe: form.nameHe.trim() || undefined,
+      companyName: form.companyName.trim() || undefined,
+      phone: form.phone.trim() || undefined,
+      whatsappPhone: form.whatsappPhone.trim() || undefined,
+      email: form.email.trim() || undefined,
+      address: form.address.trim() || undefined,
+      paymentTermsDays: Number(form.paymentTermsDays) || 30,
+      leadTimeDays: Number(form.leadTimeDays) || 7,
+      rating: form.rating.trim() ? Number(form.rating) : undefined,
+      isCertified: form.isCertified,
+      notes: form.notes.trim() || undefined,
+    };
     try {
-      const row = await createMutation.mutateAsync({
-        name: form.nameEn.trim() || form.nameAr.trim() || form.nameHe.trim(),
-        nameEn: form.nameEn.trim() || undefined,
-        nameAr: form.nameAr.trim() || undefined,
-        nameHe: form.nameHe.trim() || undefined,
-        companyName: form.companyName.trim() || undefined,
-        phone: form.phone.trim() || undefined,
-        email: form.email.trim() || undefined,
-        address: form.address.trim() || undefined,
-        paymentTermsDays: Number(form.paymentTermsDays) || 30,
-        leadTimeDays: Number(form.leadTimeDays) || 7,
-        rating: form.rating.trim() ? Number(form.rating) : undefined,
-        isCertified: form.isCertified,
-        notes: form.notes.trim() || undefined,
-      });
+      if (isEdit && supplier) {
+        const row = await updateMutation.mutateAsync({ id: supplier.id, body });
+        void haptics.confirmLight();
+        showToast({ variant: 'success', message: t('catalog.supplierUpdated') });
+        const name =
+          row.nameEn || row.nameAr || row.name || form.nameEn || form.nameAr || '—';
+        onUpdated?.({ id: row.id, name });
+        dismiss();
+        return;
+      }
+      const row = await createMutation.mutateAsync(body);
       void haptics.confirmLight();
       showToast({ variant: 'success', message: t('catalog.supplierCreated') });
       const name =
@@ -97,7 +148,7 @@ export function CreateSupplierSheet({ open, onClose, onCreated, overlay = false 
     <BottomSheet
       open={open}
       onClose={dismiss}
-      title={t('catalog.newSupplier')}
+      title={isEdit ? t('mobile.purchasing.editSupplier') : t('catalog.newSupplier')}
       sheetHeight={sheetHeight}
       overlay={overlay}
     >
@@ -133,6 +184,13 @@ export function CreateSupplierSheet({ open, onClose, onCreated, overlay = false 
             value={form.phone}
             onChangeText={(v) => set('phone', v)}
             keyboardType="phone-pad"
+          />
+          <TextField
+            label={t('catalog.whatsappPhone')}
+            value={form.whatsappPhone}
+            onChangeText={(v) => set('whatsappPhone', v)}
+            keyboardType="phone-pad"
+            hint={t('catalog.whatsappPhoneHint')}
           />
           <TextField
             label={t('catalog.email')}
@@ -193,7 +251,7 @@ export function CreateSupplierSheet({ open, onClose, onCreated, overlay = false 
         <View style={{ gap: theme.spacing.sm, paddingTop: theme.spacing.xs }}>
           <PrimaryButton
             label={t('common.save')}
-            loading={createMutation.isPending}
+            loading={pending}
             onPress={() => void submit()}
             style={{ borderRadius: theme.radius.xl }}
           />

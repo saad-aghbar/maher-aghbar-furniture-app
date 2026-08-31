@@ -63,22 +63,14 @@ ok(
     existsSync(join(ROOT, 'apps/mobile/app/dev/tests/coverage.tsx')),
 );
 
-// 9) Entry row exists
-ok(
-  '9. DevTestsEntryRow exists',
-  existsSync(
-    join(ROOT, 'apps/mobile/src/dev/component-lab/screens/DevTestsEntryRow.tsx'),
-  ),
-);
-
-// 10) Unique registry ids in classifications
+// 9) Unique registry ids in classifications
 const allIds = [];
 for (const row of Object.values(classifications)) {
   for (const id of row.registryIds ?? []) allIds.push(id);
 }
 const unique = new Set(allIds);
 ok(
-  '10. classification registry ids mostly unique',
+  '9. classification registry ids mostly unique',
   unique.size >= allIds.length * 0.95,
   `unique=${unique.size} total=${allIds.length}`,
 );

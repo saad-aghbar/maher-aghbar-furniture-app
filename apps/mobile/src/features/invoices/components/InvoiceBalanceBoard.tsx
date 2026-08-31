@@ -29,6 +29,7 @@ export function InvoiceBalanceBoard({ model, currencySuffix = '₪' }: Props) {
   const showCredit = model.availableCredit > 0.001;
   const paidRatio =
     model.total > 0 ? Math.min(1, Math.max(0, model.paid / model.total)) : model.outstanding <= 0 ? 1 : 0;
+  const settledRatio = paidRatio;
 
   return (
     <View

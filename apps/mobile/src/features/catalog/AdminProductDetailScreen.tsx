@@ -492,7 +492,6 @@ export function AdminProductDetailScreen({ productId }: Props) {
       <ScrollView
         style={{ flex: 1 }}
         scrollEnabled={!sheetLocksPageScroll}
-        style={{ flex: 1 }}
         refreshControl={
           <RefreshControl
             refreshing={productQuery.isRefetching && !productQuery.isPending}

@@ -65,6 +65,8 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
   const [qualityScore, setQualityScore] = useState('');
   const [approveOpen, setApproveOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [whatsappBody, setWhatsappBody] = useState<string | null>(null);
 
   const detailQuery = useQuery({
     queryKey: ['purchase-request', params.id],
@@ -125,6 +127,29 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
+  const sendToSupplierMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{
+        purchaseOrder: { id: string };
+        whatsapp: { ok: boolean; to: string | null; body: string; error?: string };
+      }>(`/api/v1/purchase-requests/${params.id}/send-to-supplier`, {
+        method: 'POST',
+      }),
+    onSuccess: async (result) => {
+      setSendOpen(false);
+      setWhatsappBody(result.whatsapp.body);
+      if (result.whatsapp.ok && result.whatsapp.to) {
+        setBanner(tc('whatsappSentOk', { to: result.whatsapp.to }));
+      } else if (!result.whatsapp.to) {
+        setBanner(tc('whatsappNoPhone'));
+      } else {
+        setBanner(tc('whatsappSentFailed'));
+      }
+      router.push(`/purchasing/${result.purchaseOrder.id}`);
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
   const selectOfferMutation = useMutation({
     mutationFn: (offerId: string) =>
       apiFetch(`/api/v1/purchase-requests/${params.id}/offers/${offerId}/select`, {
@@ -176,9 +201,14 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
               </Button>
             ) : null}
             {data.status === 'APPROVED' && !data.purchaseOrder ? (
-              <Button size="sm" onClick={() => setConvertOpen(true)}>
-                {tc('convertToPo')}
-              </Button>
+              <>
+                <Button size="sm" onClick={() => setSendOpen(true)}>
+                  {tc('sendToSupplier')}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setConvertOpen(true)}>
+                  {tc('convertToPo')}
+                </Button>
+              </>
             ) : null}
             {data.purchaseOrder ? (
               <Link href={`/purchasing/${data.purchaseOrder.id}`}>
@@ -192,6 +222,25 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
       />
       {banner ? <Alert variant="success">{banner}</Alert> : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
+      {whatsappBody ? (
+        <Alert variant="info">
+          <p className="font-medium">{tc('whatsappMessage')}</p>
+          <pre className="mt-2 whitespace-pre-wrap text-sm" dir="ltr">
+            {whatsappBody}
+          </pre>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-2"
+            onClick={() => {
+              void navigator.clipboard.writeText(whatsappBody);
+              setBanner(tc('copyWhatsapp'));
+            }}
+          >
+            {tc('copyWhatsapp')}
+          </Button>
+        </Alert>
+      ) : null}
 
       <Card title={tc('lineItems')}>
         {data.lines.length === 0 ? (
@@ -325,10 +374,18 @@ export default function PurchaseRequestDetailPage({ params }: { params: { id: st
       <ConfirmDialog
         open={convertOpen}
         title={tc('convertToPo')}
-        description={tc('convertToPo')}
+        description={tc('convertToPoConfirm')}
         loading={convertMutation.isPending}
         onClose={() => setConvertOpen(false)}
         onConfirm={() => convertMutation.mutate()}
+      />
+      <ConfirmDialog
+        open={sendOpen}
+        title={tc('sendToSupplier')}
+        description={tc('sendToSupplierConfirm')}
+        loading={sendToSupplierMutation.isPending}
+        onClose={() => setSendOpen(false)}
+        onConfirm={() => sendToSupplierMutation.mutate()}
       />
     </div>
   );

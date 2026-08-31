@@ -79,7 +79,7 @@ export function AdminHomeFloorJourney({ data }: Props) {
         key: 'new',
         labelKey: 'mobile.adminHome.metrics.newOrders',
         value: data.newOrders,
-        href: '/(app)/(admin)/(tabs)/orders?focus=needs_attention' as Href,
+        href: '/(app)/(admin)/(tabs)/orders?chip=preparing' as Href,
       },
       {
         key: 'prod',
@@ -97,7 +97,7 @@ export function AdminHomeFloorJourney({ data }: Props) {
         key: 'late',
         labelKey: 'mobile.adminHome.metrics.delayedOrders',
         value: data.delayedOrders,
-        href: '/(app)/(admin)/(tabs)/orders?focus=needs_attention' as Href,
+        href: '/(app)/(admin)/(tabs)/orders?late=true' as Href,
       },
     ],
     [data],

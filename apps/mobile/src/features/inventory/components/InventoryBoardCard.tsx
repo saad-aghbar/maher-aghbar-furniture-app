@@ -1,27 +1,42 @@
 import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { rowDirection } from '@/i18n/rtl';
 import { useTheme } from '@/theme';
 
 type InventoryBoardCardProps = {
   children: ReactNode;
+  title?: string;
+  titleWeight?: 'medium' | 'semibold';
+  trailing?: ReactNode;
   accent?: string;
-  style?: object;
+  hideAccent?: boolean;
+  style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
   padded?: boolean;
 };
 
-/** Elevated inventory board — production floor language. */
+/** Parchment inventory board — rail, optional header band, same lift as production. */
 export function InventoryBoardCard({
   children,
+  title,
+  titleWeight,
+  trailing,
   accent,
+  hideAccent = false,
   style,
+  contentStyle,
   padded = true,
 }: InventoryBoardCardProps) {
-  const { isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { isRTL, locale } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
+  const rail = accent ?? colors.brand;
+  const railOpacity = accent && accent !== colors.brand ? 0.9 : 0.55;
+  const weight = titleWeight ?? (locale === 'ar' ? 'medium' : 'semibold');
+  const showRail = !hideAccent;
 
   return (
     <View
@@ -32,32 +47,68 @@ export function InventoryBoardCard({
           borderColor: colors.borderStrong,
           backgroundColor: colors.surface,
           overflow: 'hidden',
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         },
         style,
       ]}
     >
-      {accent ? (
+      {showRail ? (
         <View
+          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
             bottom: 0,
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
-            backgroundColor: accent,
-            opacity: 0.55,
+            backgroundColor: rail,
+            opacity: railOpacity,
           }}
         />
       ) : null}
+      {title || trailing ? (
+        <View
+          style={{
+            paddingVertical: theme.spacing.md,
+            paddingHorizontal: theme.spacing.lg,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.lg + (showRail ? 4 : 0) }
+              : { paddingLeft: theme.spacing.lg + (showRail ? 4 : 0) }),
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.sm,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surfaceSecondary,
+          }}
+        >
+          {title ? (
+            <AppText
+              variant="label"
+              weight={weight}
+              numberOfLines={1}
+              style={{ flex: 1, textAlign: isRTL ? 'right' : 'left', fontSize: 15 }}
+            >
+              {title}
+            </AppText>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
+          {trailing}
+        </View>
+      ) : null}
       <View
-        style={{
-          padding: padded ? theme.spacing.md : 0,
-          gap: padded ? theme.spacing.sm : 0,
-          ...(isRTL
-            ? { paddingRight: accent && padded ? theme.spacing.md + 4 : undefined }
-            : { paddingLeft: accent && padded ? theme.spacing.md + 4 : undefined }),
-        }}
+        style={[
+          {
+            padding: padded ? theme.spacing.lg : 0,
+            gap: padded ? theme.spacing.md : 0,
+            ...(isRTL
+              ? { paddingRight: showRail && padded ? theme.spacing.lg + 4 : undefined }
+              : { paddingLeft: showRail && padded ? theme.spacing.lg + 4 : undefined }),
+          },
+          contentStyle,
+        ]}
       >
         {children}
       </View>
@@ -80,6 +131,7 @@ export function InventorySectionHeader({
 }: InventorySectionHeaderProps) {
   const { isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
     <View
@@ -96,7 +148,7 @@ export function InventorySectionHeader({
           borderRadius: 16,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: colors.surfaceSecondary,
+          backgroundColor: colors.brandSoft,
           borderWidth: 1,
           borderColor: colors.border,
         }}
@@ -105,14 +157,15 @@ export function InventorySectionHeader({
       </View>
       <AppText
         variant="caption"
-        color="muted"
+        weight={titleWeight}
         style={{
           flex: 1,
           textTransform: locale === 'ar' ? 'none' : 'uppercase',
-          letterSpacing: locale === 'ar' ? 0 : 0.6,
+          letterSpacing: locale === 'ar' ? 0 : 0.5,
           fontSize: 11,
           lineHeight: 14,
           textAlign: isRTL ? 'right' : 'left',
+          color: colors.brand,
         }}
       >
         {label}
@@ -130,7 +183,7 @@ type InventoryQtyStripProps = {
   warning?: boolean;
 };
 
-/** On-hand / reserved / free strip — finished goods and reserved stock. */
+/** On-hand / reserved / free strip — inset ledger. */
 export function InventoryQtyStrip({
   onHand,
   reserved,
@@ -146,7 +199,7 @@ export function InventoryQtyStrip({
       style={{
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'stretch',
-        borderRadius: theme.radius.md,
+        borderRadius: theme.radius.lg,
         backgroundColor: colors.surfaceSecondary,
         borderWidth: 1,
         borderColor: colors.border,
@@ -194,6 +247,8 @@ function QtyCell({
   warning?: boolean;
 }) {
   const { theme } = useTheme();
+  const { locale } = useLocale();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const tone = warning ? 'warning' : emphasize ? 'brand' : value === 0 ? 'muted' : 'primary';
 
   return (
@@ -206,7 +261,7 @@ function QtyCell({
         paddingHorizontal: theme.spacing.xs,
       }}
     >
-      <AppText variant="heading" weight="semibold" dir="ltr" align="center" color={tone}>
+      <AppText variant="heading" weight={titleWeight} dir="ltr" align="center" color={tone}>
         {value}
       </AppText>
       <AppText

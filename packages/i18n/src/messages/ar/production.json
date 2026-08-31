@@ -232,7 +232,7 @@
     "productionDelay": "الإنتاج يستغرق وقتاً أطول من المتوقع.",
     "scheduleUpdating": "الجدول قيد التحديث",
     "notConfirmed": "غير مؤكد بعد",
-    "requestedHint": "سنؤكد تاريخ التسليم بعد جدولة الإنتاج.",
+    "requestedHint": "سنؤكد تاريخ التسليم على عرض السعر.",
     "modeUpcoming": "القادم",
     "modeCalendar": "التقويم",
     "groupToday": "اليوم",

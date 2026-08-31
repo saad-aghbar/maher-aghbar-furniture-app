@@ -47,7 +47,7 @@ export function InventorySemiStagePickerButton({ label, count, onPress }: Props)
           bottom: 0,
           ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
-          backgroundColor: colors.info,
+          backgroundColor: colors.brand,
           opacity: 0.7,
         }}
       />

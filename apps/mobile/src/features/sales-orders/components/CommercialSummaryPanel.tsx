@@ -13,7 +13,7 @@ import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
-import { OrderBoardCard } from '@/features/sales-orders/components/OrderBoardCard';
+import { OrderBoardCard, OrderSectionHeader } from '@/features/sales-orders/components/OrderBoardCard';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -32,11 +32,10 @@ export function CommercialSummaryPanel({
   summary,
   grossDifference,
 }: Props) {
-  const { t, isRTL, formatCurrency, locale } = useLocale();
+  const { t, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const qc = useQueryClient();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   const requiredLines = useMemo(
     () =>
@@ -69,15 +68,13 @@ export function CommercialSummaryPanel({
 
   return (
     <>
-      <OrderBoardCard>
+      <OrderBoardCard accent={summary.commercialComplete ? colors.success : colors.warning}>
         <View style={{ gap: theme.spacing.md }}>
-          <AppText
-            variant="label"
-            weight={titleWeight}
-            style={{ textAlign: isRTL ? 'right' : 'left' }}
-          >
-            {t('accounting.commercialSummary')}
-          </AppText>
+          <OrderSectionHeader
+            icon="wallet-outline"
+            label={t('accounting.commercialSummary')}
+            accent={summary.commercialComplete ? colors.success : colors.warning}
+          />
           <AppText
             variant="caption"
             color="muted"

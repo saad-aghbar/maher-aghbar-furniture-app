@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Image, Linking, RefreshControl, ScrollView, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
-import { localizedName } from '@maher/i18n';
+import { localizedName, presentQuotationStatus } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
+import { toastMessageForError } from '@/api/queryClient';
+import { resolveDocumentUrl } from '@/api/modules/uploads';
 import {
-  approveQuotation,
   getQuotation,
   openQuotationPdf,
   rejectQuotation,
   reviseQuotation,
   sendQuotation,
-  submitQuotationForApproval,
   updateQuotation,
   type QuotationLine,
 } from '@/api/modules/quotations';
@@ -34,20 +35,21 @@ import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
+import { formatNumber } from '@/i18n/format';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
-import { haptics, ListItemEnter } from '@/motion';
+import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import {
-  OrderBoardCard,
-  OrderSectionHeader,
-} from '@/features/sales-orders/components/OrderBoardCard';
-import {
   presentableText,
+  quotationComplexity,
+  quotationDraftTotals,
   quotationLineDims,
   quotationLineNet,
   quotationLineSpecs,
   quotationQtyLabel,
+  sellingPriceMissing,
 } from '@/features/quotations/presentAdminQuotation';
 
 type Props = {
@@ -76,10 +78,15 @@ const REVISE_STATUSES = new Set([
   'VIEWED',
 ]);
 
-function money(value: number | string | null | undefined): string {
+function boardMoney(
+  locale: string,
+  value: number | string | null | undefined,
+): string {
   if (value == null || value === '') return '—';
   const n = Number(value);
-  return Number.isFinite(n) ? n.toFixed(2) : String(value);
+  if (!Number.isFinite(n)) return String(value);
+  const typed = locale === 'ar' || locale === 'he' || locale === 'en' ? locale : 'en';
+  return `${formatNumber(typed, n, { maximumFractionDigits: 2 })} ₪`;
 }
 
 function MetaCell({
@@ -98,24 +105,39 @@ function MetaCell({
   fullWidth?: boolean;
 }) {
   const { colors, theme } = useTheme();
+  const { isRTL, locale } = useLocale();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const cellStyle = {
     flexGrow: 1,
     flexBasis: fullWidth ? ('100%' as const) : ('46%' as const),
     minWidth: fullWidth ? ('100%' as const) : ('46%' as const),
     maxWidth: fullWidth ? ('100%' as const) : ('50%' as const),
     gap: theme.spacing.xs,
+    alignItems: (isRTL ? 'flex-end' : 'flex-start') as 'flex-end' | 'flex-start',
   };
   const content = (
     <>
-      <AppText variant="caption" color="muted">
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textAlign: isRTL ? 'right' : 'left',
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'ar' ? 0 : 0.45,
+          fontSize: 11,
+        }}
+      >
         {label}
       </AppText>
       <AppText
         variant="label"
-        weight="semibold"
+        weight={titleWeight}
         numberOfLines={fullWidth ? 4 : 2}
         dir={ltr ? 'ltr' : undefined}
-        style={brand ? { color: colors.brand } : undefined}
+        style={{
+          color: brand ? colors.brand : colors.textPrimary,
+          textAlign: isRTL ? 'right' : 'left',
+        }}
       >
         {value}
       </AppText>
@@ -125,9 +147,17 @@ function MetaCell({
     return <View style={cellStyle}>{content}</View>;
   }
   return (
-    <Pressable accessibilityRole="link" onPress={onPress} style={cellStyle}>
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="link"
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={cellStyle}
+    >
       {content}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -168,8 +198,14 @@ export function AdminQuotationDetailScreen({
   onLoaded,
 }: Props) {
   const { user } = useAuth();
-  const { t, isRTL, locale, formatCurrency } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const floorBtn = {
+    alignSelf: 'stretch' as const,
+    width: '100%' as const,
+    borderRadius: theme.radius.full,
+    minHeight: theme.sizes.touch.min,
+  };
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -179,6 +215,10 @@ export function AdminQuotationDetailScreen({
   const [pdfBusy, setPdfBusy] = useState(false);
   const [paymentTerms, setPaymentTerms] = useState('');
   const [deliveryTerms, setDeliveryTerms] = useState('');
+  const [customerNotes, setCustomerNotes] = useState('');
+  const [expirationDate, setExpirationDate] = useState('');
+  const [offeredDeliveryDate, setOfferedDeliveryDate] = useState('');
+  const [sendBlockers, setSendBlockers] = useState<string[]>([]);
   const [draftLines, setDraftLines] = useState<
     Array<{ id: string; unitPrice: string; line: QuotationLine }>
   >([]);
@@ -186,7 +226,6 @@ export function AdminQuotationDetailScreen({
 
   const allowed = can(user, 'quotation.read') || can(user, 'request.read');
   const canUpdate = can(user, 'quotation.update');
-  const canApprove = can(user, 'quotation.approve');
   const canSend = can(user, 'quotation.send');
   const canReject = can(user, 'quotation.reject');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -203,6 +242,9 @@ export function AdminQuotationDetailScreen({
     if (!detail) return;
     setPaymentTerms(detail.paymentTerms ?? '');
     setDeliveryTerms(detail.deliveryTerms ?? '');
+    setCustomerNotes(detail.customerNotes ?? '');
+    setExpirationDate(detail.expirationDate ? String(detail.expirationDate).slice(0, 10) : '');
+    setOfferedDeliveryDate(detail.offeredDeliveryDate ? String(detail.offeredDeliveryDate).slice(0, 10) : '');
     setDraftLines(
       (detail.lines ?? []).map((line) => ({
         id: line.id,
@@ -247,7 +289,7 @@ export function AdminQuotationDetailScreen({
     void haptics.error();
     showToast({
       variant: 'error',
-      message: isApiError(err) ? err.message : fallback,
+      message: toastMessageForError(err) || fallback,
     });
   };
 
@@ -256,6 +298,9 @@ export function AdminQuotationDetailScreen({
       updateQuotation(quotationId, {
         paymentTerms: paymentTerms.trim() || undefined,
         deliveryTerms: deliveryTerms.trim() || undefined,
+        customerNotes: customerNotes.trim() || undefined,
+        expirationDate: expirationDate.trim() || undefined,
+        offeredDeliveryDate: offeredDeliveryDate.trim() || undefined,
         lines: draftLines.map(({ unitPrice, line }) => ({
           description: line.description,
           quantity: Number(line.quantity) || 0,
@@ -265,11 +310,11 @@ export function AdminQuotationDetailScreen({
           material: line.material ?? undefined,
           fabric: line.fabric ?? undefined,
           color: line.color ?? undefined,
-          notes: line.notes ?? undefined,
           taxRate: line.taxRate != null ? Number(line.taxRate) : 0.16,
           width: line.width != null ? Number(line.width) : undefined,
           height: line.height != null ? Number(line.height) : undefined,
           depth: line.depth != null ? Number(line.depth) : undefined,
+          manufacturingComplexity: quotationComplexity(line.manufacturingComplexity),
         })),
       }),
     onSuccess: () => {
@@ -280,34 +325,22 @@ export function AdminQuotationDetailScreen({
     onError: (err) => actionError(err, t('mobile.adminQuotation.saveFailed')),
   });
 
-  const submitMutation = useMutation({
-    mutationFn: () => submitQuotationForApproval(quotationId),
-    onSuccess: () => {
-      void haptics.confirmMedium();
-      showToast({ variant: 'success', message: t('mobile.adminQuotation.submitted') });
-      invalidate();
-    },
-    onError: (err) => actionError(err, t('mobile.adminQuotation.actionFailed')),
-  });
-
-  const approveMutation = useMutation({
-    mutationFn: () => approveQuotation(quotationId),
-    onSuccess: () => {
-      void haptics.confirmMedium();
-      showToast({ variant: 'success', message: t('mobile.adminQuotation.approved') });
-      invalidate();
-    },
-    onError: (err) => actionError(err, t('mobile.adminQuotation.actionFailed')),
-  });
-
   const sendMutation = useMutation({
     mutationFn: () => sendQuotation(quotationId),
     onSuccess: () => {
+      setSendBlockers([]);
       void haptics.confirmMedium();
       showToast({ variant: 'success', message: t('mobile.adminQuotation.sent') });
       invalidate();
     },
-    onError: (err) => actionError(err, t('mobile.adminQuotation.actionFailed')),
+    onError: (err) => {
+      const extras =
+        isApiError(err) && err.fieldErrors
+          ? Object.values(err.fieldErrors).flat().filter(Boolean)
+          : [];
+      setSendBlockers(extras);
+      actionError(err, t('mobile.adminQuotation.actionFailed'));
+    },
   });
 
   const rejectMutation = useMutation({
@@ -345,8 +378,6 @@ export function AdminQuotationDetailScreen({
 
   const workflowBusy =
     saveMutation.isPending ||
-    submitMutation.isPending ||
-    approveMutation.isPending ||
     sendMutation.isPending ||
     rejectMutation.isPending ||
     reviseMutation.isPending;
@@ -440,13 +471,36 @@ export function AdminQuotationDetailScreen({
 
   const status = detail.status;
   const isDraft = status === 'DRAFT';
-  const taxValue = Number(detail.taxAmount ?? detail.taxTotal ?? 0);
+  const commerciallyExpired = Boolean(detail.commerciallyExpired);
+  const statusLabel = presentQuotationStatus(locale, status, commerciallyExpired);
+  const quoteAccent =
+    status === 'ACCEPTED'
+      ? colors.success
+      : status === 'REJECTED' || commerciallyExpired
+        ? colors.error
+        : status === 'REVISION_REQUESTED'
+          ? colors.warning
+          : colors.brand;
+  const savedTax = Number(detail.taxAmount ?? detail.taxTotal ?? 0);
+  const liveDraft =
+    isDraft && canUpdate
+      ? quotationDraftTotals(
+          draftLines.map(({ unitPrice, line }) => ({
+            unitPrice,
+            quantity: line.quantity,
+            taxRate: line.taxRate,
+          })),
+        )
+      : null;
+  const displayTotal = liveDraft?.total ?? Number(detail.total);
+  const displaySubtotal = liveDraft?.subtotal ?? (detail.subtotal != null ? Number(detail.subtotal) : null);
+  const displayTax = liveDraft?.tax ?? savedTax;
   const showRevise = canUpdate && REVISE_STATUSES.has(status);
-  const showSubmit = canUpdate && status === 'DRAFT';
-  const showApprove = canApprove && status === 'INTERNAL_REVIEW';
-  const showSend = canSend && status === 'APPROVED';
+  const showSend =
+    canSend && ['DRAFT', 'INTERNAL_REVIEW', 'APPROVED'].includes(status);
   const showRejectBtn =
-    canReject && ['INTERNAL_REVIEW', 'APPROVED'].includes(status);
+    canReject && ['INTERNAL_REVIEW', 'APPROVED', 'SENT', 'VIEWED'].includes(status);
+  const requestDocs = detail.request?.documents ?? [];
   const linkedSalesOrder = detail.salesOrders?.[0];
   const paymentTermsShown = isDraft && canUpdate ? null : presentableText(detail.paymentTerms);
   const deliveryTermsShown = isDraft && canUpdate ? null : presentableText(detail.deliveryTerms);
@@ -474,24 +528,94 @@ export function AdminQuotationDetailScreen({
         ) : null}
 
         <ListItemEnter index={nextIndex()}>
-          <OrderBoardCard accent={colors.brand}>
-            <OrderSectionHeader
-              icon="receipt-outline"
-              label={
-                embedded
-                  ? `${t('mobile.adminQuotation.detail')} · ${detail.number}`
-                  : t('mobile.adminQuotation.detail')
-              }
-              accent={colors.brand}
-              uppercase={false}
-              trailing={embedded ? <StatusBadge status={detail.status} dot /> : undefined}
-            />
-
-            <View style={{ gap: theme.spacing.lg }}>
+          <DealerBoard
+            title={t('mobile.adminQuotation.detail')}
+            titleWeight={titleWeight}
+            accentColor={quoteAccent}
+            trailing={
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  alignItems: 'center',
+                  gap: theme.spacing.sm,
+                  maxWidth: '58%',
+                }}
+              >
+                <AppText
+                  variant="caption"
+                  color="brand"
+                  weight={titleWeight}
+                  dir="ltr"
+                  numberOfLines={1}
+                >
+                  {detail.number}
+                </AppText>
+                <StatusBadge status={detail.status} label={statusLabel} dot />
+              </View>
+            }
+          >
+            <View style={{ gap: theme.spacing.md }}>
+              {dealerName !== '—' ? (
+                <AppText
+                  variant="label"
+                  weight={titleWeight}
+                  numberOfLines={2}
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {dealerName}
+                </AppText>
+              ) : null}
               <MetaRow isRTL={isRTL}>
+                {detail.customer?.code ? (
+                  <MetaCell label={t('mobile.adminQuotation.dealerCode')} value={detail.customer.code} ltr />
+                ) : null}
+                {detail.request ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.rfq')}
+                    value={detail.request.number}
+                    brand={!embedded}
+                    ltr
+                    onPress={
+                      embedded
+                        ? undefined
+                        : () => {
+                            if (onOpenRequest) {
+                              onOpenRequest();
+                              return;
+                            }
+                            router.push(`/(app)/(admin)/requests/${detail.request!.id}` as never);
+                          }
+                    }
+                  />
+                ) : null}
+                {detail.request?.externalOrderNumber ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.dealerOrder')}
+                    value={detail.request.externalOrderNumber}
+                    ltr
+                  />
+                ) : null}
+                {detail.createdAt ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.createdAt')}
+                    value={String(detail.createdAt).slice(0, 10)}
+                    ltr
+                  />
+                ) : null}
+                {detail.expirationDate || commerciallyExpired ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.validUntil')}
+                    value={
+                      commerciallyExpired
+                        ? statusLabel
+                        : String(detail.expirationDate).slice(0, 10)
+                    }
+                    ltr
+                  />
+                ) : null}
                 <MetaCell
-                  label={t('mobile.adminQuotation.total')}
-                  value={formatCurrency(Number(detail.total ?? 0))}
+                  label={t('mobile.adminQuotation.currency')}
+                  value={detail.currency || 'ILS'}
                   ltr
                 />
                 {linkedSalesOrder && !embedded ? (
@@ -501,205 +625,30 @@ export function AdminQuotationDetailScreen({
                     brand
                     ltr
                     onPress={() => {
-                      void haptics.selection();
                       router.push(`/(app)/(admin)/orders/${linkedSalesOrder.id}` as never);
                     }}
                   />
                 ) : null}
               </MetaRow>
-
-              {paymentTermsShown ? (
-                <MetaCell
-                  label={t('mobile.adminQuotation.paymentTerms')}
-                  value={paymentTermsShown}
-                  fullWidth
-                />
+              {(detail.version ?? 1) > 1 ? (
+                <AppText variant="caption" color="secondary">
+                  {t('mobile.adminQuotation.revised')} · v{detail.version}
+                </AppText>
               ) : null}
-              {deliveryTermsShown ? (
-                <MetaCell
-                  label={t('mobile.adminQuotation.deliveryTerms')}
-                  value={deliveryTermsShown}
-                  fullWidth
-                />
-              ) : null}
-
-              {detail.request && !embedded ? (
-                <MetaRow isRTL={isRTL}>
-                  <MetaCell
-                    label={t('mobile.adminQuotation.rfq')}
-                    value={detail.request.number}
-                    brand
-                    ltr
-                    onPress={() => {
-                      void haptics.selection();
-                      if (onOpenRequest) {
-                        onOpenRequest();
-                        return;
-                      }
-                      router.push(`/(app)/(admin)/requests/${detail.request!.id}` as never);
-                    }}
-                  />
-                  {detail.request.externalOrderNumber ? (
-                    <MetaCell
-                      label={t('mobile.adminQuotation.dealerOrder')}
-                      value={detail.request.externalOrderNumber}
-                      ltr
-                    />
-                  ) : null}
-                </MetaRow>
-              ) : detail.request?.externalOrderNumber ? (
-                <MetaRow isRTL={isRTL}>
-                  <MetaCell
-                    label={t('mobile.adminQuotation.dealerOrder')}
-                    value={detail.request.externalOrderNumber}
-                    ltr
-                  />
-                </MetaRow>
+              {detail.rejectionReason ? (
+                <AppText variant="caption" color="secondary">
+                  {t('mobile.adminQuotation.rejectionReason')}: {detail.rejectionReason}
+                </AppText>
               ) : null}
             </View>
-
-            {isDraft && canUpdate ? (
-              <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
-                <TextField
-                  label={t('mobile.adminQuotation.paymentTerms')}
-                  value={paymentTerms}
-                  onChangeText={setPaymentTerms}
-                />
-                <TextField
-                  label={t('mobile.adminQuotation.deliveryTerms')}
-                  value={deliveryTerms}
-                  onChangeText={setDeliveryTerms}
-                  multiline
-                />
-              </View>
-            ) : null}
-
-            {(detail.subtotal != null || taxValue > 0) && (
-              <View
-                style={{
-                  marginTop: theme.spacing.md,
-                  paddingTop: theme.spacing.md,
-                  borderTopWidth: 1,
-                  borderTopColor: colors.border,
-                  gap: theme.spacing.sm,
-                }}
-              >
-                {detail.subtotal != null ? (
-                  <View
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <AppText variant="caption" color="muted">
-                      {t('mobile.adminQuotation.subtotal')}
-                    </AppText>
-                    <AppText variant="caption" weight="medium" dir="ltr">
-                      {formatCurrency(Number(detail.subtotal))}
-                    </AppText>
-                  </View>
-                ) : null}
-                {taxValue > 0 ? (
-                  <View
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <AppText variant="caption" color="muted">
-                      {t('mobile.adminQuotation.tax')}
-                    </AppText>
-                    <AppText variant="caption" weight="medium" dir="ltr">
-                      {formatCurrency(taxValue)}
-                    </AppText>
-                  </View>
-                ) : null}
-              </View>
-            )}
-
-            <View
-              style={{
-                marginTop: theme.spacing.md,
-                paddingTop: theme.spacing.md,
-                borderTopWidth: 1,
-                borderTopColor: colors.border,
-                gap: theme.spacing.md,
-              }}
-            >
-              <PrimaryButton
-                label={t('mobile.adminQuotation.pdf')}
-                disabled={pdfBusy}
-                loading={pdfBusy}
-                onPress={() => void openPdf()}
-                style={{ alignSelf: 'stretch', width: '100%' }}
-              />
-              {showRevise ? (
-                <SecondaryButton
-                  label={t('mobile.adminQuotation.revise')}
-                  onPress={() => setConfirm('revise')}
-                  disabled={workflowBusy}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-
-              {isDraft && canUpdate ? (
-                <SecondaryButton
-                  label={t('mobile.adminQuotation.save')}
-                  onPress={() => saveMutation.mutate()}
-                  loading={saveMutation.isPending}
-                  disabled={workflowBusy}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-
-              {showSubmit ? (
-                <PrimaryButton
-                  label={t('mobile.adminQuotation.submitForApproval')}
-                  onPress={() => submitMutation.mutate()}
-                  loading={submitMutation.isPending}
-                  disabled={workflowBusy}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {showApprove ? (
-                <PrimaryButton
-                  label={t('mobile.adminQuotation.approve')}
-                  onPress={() => approveMutation.mutate()}
-                  loading={approveMutation.isPending}
-                  disabled={workflowBusy}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {showSend ? (
-                <PrimaryButton
-                  label={t('mobile.adminQuotation.send')}
-                  onPress={() => sendMutation.mutate()}
-                  loading={sendMutation.isPending}
-                  disabled={workflowBusy}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {showRejectBtn ? (
-                <DestructiveButton
-                  label={t('mobile.adminQuotation.reject')}
-                  disabled={workflowBusy}
-                  onPress={() => setConfirm('reject')}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-            </View>
-          </OrderBoardCard>
+          </DealerBoard>
         </ListItemEnter>
 
         <ListItemEnter index={nextIndex()}>
-          <OrderBoardCard>
-            <OrderSectionHeader
-              icon="list-outline"
-              label={t('mobile.adminQuotation.lines')}
-              uppercase={false}
-            />
+          <DealerBoard
+            title={t('mobile.adminQuotation.lines')}
+            titleWeight={titleWeight}
+          >
             {(detail.lines ?? []).length === 0 ? (
               <AppText variant="caption" color="muted">
                 {t('mobile.adminQuotation.noLines')}
@@ -715,7 +664,12 @@ export function AdminQuotationDetailScreen({
                   const dims = quotationLineDims(line);
                   const specs = quotationLineSpecs(line);
                   const qtyLabel = quotationQtyLabel(line.quantity);
-                  const lineNet = quotationLineNet(line.unitPrice, line.quantity);
+                  const pricedUnit = isDraft && canUpdate ? row.unitPrice : line.unitPrice;
+                  const missingPrice = sellingPriceMissing(pricedUnit);
+                  const lineNet = missingPrice ? null : quotationLineNet(pricedUnit, line.quantity);
+                  const complexity = quotationComplexity(line.manufacturingComplexity);
+                  const photo = line.product?.imageUrl;
+                  const sku = line.product?.sku;
                   return (
                   <View
                     key={row.id}
@@ -731,6 +685,33 @@ export function AdminQuotationDetailScreen({
                     <View
                       style={{
                         flexDirection: isRTL ? 'row-reverse' : 'row',
+                        gap: theme.spacing.sm,
+                        alignItems: 'flex-start',
+                      }}
+                    >
+                      {photo ? (
+                        <Image
+                          source={{ uri: photo }}
+                          style={{ width: 56, height: 56, borderRadius: theme.radius.md }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 56,
+                            height: 56,
+                            borderRadius: theme.radius.md,
+                            backgroundColor: colors.brandSoft,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Ionicons name="image-outline" size={20} color={colors.brand} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1, gap: 4 }}>
+                    <View
+                      style={{
+                        flexDirection: isRTL ? 'row-reverse' : 'row',
                         justifyContent: 'space-between',
                         gap: theme.spacing.sm,
                         alignItems: 'flex-start',
@@ -738,8 +719,8 @@ export function AdminQuotationDetailScreen({
                     >
                       <AppText
                         variant="label"
-                        weight="semibold"
-                        style={{ flex: 1 }}
+                        weight={titleWeight}
+                        style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
                         numberOfLines={4}
                       >
                         {line.description || t('mobile.adminQuotation.line', { n: index + 1 })}
@@ -766,6 +747,17 @@ export function AdminQuotationDetailScreen({
                         </View>
                       ) : null}
                     </View>
+                    <StatusBadge
+                      status={complexity}
+                      label={t(`mobile.adminQuotation.complexity.${complexity}`)}
+                    />
+                    {sku ? (
+                      <AppText variant="caption" color="muted" dir="ltr">
+                        {t('mobile.adminQuotation.sku')} {sku}
+                      </AppText>
+                    ) : null}
+                      </View>
+                    </View>
 
                     <View
                       style={{
@@ -779,7 +771,11 @@ export function AdminQuotationDetailScreen({
                           <AppText
                             variant="caption"
                             color="muted"
-                            style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}
+                            style={{
+                              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                              letterSpacing: locale === 'ar' ? 0 : 0.45,
+                              fontSize: 10,
+                            }}
                           >
                             {t('mobile.adminQuotation.dimensions')}
                           </AppText>
@@ -793,7 +789,11 @@ export function AdminQuotationDetailScreen({
                           <AppText
                             variant="caption"
                             color="muted"
-                            style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}
+                            style={{
+                              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                              letterSpacing: locale === 'ar' ? 0 : 0.45,
+                              fontSize: 10,
+                            }}
                           >
                             {t('mobile.adminQuotation.specs')}
                           </AppText>
@@ -818,50 +818,311 @@ export function AdminQuotationDetailScreen({
                             }
                             keyboardType="decimal-pad"
                           />
+                          {line.referenceUnitPrice != null ? (
+                            <AppText variant="caption" color="muted" dir="ltr">
+                              {t('mobile.adminQuotation.referencePrice')}{' '}
+                              {boardMoney(locale, line.referenceUnitPrice)}
+                            </AppText>
+                          ) : null}
                         </View>
                       ) : (
-                        <>
-                          <View style={{ minWidth: '40%', gap: 2 }}>
-                            <AppText
-                              variant="caption"
-                              color="muted"
-                              style={{
-                                textTransform: 'uppercase',
-                                fontSize: 10,
-                                letterSpacing: 0.5,
-                              }}
-                            >
-                              {t('mobile.adminQuotation.price')}
+                        <View style={{ minWidth: '40%', gap: 2 }}>
+                          <AppText
+                            variant="caption"
+                            color="muted"
+                            style={{
+                              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                              letterSpacing: locale === 'ar' ? 0 : 0.45,
+                              fontSize: 10,
+                            }}
+                          >
+                            {t('mobile.adminQuotation.price')}
+                          </AppText>
+                          <AppText variant="caption" weight="medium" dir="ltr">
+                            {missingPrice
+                              ? t('mobile.adminQuotation.priceRequired')
+                              : boardMoney(locale, line.unitPrice)}
+                          </AppText>
+                          {missingPrice && line.referenceUnitPrice != null ? (
+                            <AppText variant="caption" color="muted" dir="ltr">
+                              {t('mobile.adminQuotation.referencePrice')}{' '}
+                              {boardMoney(locale, line.referenceUnitPrice)}
                             </AppText>
-                            <AppText variant="caption" weight="medium" dir="ltr">
-                              {money(line.unitPrice)}
-                            </AppText>
-                          </View>
-                          <View style={{ minWidth: '40%', gap: 2 }}>
-                            <AppText
-                              variant="caption"
-                              color="muted"
-                              style={{
-                                textTransform: 'uppercase',
-                                fontSize: 10,
-                                letterSpacing: 0.5,
-                              }}
-                            >
-                              {t('mobile.adminQuotation.lineTotal')}
-                            </AppText>
-                            <AppText variant="caption" weight="semibold" dir="ltr">
-                              {money(lineNet)}
-                            </AppText>
-                          </View>
-                        </>
+                          ) : null}
+                        </View>
                       )}
+                      <View
+                        style={{
+                          minWidth: isDraft && canUpdate ? '100%' : '40%',
+                          gap: 2,
+                        }}
+                      >
+                        <AppText
+                          variant="caption"
+                          color="muted"
+                          style={{
+                            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                            letterSpacing: locale === 'ar' ? 0 : 0.45,
+                            fontSize: 10,
+                          }}
+                        >
+                          {t('mobile.adminQuotation.lineTotal')}
+                        </AppText>
+                        <AppText variant="caption" weight={titleWeight} dir="ltr">
+                          {missingPrice
+                            ? t('mobile.adminQuotation.priceRequired')
+                            : boardMoney(locale, lineNet)}
+                        </AppText>
+                      </View>
                     </View>
                   </View>
                   );
                 })}
               </View>
             )}
-          </OrderBoardCard>
+          </DealerBoard>
+        </ListItemEnter>
+
+        <ListItemEnter index={nextIndex()}>
+          <DealerBoard title={t('mobile.adminQuotation.commercial')} titleWeight={titleWeight}>
+            <View
+              style={{
+                borderRadius: theme.radius.lg,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceSecondary,
+                padding: theme.spacing.md,
+                gap: theme.spacing.sm,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <AppText variant="caption" color="muted">
+                  {t('mobile.adminQuotation.total')}
+                </AppText>
+                <AppText variant="title" weight={titleWeight} dir="ltr">
+                  {boardMoney(locale, displayTotal)}
+                </AppText>
+              </View>
+              {displaySubtotal != null ? (
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <AppText variant="caption" color="muted">
+                    {t('mobile.adminQuotation.subtotal')}
+                  </AppText>
+                  <AppText variant="label" weight={titleWeight} dir="ltr">
+                    {boardMoney(locale, displaySubtotal)}
+                  </AppText>
+                </View>
+              ) : null}
+              {displayTax > 0 ? (
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <AppText variant="caption" color="muted">
+                    {t('mobile.adminQuotation.tax')}
+                  </AppText>
+                  <AppText variant="label" weight={titleWeight} dir="ltr">
+                    {boardMoney(locale, displayTax)}
+                  </AppText>
+                </View>
+              ) : null}
+            </View>
+            {isDraft && canUpdate ? (
+              <View style={{ gap: theme.spacing.sm }}>
+                <TextField
+                  label={t('mobile.adminQuotation.validUntil')}
+                  value={expirationDate}
+                  onChangeText={setExpirationDate}
+                  placeholder="YYYY-MM-DD"
+                />
+                <TextField
+                  label={t('mobile.adminQuotation.factoryDelivery')}
+                  value={offeredDeliveryDate}
+                  onChangeText={setOfferedDeliveryDate}
+                  placeholder="YYYY-MM-DD"
+                />
+                <TextField
+                  label={t('mobile.adminQuotation.paymentTerms')}
+                  value={paymentTerms}
+                  onChangeText={setPaymentTerms}
+                />
+                <TextField
+                  label={t('mobile.adminQuotation.deliveryTerms')}
+                  value={deliveryTerms}
+                  onChangeText={setDeliveryTerms}
+                  multiline
+                />
+                <TextField
+                  label={t('mobile.adminQuotation.notes')}
+                  value={customerNotes}
+                  onChangeText={setCustomerNotes}
+                  multiline
+                />
+              </View>
+            ) : (
+              <View style={{ gap: theme.spacing.sm }}>
+                {offeredDeliveryDate ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.factoryDelivery')}
+                    value={offeredDeliveryDate}
+                    fullWidth
+                  />
+                ) : null}
+                {paymentTermsShown ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.paymentTerms')}
+                    value={paymentTermsShown}
+                    fullWidth
+                  />
+                ) : null}
+                {deliveryTermsShown ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.deliveryTerms')}
+                    value={deliveryTermsShown}
+                    fullWidth
+                  />
+                ) : null}
+                {presentableText(detail.customerNotes) ? (
+                  <MetaCell
+                    label={t('mobile.adminQuotation.notes')}
+                    value={presentableText(detail.customerNotes)!}
+                    fullWidth
+                  />
+                ) : null}
+              </View>
+            )}
+          </DealerBoard>
+        </ListItemEnter>
+
+        <ListItemEnter index={nextIndex()}>
+          <DealerBoard title={t('mobile.adminQuotation.attachments')} titleWeight={titleWeight}>
+            {requestDocs.length === 0 ? (
+              <AppText variant="caption" color="muted">
+                {t('mobile.adminQuotation.noAttachments')}
+              </AppText>
+            ) : (
+              <View style={{ gap: theme.spacing.sm }}>
+                {requestDocs.map((doc) => (
+                  <AnimatedPressable
+                    key={doc.id}
+                    variant="button"
+                    onPress={() => {
+                      void (async () => {
+                        try {
+                          const url = await resolveDocumentUrl(doc.id);
+                          await Linking.openURL(url);
+                        } catch {
+                          showToast({
+                            variant: 'error',
+                            message: t('mobile.adminQuotation.actionFailed'),
+                          });
+                        }
+                      })();
+                    }}
+                    style={{
+                      flexDirection: isRTL ? 'row-reverse' : 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: theme.spacing.md,
+                      borderRadius: theme.radius.lg,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceSecondary,
+                    }}
+                  >
+                    <AppText variant="label" style={{ flex: 1 }}>
+                      {doc.fileName}
+                    </AppText>
+                    <Ionicons
+                      name={isRTL ? 'chevron-back' : 'chevron-forward'}
+                      size={16}
+                      color={colors.textMuted}
+                    />
+                  </AnimatedPressable>
+                ))}
+              </View>
+            )}
+          </DealerBoard>
+        </ListItemEnter>
+
+        <ListItemEnter index={nextIndex()}>
+          <DealerBoard title={t('mobile.adminQuotation.send')} titleWeight={titleWeight}>
+            {sendBlockers.length > 0 ? (
+              <View
+                style={{
+                  borderRadius: theme.radius.lg,
+                  borderWidth: 1,
+                  borderColor: colors.warning,
+                  backgroundColor: colors.warningSoft,
+                  padding: theme.spacing.md,
+                  gap: theme.spacing.xs,
+                }}
+              >
+                <AppText variant="caption" weight={titleWeight}>
+                  {t('mobile.adminQuotation.cannotSendTitle')}
+                </AppText>
+                {sendBlockers.map((reason) => (
+                  <AppText key={reason} variant="caption" color="secondary">
+                    {reason}
+                  </AppText>
+                ))}
+              </View>
+            ) : null}
+            {showSend ? (
+              <PrimaryButton
+                label={t('mobile.adminQuotation.send')}
+                onPress={() => sendMutation.mutate()}
+                loading={sendMutation.isPending}
+                disabled={workflowBusy}
+                style={floorBtn}
+              />
+            ) : null}
+            {isDraft && canUpdate ? (
+              <SecondaryButton
+                label={t('mobile.adminQuotation.save')}
+                onPress={() => saveMutation.mutate()}
+                loading={saveMutation.isPending}
+                disabled={workflowBusy}
+                style={floorBtn}
+              />
+            ) : null}
+            <PrimaryButton
+              label={t('mobile.adminQuotation.pdf')}
+              disabled={pdfBusy}
+              loading={pdfBusy}
+              onPress={() => void openPdf()}
+              leading={<Ionicons name="document-text-outline" size={16} color={colors.onBrand} />}
+              style={floorBtn}
+            />
+            {showRevise ? (
+              <SecondaryButton
+                label={t('mobile.adminQuotation.revise')}
+                onPress={() => setConfirm('revise')}
+                disabled={workflowBusy}
+                style={floorBtn}
+              />
+            ) : null}
+            {showRejectBtn ? (
+              <DestructiveButton
+                label={t('mobile.adminQuotation.reject')}
+                disabled={workflowBusy}
+                onPress={() => setConfirm('reject')}
+                style={floorBtn}
+              />
+            ) : null}
+          </DealerBoard>
         </ListItemEnter>
     </>
   );
@@ -917,15 +1178,6 @@ export function AdminQuotationDetailScreen({
         }}
       >
         <BackButton onPress={goBack} label={t('mobile.adminQuotation.back')} />
-        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <AppText variant="title" weight={titleWeight} numberOfLines={1} dir="ltr">
-            {detail.number}
-          </AppText>
-          <AppText variant="caption" color="muted" numberOfLines={1}>
-            {dealerName}
-          </AppText>
-        </View>
-        <StatusBadge status={detail.status} dot />
       </View>
 
       <ScrollView

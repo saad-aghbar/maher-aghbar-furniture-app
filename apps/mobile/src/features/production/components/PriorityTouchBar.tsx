@@ -21,16 +21,16 @@ const CHIP_MIN_WIDTH = 48;
 
 const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
 
-/** Soft fills — Low / Normal / High / Urgent */
-const FILL_LIGHT = ['#E8EBEF', '#F3EEE5', '#F5EDE3', '#F2E8E4'] as const;
-const BORDER_LIGHT = ['#6B7280', '#8F7A58', '#B45309', '#7A4538'] as const;
+/** Soft fills — Low / Normal / High / Urgent (wood → sienna, no UI grey/blue). */
+const FILL_LIGHT = ['#EEEAE4', '#F3EEE5', '#F3EDE3', '#F2E8E4'] as const;
+const BORDER_LIGHT = ['#6E6254', '#8F7A58', '#8B7049', '#7A4538'] as const;
 const FILL_DARK = [
-  'rgba(148,163,184,0.18)',
+  'rgba(181,164,140,0.20)',
   'rgba(168,144,108,0.18)',
-  'rgba(217,119,6,0.20)',
+  'rgba(196,160,106,0.18)',
   'rgba(196,137,122,0.18)',
 ] as const;
-const BORDER_DARK = ['#94A3B8', '#A8906C', '#F59E0B', '#C4897A'] as const;
+const BORDER_DARK = ['#B5A48C', '#A8906C', '#C4A06A', '#C4897A'] as const;
 
 type ChipLayout = { x: number; width: number };
 

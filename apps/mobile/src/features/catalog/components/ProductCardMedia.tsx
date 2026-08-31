@@ -86,16 +86,18 @@ export function ProductCardMedia({
           <Animated.View
             key={current}
             entering={reduce ? undefined : FadeIn.duration(420)}
-            style={{ position: 'absolute', width, height, opacity: showingPhoto ? 1 : 0 }}
+            style={{ position: 'absolute', width, height }}
           >
-            <Image
-              source={{ uri: current }}
-              style={{ width, height }}
-              resizeMode="cover"
-              onLoad={() => setLoaded((prev) => ({ ...prev, [current]: true }))}
-              onError={() => setFailed((prev) => ({ ...prev, [current]: true }))}
-              accessibilityIgnoresInvertColors
-            />
+            <View style={{ width, height, opacity: showingPhoto ? 1 : 0 }}>
+              <Image
+                source={{ uri: current }}
+                style={{ width, height }}
+                resizeMode="cover"
+                onLoad={() => setLoaded((prev) => ({ ...prev, [current]: true }))}
+                onError={() => setFailed((prev) => ({ ...prev, [current]: true }))}
+                accessibilityIgnoresInvertColors
+              />
+            </View>
           </Animated.View>
           {displayable.map((uri, i) =>
             i === safeIndex ? null : (

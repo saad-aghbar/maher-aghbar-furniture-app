@@ -1,7 +1,7 @@
 'use client';
 
 import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
-import { AvailabilityCard } from '@/components/availability-card';
+import { AvailabilityCard, localDealerMinimumRequestYmd } from '@/components/availability-card';
 import { DeliveryLocationMapLazy } from '@/components/delivery-location-map-lazy';
 import { useRouter } from '@/i18n/navigation';
 import {
@@ -656,10 +656,16 @@ function CreateOrderForm() {
 
           <Input
             label={tc('preferredDeliveryDate')}
-            hint={tc('preferredDeliveryDateHint')}
+            hint={tc('deliveryLeadTimeNotice')}
             type="date"
+            min={localDealerMinimumRequestYmd()}
             value={preferredDeliveryDate}
-            onChange={(e) => setPreferredDeliveryDate(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              const min = localDealerMinimumRequestYmd();
+              if (next && next < min) return;
+              setPreferredDeliveryDate(next);
+            }}
             dir="ltr"
             disabled={busy}
           />

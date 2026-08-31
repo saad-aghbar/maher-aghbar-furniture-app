@@ -42,6 +42,7 @@ import {
   type MgmtManufacturing,
   type MgmtWorkers,
 } from './management-summary';
+import { workerFloorOpenTasksWhere } from '../production/worker-task-visibility';
 
 const OPEN_TASK_STATUSES: TaskStatus[] = [
   TaskStatus.NOT_STARTED,
@@ -918,10 +919,8 @@ export class ReportsService {
     endOfDay.setHours(23, 59, 59, 999);
 
     const mine: Prisma.ProductionTaskWhereInput = { assignedEmployeeId: assigneeId };
-    const openMine: Prisma.ProductionTaskWhereInput = {
-      ...mine,
-      status: { in: OPEN_TASK_STATUSES },
-    };
+    /** Same floor eligibility as Tasks tab — hide unreleased Preparing work. */
+    const openMine: Prisma.ProductionTaskWhereInput = workerFloorOpenTasksWhere(assigneeId);
     const canNotifications = hasPermission(user.permissions ?? [], 'notification.read');
     const rawLang = String(localeOverride || user.preferredLanguage || 'en').toLowerCase();
     const lang = rawLang.startsWith('ar') ? 'ar' : rawLang.startsWith('he') ? 'he' : 'en';

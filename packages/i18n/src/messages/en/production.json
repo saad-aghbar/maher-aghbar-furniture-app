@@ -232,7 +232,7 @@
     "productionDelay": "Production is taking longer than expected.",
     "scheduleUpdating": "Schedule being updated",
     "notConfirmed": "Not yet confirmed",
-    "requestedHint": "We'll confirm the delivery date after production scheduling.",
+    "requestedHint": "We'll confirm the delivery date on the quotation.",
     "modeUpcoming": "Upcoming",
     "modeCalendar": "Calendar",
     "groupToday": "Today",

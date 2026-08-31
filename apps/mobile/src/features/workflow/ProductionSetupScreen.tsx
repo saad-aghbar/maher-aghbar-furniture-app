@@ -18,7 +18,6 @@ import {
   patchAdminProduct,
   type AdminBomLine,
 } from '@/api/modules/catalogAdmin';
-import { queryKeys } from '@/api/queryKeys';
 import type { ProductionSetupStage } from '@/api/modules/workflow';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
@@ -789,10 +788,9 @@ export function ProductionSetupScreen({
         }}
         refreshControl={
           <RefreshControl
-            refreshing={setupQuery.isRefetching || productQuery.isRefetching}
+            refreshing={setupQuery.isRefetching}
             onRefresh={() => {
               void setupQuery.refetch();
-              void productQuery.refetch();
             }}
           />
         }

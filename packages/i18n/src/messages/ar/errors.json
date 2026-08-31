@@ -67,6 +67,7 @@
   "NO_SOURCE": "لم يتم توفير مستند مصدر.",
   "AI_INTAKE_FAILED": "تعذر قراءة الطلبية. يرجى المحاولة مرة أخرى.",
   "INVALID_STATUS": "هذا الإجراء غير مسموح في الحالة الحالية.",
+  "QUOTATION_EXPIRED": "انتهت صلاحية عرض السعر.",
   "WEBHOOK_DISABLED": "الويب هوك معطّل.",
   "SCHEDULE_STALE": "تغير الجدول منذ آخر تحديث. يرجى إعادة تحميل البيانات.",
   "SCHEDULE_CONFLICT": "يوجد تعارض في الجدولة. يرجى مراجعة المواعيد.",
@@ -136,5 +137,6 @@
   "SETUP_DELIVERY_MUST_NOT_PRODUCE": "التسليم يحدد الطرود على الشاحنة ولا ينشئ مخزوناً.",
   "SETUP_PACKAGING_MUST_PRODUCE_FINISHED": "التعبئة يجب أن تنتج المنتج الجاهز مع طرود الشحن.",
   "SETUP_PACKAGING_MUST_CONSUME_SEMI": "التعبئة يجب أن تأخذ الطقم نصف المصنّع من المراحل السابقة.",
-  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "الفحص يجب أن يأخذ الطقم نصف المصنّع للتأكيد."
+  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "الفحص يجب أن يأخذ الطقم نصف المصنّع للتأكيد.",
+  "DELIVERY_DATE_TOO_SOON": "اختر تاريخ تسليم بعد أربعة أيام على الأقل من اليوم."
 }

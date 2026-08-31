@@ -595,7 +595,7 @@ export class TasksService {
     }
   }
 
-  async assign(id: string, dto: AssignTaskDto, permissions: string[] = []) {
+  async assign(id: string, dto: AssignTaskDto, permissions: string[] = [], actorUserId?: string) {
     const task = await this.getTask(id);
     const orderStatus = task.productionOrder?.status;
     if (orderStatus === 'COMPLETED' || orderStatus === 'CANCELLED') {
@@ -834,10 +834,24 @@ export class TasksService {
         const canOverride =
           dto.overrideConflict === true && permissions.includes('schedule.override');
         if (!canOverride) {
+          const durationMs = Math.max(
+            30 * 60_000,
+            windowEnd.getTime() - windowStart.getTime(),
+          );
+          const latestEndMs = Math.max(
+            ...conflicts.map((c) => new Date(c.end).getTime()),
+            windowStart.getTime(),
+          );
+          const suggestedStart = new Date(latestEndMs);
+          const suggestedEnd = new Date(latestEndMs + durationMs);
           throw new ConflictException({
             code: 'WORKER_SCHEDULE_CONFLICT',
             message: 'Worker has overlapping work in this time window.',
             conflicts,
+            suggestedWindow: {
+              plannedStart: suggestedStart.toISOString(),
+              plannedCompletion: suggestedEnd.toISOString(),
+            },
             overrideRequires: 'schedule.override',
           });
         }
@@ -858,9 +872,28 @@ export class TasksService {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
         stageDefinition: true,
-        productionOrder: { select: { id: true, number: true } },
+        productionOrder: { select: { id: true, number: true, releasedToFactoryAt: true } },
       },
     });
+
+    // Post–Release to factory: Change worker / dates are explicit actions — audit them.
+    if (updated.productionOrder?.releasedToFactoryAt) {
+      await this.prisma.auditEvent.create({
+        data: {
+          userId: actorUserId ?? null,
+          action: 'production-task.change-assignment',
+          entityType: 'ProductionTask',
+          entityId: id,
+          newValues: {
+            productionOrderId: updated.productionOrder.id,
+            assignedEmployeeId: dto.employeeId,
+            plannedStart: plannedStart?.toISOString() ?? null,
+            plannedCompletion: plannedCompletion?.toISOString() ?? null,
+            previousEmployeeId: task.assignedEmployeeId,
+          },
+        },
+      }).catch(() => undefined);
+    }
 
     const timing = buildTaskTimingSummary({
       status: updated.status,
@@ -901,6 +934,22 @@ export class TasksService {
     const task = await this.getTask(id);
     this.assertCanModify(task, userId, permissions);
     await this.assertPrereqsMet(task);
+
+    if (!task.productionOrder?.releasedToFactoryAt) {
+      const poStatus = String(task.productionOrder?.status ?? '').toUpperCase();
+      const legacyOnFloor =
+        Boolean(task.productionOrder?.actualStartDate) ||
+        ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(
+          poStatus,
+        );
+      if (!legacyOnFloor) {
+        throw new BadRequestException({
+          code: 'NOT_RELEASED_TO_FACTORY',
+          message:
+            'This order has not been released to the factory yet. Finish the production plan and release it first.',
+        });
+      }
+    }
 
     const stageStatus = task.stageInstance?.status;
     const allowedTask = ['NOT_STARTED', 'READY', 'PAUSED'].includes(task.status);
@@ -1577,18 +1626,6 @@ export class TasksService {
         entityId: id,
         response: updated,
       });
-    }
-
-    const poStatus = updated.productionOrder?.status;
-    const salesOrderId = (
-      await this.prisma.productionOrder.findUnique({
-        where: { id: task.productionOrderId },
-        select: { salesOrderId: true },
-      })
-    )?.salesOrderId;
-
-    if (poStatus === 'COMPLETED' && salesOrderId) {
-      await this.invoices.ensureFromSalesOrder(salesOrderId, userId).catch(() => {});
     }
 
     this.notifyScheduleLifecycle(id, 'complete');

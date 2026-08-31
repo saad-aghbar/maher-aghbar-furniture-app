@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -18,11 +19,11 @@ type WipProps = {
 
 function lotAccent(
   status: string,
-  colors: { info: string; success: string; warning: string; error: string; textMuted: string },
+  colors: { brand: string; success: string; warning: string; error: string; textMuted: string },
 ): string {
   switch (status) {
     case 'AVAILABLE':
-      return colors.info;
+      return colors.success;
     case 'RESERVED':
     case 'REQUIRES_REVIEW':
     case 'QUARANTINED':
@@ -34,7 +35,7 @@ function lotAccent(
     case 'DELIVERED':
       return colors.success;
     default:
-      return colors.info;
+      return colors.brand;
   }
 }
 
@@ -292,7 +293,7 @@ function ThumbWell({
 
 export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: WipProps) {
   const { t, isRTL, formatDateTime, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const name = localizedName(locale, lot.inventoryItem);
   const stageName = lot.stageInstance?.stageDefinition
@@ -332,10 +333,11 @@ export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: Wi
           backgroundColor: colors.surface,
           gap: theme.spacing.sm,
           overflow: 'hidden',
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <View
+          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
@@ -343,7 +345,7 @@ export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: Wi
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: 0.85,
+            opacity: accent === colors.brand ? 0.55 : 0.9,
           }}
         />
 
@@ -442,10 +444,7 @@ export function InventoryWipRow({ lot, index, animateEnter = true, onPress }: Wi
               <MetaChip icon="bus-outline" label={t('lifecycle.waitingForTruck')} />
             ) : null}
           </View>
-          {orderNumber ? null : (
-            <Ionicons name={chevron} size={16} color={colors.brand} style={{ marginTop: 4 }} />
-          )}
-        </View>
+        ) : null}
 
         <View
           style={{
@@ -523,7 +522,7 @@ export function InventoryFinishedRow({
   animateEnter = true,
 }: FgProps) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const onHand = Math.max(0, available);
   const held = Math.max(0, reserved);
@@ -536,7 +535,7 @@ export function InventoryFinishedRow({
       ? colors.textMuted
       : ready
         ? colors.success
-        : colors.info;
+        : colors.brand;
   const chevron = isRTL ? 'chevron-back' : 'chevron-forward';
 
   return (
@@ -560,10 +559,11 @@ export function InventoryFinishedRow({
           backgroundColor: colors.surface,
           gap: theme.spacing.md,
           overflow: 'hidden',
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <View
+          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
@@ -571,7 +571,7 @@ export function InventoryFinishedRow({
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: empty && !quarantined ? 0.45 : 0.9,
+            opacity: empty && !quarantined ? 0.35 : accent === colors.brand ? 0.55 : 0.9,
           }}
         />
 
@@ -643,7 +643,7 @@ type FgLotProps = {
 /** Finished-goods lot row — order/dealer/delivery context, not WIP stage flow. */
 export function InventoryFgLotRow({ lot, index, animateEnter = true, onPress }: FgLotProps) {
   const { t, isRTL, formatDate, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const productName =
     lot.productNameEn || lot.productNameAr
@@ -687,10 +687,11 @@ export function InventoryFgLotRow({ lot, index, animateEnter = true, onPress }: 
           backgroundColor: colors.surface,
           gap: theme.spacing.sm,
           overflow: 'hidden',
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <View
+          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
@@ -698,7 +699,7 @@ export function InventoryFgLotRow({ lot, index, animateEnter = true, onPress }: 
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: waitingForTruck ? colors.warning : accent,
-            opacity: 0.9,
+            opacity: waitingForTruck || accent !== colors.brand ? 0.9 : 0.55,
           }}
         />
 

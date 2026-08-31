@@ -137,8 +137,9 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
       null,
     [query.data, lineId],
   );
-  const released = query.data?.status === 'RELEASED';
-  const editable = canEdit && !released;
+  const factoryLocked = Boolean(query.data?.factoryReleased);
+  const planEditable = query.data?.planEditable !== false && !factoryLocked;
+  const editable = canEdit && planEditable;
 
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
@@ -968,7 +969,7 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
                 ...withoutFabric,
                 {
                   key: `fabric-${picked.sku}-${Date.now()}`,
-                  inventoryItemId: picked.materialId ?? null,
+                  inventoryItemId: picked.inventoryItemId ?? null,
                   sku: picked.sku,
                   displayName: picked.nameEn,
                   category: picked.category ?? 'FABRIC',
@@ -989,7 +990,7 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
             ...prev,
             {
               key: `new-${picked.sku}-${Date.now()}`,
-              inventoryItemId: picked.materialId ?? null,
+              inventoryItemId: picked.inventoryItemId ?? null,
               sku: picked.sku,
               displayName: picked.nameEn,
               category: picked.category ?? null,

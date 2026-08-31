@@ -47,6 +47,16 @@ export class AvailabilityRequestDto {
   @IsString()
   requestedDeliveryDate?: string;
 
+  @ApiPropertyOptional({ description: 'Inclusive YYYY-MM-DD start for days[]' })
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Inclusive YYYY-MM-DD end for days[]' })
+  @IsOptional()
+  @IsString()
+  to?: string;
+
   /** Admin-only: check availability on behalf of a specific dealer. */
   @ApiPropertyOptional()
   @IsOptional()
@@ -204,6 +214,25 @@ export class CalendarExceptionDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  @ApiPropertyOptional({ description: 'Owner target load percent for this date (100, 120, 0=closed).' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(200)
+  targetLoadPercent?: number;
+
+  @ApiPropertyOptional({ description: 'Worker ids this overtime window applies to.' })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  overtimeEmployeeIds?: string[];
+
+  @ApiPropertyOptional({ description: 'Required when closing/reducing a day that already has scheduled work.' })
+  @IsOptional()
+  @IsBoolean()
+  confirmImpact?: boolean;
 }
 
 export class ProductionCalendarDto {
@@ -424,6 +453,59 @@ export class ListCalendarQuery {
   @IsOptional()
   @IsIn(['day', 'week', 'month'])
   view?: 'day' | 'week' | 'month';
+}
+
+export class ReviewedAllocationMoveDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  allocationId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  productionTaskId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
+
+  @ApiProperty()
+  @IsString()
+  plannedStart!: string;
+
+  @ApiProperty()
+  @IsString()
+  plannedEnd!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  sortOrder?: number;
+}
+
+export class ApplyReviewedAllocationsDto {
+  @ApiProperty({ type: [ReviewedAllocationMoveDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReviewedAllocationMoveDto)
+  allocations!: ReviewedAllocationMoveDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class BulkShiftPreviewDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  days?: number;
 }
 
 export class ListOwnDeliveriesQuery {

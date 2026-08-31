@@ -20,7 +20,6 @@ import { useTheme } from '@/theme';
 import { MoreFloorCommand } from './components/MoreFloorCommand';
 import { MoreIdentityBoard } from './components/MoreIdentityBoard';
 import { MorePreferencesBoard } from './components/MorePreferencesBoard';
-import { DevTestsEntryRow } from '@/dev/component-lab/screens/DevTestsEntryRow';
 
 /** Admin More hub — signed in, prefs, places, automation. */
 export function MoreHubScreen() {
@@ -132,7 +131,6 @@ export function MoreHubScreen() {
         <Divider />
 
         <Footer {...footerProps} style={{ gap: theme.spacing.sm }}>
-          <DevTestsEntryRow />
           <DestructiveButton
             label={t('auth.logout')}
             onPress={() => {

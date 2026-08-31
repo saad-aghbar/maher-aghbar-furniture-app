@@ -2,6 +2,7 @@ import { FlatList, RefreshControl, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
+import { presentQuotationStatus } from '@maher/i18n';
 import { listQuotations } from '@/api/modules/quotations';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthProvider';
@@ -100,7 +101,11 @@ export function DealerQuotationsListScreen({ detailHref, backFallback }: Props) 
                       {item.number}
                       {item.version ? ` v${item.version}` : ''}
                     </AppText>
-                    <StatusBadge status={item.status} dot />
+                    <StatusBadge
+                      status={item.status}
+                      label={presentQuotationStatus(locale, item.status, item.commerciallyExpired)}
+                      dot
+                    />
                   </View>
                   {item.total != null ? (
                     <AppText variant="body" weight="medium" dir="ltr">

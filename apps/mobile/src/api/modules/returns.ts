@@ -31,9 +31,8 @@ export type ReturnRequest = {
   /** Dealer-visible note when approvalStatus is NEED_INFO. */
   needInfoNote?: string | null;
   /** Admin disposition — dealers only see resolved via lifecycle, never scrap labels. */
-  inventoryFate?: string | null;
-  resolution?: string | null;
   inventoryFate?: ReturnInventoryFate | string | null;
+  resolution?: string | null;
   reasonPhotoUrl?: string | null;
   issuePhotoUrl?: string | null;
   /** Multi-photo galleries (preferred). */

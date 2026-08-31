@@ -1,7 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Linking,
-  Pressable,
   RefreshControl,
   StyleSheet,
   View,
@@ -16,9 +15,12 @@ import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { can } from '@maher/permissions';
 import { confirmDeliveryReceipt } from '@/api/modules/deliveries';
+import { returnProductionOrderToPreparing } from '@/api/modules/production';
 import { queryKeys } from '@/api/queryKeys';
+import { toastMessageForError } from '@/api/queryClient';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { mapConfirmReceiptErrorCode } from '@maher/types';
+import { seedOrdersDeskChip } from './ordersDeskContext';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { openInvoicePdf } from '@/api/modules/invoices';
 import {
@@ -47,8 +49,8 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
-import { haptics, ListItemEnter } from '@/motion';
-import { surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
+import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
+import { SURFACE_TAB_BAR_CLEARANCE, surfaceTabBarStackInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import {
   adminOrderFlowHref,
@@ -76,10 +78,11 @@ import {
   OrderBoardCard,
   OrderSectionHeader,
 } from './components/OrderBoardCard';
+import { OrderIdentityBoard } from './components/OrderIdentityBoard';
 import { LinkedTablePanel } from './components/LinkedTablePanel';
 import { OrderDetailSkeleton } from './components/OrderDetailSkeleton';
 import { CommercialSummaryPanel } from './components/CommercialSummaryPanel';
-import { DeskCard } from '@/components/desk';
+import { orderBoardShadow } from './components/orderFloorStyle';
 import {
   adminLifecycleAccentKey,
   adminLifecycleHumanLabel,
@@ -109,7 +112,6 @@ function lifecycleAccent(
   colors: {
     warning: string;
     success: string;
-    info: string;
     brand: string;
     textMuted: string;
   },
@@ -121,7 +123,7 @@ function lifecycleAccent(
     case 'success':
       return colors.success;
     case 'info':
-      return colors.info;
+      return colors.brand;
     case 'brand':
       return colors.brand;
     default:
@@ -188,8 +190,32 @@ export function OrderDetailScreen({
     },
   });
 
+  const unlockPlanMutation = useMutation({
+    mutationFn: (productionOrderId: string) =>
+      returnProductionOrderToPreparing(productionOrderId),
+    onSuccess: async () => {
+      setEditPlanConfirmOpen(false);
+      seedOrdersDeskChip('preparing');
+      await query.refetch();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.salesOrders.lists() });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.production.all });
+      showToast({
+        variant: 'success',
+        message: t('mobile.orders.journey.editPlan'),
+      });
+      router.push(`/(app)/(admin)/orders/${orderId}/production-plan` as Href);
+    },
+    onError: (err: unknown) => {
+      showToast({
+        variant: 'error',
+        message: toastMessageForError(err, t),
+      });
+    },
+  });
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmKind, setConfirmKind] = useState<ConfirmKind>(null);
+  const [editPlanConfirmOpen, setEditPlanConfirmOpen] = useState(false);
   const [changeDateSheetOpen, setChangeDateSheetOpen] = useState(false);
   const [dateChangeError, setDateChangeError] = useState<string | null>(null);
   const [galleryUris, setGalleryUris] = useState<string[]>([]);
@@ -352,7 +378,7 @@ export function OrderDetailScreen({
   const stickyPad = showStickyActions
     ? stickyCtaBottomInset(insets.bottom, theme.spacing.md) + 148
     : theme.spacing['3xl'] +
-      stickyBottom +
+      SURFACE_TAB_BAR_CLEARANCE +
       (variant === 'dealer' ? 56 : theme.spacing['2xl']);
 
   const actionsSheet: ActionSheetItem[] = useMemo(() => {
@@ -605,7 +631,11 @@ export function OrderDetailScreen({
                         `/(app)/(admin)/orders/${orderId}/production-setup` as Href,
                       )
                     }
-                    style={{ alignSelf: 'stretch', width: '100%' }}
+                    style={{
+                      alignSelf: 'stretch',
+                      width: '100%',
+                      borderRadius: theme.radius.xl,
+                    }}
                   />
                 ) : null}
               </OrderBoardCard>
@@ -617,13 +647,13 @@ export function OrderDetailScreen({
           vm.workerAssignmentRequired ? (
             <ListItemEnter index={nextIndex()}>
               <OrderBoardCard
-                accent={colors.info}
+                accent={colors.brand}
                 style={{ backgroundColor: colors.brandSoft }}
               >
                 <OrderSectionHeader
                   icon="people-outline"
                   label={t('mobile.production.setup.planRequired')}
-                  accent={colors.info}
+                  accent={colors.brand}
                 />
                 <AppText variant="caption" color="secondary">
                   {t('mobile.production.setup.assignWorkersAndDates')}
@@ -640,10 +670,14 @@ export function OrderDetailScreen({
                       onPress={() => {
                         void haptics.selection();
                         router.push(
-                          `/(app)/(admin)/production/${poId}` as Href,
+                          `/(app)/(admin)/orders/${orderId}/production-plan` as Href,
                         );
                       }}
-                      style={{ alignSelf: 'stretch', width: '100%' }}
+                      style={{
+                        alignSelf: 'stretch',
+                        width: '100%',
+                        borderRadius: theme.radius.xl,
+                      }}
                     />
                   );
                 })()}
@@ -652,45 +686,40 @@ export function OrderDetailScreen({
           ) : null}
 
           <ListItemEnter index={nextIndex()}>
-            <OrderBoardCard accent={colors.brand}>
-              <OrderSectionHeader
-                icon="cube-outline"
-                label={t('mobile.orders.journey.identityEyebrow')}
-                accent={colors.brand}
-              />
-              <AppText variant="title" weight={titleWeight}>
-                {vm.title ?? vm.number}
-              </AppText>
-              <AppText
-                variant="caption"
-                color="secondary"
-                dir="ltr"
-                style={{ letterSpacing: 0.2 }}
-              >
-                {vm.number}
-                {vm.totalQuantity != null ? ` · ${vm.totalQuantity}` : ''}
-              </AppText>
-              {vm.showCosts === false && vm.customerRef ? (
-                <AppText variant="caption" color="muted">
-                  {t('mobile.orderDetail.customerRef')}: {vm.customerRef}
-                </AppText>
-              ) : null}
-              {vm.showCosts && vm.dealerName ? (
-                <AppText variant="caption" color="muted">
-                  {t('mobile.orders.dealer')}: {vm.dealerName}
-                </AppText>
-              ) : null}
-              {vm.deliveryDate ? (
-                <AppText variant="caption" color="muted">
-                  {formatDate(vm.deliveryDate)}
-                </AppText>
-              ) : null}
-            </OrderBoardCard>
+            <OrderIdentityBoard
+              number={vm.number}
+              title={vm.title ?? vm.number}
+              status={vm.status}
+              statusLabel={
+                vm.lifecycle
+                  ? adminLifecycleHumanLabel(vm.lifecycle, t)
+                  : undefined
+              }
+              dealerName={vm.dealerName}
+              customerRef={vm.customerRef}
+              metaLine={[
+                vm.totalQuantity != null ? String(vm.totalQuantity) : null,
+                vm.manufacturingKind
+                  ? t(`mobile.orders.journey.kind.${vm.manufacturingKind}`)
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || null}
+              deliveryLabel={
+                vm.deliveryDate ? formatDate(vm.deliveryDate) : null
+              }
+              showCosts={vm.showCosts !== false}
+              accent={
+                vm.lifecycle
+                  ? lifecycleAccent(vm.lifecycle, colors)
+                  : colors.brand
+              }
+            />
           </ListItemEnter>
 
           {variant === 'admin' && vm.lifecycle ? (
             <ListItemEnter index={nextIndex()}>
-              <DeskCard accent={lifecycleAccent(vm.lifecycle, colors)}>
+              <OrderBoardCard accent={lifecycleAccent(vm.lifecycle, colors)}>
                 <OrderSectionHeader
                   icon="git-branch-outline"
                   label={t('mobile.orders.journey.phaseEyebrow')}
@@ -746,10 +775,12 @@ export function OrderDetailScreen({
                     vm.productionReadinessSummary?.primaryProductionOrderId ??
                     vm.productionOrders[0]?.id ??
                     null;
-                  if (!poId) return null;
-                  const needsSetup = Boolean(
-                    vm.productionReadinessSummary?.needsSetup,
-                  );
+                  if (!poId && !vm.productionSetupRequired) return null;
+                  const ctaStyle = {
+                    alignSelf: 'stretch' as const,
+                    width: '100%' as const,
+                    borderRadius: theme.radius.xl,
+                  };
                   const shipReady =
                     vm.lifecycle === 'ready_to_ship' ||
                     vm.lifecycle === 'shipped';
@@ -763,26 +794,84 @@ export function OrderDetailScreen({
                             `/(app)/(admin)/deliveries/${vm.deliveries[0]!.id}` as Href,
                           );
                         }}
+                        style={ctaStyle}
+                      />
+                    );
+                  }
+                  if (vm.lifecycle === 'ready_to_start' && poId) {
+                    return (
+                      <View style={{ gap: theme.spacing.sm, width: '100%' }}>
+                        {canUpdate ? (
+                          <PrimaryButton
+                            label={t('mobile.orders.journey.editPlan')}
+                            loading={unlockPlanMutation.isPending}
+                            disabled={unlockPlanMutation.isPending}
+                            onPress={() => {
+                              void haptics.selection();
+                              setEditPlanConfirmOpen(true);
+                            }}
+                            style={ctaStyle}
+                          />
+                        ) : null}
+                        <SecondaryButton
+                          label={t('mobile.orders.cta.openProduction')}
+                          onPress={() => {
+                            void haptics.selection();
+                            router.push(
+                              `/(app)/(admin)/production/${poId}` as Href,
+                            );
+                          }}
+                          style={ctaStyle}
+                        />
+                      </View>
+                    );
+                  }
+                  if (vm.releasedToFactory && poId) {
+                    return (
+                      <PrimaryButton
+                        label={t('mobile.orders.cta.openProduction')}
+                        onPress={() => {
+                          void haptics.selection();
+                          router.push(
+                            `/(app)/(admin)/production/${poId}` as Href,
+                          );
+                        }}
+                        style={ctaStyle}
+                      />
+                    );
+                  }
+                  if (vm.productionSetupRequired) {
+                    return (
+                      <PrimaryButton
+                        label={t('mobile.orders.prepareProduction')}
+                        onPress={() => {
+                          void haptics.selection();
+                          router.push(
+                            `/(app)/(admin)/orders/${orderId}/production-setup` as Href,
+                          );
+                        }}
+                        style={ctaStyle}
                       />
                     );
                   }
                   return (
                     <PrimaryButton
                       label={
-                        needsSetup
-                          ? t('mobile.orders.cta.finishSetup')
-                          : t('mobile.orders.cta.openProduction')
+                        vm.workerAssignmentRequired
+                          ? t('mobile.productionSetup.openPlanCta')
+                          : t('mobile.orders.cta.finishSetup')
                       }
                       onPress={() => {
                         void haptics.selection();
                         router.push(
-                          `/(app)/(admin)/production/${poId}` as Href,
+                          `/(app)/(admin)/orders/${orderId}/production-plan` as Href,
                         );
                       }}
+                      style={ctaStyle}
                     />
                   );
                 })()}
-              </DeskCard>
+              </OrderBoardCard>
             </ListItemEnter>
           ) : null}
 
@@ -858,9 +947,15 @@ export function OrderDetailScreen({
                       ? `${Math.round(po.progressPercent)}%`
                       : '—',
                   onPress: () => {
-                    router.push(
-                      `/(app)/(admin)/production/${po.id}` as Href,
-                    );
+                    if (vm.releasedToFactory) {
+                      router.push(
+                        `/(app)/(admin)/production/${po.id}` as Href,
+                      );
+                    } else {
+                      router.push(
+                        `/(app)/(admin)/orders/${orderId}/production-plan` as Href,
+                      );
+                    }
                   },
                 }))}
               />
@@ -946,40 +1041,52 @@ export function OrderDetailScreen({
 
           {vm.showCosts ? (
             <ListItemEnter index={nextIndex()}>
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  flexWrap: 'wrap',
-                  gap: theme.spacing.sm,
-                }}
-              >
-                <MoneyChip
+              <OrderBoardCard accent={colors.brand}>
+                <OrderSectionHeader
+                  icon="cash-outline"
                   label={t('mobile.orderDetail.sellerPrice')}
-                  value={vm.sellerPrice}
-                  formatCurrency={formatCurrency}
-                  footnote={(() => {
-                    const v = t('sales.autoCalculated');
-                    return v === 'sales.autoCalculated' ? 'Auto-calculated' : v;
-                  })()}
                 />
-                <MoneyChip
-                  label={t('mobile.orderDetail.productionPrice')}
-                  value={vm.manufacturingCost}
-                  formatCurrency={formatCurrency}
-                  footnote={(() => {
-                    const v = t('sales.fromInventoryCosts');
-                    return v === 'sales.fromInventoryCosts'
-                      ? 'Auto from inventory material prices'
-                      : v;
-                  })()}
-                />
-                <MoneyChip
-                  label={t('mobile.orderDetail.profit')}
-                  value={vm.profit}
-                  formatCurrency={formatCurrency}
-                  emphasize
-                />
-              </View>
+                <View
+                  style={{
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    padding: theme.spacing.md,
+                    gap: theme.spacing.sm,
+                  }}
+                >
+                  <MoneyRow
+                    label={t('mobile.orderDetail.sellerPrice')}
+                    value={vm.sellerPrice}
+                    formatCurrency={formatCurrency}
+                    isRTL={isRTL}
+                    footnote={(() => {
+                      const v = t('sales.autoCalculated');
+                      return v === 'sales.autoCalculated' ? 'Auto-calculated' : v;
+                    })()}
+                  />
+                  <MoneyRow
+                    label={t('mobile.orderDetail.productionPrice')}
+                    value={vm.manufacturingCost}
+                    formatCurrency={formatCurrency}
+                    isRTL={isRTL}
+                    footnote={(() => {
+                      const v = t('sales.fromInventoryCosts');
+                      return v === 'sales.fromInventoryCosts'
+                        ? 'Auto from inventory material prices'
+                        : v;
+                    })()}
+                  />
+                  <MoneyRow
+                    label={t('mobile.orderDetail.profit')}
+                    value={vm.profit}
+                    formatCurrency={formatCurrency}
+                    isRTL={isRTL}
+                    emphasize
+                  />
+                </View>
+              </OrderBoardCard>
             </ListItemEnter>
           ) : vm.sellerPrice != null ? (
             <ListItemEnter index={nextIndex()}>
@@ -1199,6 +1306,7 @@ export function OrderDetailScreen({
                 onChange={setCostEdit}
                 editable={vm.canEdit}
                 formatCurrency={formatCurrency}
+                seedLines={vm.costMaterialLines}
               />
             </ListItemEnter>
           ) : null}
@@ -1209,6 +1317,11 @@ export function OrderDetailScreen({
                 label={t('mobile.orderDetail.saveChanges')}
                 onPress={saveDraftEdits}
                 loading={actions.update.isPending}
+                style={{
+                  alignSelf: 'stretch',
+                  width: '100%',
+                  borderRadius: theme.radius.xl,
+                }}
               />
             </ListItemEnter>
           ) : null}
@@ -1259,11 +1372,13 @@ export function OrderDetailScreen({
                   label={t('mobile.orderDetail.attachments')}
                 />
                 {vm.documents.map((doc) => (
-                  <Pressable
+                  <AnimatedPressable
                     key={doc.id}
+                    variant="button"
                     disabled={!canDocument && !forceState}
                     onPress={() => {
                       if (!canDocument && !forceState) return;
+                      void haptics.selection();
                       void resolveDocumentUrl(doc.id)
                         .then((url) => Linking.openURL(url))
                         .catch(() => {
@@ -1276,12 +1391,20 @@ export function OrderDetailScreen({
                           });
                         });
                     }}
-                    style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}
+                    style={{
+                      minHeight: theme.sizes.touch.min,
+                      justifyContent: 'center',
+                      borderRadius: theme.radius.lg,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceSecondary,
+                      paddingHorizontal: theme.spacing.md,
+                    }}
                   >
                     <AppText variant="body" color="brand">
                       {doc.fileName}
                     </AppText>
-                  </Pressable>
+                  </AnimatedPressable>
                 ))}
               </OrderBoardCard>
             </ListItemEnter>
@@ -1376,9 +1499,17 @@ export function OrderDetailScreen({
                       <PrimaryButton
                         key={`confirm-${d.id}`}
                         label={t('lifecycle.confirmReceived')}
-                        onPress={() => setConfirmDeliveryId(d.id)}
+                        onPress={() => {
+                          void haptics.selection();
+                          setConfirmDeliveryId(d.id);
+                        }}
                         disabled={confirmReceiptMutation.isPending}
                         accessibilityLabel={`${t('lifecycle.confirmReceived')} ${vm.number}`}
+                        style={{
+                          alignSelf: 'stretch',
+                          width: '100%',
+                          borderRadius: theme.radius.xl,
+                        }}
                       />
                     ))}
                 </View>
@@ -1434,11 +1565,26 @@ export function OrderDetailScreen({
 
       {showStickyActions ? (
         <FloatingActionDock floating>
-          <PrimaryButton
-            label={t('mobile.orderDetail.confirm')}
-            onPress={() => setConfirmKind('confirm')}
-            loading={actions.confirm.isPending}
-          />
+          <View
+            style={{
+              borderRadius: theme.radius.xl,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
+              backgroundColor: colors.surface,
+              padding: theme.spacing.md,
+              ...orderBoardShadow(colorScheme),
+            }}
+          >
+            <PrimaryButton
+              label={t('mobile.orderDetail.confirm')}
+              onPress={() => {
+                void haptics.selection();
+                setConfirmKind('confirm');
+              }}
+              loading={actions.confirm.isPending}
+              style={{ borderRadius: theme.radius.xl }}
+            />
+          </View>
         </FloatingActionDock>
       ) : null}
 
@@ -1458,6 +1604,23 @@ export function OrderDetailScreen({
         />
       ) : null}
       {pdfDownloadSheet}
+
+      <ConfirmationSheet
+        open={editPlanConfirmOpen}
+        onClose={() => setEditPlanConfirmOpen(false)}
+        title={t('mobile.orders.journey.editPlanConfirmTitle')}
+        message={t('mobile.orders.journey.editPlanConfirmBody')}
+        confirmLabel={t('mobile.orders.journey.editPlan')}
+        cancelLabel={t('mobile.production.cancel')}
+        onConfirm={() => {
+          const poId =
+            vm?.productionReadinessSummary?.primaryProductionOrderId ??
+            vm?.productionOrders[0]?.id ??
+            null;
+          if (!poId) return;
+          unlockPlanMutation.mutate(poId);
+        }}
+      />
 
       <ConfirmationSheet
         open={confirmKind === 'confirm'}
@@ -1556,38 +1719,62 @@ export function OrderDetailScreen({
   );
 }
 
-function MoneyChip({
+function MoneyRow({
   label,
   value,
   formatCurrency,
+  isRTL,
   emphasize,
   footnote,
 }: {
   label: string;
   value: number | null;
   formatCurrency: (n: number) => string;
+  isRTL: boolean;
   emphasize?: boolean;
   footnote?: string;
 }) {
-  const { colors } = useTheme();
-
+  const { colors, theme } = useTheme();
   return (
-    <OrderBoardCard
-      accent={emphasize ? colors.brand : undefined}
-      style={{ flexGrow: 1, flexBasis: '30%', minWidth: 100 }}
-    >
-      <AppText variant="caption" color="muted">
-        {label}
-      </AppText>
-      <AppText variant={emphasize ? 'label' : 'body'} weight="semibold" dir="ltr">
-        {value != null ? formatCurrency(value) : '—'}
-      </AppText>
+    <View style={{ gap: 2 }}>
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: theme.spacing.sm,
+        }}
+      >
+        <AppText
+          variant="caption"
+          color="muted"
+          style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
+        >
+          {label}
+        </AppText>
+        <AppText
+          variant={emphasize ? 'label' : 'body'}
+          weight="semibold"
+          dir="ltr"
+          style={{ color: emphasize ? colors.brand : colors.textPrimary }}
+        >
+          {value != null ? formatCurrency(value) : '—'}
+        </AppText>
+      </View>
       {footnote ? (
-        <AppText variant="caption" color="muted" style={{ fontSize: 10, lineHeight: 13 }}>
+        <AppText
+          variant="caption"
+          color="muted"
+          style={{
+            fontSize: 10,
+            lineHeight: 13,
+            textAlign: isRTL ? 'right' : 'left',
+          }}
+        >
           {footnote}
         </AppText>
       ) : null}
-    </OrderBoardCard>
+    </View>
   );
 }
 
@@ -1763,14 +1950,14 @@ function DetailNav({
         </View>
       ) : null}
       {onMore ? (
-        <Pressable
+        <AnimatedPressable
+          variant="button"
           onPress={() => {
             void haptics.selection();
             onMore();
           }}
           accessibilityRole="button"
           accessibilityLabel={t('mobile.orderDetail.actions')}
-          hitSlop={8}
           style={{
             minWidth: theme.sizes.touch.min,
             minHeight: theme.sizes.touch.min,
@@ -1793,7 +1980,7 @@ function DetailNav({
           >
             <Ionicons name="ellipsis-horizontal" size={18} color={moreInk} />
           </View>
-        </Pressable>
+        </AnimatedPressable>
       ) : null}
     </View>
   );

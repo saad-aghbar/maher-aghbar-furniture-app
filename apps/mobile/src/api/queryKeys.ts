@@ -153,6 +153,7 @@ export const queryKeys = {
     list: (filters: unknown = {}) => [...queryKeys.production.lists(), filters] as const,
     details: () => [...queryKeys.production.all, 'detail'] as const,
     detail: (id: string) => [...queryKeys.production.details(), id] as const,
+    planSetup: (id: string) => [...queryKeys.production.all, 'plan-setup', id] as const,
     workers: (
       q?: string,
       stageDefinitionId?: string,

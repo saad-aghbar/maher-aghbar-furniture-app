@@ -20,18 +20,19 @@ export const ADMIN_LIFECYCLE_LABEL_FALLBACK: Record<AdminOrderLifecycle, string>
   rfq: 'Customer Requests',
   preparing: 'Preparing',
   ready_to_start: 'Ready to start',
-  in_production: 'Production',
+  in_production: 'In production',
   ready_to_ship: 'Ready',
   shipped: 'Shipped',
   delivered: 'Delivered',
+  /** @deprecated Attention is no longer a chip — soft badge only. */
   needs_attention: 'Attention',
 };
 
 export const ADMIN_LIFECYCLE_HINT_FALLBACK: Record<AdminOrderLifecycle, string> = {
   rfq: 'Requests waiting for factory action',
   preparing: 'Accepted orders being prepared for production',
-  ready_to_start: 'Setup done — assign workers and start',
-  in_production: 'Currently being manufactured',
+  ready_to_start: 'Plan confirmed — waiting for work to start',
+  in_production: 'At least one factory task has started',
   ready_to_ship: 'Finished and waiting to leave',
   shipped: 'Left the factory',
   delivered: 'Dealer confirmed receipt',
@@ -83,6 +84,8 @@ export type AdminLifecycleInput = {
   productionSetupRequired?: boolean;
   productionSetupStatus?: string | null;
   productionOrderCount?: number;
+  releasedToFactory?: boolean;
+  executionStarted?: boolean;
   productionReadinessSummary?: {
     canStart?: boolean;
     needsSetup?: boolean;
@@ -104,6 +107,8 @@ export function classifyAdminOrderLifecycle(input: AdminLifecycleInput): AdminOr
     productionSetupRequired: input.productionSetupRequired,
     productionSetupStatus: input.productionSetupStatus,
     productionOrderCount: input.productionOrderCount,
+    releasedToFactory: input.releasedToFactory,
+    executionStarted: input.executionStarted,
     productionReadinessSummary: input.productionReadinessSummary,
     progressPercent: input.progressPercent,
     currentStageLabel: input.currentStageLabel,
@@ -123,6 +128,8 @@ export function adminLifecycleActionHint(input: AdminLifecycleInput): string | n
     productionSetupRequired: input.productionSetupRequired,
     productionSetupStatus: input.productionSetupStatus,
     productionOrderCount: input.productionOrderCount,
+    releasedToFactory: input.releasedToFactory,
+    executionStarted: input.executionStarted,
     productionReadinessSummary: input.productionReadinessSummary,
     progressPercent: input.progressPercent,
     currentStageLabel: input.currentStageLabel,

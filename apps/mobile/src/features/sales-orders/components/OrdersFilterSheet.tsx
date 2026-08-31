@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
+import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import {
   MonthCalendar,
   initialCursorFromValue,
@@ -15,7 +16,7 @@ import {
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { orderBoardShadow } from './orderFloorStyle';
 
@@ -24,6 +25,7 @@ export type OrdersSortDir = 'asc' | 'desc';
 export type OrdersDeliveryPreset = 'any' | 'overdue' | 'week' | 'month' | 'custom';
 /** Draft = not approved; any other sales-order status = approved (confirmed). */
 export type OrdersApprovalFilter = 'any' | 'approved' | 'notApproved';
+export type OrdersKindFilter = 'standard' | 'modified' | 'custom';
 
 export type OrdersFilterDealerOption = {
   id: string;
@@ -36,6 +38,8 @@ export type OrdersFilterDealerOption = {
 export type OrdersFilterDraft = {
   dealerId: string; // 'all' | customer id
   approval: OrdersApprovalFilter;
+  /** Empty = any kind. Multi-select Commercial kinds. */
+  kinds: OrdersKindFilter[];
   sortBy: OrdersSortBy;
   sortDir: OrdersSortDir;
   deliveryPreset: OrdersDeliveryPreset;
@@ -86,10 +90,13 @@ const RFQ_NOT_APPROVED = new Set([
 const SECTION_ICON = {
   dealer: 'people-outline',
   approval: 'checkmark-circle-outline',
+  kind: 'layers-outline',
   delivery: 'calendar-outline',
   sort: 'swap-vertical-outline',
   direction: 'arrow-down-outline',
 } as const satisfies Record<string, keyof typeof Ionicons.glyphMap>;
+
+const KIND_OPTIONS: OrdersKindFilter[] = ['standard', 'modified', 'custom'];
 
 /**
  * Approval filter for Orders list.
@@ -108,6 +115,16 @@ export function matchesApprovalFilter(
   }
   const isDraft = s === 'DRAFT';
   return approval === 'notApproved' ? isDraft : !isDraft;
+}
+
+/** Empty kinds = any. Otherwise require manufacturingKind in selection. */
+export function matchesKindFilter(
+  manufacturingKind: string | null | undefined,
+  kinds: OrdersKindFilter[],
+): boolean {
+  if (!kinds.length) return true;
+  const k = String(manufacturingKind ?? 'standard').toLowerCase();
+  return kinds.includes(k as OrdersKindFilter);
 }
 
 function isoDay(d: Date): string {
@@ -148,6 +165,7 @@ export function countActiveOrderFilters(
   let n = 0;
   if (includeDealers && draft.dealerId !== 'all') n += 1;
   if (includeApproval && draft.approval !== 'any') n += 1;
+  if (draft.kinds.length > 0) n += 1;
   if (draft.deliveryPreset !== 'any' || draft.deliveryFrom || draft.deliveryTo) n += 1;
   if (draft.sortBy !== 'createdAt') n += 1;
   if (draft.sortDir !== 'desc') n += 1;
@@ -166,6 +184,7 @@ function formatFilterYmd(
 export const defaultOrdersFilterDraft: OrdersFilterDraft = {
   dealerId: 'all',
   approval: 'any',
+  kinds: [],
   sortBy: 'createdAt',
   sortDir: 'desc',
   deliveryPreset: 'any',
@@ -174,7 +193,7 @@ export const defaultOrdersFilterDraft: OrdersFilterDraft = {
 };
 
 /**
- * Orders filter sheet — production floor aesthetic.
+ * Orders filter sheet — parchment boards + floor chips.
  */
 export function OrdersFilterSheet({
   open,
@@ -189,7 +208,6 @@ export function OrdersFilterSheet({
 }: OrdersFilterSheetProps) {
   const { t, isRTL, formatDate } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
-  const reduce = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.min(Math.round(height * 0.88), 720);
@@ -232,13 +250,6 @@ export function OrdersFilterSheet({
     gap: theme.spacing.sm,
   };
 
-  let section = 0;
-  const nextIndex = () => {
-    const i = section;
-    section += 1;
-    return i;
-  };
-
   return (
     <BottomSheet
       open={open}
@@ -259,8 +270,6 @@ export function OrdersFilterSheet({
         >
           {showDealers ? (
             <FilterSection
-              index={nextIndex()}
-              reduce={reduce}
               icon={SECTION_ICON.dealer}
               title={t('mobile.orders.dealerRailEyebrow')}
               accent={draft.dealerId !== 'all' ? colors.brand : undefined}
@@ -280,8 +289,6 @@ export function OrdersFilterSheet({
 
           {showApproval ? (
             <FilterSection
-              index={nextIndex()}
-              reduce={reduce}
               icon={SECTION_ICON.approval}
               title={t('mobile.orders.filterApproval')}
               accent={draft.approval !== 'any' ? colors.brand : undefined}
@@ -302,9 +309,43 @@ export function OrdersFilterSheet({
             </FilterSection>
           ) : null}
 
+          {showApproval ? (
+            <FilterSection
+              icon={SECTION_ICON.kind}
+              title={t('mobile.orders.journey.kind.filterTitle')}
+              accent={draft.kinds.length > 0 ? colors.brand : undefined}
+            >
+              <View style={chipRow}>
+                <FloorChip
+                  label={t('mobile.orders.journey.kind.any')}
+                  active={draft.kinds.length === 0}
+                  onPress={() => {
+                    void haptics.selection();
+                    onChange({ ...draft, kinds: [] });
+                  }}
+                />
+                {KIND_OPTIONS.map((opt) => {
+                  const active = draft.kinds.includes(opt);
+                  return (
+                    <FloorChip
+                      key={opt}
+                      label={t(`mobile.orders.journey.kind.${opt}`)}
+                      active={active}
+                      onPress={() => {
+                        void haptics.selection();
+                        const next = active
+                          ? draft.kinds.filter((k) => k !== opt)
+                          : [...draft.kinds, opt];
+                        onChange({ ...draft, kinds: next });
+                      }}
+                    />
+                  );
+                })}
+              </View>
+            </FilterSection>
+          ) : null}
+
           <FilterSection
-            index={nextIndex()}
-            reduce={reduce}
             icon={SECTION_ICON.delivery}
             title={t('mobile.orders.filterDelivery')}
             accent={
@@ -365,8 +406,6 @@ export function OrdersFilterSheet({
           </FilterSection>
 
           <FilterSection
-            index={nextIndex()}
-            reduce={reduce}
             icon={SECTION_ICON.sort}
             title={t('mobile.orders.sortBy')}
             accent={draft.sortBy !== 'createdAt' ? colors.brand : undefined}
@@ -387,8 +426,6 @@ export function OrdersFilterSheet({
           </FilterSection>
 
           <FilterSection
-            index={nextIndex()}
-            reduce={reduce}
             icon={SECTION_ICON.direction}
             title={t('mobile.orders.sortDirection')}
             accent={draft.sortDir !== 'desc' ? colors.brand : undefined}
@@ -424,78 +461,40 @@ export function OrdersFilterSheet({
         <View
           style={{
             paddingTop: theme.spacing.md,
-            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopWidth: 1,
             borderTopColor: colors.border,
             flexDirection: isRTL ? 'row-reverse' : 'row',
             gap: theme.spacing.sm,
             paddingBottom: Math.max(insets.bottom, theme.spacing.sm),
           }}
         >
-          <AnimatedPressable
-            variant="button"
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.orders.reset')}
-            onPress={() => {
-              void haptics.selection();
-              onReset();
-            }}
+          <SecondaryButton
+            label={t('mobile.orders.reset')}
+            onPress={onReset}
             style={{
               flex: 1,
-              minHeight: theme.sizes.touch.min,
               borderRadius: theme.radius.full,
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingHorizontal: theme.spacing.md,
-              backgroundColor: colors.surfaceSecondary,
-              borderWidth: 1,
-              borderColor: colors.border,
+              minHeight: theme.sizes.touch.min,
+              paddingVertical: 0,
             }}
-          >
-            <AppText variant="label" weight="medium" style={{ color: colors.textSecondary }}>
-              {t('mobile.orders.reset')}
-            </AppText>
-          </AnimatedPressable>
-
-          <AnimatedPressable
-            variant="button"
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.orders.apply')}
-            onPress={() => {
-              void haptics.confirmLight();
-              onApply();
-            }}
+          />
+          <PrimaryButton
+            label={
+              activeCount > 0
+                ? t('mobile.orders.applyWithCount', { n: String(activeCount) })
+                : t('mobile.orders.apply')
+            }
+            haptic="light"
+            onPress={onApply}
+            trailing={<Ionicons name="checkmark" size={18} color={colors.onBrand} />}
             style={{
               flex: 1.35,
-              minHeight: theme.sizes.touch.min,
               borderRadius: theme.radius.full,
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              gap: theme.spacing.sm,
-              paddingHorizontal: theme.spacing.lg,
-              backgroundColor: colors.brand,
-              ...(colorScheme === 'dark'
-                ? {
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: 0.35,
-                    shadowRadius: 10,
-                  }
-                : {
-                    shadowColor: colors.brand,
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: 0.28,
-                    shadowRadius: 12,
-                  }),
+              minHeight: theme.sizes.touch.min,
+              paddingVertical: 0,
+              ...orderBoardShadow(colorScheme),
             }}
-          >
-            <AppText variant="label" weight="semibold" style={{ color: colors.onBrand }}>
-              {activeCount > 0
-                ? t('mobile.orders.applyWithCount', { n: String(activeCount) })
-                : t('mobile.orders.apply')}
-            </AppText>
-            <Ionicons name="checkmark" size={18} color={colors.onBrand} />
-          </AnimatedPressable>
+          />
         </View>
       </View>
     </BottomSheet>
@@ -506,41 +505,40 @@ function FilterSection({
   title,
   icon,
   children,
-  index,
-  reduce,
   accent,
 }: {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
   children: ReactNode;
-  index: number;
-  reduce: boolean;
   accent?: string;
 }) {
-  const { theme, colors } = useTheme();
-  const { isRTL } = useLocale();
-  const body = (
+  const { theme, colors, colorScheme } = useTheme();
+  const { isRTL, locale } = useLocale();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const railPad = accent ? 4 : 0;
+
+  return (
     <View
       style={{
         borderRadius: theme.radius.xl,
         borderWidth: 1,
         borderColor: colors.borderStrong,
-        backgroundColor: colors.surfaceSecondary,
-        padding: theme.spacing.md,
-        gap: theme.spacing.sm,
+        backgroundColor: colors.surface,
         overflow: 'hidden',
+        ...orderBoardShadow(colorScheme),
       }}
     >
       {accent ? (
         <View
+          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
             bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: 0.85,
+            opacity: 0.55,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
           }}
         />
       ) : null}
@@ -549,31 +547,35 @@ function FilterSection({
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'center',
           gap: theme.spacing.sm,
-          ...(isRTL
-            ? { paddingRight: accent ? 4 : 0 }
-            : { paddingLeft: accent ? 4 : 0 }),
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm + 2,
+          ...(isRTL ? { paddingRight: theme.spacing.md + railPad } : { paddingLeft: theme.spacing.md + railPad }),
+          backgroundColor: colors.surfaceSecondary,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
         }}
       >
         <View
           style={{
-            width: 32,
-            height: 32,
-            borderRadius: 16,
+            width: 28,
+            height: 28,
+            borderRadius: 14,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: colors.surface,
+            backgroundColor: accent ? colors.brandSoft : colors.surface,
             borderWidth: 1,
-            borderColor: colors.border,
+            borderColor: accent ?? colors.border,
           }}
         >
-          <Ionicons name={icon} size={16} color={accent ?? colors.brand} />
+          <Ionicons name={icon} size={14} color={accent ?? colors.brand} />
         </View>
         <AppText
           variant="caption"
+          weight={titleWeight}
           style={{
             flex: 1,
-            textTransform: 'uppercase',
-            letterSpacing: 0.6,
+            letterSpacing: locale === 'ar' ? 0 : 0.55,
+            textTransform: locale === 'ar' ? 'none' : 'uppercase',
             fontSize: 11,
             lineHeight: 14,
             color: colors.brand,
@@ -585,20 +587,16 @@ function FilterSection({
       </View>
       <View
         style={{
+          padding: theme.spacing.md,
+          gap: theme.spacing.sm,
           ...(isRTL
-            ? { paddingRight: accent ? 4 : 0 }
-            : { paddingLeft: accent ? 4 : 0 }),
+            ? { paddingRight: theme.spacing.md + railPad }
+            : { paddingLeft: theme.spacing.md + railPad }),
         }}
       >
         {children}
       </View>
     </View>
-  );
-  if (reduce) return body;
-  return (
-    <Animated.View entering={FadeInDown.delay(40 + index * 40).duration(220)}>
-      {body}
-    </Animated.View>
   );
 }
 
@@ -613,8 +611,9 @@ function FloorChip({
   onPress: () => void;
   stretch?: boolean;
 }) {
-  const { isRTL } = useLocale();
+  const { isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
     <AnimatedPressable
@@ -622,6 +621,7 @@ function FloorChip({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
+      accessibilityLabel={label}
       style={{
         minWidth: stretch ? undefined : 96,
         flex: stretch ? 1 : undefined,
@@ -630,8 +630,8 @@ function FloorChip({
         paddingVertical: theme.spacing.sm,
         minHeight: 40,
         borderRadius: theme.radius.lg,
-        backgroundColor: active ? colors.brandSoft : colors.surface,
-        borderWidth: 1,
+        backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
+        borderWidth: 1.5,
         borderColor: active ? colors.brand : colors.border,
         overflow: 'hidden',
         alignItems: isRTL ? 'flex-end' : 'flex-start',
@@ -640,20 +640,21 @@ function FloorChip({
     >
       {active ? (
         <View
+          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
             bottom: 0,
-            ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: colors.brand,
-            opacity: 0.85,
+            opacity: 0.55,
+            ...(isRTL ? { right: 0 } : { left: 0 }),
           }}
         />
       ) : null}
       <AppText
         variant="label"
-        weight="semibold"
+        weight={active ? titleWeight : 'medium'}
         numberOfLines={1}
         style={{
           color: active ? colors.brand : colors.textPrimary,
@@ -833,7 +834,7 @@ function DealerRow({
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: colors.brand,
-            opacity: 0.85,
+            opacity: 0.55,
           }}
         />
       ) : null}

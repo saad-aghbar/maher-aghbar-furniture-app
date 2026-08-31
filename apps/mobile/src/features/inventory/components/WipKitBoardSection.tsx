@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { AppText } from '@/components/AppText';
 import { useToast, toastCopy } from '@/components/feedback/Toast';
 import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
-import { haptics } from '@/motion';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import {
   fetchWipKitBoard,
@@ -44,7 +45,7 @@ type Props = {
  */
 export function WipKitBoardSection({ enabled }: Props) {
   const { t, locale, isRTL } = useLocale();
-  const { theme, colors } = useTheme();
+  const { theme, colors, colorScheme } = useTheme();
   const { showToast } = useToast();
   const { pickPdfOptions } = usePdfDownload();
   const [qrItem, setQrItem] = useState<InventoryQrItem | null>(null);
@@ -135,7 +136,8 @@ export function WipKitBoardSection({ enabled }: Props) {
               {localizedStage(section, locale)}
             </AppText>
             {section.kits.map((kit) => (
-              <Pressable
+              <AnimatedPressable
+                variant="card"
                 key={kit.id}
                 onPress={() => {
                   void haptics.selection();
@@ -153,11 +155,13 @@ export function WipKitBoardSection({ enabled }: Props) {
                 }}
                 style={{
                   borderWidth: 1,
-                  borderColor: colors.border,
-                  borderRadius: theme.radius.lg,
+                  borderColor: colors.borderStrong,
+                  borderRadius: theme.radius.xl,
                   padding: theme.spacing.md,
                   backgroundColor: colors.surface,
                   gap: theme.spacing.xs,
+                  overflow: 'hidden',
+                  ...orderBoardShadow(colorScheme),
                 }}
               >
                 <View
@@ -168,7 +172,11 @@ export function WipKitBoardSection({ enabled }: Props) {
                     gap: theme.spacing.sm,
                   }}
                 >
-                  <AppText variant="body" weight="semibold" style={{ flex: 1 }}>
+                  <AppText
+                    variant="body"
+                    weight={locale === 'ar' ? 'medium' : 'semibold'}
+                    style={{ flex: 1 }}
+                  >
                     {kit.productionOrder.number}
                   </AppText>
                   <StatusBadge status={kit.status} />
@@ -188,7 +196,8 @@ export function WipKitBoardSection({ enabled }: Props) {
                 {kit.pieces.length > 1 ? (
                   <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.xs }}>
                     {kit.pieces.map((piece, i) => (
-                      <Pressable
+                      <AnimatedPressable
+                        variant="button"
                         key={piece.id}
                         onPress={() => {
                           void haptics.selection();
@@ -214,11 +223,11 @@ export function WipKitBoardSection({ enabled }: Props) {
                           {piece.label || t('mobile.inventory.wipPieceN', { n: i + 1 })}
                           {piece.qrCode ? ` · ${piece.qrCode}` : ''}
                         </AppText>
-                      </Pressable>
+                      </AnimatedPressable>
                     ))}
                   </View>
                 ) : null}
-              </Pressable>
+              </AnimatedPressable>
             ))}
           </View>
         ))

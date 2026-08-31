@@ -33,7 +33,7 @@ export class QuotationsController {
   @RequirePermissions('quotation.read')
   @Get(':id')
   getById(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.quotations.getById(id, user);
+    return this.quotations.getForClient(id, user);
   }
 
   @RequirePermissions('quotation.update')

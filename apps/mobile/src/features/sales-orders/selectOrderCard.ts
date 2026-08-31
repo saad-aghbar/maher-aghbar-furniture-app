@@ -10,6 +10,7 @@ import {
   type JourneyPrimaryCta,
   type JourneyReadiness,
 } from './adminOrderJourney';
+import { resolveOrderManufacturingKind } from './orderManufacturingKind';
 
 export type OrdersListVariant = 'admin' | 'dealer';
 
@@ -43,6 +44,8 @@ export type AdminOrderCardModel = {
   actionHint?: string | null;
   /** RFQ rows merged into admin Orders — look like normal orders in UI. */
   kind?: 'order' | 'rfq';
+  /** Commercial line kind: standard | modified | custom (worst of lines). */
+  manufacturingKind?: 'standard' | 'modified' | 'custom';
 };
 
 export type DealerOrderCardModel = {
@@ -102,6 +105,26 @@ export function toAdminOrderCard(
       item.productionReadinessSummary?.productionOrderCount ??
       item.productionOrders?.length ??
       0,
+    releasedToFactory: Boolean(
+      item.releasedToFactory ??
+        (item.productionOrders ?? []).some((po) => Boolean(po.releasedToFactoryAt)),
+    ),
+    executionStarted: Boolean(
+      item.executionStarted ??
+        ((item.productionOrders ?? []).some(
+          (po) =>
+            Boolean(po.actualStartDate) ||
+            [
+              'IN_PROGRESS',
+              'ON_HOLD',
+              'QUALITY_CHECK',
+              'READY_FOR_PACKAGING',
+              'READY_FOR_DELIVERY',
+              'COMPLETED',
+            ].includes(String(po.status ?? '').toUpperCase()),
+        ) ||
+          String(item.status).toUpperCase() === 'IN_PRODUCTION'),
+    ),
     productionReadinessSummary: item.productionReadinessSummary,
     progressPercent: item.progressPercent,
     currentStageLabel: progressLabel,
@@ -139,6 +162,7 @@ export function toAdminOrderCard(
       item.productionReadinessSummary?.actionHint ??
       (journey.attention ? journey.attention.reasonLabelKey : null),
     kind: 'order',
+    manufacturingKind: resolveOrderManufacturingKind([item.manufacturingComplexity]),
   };
 }
 

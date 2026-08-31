@@ -1,6 +1,7 @@
 import type { Href } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ScrollView, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -21,10 +22,16 @@ import { haptics } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { PurchaseWhatsAppResult } from '@/api/modules/purchasing';
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { ReceiveGoodsSheet } from './components/ReceiveGoodsSheet';
 import { usePurchaseActionMutation, usePurchaseOrderQuery } from './query';
-import { localizedNamed, resolvePhaseLabel } from './selectPurchase';
+import {
+  localizedNamed,
+  purchaseLineQtyLabel,
+  resolvePhaseLabel,
+  selectPurchaseDetail,
+} from './selectPurchase';
 
 type Props = { orderId: string };
 
@@ -46,6 +53,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
 
   const [confirm, setConfirm] = useState<'approve' | 'send' | null>(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [whatsappPreview, setWhatsappPreview] = useState<PurchaseWhatsAppResult | null>(null);
   const query = usePurchaseOrderQuery(orderId, canRead);
   const actions = usePurchaseActionMutation(orderId);
 
@@ -98,7 +106,10 @@ export function PurchaseDetailScreen({ orderId }: Props) {
       presentation?.primaryAction === 'RECEIVE');
   const showApprove = canApprove && po.status === 'DRAFT';
   const showSend = canApprove && po.status === 'APPROVED';
-  const hasDockActions = showApprove || showSend || canOpenReceive;
+  const showResendWhatsapp = canApprove && po.status === 'SENT';
+  const whatsappBody = whatsappPreview?.body ?? po.whatsappLastBody ?? null;
+  const whatsappTo = whatsappPreview?.to ?? po.whatsappLastTo ?? null;
+  const hasDockActions = showApprove || showSend || canOpenReceive || showResendWhatsapp;
   const dockPad = hasDockActions
     ? stickyCtaBottomInset(insets.bottom, theme.spacing.md, SURFACE_TAB_BAR_CLEARANCE) + 96
     : theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
@@ -206,7 +217,7 @@ export function PurchaseDetailScreen({ orderId }: Props) {
                   {line.description}
                 </AppText>
                 <AppText variant="caption" color="secondary" dir="ltr">
-                  {`${qtyLabel(line.quantity)} ${line.unit} × ${formatCurrency(line.unitPrice)}`}
+                  {`${purchaseLineQtyLabel(locale, line.quantity, line.unit)} × ${formatCurrency(line.unitPrice)}`}
                 </AppText>
                 <AppText
                   variant="caption"
@@ -307,6 +318,41 @@ export function PurchaseDetailScreen({ orderId }: Props) {
           </PurchasingFloorBoard>
         ) : null}
 
+        {whatsappBody ? (
+          <PurchasingFloorBoard title={t('mobile.purchasing.whatsappMessage')}>
+            {whatsappTo ? (
+              <AppText variant="caption" color="muted" dir="ltr">
+                {whatsappTo}
+              </AppText>
+            ) : null}
+            {po.whatsappSentAt ? (
+              <AppText variant="caption" color="muted" dir="ltr">
+                {formatDate(po.whatsappSentAt)}
+              </AppText>
+            ) : null}
+            <AppText
+              variant="caption"
+              color="secondary"
+              style={{ textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {whatsappBody}
+            </AppText>
+            <SecondaryButton
+              label={t('mobile.purchasing.copyWhatsapp')}
+              onPress={() => {
+                void Clipboard.setStringAsync(whatsappBody).then(() => {
+                  void haptics.confirmLight();
+                  showToast({
+                    variant: 'success',
+                    message: t('mobile.purchasing.copied'),
+                  });
+                });
+              }}
+              style={{ borderRadius: theme.radius.xl }}
+            />
+          </PurchasingFloorBoard>
+        ) : null}
+
       </ScrollView>
 
       {hasDockActions ? (
@@ -322,6 +368,13 @@ export function PurchaseDetailScreen({ orderId }: Props) {
             {showSend ? (
               <PrimaryButton
                 label={t('mobile.purchasing.send')}
+                onPress={() => setConfirm('send')}
+                style={{ borderRadius: theme.radius.xl }}
+              />
+            ) : null}
+            {showResendWhatsapp ? (
+              <SecondaryButton
+                label={t('mobile.purchasing.resendWhatsapp')}
                 onPress={() => setConfirm('send')}
                 style={{ borderRadius: theme.radius.xl }}
               />
@@ -362,12 +415,26 @@ export function PurchaseDetailScreen({ orderId }: Props) {
             });
           } else if (confirm === 'send') {
             actions.send.mutate(undefined, {
-              onSuccess: () => {
+              onSuccess: (result) => {
                 void haptics.confirmMedium();
-                showToast({
-                  variant: 'success',
-                  message: t('mobile.purchasing.updateSuccess'),
-                });
+                setWhatsappPreview(result.whatsapp);
+                const wa = result.whatsapp;
+                if (wa.ok && wa.to) {
+                  showToast({
+                    variant: 'success',
+                    message: t('mobile.purchasing.whatsappSentOk', { to: wa.to }),
+                  });
+                } else if (!wa.to) {
+                  showToast({
+                    variant: 'warning',
+                    message: t('mobile.purchasing.whatsappNoPhone'),
+                  });
+                } else {
+                  showToast({
+                    variant: 'warning',
+                    message: t('mobile.purchasing.whatsappSentFailed'),
+                  });
+                }
               },
               onError: () =>
                 showToast({

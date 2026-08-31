@@ -17,6 +17,7 @@ import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { InventoryService } from '../inventory/inventory.service';
 import { StagePipelineService } from '../production/stage-pipeline.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { InvoicesService } from '../invoices/invoices.service';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 import {
   packLabelForPieceIndex,
@@ -39,6 +40,7 @@ export class DeliveryLoadService {
     private readonly inventory: InventoryService,
     private readonly pipeline: StagePipelineService,
     private readonly notifications: NotificationsService,
+    private readonly invoices: InvoicesService,
   ) {}
 
   /** Floor drivers are always scoped to their own assignments. */
@@ -734,6 +736,14 @@ export class DeliveryLoadService {
         linkUrl: `/sales-orders/${existing.salesOrderId ?? ''}`,
       })
       .catch(() => undefined);
+
+    // Order invoice is created when the truck leaves the factory (shipped),
+    // not when the dealer confirms delivery.
+    if (existing.salesOrderId) {
+      await this.invoices
+        .ensureFromSalesOrder(existing.salesOrderId, user.id)
+        .catch(() => undefined);
+    }
 
     return this.getLoadSheet(deliveryId, user);
   }

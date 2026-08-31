@@ -28,17 +28,38 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code = HttpStatus[status] ?? code;
       } else if (typeof body === 'object' && body !== null) {
         const obj = body as Record<string, unknown>;
-        message = String(obj.message ?? message);
-        code = String(obj.code ?? code);
+        // Nest may nest our payload under `message` when mixed with statusCode wrappers.
+        const nested =
+          obj.message &&
+          typeof obj.message === 'object' &&
+          !Array.isArray(obj.message)
+            ? (obj.message as Record<string, unknown>)
+            : null;
+        const payload = nested ?? obj;
         if (Array.isArray(obj.message)) {
           message = 'Validation failed';
           code = 'VALIDATION_ERROR';
           fieldErrors = { _: obj.message.map(String) };
+        } else if (typeof payload.message === 'string') {
+          message = payload.message;
+        } else if (typeof obj.message === 'string') {
+          message = obj.message;
         }
-        if (obj.fieldErrors && typeof obj.fieldErrors === 'object') {
+        if (typeof payload.code === 'string') {
+          code = payload.code;
+        } else if (typeof obj.code === 'string') {
+          code = obj.code;
+        } else {
+          code = String(obj.error ?? HttpStatus[status] ?? code);
+        }
+        if (payload.fieldErrors && typeof payload.fieldErrors === 'object') {
+          fieldErrors = payload.fieldErrors as Record<string, string[]>;
+        } else if (obj.fieldErrors && typeof obj.fieldErrors === 'object') {
           fieldErrors = obj.fieldErrors as Record<string, string[]>;
         }
-        if (typeof obj.runId === 'string' && obj.runId.length > 0) {
+        if (typeof payload.runId === 'string' && payload.runId.length > 0) {
+          runId = payload.runId;
+        } else if (typeof obj.runId === 'string' && obj.runId.length > 0) {
           runId = obj.runId;
         }
       }
@@ -49,6 +70,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
       console.error(exception);
     }
 
+    const exceptionBody =
+      exception instanceof HttpException &&
+      typeof exception.getResponse() === 'object' &&
+      exception.getResponse() !== null
+        ? (exception.getResponse() as Record<string, unknown>)
+        : null;
+    const exceptionPayload =
+      exceptionBody &&
+      exceptionBody.message &&
+      typeof exceptionBody.message === 'object' &&
+      !Array.isArray(exceptionBody.message)
+        ? (exceptionBody.message as Record<string, unknown>)
+        : exceptionBody;
+
     response.status(status).json({
       error: {
         code,
@@ -56,6 +91,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
         fieldErrors,
         requestId: request.requestId ?? null,
         ...(runId ? { runId } : {}),
+        ...(exceptionPayload && Array.isArray(exceptionPayload.reasons)
+          ? { reasons: exceptionPayload.reasons }
+          : {}),
+        ...(exceptionPayload && Array.isArray(exceptionPayload.conflicts)
+          ? { conflicts: exceptionPayload.conflicts }
+          : {}),
+        ...(exceptionPayload &&
+        exceptionPayload.suggestedWindow &&
+        typeof exceptionPayload.suggestedWindow === 'object'
+          ? { suggestedWindow: exceptionPayload.suggestedWindow }
+          : {}),
       },
     });
   }

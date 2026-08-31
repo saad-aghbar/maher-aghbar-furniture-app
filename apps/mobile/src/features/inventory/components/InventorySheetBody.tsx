@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ScrollView, View, type StyleProp, type ViewStyle } from 'react-native';
 import { AppText } from '@/components/AppText';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
@@ -15,8 +16,7 @@ type Props = {
  * Floor form shell for inventory sheets — hint + error + elevated field board.
  */
 export function InventorySheetBody({ children, hint, error, style }: Props) {
-  const { locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
 
   return (
     <View style={[{ flex: 1, gap: theme.spacing.md }, style]}>
@@ -38,7 +38,7 @@ export function InventorySheetBody({ children, hint, error, style }: Props) {
           borderColor: colors.borderStrong,
           backgroundColor: colors.surface,
           overflow: 'hidden',
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <ScrollView

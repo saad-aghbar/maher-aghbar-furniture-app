@@ -200,6 +200,7 @@ type SupplierFormState = {
   nameHe: string;
   companyName: string;
   phone: string;
+  whatsappPhone: string;
   email: string;
   address: string;
   paymentTermsDays: string;
@@ -215,6 +216,7 @@ const emptySupplierForm = (): SupplierFormState => ({
   nameHe: '',
   companyName: '',
   phone: '',
+  whatsappPhone: '',
   email: '',
   address: '',
   paymentTermsDays: '30',
@@ -438,6 +440,7 @@ export default function PurchasingPage() {
           nameHe: supplierForm.nameHe.trim() || undefined,
           companyName: supplierForm.companyName.trim() || undefined,
           phone: supplierForm.phone.trim() || undefined,
+          whatsappPhone: supplierForm.whatsappPhone.trim() || undefined,
           email: supplierForm.email.trim() || undefined,
           address: supplierForm.address.trim() || undefined,
           paymentTermsDays: Number(supplierForm.paymentTermsDays) || 30,
@@ -668,6 +671,10 @@ export default function PurchasingPage() {
               {tc('newSupplier')}
             </Button>
           </div>
+          <p className="text-sm text-text-secondary">
+            {tc('purchaseOrdersHint')} · {tc('purchaseRequestsHint')} ·{' '}
+            {tc('supplierInvoicesHint')}
+          </p>
 
           <TabPanel value="orders" className="maher-purchasing-panel">
             <div
@@ -1288,6 +1295,12 @@ export default function PurchasingPage() {
             label={tc('phone')}
             value={supplierForm.phone}
             onChange={(e) => setSupplierForm((f) => ({ ...f, phone: e.target.value }))}
+          />
+          <Input
+            label={tc('whatsappPhone')}
+            value={supplierForm.whatsappPhone}
+            onChange={(e) => setSupplierForm((f) => ({ ...f, whatsappPhone: e.target.value }))}
+            hint={tc('whatsappPhoneHint')}
           />
           <Input
             label={tc('email')}

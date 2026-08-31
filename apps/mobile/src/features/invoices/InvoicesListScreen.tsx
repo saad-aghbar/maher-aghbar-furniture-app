@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { RefreshControl, SectionList, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
@@ -19,6 +20,13 @@ import {
   DealerSearchBar,
 } from '@/features/dealer-ui';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { SupplierInvoiceBoardCard } from '@/features/purchasing/components/SupplierInvoiceBoardCard';
+import {
+  flattenSupplierInvoices,
+  useSupplierInvoicesInfiniteQuery,
+} from '@/features/purchasing/query';
+import { selectSupplierInvoiceCard } from '@/features/purchasing/selectPurchase';
+import type { SupplierInvoiceCardModel } from '@/features/purchasing/selectPurchase';
 import { openInvoicePdf } from './api';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { CreateInvoiceFromSalesOrderSheet } from './components/CreateInvoiceFromSalesOrderSheet';
@@ -40,7 +48,7 @@ import {
   useInvoiceCustomersQuery,
   useInvoicesInfiniteQuery,
 } from './query';
-import { selectInvoiceCard } from './selectInvoice';
+import { selectInvoiceCard, type InvoiceCardModel } from './selectInvoice';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 
 type Props = {
@@ -48,6 +56,18 @@ type Props = {
   backFallback?: Href;
   /** When true, show create CTA + dealer filter (admin). */
   adminControls?: boolean;
+  /** Admin purchasing invoice detail route. */
+  purchasingDetailHref?: (id: string) => Href;
+};
+
+type SectionItem =
+  | { kind: 'order'; card: InvoiceCardModel }
+  | { kind: 'purchase'; card: SupplierInvoiceCardModel };
+
+type InvoiceSection = {
+  key: 'orders' | 'purchasing';
+  title: string;
+  data: SectionItem[];
 };
 
 function InvoicesScreenTitle({
@@ -92,6 +112,8 @@ export function InvoicesListScreen({
   detailHref,
   backFallback = '/(app)/(admin)/(tabs)' as Href,
   adminControls = false,
+  purchasingDetailHref = (id) =>
+    `/(app)/(admin)/purchasing/supplier-invoices/${id}` as Href,
 }: Props) {
   const { user } = useAuth();
   const { t, locale, isRTL } = useLocale();
@@ -102,6 +124,7 @@ export function InvoicesListScreen({
   const router = useRouter();
   const params = useLocalSearchParams<{ chip?: string }>();
   const allowed = can(user, 'invoice.read');
+  const canReadPurchasing = adminControls && can(user, 'supplier-invoice.read');
   const canCreate = adminControls && can(user, 'invoice.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dealerSurface = !adminControls;
@@ -119,9 +142,12 @@ export function InvoicesListScreen({
   useEffect(() => {
     const raw = String(params.chip ?? '').trim().toUpperCase();
     if (!raw) return;
-    if (raw === 'OVERDUE' || raw === 'OPEN' || raw === 'DRAFT' || raw === 'PARTIAL' || raw === 'PAID') {
+    if (raw === 'OVERDUE' || raw === 'DRAFT' || raw === 'PAID' || raw === 'ISSUED' || raw === 'PARTIALLY_PAID') {
       setChip(raw as InvoiceStatusFilter);
+      return;
     }
+    if (raw === 'OPEN') setChip('ISSUED');
+    if (raw === 'PARTIAL') setChip('PARTIALLY_PAID');
   }, [params.chip]);
 
   useEffect(() => {
@@ -139,10 +165,56 @@ export function InvoicesListScreen({
     },
     allowed,
   );
-  const cards = useMemo(
+  const purchasingQuery = useSupplierInvoicesInfiniteQuery(
+    {
+      q: q || undefined,
+      status: chip === 'ALL' ? undefined : chip,
+    },
+    canReadPurchasing,
+  );
+  const orderCards = useMemo(
     () => flattenInvoices(query.data).map((inv) => selectInvoiceCard(inv, locale)),
     [query.data, locale],
   );
+  const purchaseCards = useMemo(
+    () =>
+      canReadPurchasing
+        ? flattenSupplierInvoices(purchasingQuery.data).map((inv) =>
+            selectSupplierInvoiceCard(inv, locale),
+          )
+        : [],
+    [canReadPurchasing, purchasingQuery.data, locale],
+  );
+
+  const sections: InvoiceSection[] = useMemo(() => {
+    if (!adminControls) {
+      return [
+        {
+          key: 'orders',
+          title: t('mobile.invoices.sectionOrders'),
+          data: orderCards.map((card) => ({ kind: 'order' as const, card })),
+        },
+      ];
+    }
+    const next: InvoiceSection[] = [
+      {
+        key: 'orders',
+        title: t('mobile.invoices.sectionOrders'),
+        data: orderCards.map((card) => ({ kind: 'order' as const, card })),
+      },
+    ];
+    if (canReadPurchasing) {
+      next.push({
+        key: 'purchasing',
+        title: t('mobile.invoices.sectionPurchasing'),
+        data: purchaseCards.map((card) => ({ kind: 'purchase' as const, card })),
+      });
+    }
+    return next;
+  }, [adminControls, canReadPurchasing, orderCards, purchaseCards, t]);
+
+  const isEmpty =
+    orderCards.length === 0 && (!canReadPurchasing || purchaseCards.length === 0);
 
   const dealerOptions: InvoiceDealerOption[] = useMemo(() => {
     const rows = customersQuery.data?.data ?? [];
@@ -195,9 +267,10 @@ export function InvoicesListScreen({
   return (
     <AppScreen>
       {showOfflineBanner ? <OfflineBanner /> : null}
-      <FlatList
-        data={cards}
-        keyExtractor={(item) => item.id}
+      <SectionList
+        sections={sections}
+        keyExtractor={(item) => `${item.kind}-${item.card.id}`}
+        stickySectionHeadersEnabled={false}
         contentContainerStyle={{
           gap: theme.spacing.md,
           flexGrow: 1,
@@ -205,13 +278,28 @@ export function InvoicesListScreen({
         }}
         refreshControl={
           <RefreshControl
-            refreshing={query.isRefetching && !query.isFetchingNextPage}
-            onRefresh={() => void query.refetch()}
+            refreshing={
+              (query.isRefetching && !query.isFetchingNextPage) ||
+              (canReadPurchasing &&
+                purchasingQuery.isRefetching &&
+                !purchasingQuery.isFetchingNextPage)
+            }
+            onRefresh={() => {
+              void query.refetch();
+              if (canReadPurchasing) void purchasingQuery.refetch();
+            }}
             tintColor={colors.brand}
           />
         }
         onEndReached={() => {
           if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+          if (
+            canReadPurchasing &&
+            purchasingQuery.hasNextPage &&
+            !purchasingQuery.isFetchingNextPage
+          ) {
+            void purchasingQuery.fetchNextPage();
+          }
         }}
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.sm }}>
@@ -260,7 +348,7 @@ export function InvoicesListScreen({
                   <AppTextInput
                     value={search}
                     onChangeText={setSearch}
-                    placeholder={t('accounting.searchPlaceholder')}
+                    placeholder={t('mobile.invoices.search')}
                     placeholderTextColor={colors.textMuted}
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -295,39 +383,81 @@ export function InvoicesListScreen({
           </View>
         }
         ListEmptyComponent={
-          dealerSurface ? (
-            <DealerEmptyState
-              title={t('mobile.invoices.emptyTitle')}
-              body={t('mobile.invoices.emptyBody')}
-            />
-          ) : (
-            <EmptyState
-              title={t('mobile.invoices.emptyTitle')}
-              description={t('mobile.invoices.emptyBody')}
-            />
-          )
+          isEmpty ? (
+            dealerSurface ? (
+              <DealerEmptyState
+                title={t('mobile.invoices.emptyTitle')}
+                body={t('mobile.invoices.emptyBody')}
+              />
+            ) : (
+              <EmptyState
+                title={t('mobile.invoices.emptyTitle')}
+                description={t('mobile.invoices.emptyBody')}
+              />
+            )
+          ) : null
+        }
+        renderSectionHeader={({ section }) =>
+          adminControls && canReadPurchasing ? (
+            <View
+              style={{
+                paddingTop: theme.spacing.sm,
+                paddingBottom: theme.spacing.xs,
+              }}
+            >
+              <AppText
+                variant="caption"
+                weight={titleWeight}
+                color="brand"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {section.title}
+              </AppText>
+              {section.data.length === 0 ? (
+                <AppText
+                  variant="caption"
+                  color="muted"
+                  style={{
+                    textAlign: isRTL ? 'right' : 'left',
+                    marginTop: 4,
+                  }}
+                >
+                  {section.key === 'purchasing'
+                    ? t('mobile.invoices.emptyPurchasing')
+                    : t('mobile.invoices.emptyOrders')}
+                </AppText>
+              ) : null}
+            </View>
+          ) : null
         }
         renderItem={({ item, index }) => (
           <ListItemEnter index={index}>
-            <InvoiceBoardCard
-              invoice={item}
-              dealerFacing={dealerSurface}
-              onPress={() => router.push(detailHref(item.id))}
-              onPdf={() => {
-                void (async () => {
-                  const opts = await pickPdfOptions();
-                  if (!opts) return;
-                  try {
-                    await openInvoicePdf(item.id, opts);
-                  } catch {
-                    showToast({
-                      variant: 'error',
-                      message: t('mobile.invoices.pdfFailed'),
-                    });
-                  }
-                })();
-              }}
-            />
+            {item.kind === 'order' ? (
+              <InvoiceBoardCard
+                invoice={item.card}
+                dealerFacing={dealerSurface}
+                onPress={() => router.push(detailHref(item.card.id))}
+                onPdf={() => {
+                  void (async () => {
+                    const opts = await pickPdfOptions();
+                    if (!opts) return;
+                    try {
+                      await openInvoicePdf(item.card.id, opts);
+                    } catch {
+                      showToast({
+                        variant: 'error',
+                        message: t('mobile.invoices.pdfFailed'),
+                      });
+                    }
+                  })();
+                }}
+              />
+            ) : (
+              <SupplierInvoiceBoardCard
+                invoice={item.card}
+                onPress={() => router.push(purchasingDetailHref(item.card.id))}
+              />
+            )}
           </ListItemEnter>
         )}
       />

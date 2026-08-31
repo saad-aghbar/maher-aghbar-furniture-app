@@ -8,6 +8,7 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { InventorySheetFooter } from './InventorySheetFooter';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
   open: boolean;
@@ -53,11 +54,11 @@ function movementIcon(type: string): keyof typeof Ionicons.glyphMap {
 
 function lotAccent(
   status: string,
-  colors: { info: string; success: string; warning: string; error: string; textMuted: string },
+  colors: { brand: string; success: string; warning: string; error: string; textMuted: string },
 ): string {
   switch (status) {
     case 'AVAILABLE':
-      return colors.info;
+      return colors.success;
     case 'RESERVED':
     case 'REQUIRES_REVIEW':
     case 'QUARANTINED':
@@ -69,7 +70,7 @@ function lotAccent(
     case 'DELIVERED':
       return colors.success;
     default:
-      return colors.info;
+      return colors.brand;
   }
 }
 
@@ -85,7 +86,7 @@ function FactRow({
   last?: boolean;
 }) {
   const { isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
 
   return (
     <View
@@ -154,7 +155,7 @@ export function InventoryLotInspectSheet({
   onPrintQr,
 }: Props) {
   const { t, locale, isRTL, formatDateTime } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   if (!lot) return null;
 
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -216,7 +217,7 @@ export function InventoryLotInspectSheet({
             borderColor: colors.borderStrong,
             backgroundColor: colors.surface,
             overflow: 'hidden',
-            ...theme.elevation.card,
+            ...orderBoardShadow(colorScheme),
           }}
         >
           <View

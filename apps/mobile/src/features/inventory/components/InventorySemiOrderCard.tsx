@@ -123,8 +123,8 @@ export function InventorySemiOrderCard({
               label: floorStatusLabel(floor, t),
             }
           : {
-              soft: colors.infoSoft,
-              ink: colors.info,
+              soft: colors.brandSoft,
+              ink: colors.brand,
               label: floorStatusLabel(floor, t),
             };
   const accent = statusStamp.ink;

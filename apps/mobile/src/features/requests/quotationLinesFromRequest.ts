@@ -19,6 +19,12 @@ export function quotationLinesFromRequestItems(
   return items.map((item) => {
     const quantity = positiveNumber(item.quantity) ?? 1;
     const description = (item.productName || item.description || 'Item').trim();
+    const complexity =
+      item.manufacturingComplexity === 'MODIFIED' || item.manufacturingComplexity === 'CUSTOM'
+        ? item.manufacturingComplexity
+        : item.manufacturingComplexity === 'STANDARD'
+          ? 'STANDARD'
+          : undefined;
     const line: CreateQuotationLineInput = {
       description,
       quantity,
@@ -26,6 +32,7 @@ export function quotationLinesFromRequestItems(
       unit: item.unit?.trim() || 'pcs',
       taxRate: 0.16,
     };
+    if (complexity) line.manufacturingComplexity = complexity;
     if (item.productId && UUID_RE.test(item.productId)) {
       line.productId = item.productId;
     }

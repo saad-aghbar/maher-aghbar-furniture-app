@@ -263,7 +263,8 @@ export function BomMaterialPickerSheet({ open, onClose, existingSkus, onPick }: 
       lineCost: n * selected.unitCost,
       nameEn: selected.nameEn,
       nameAr: selected.nameAr,
-      materialId: selected.materialId ?? selected.id,
+      materialId: selected.materialId ?? null,
+      inventoryItemId: selected.id,
       imageUrl: selected.imageUrl ?? null,
     });
     onClose();

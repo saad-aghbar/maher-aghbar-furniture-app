@@ -37,4 +37,16 @@ describe('quotationLinesFromRequestItems', () => {
     expect(line?.productId).toBe(id);
     expect(line?.quantity).toBe(1);
   });
+
+  it('passes manufacturing complexity and does not invent a selling price', () => {
+    const [line] = quotationLinesFromRequestItems([
+      {
+        productName: 'Milano Sofa',
+        quantity: 1,
+        manufacturingComplexity: 'CUSTOM',
+      },
+    ]);
+    expect(line?.manufacturingComplexity).toBe('CUSTOM');
+    expect(line?.unitPrice).toBe(0);
+  });
 });

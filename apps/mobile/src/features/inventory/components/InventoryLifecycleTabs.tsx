@@ -38,14 +38,11 @@ type Props = {
 };
 
 function accentFor(
-  lifecycle: InventoryLifecycle,
-  colors: { brand: string; info: string; success: string; textSecondary: string },
+  _lifecycle: InventoryLifecycle,
+  colors: { brand: string; textSecondary: string },
   focused: boolean,
 ): string {
-  if (!focused) return colors.textSecondary;
-  if (lifecycle === 'semiFinished') return colors.info;
-  if (lifecycle === 'finished') return colors.success;
-  return colors.brand;
+  return focused ? colors.brand : colors.textSecondary;
 }
 
 /** Warehouse-type switcher — same pill language as floor section tabs. */

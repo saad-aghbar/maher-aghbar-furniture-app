@@ -18,6 +18,7 @@ export type CreateQuotationLineInput = {
   width?: number;
   height?: number;
   depth?: number;
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
 };
 
 export type CreateQuotationInput = {
@@ -25,6 +26,7 @@ export type CreateQuotationInput = {
   requestId?: string;
   paymentTerms?: string;
   deliveryTerms?: string;
+  offeredDeliveryDate?: string;
   customerNotes?: string;
   internalNotes?: string;
   lines: CreateQuotationLineInput[];
@@ -33,8 +35,10 @@ export type CreateQuotationInput = {
 export type UpdateQuotationInput = {
   paymentTerms?: string;
   deliveryTerms?: string;
+  offeredDeliveryDate?: string;
   customerNotes?: string;
   internalNotes?: string;
+  expirationDate?: string;
   lines?: CreateQuotationLineInput[];
 };
 
@@ -42,6 +46,9 @@ export type QuotationSummary = {
   id: string;
   number: string;
   status: string;
+  version?: number;
+  total?: number | string | null;
+  commerciallyExpired?: boolean;
 };
 
 export type QuotationLine = {
@@ -61,6 +68,17 @@ export type QuotationLine = {
   notes?: string | null;
   taxRate?: number | string | null;
   discountValue?: number | string | null;
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
+  priceRequired?: boolean;
+  referenceUnitPrice?: number | string | null;
+  product?: {
+    id: string;
+    sku?: string | null;
+    imageUrl?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+  } | null;
 };
 
 export type QuotationDetail = {
@@ -75,6 +93,7 @@ export type QuotationDetail = {
   currency?: string | null;
   paymentTerms?: string | null;
   deliveryTerms?: string | null;
+  offeredDeliveryDate?: string | null;
   customerNotes?: string | null;
   internalNotes?: string | null;
   pendingApproverRole?: string | null;
@@ -93,6 +112,12 @@ export type QuotationDetail = {
     id: string;
     number: string;
     externalOrderNumber?: string | null;
+    documents?: Array<{
+      id: string;
+      fileName: string;
+      mimeType?: string | null;
+      visibility?: string | null;
+    }>;
   } | null;
   lines?: QuotationLine[];
   salesOrders?: Array<{ id: string; number: string; status: string }>;
@@ -100,6 +125,9 @@ export type QuotationDetail = {
   acceptedAt?: string | null;
   discountTotal?: number | string | null;
   expirationDate?: string | null;
+  commerciallyExpired?: boolean;
+  canDecide?: boolean;
+  rejectionReason?: string | null;
 };
 
 export async function listQuotations(
@@ -156,8 +184,10 @@ export async function reviseQuotation(id: string): Promise<QuotationSummary> {
   return apiPost<QuotationSummary>(`/quotations/${encodeURIComponent(id)}/revise`);
 }
 
-export async function rejectQuotation(id: string): Promise<QuotationDetail> {
-  return apiPost<QuotationDetail>(`/quotations/${encodeURIComponent(id)}/reject`, {});
+export async function rejectQuotation(id: string, comment?: string): Promise<QuotationDetail> {
+  return apiPost<QuotationDetail>(`/quotations/${encodeURIComponent(id)}/reject`, {
+    comment,
+  });
 }
 
 /** Fetch quotation PDF with Bearer auth and open via data URL / share sheet. */

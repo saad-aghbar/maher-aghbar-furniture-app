@@ -49,6 +49,11 @@ export function HoursMinutesRow({
           flexDirection: isRTL ? 'row-reverse' : 'row',
           alignItems: 'flex-end',
           gap: theme.spacing.sm,
+          borderRadius: theme.radius.lg,
+          backgroundColor: colors.surfaceSecondary,
+          borderWidth: 1,
+          borderColor: colors.border,
+          padding: theme.spacing.md,
         }}
       >
         <View style={{ flex: 1, gap: 4 }}>

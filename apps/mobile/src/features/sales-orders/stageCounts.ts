@@ -184,3 +184,5 @@ export function matchesStatusChip(item: StageCountable, chip: StatusChipKey): bo
 export function chipToStageHighlight(chip: StatusChipKey): OrdersStageKey | null {
   return chipToStageFocus(chip) === 'all' ? null : (chip as OrdersStageKey);
 }
+
+export { honestJourneyCount as formatJourneyCount } from './honestJourneyCount';

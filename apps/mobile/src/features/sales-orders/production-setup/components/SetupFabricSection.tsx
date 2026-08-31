@@ -35,8 +35,8 @@ export function SetupFabricSection({
     null;
   const selectedSku = selected?.sku?.trim() || selected?.inventoryItem?.sku || null;
   const expectedQty = fabric?.expectedQty ?? selected?.expectedQty ?? null;
-  const availableQty = fabric?.availableQty ?? selected?.availability?.availableQty ?? null;
-  const shortageQty = fabric?.shortageQty ?? selected?.availability?.shortageQty ?? null;
+  const availableQty = fabric?.availableQty ?? selected?.availability?.available ?? null;
+  const shortageQty = fabric?.shortageQty ?? selected?.availability?.short ?? null;
   const imageUrl =
     fabric?.imageUrl ?? selected?.inventoryItem?.imageUrl ?? null;
   const unitCost = fabric?.unitCost ?? selected?.unitCost ?? null;

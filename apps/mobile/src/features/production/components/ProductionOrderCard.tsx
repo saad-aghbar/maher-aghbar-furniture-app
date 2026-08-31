@@ -1,8 +1,10 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { ProductThumb } from '@/components/desk/ProductThumb';
+import { Divider } from '@/components/layout/Divider';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -18,7 +20,7 @@ type ProductionOrderCardProps = {
   onPress: () => void;
 };
 
-const MEDIA = 88;
+const MEDIA = 72;
 
 function priorityLabel(priority: string, t: (key: string) => string): string {
   const key = `mobile.production.priority.${priority}`;
@@ -27,24 +29,21 @@ function priorityLabel(priority: string, t: (key: string) => string): string {
 }
 
 /**
- * Floor-list card: product media, full meta (no clipped delivery date), workflow progress.
+ * Production order floor card — header band, media, inset meta, progress.
  */
 export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const router = useRouter();
 
   const pct = Math.max(0, Math.min(100, Math.round(order.progressPercent || 0)));
   const urgent = order.priority === 'URGENT' || order.priority === 'HIGH';
-  const accent = order.isLate
-    ? colors.error
-    : urgent
-      ? colors.warning
-      : colors.brand;
-
+  const late = order.isLate;
+  const accent = late ? colors.error : urgent ? colors.warning : colors.brand;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dealer =
     order.dealerName && order.dealerName !== '—' ? order.dealerName : null;
+  const blocked = order.boardBucket === 'blocked' && Boolean(order.readinessReason);
 
   return (
     <AnimatedPressable
@@ -58,17 +57,14 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
       style={{
         borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: order.isLate
-          ? colors.error
-          : urgent
-            ? colors.warning
-            : colors.borderStrong,
+        borderColor: late ? colors.error : urgent ? colors.warning : colors.borderStrong,
         backgroundColor: colors.surface,
         overflow: 'hidden',
-        ...theme.elevation.card,
+        ...orderBoardShadow(colorScheme),
       }}
     >
       <View
+        pointerEvents="none"
         style={{
           position: 'absolute',
           top: 0,
@@ -76,221 +72,259 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
           ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
           backgroundColor: accent,
-          opacity: order.isLate || urgent ? 1 : 0.5,
+          opacity: late || urgent ? 0.9 : 0.55,
         }}
       />
 
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
-          gap: theme.spacing.md,
-          paddingTop: theme.spacing.md,
-          paddingBottom: theme.spacing.sm,
-          paddingHorizontal: theme.spacing.md,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.lg,
+          paddingVertical: theme.spacing.md,
           ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
-          alignItems: 'flex-start',
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          backgroundColor: colors.surfaceSecondary,
         }}
       >
-        <View style={{ width: MEDIA, gap: theme.spacing.xs }}>
-          <ProductThumb uri={order.imageUrl} size={MEDIA} radius={theme.radius.lg} />
-
-          {urgent || order.isLate ? (
-            <View
-              style={{
-                width: MEDIA,
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                flexWrap: 'wrap',
-                gap: 4,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {urgent ? (
-                <View
-                  style={{
-                    paddingHorizontal: 6,
-                    paddingVertical: 3,
-                    borderRadius: theme.radius.sm,
-                    backgroundColor: colors.warningSoft,
-                    alignItems: 'center',
-                  }}
-                >
-                  <AppText
-                    variant="caption"
-                    weight="semibold"
-                    numberOfLines={1}
-                    style={{
-                      color: colors.warning,
-                      fontSize: 10,
-                      lineHeight: 13,
-                    }}
-                  >
-                    {priorityLabel(order.priority, t)}
-                  </AppText>
-                </View>
-              ) : null}
-              {order.isLate ? (
-                <View
-                  style={{
-                    paddingHorizontal: 6,
-                    paddingVertical: 3,
-                    borderRadius: theme.radius.sm,
-                    backgroundColor: colors.errorSoft,
-                    alignItems: 'center',
-                  }}
-                >
-                  <AppText
-                    variant="caption"
-                    weight="semibold"
-                    numberOfLines={1}
-                    style={{
-                      color: colors.error,
-                      fontSize: 10,
-                      lineHeight: 13,
-                    }}
-                  >
-                    {t('mobile.production.late')}
-                  </AppText>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-
         <View
           style={{
             flex: 1,
             minWidth: 0,
-            gap: 4,
-            alignItems: isRTL ? 'flex-end' : 'flex-start',
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'center',
+            gap: theme.spacing.sm,
+            flexWrap: 'wrap',
           }}
         >
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              gap: theme.spacing.sm,
-              width: '100%',
-            }}
-          >
+          <StatusBadge
+            status={order.status}
+            dot
+            label={productionFloorStatusLabel(
+              order.status,
+              t('mobile.production.inProduction'),
+            )}
+          />
+          {urgent ? (
             <AppText
-              variant="label"
+              variant="caption"
               weight={titleWeight}
-              numberOfLines={2}
-              style={{ flex: 1 }}
+              style={{ color: colors.warning, fontSize: 11 }}
+              numberOfLines={1}
             >
-              {order.title}
-            </AppText>
-            <StatusBadge
-              status={order.status}
-              label={productionFloorStatusLabel(
-                order.status,
-                t('mobile.production.inProduction'),
-              )}
-            />
-          </View>
-
-          <AppText
-            variant="caption"
-            color="secondary"
-            numberOfLines={1}
-            dir="ltr"
-            style={{ letterSpacing: 0.2 }}
-          >
-            {order.number}
-          </AppText>
-
-          {dealer ? (
-            <AppText variant="caption" color="muted" style={{ width: '100%' }}>
-              {`${t('mobile.production.dealer')}: ${dealer}`}
+              {priorityLabel(order.priority, t)}
             </AppText>
           ) : null}
-
-          {order.deliveryLabel ? (
-            <AppText variant="caption" color="muted" style={{ width: '100%' }}>
-              {`${t('mobile.production.deliveryDate')}: ${order.deliveryLabel}`}
-            </AppText>
-          ) : null}
-
-          {order.boardBucket === 'blocked' && order.readinessReason ? (
-            <View
-              style={{
-                marginTop: 4,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: 6,
-                borderRadius: theme.radius.md,
-                backgroundColor: colors.errorSoft,
-                width: '100%',
-              }}
+          {late ? (
+            <AppText
+              variant="caption"
+              weight={titleWeight}
+              style={{ color: colors.error, fontSize: 11 }}
+              numberOfLines={1}
             >
-              <AppText
-                variant="caption"
-                weight="semibold"
-                style={{ color: colors.error, marginBottom: 2 }}
-              >
-                {t('mobile.production.blocked')}
-              </AppText>
-              <AppText
-                variant="caption"
-                color="error"
-                numberOfLines={2}
-                style={{ width: '100%' }}
-              >
-                {order.readinessReason}
-              </AppText>
-            </View>
+              {t('mobile.production.late')}
+            </AppText>
           ) : null}
         </View>
+        <AppText variant="caption" color="brand" weight={titleWeight}>
+          {t('common.details')}
+        </AppText>
       </View>
 
       <View
         style={{
-          marginHorizontal: theme.spacing.md,
-          marginBottom: theme.spacing.md,
-          paddingTop: theme.spacing.sm,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.border,
-          gap: theme.spacing.xs,
+          padding: theme.spacing.lg,
+          gap: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
         }}
       >
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
+            gap: theme.spacing.md,
+            alignItems: 'flex-start',
           }}
         >
-          <AppText
-            variant="caption"
-            color="secondary"
-            numberOfLines={1}
-            style={{ flex: 1 }}
-          >
-            {order.progressLabel?.trim() || t('mobile.production.progress')}
-          </AppText>
-          <AppText
-            variant="caption"
-            weight="semibold"
-            style={{ color: accent }}
-            dir="ltr"
-          >
-            {`${pct}%`}
-          </AppText>
+          <ProductThumb uri={order.imageUrl} size={MEDIA} radius={theme.radius.lg} />
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            <AppText
+              variant="label"
+              weight={titleWeight}
+              dir="ltr"
+              numberOfLines={1}
+              style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 17 }}
+            >
+              {order.number}
+            </AppText>
+            <AppText
+              variant="caption"
+              color="secondary"
+              numberOfLines={2}
+              style={{ textAlign: isRTL ? 'right' : 'left', lineHeight: 18 }}
+            >
+              {order.title}
+            </AppText>
+          </View>
         </View>
-        <WorkflowProgressHit
-          progressPercent={pct}
-          height={5}
-          accessibilityLabel={t('mobile.productionFlow.openWorkflow')}
-          onPress={() => {
-            void haptics.selection();
-            router.push(adminProductionFlowHref(order.id));
+
+        <View
+          style={{
+            borderRadius: theme.radius.lg,
+            backgroundColor: colors.surfaceSecondary,
+            borderWidth: 1,
+            borderColor: blocked ? colors.error : colors.border,
+            overflow: 'hidden',
           }}
-        />
+        >
+          {dealer ? (
+            <MetaRow label={t('mobile.production.dealer')} value={dealer} isRTL={isRTL} />
+          ) : null}
+          {order.deliveryLabel ? (
+            <>
+              {dealer ? <Divider compact plain style={{ marginVertical: 0 }} /> : null}
+              <MetaRow
+                label={t('mobile.production.deliveryDate')}
+                value={order.deliveryLabel}
+                isRTL={isRTL}
+                tone={late ? 'error' : undefined}
+              />
+            </>
+          ) : null}
+          {order.progressLabel?.trim() ? (
+            <>
+              {dealer || order.deliveryLabel ? (
+                <Divider compact plain style={{ marginVertical: 0 }} />
+              ) : null}
+              <MetaRow
+                label={t('mobile.production.progress')}
+                value={order.progressLabel.trim()}
+                isRTL={isRTL}
+              />
+            </>
+          ) : null}
+          {blocked && order.readinessReason ? (
+            <>
+              <Divider compact plain style={{ marginVertical: 0 }} />
+              <MetaRow
+                label={t('mobile.production.blocked')}
+                value={order.readinessReason}
+                isRTL={isRTL}
+                tone="error"
+                multiline
+              />
+            </>
+          ) : null}
+        </View>
+
+        <View style={{ gap: theme.spacing.xs }}>
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
+            }}
+          >
+            <AppText
+              variant="caption"
+              color="muted"
+              style={{
+                flex: 1,
+                textAlign: isRTL ? 'right' : 'left',
+                fontSize: 10,
+                letterSpacing: locale === 'ar' ? 0 : 0.45,
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              }}
+            >
+              {t('mobile.production.progress')}
+            </AppText>
+            <AppText
+              weight={titleWeight}
+              dir="ltr"
+              style={{ color: accent, fontSize: 15 }}
+            >
+              {`${pct}%`}
+            </AppText>
+          </View>
+          <WorkflowProgressHit
+            progressPercent={pct}
+            height={5}
+            accessibilityLabel={t('mobile.productionFlow.openWorkflow')}
+            onPress={() => {
+              void haptics.selection();
+              router.push(adminProductionFlowHref(order.id));
+            }}
+          />
+        </View>
       </View>
     </AnimatedPressable>
+  );
+}
+
+function MetaRow({
+  label,
+  value,
+  isRTL,
+  valueLtr,
+  multiline,
+  tone,
+}: {
+  label: string;
+  value: string;
+  isRTL: boolean;
+  valueLtr?: boolean;
+  multiline?: boolean;
+  tone?: 'error';
+}) {
+  const { colors, theme } = useTheme();
+  const { locale } = useLocale();
+
+  return (
+    <View
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: multiline ? 'flex-start' : 'center',
+        justifyContent: 'space-between',
+        gap: theme.spacing.md,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm + 2,
+      }}
+    >
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'ar' ? 0 : 0.5,
+          fontSize: 10,
+          flexShrink: 0,
+          textAlign: isRTL ? 'right' : 'left',
+          paddingTop: multiline ? 2 : 0,
+        }}
+      >
+        {label}
+      </AppText>
+      <AppText
+        weight="semibold"
+        dir={valueLtr ? 'ltr' : undefined}
+        numberOfLines={multiline ? 3 : 1}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          color: tone === 'error' ? colors.error : colors.textPrimary,
+          textAlign: isRTL ? 'left' : 'right',
+          lineHeight: multiline ? 20 : undefined,
+        }}
+      >
+        {value}
+      </AppText>
+    </View>
   );
 }

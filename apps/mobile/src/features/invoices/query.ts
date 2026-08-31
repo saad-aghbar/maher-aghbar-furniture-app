@@ -4,7 +4,7 @@ import { flattenPaginatedPages, getNextPageParamFromMeta } from '@/api/infinite'
 import { useAuth } from '@/auth/AuthProvider';
 import { listCustomers } from '@/api/modules/customers';
 import { listSalesOrders } from '@/api/modules/sales-orders';
-import { createInvoiceFromSalesOrder, getInvoice, listInvoices } from './api';
+import { createInvoiceFromSalesOrder, getInvoice, listInvoices, updateInvoice } from './api';
 import { invoiceListCustomerScope } from './selectInvoice';
 
 export function useInvoicesInfiniteQuery(
@@ -62,6 +62,20 @@ export function useCreateInvoiceMutation() {
       if (invoice?.id) {
         await qc.invalidateQueries({ queryKey: queryKeys.invoices.detail(invoice.id) });
       }
+    },
+  });
+}
+
+export function useUpdateInvoiceMutation(invoiceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof updateInvoice>[1]) =>
+      updateInvoice(invoiceId, body),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.invoices.lists() }),
+        qc.invalidateQueries({ queryKey: queryKeys.invoices.detail(invoiceId) }),
+      ]);
     },
   });
 }

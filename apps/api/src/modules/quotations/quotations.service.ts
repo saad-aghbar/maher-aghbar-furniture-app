@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { DiscountType, Prisma } from '@maher/database';
@@ -23,7 +24,9 @@ import { SalesOrdersService } from '../sales-orders/sales-orders.service';
 import {
   DEALER_VISIBLE_QUOTATION_STATUSES,
   SAME_RFQ_ACCEPTED_ERROR,
+  dealerCanDecideQuotation,
   isDealerVisibleQuotationStatus,
+  isQuotationCommerciallyExpired,
 } from './quotation-visibility';
 import {
   EMAIL_PROVIDER,
@@ -31,9 +34,13 @@ import {
 } from '../../integrations/integrations.module';
 
 const APPROVAL_STEP_RE = /\[step:([A-Z_]+)\]/;
+const STAFF_REJECT_STATUSES = ['INTERNAL_REVIEW', 'APPROVED', 'SENT', 'VIEWED'] as const;
+const ALREADY_WITH_DEALER = ['SENT', 'VIEWED'] as const;
 
 @Injectable()
 export class QuotationsService {
+  private readonly logger = new Logger(QuotationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly sequences: SequenceService,
@@ -214,6 +221,7 @@ export class QuotationsService {
       subtotal: totals.subtotal,
       taxAmount: totals.taxAmount,
       lineTotal: totals.lineTotal,
+      manufacturingComplexity: this.normalizeComplexity(line.manufacturingComplexity),
       sortOrder: index,
     };
   }
@@ -245,8 +253,27 @@ export class QuotationsService {
             OR: [
               { number: { contains: query.q, mode: 'insensitive' } },
               { customer: { name: { contains: query.q, mode: 'insensitive' } } },
+              { customer: { nameAr: { contains: query.q, mode: 'insensitive' } } },
+              { customer: { nameEn: { contains: query.q, mode: 'insensitive' } } },
+              { customer: { nameHe: { contains: query.q, mode: 'insensitive' } } },
+              { customer: { code: { contains: query.q, mode: 'insensitive' } } },
               { request: { externalOrderNumber: { contains: query.q, mode: 'insensitive' } } },
               { request: { number: { contains: query.q, mode: 'insensitive' } } },
+              { request: { projectName: { contains: query.q, mode: 'insensitive' } } },
+              { request: { endCustomerName: { contains: query.q, mode: 'insensitive' } } },
+              { lines: { some: { description: { contains: query.q, mode: 'insensitive' } } } },
+              { lines: { some: { product: { sku: { contains: query.q, mode: 'insensitive' } } } } },
+              {
+                lines: {
+                  some: { product: { nameEn: { contains: query.q, mode: 'insensitive' } } },
+                },
+              },
+              {
+                lines: {
+                  some: { product: { nameAr: { contains: query.q, mode: 'insensitive' } } },
+                },
+              },
+              { salesOrders: { some: { number: { contains: query.q, mode: 'insensitive' } } } },
             ],
           }
         : {}),
@@ -276,7 +303,13 @@ export class QuotationsService {
       }),
     ]);
 
-    return { data, meta: paginatedMeta(page, pageSize, totalItems) };
+    return {
+      data: data.map((row) => ({
+        ...row,
+        commerciallyExpired: isQuotationCommerciallyExpired(row.expirationDate),
+      })),
+      meta: paginatedMeta(page, pageSize, totalItems),
+    };
   }
 
   async getById(id: string, user?: AuthUser) {
@@ -285,7 +318,21 @@ export class QuotationsService {
       include: {
         customer: true,
         request: { include: { items: true, documents: true } },
-        lines: { orderBy: { sortOrder: 'asc' } },
+        lines: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            product: {
+              select: {
+                id: true,
+                sku: true,
+                imageUrl: true,
+                nameEn: true,
+                nameAr: true,
+                nameHe: true,
+              },
+            },
+          },
+        },
         approvals: {
           include: {
             approver: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -318,7 +365,206 @@ export class QuotationsService {
     };
   }
 
-  /** Resolve product + seller unit price: dealer price for this customer, else catalog basePrice. */
+  /** HTTP GET — mark viewed, enrich lines, strip dealer-internal fields. */
+  async getForClient(id: string, user?: AuthUser) {
+    const quotation = await this.getById(id, user);
+    let status = quotation.status;
+    let viewedAt = (quotation as { viewedAt?: Date | null }).viewedAt ?? null;
+    if (user?.customerId && status === 'SENT') {
+      const marked = await this.prisma.quotation.update({
+        where: { id },
+        data: { status: 'VIEWED', viewedAt: new Date() },
+        select: { status: true, viewedAt: true },
+      });
+      status = marked.status;
+      viewedAt = marked.viewedAt;
+    }
+    return this.presentForClient({ ...quotation, status, viewedAt }, user);
+  }
+
+  private normalizeComplexity(
+    value: string | null | undefined,
+  ): 'STANDARD' | 'MODIFIED' | 'CUSTOM' {
+    if (value === 'MODIFIED' || value === 'CUSTOM') return value;
+    return 'STANDARD';
+  }
+
+  private sellingPriceMissing(unitPrice: unknown): boolean {
+    const n = Number(unitPrice);
+    return !Number.isFinite(n) || n <= 0;
+  }
+
+  private async assertNotExpiredForDealer(
+    quotation: { id: string; status: string; expirationDate?: Date | string | null },
+    user: AuthUser,
+  ) {
+    if (!user.customerId) return;
+    if (!isQuotationCommerciallyExpired(quotation.expirationDate)) return;
+    if (quotation.status === 'SENT' || quotation.status === 'VIEWED') {
+      await this.prisma.quotation.update({
+        where: { id: quotation.id },
+        data: { status: 'EXPIRED' },
+      }).catch(() => undefined);
+    }
+    throw new BadRequestException({
+      code: 'QUOTATION_EXPIRED',
+      message: 'This quotation has expired.',
+    });
+  }
+
+  private validateReadyToSend(quotation: {
+    customerId?: string | null;
+    customer?: { id?: string } | null;
+    offeredDeliveryDate?: Date | string | null;
+    lines?: Array<{
+      description?: string | null;
+      quantity?: unknown;
+      unitPrice?: unknown;
+      manufacturingComplexity?: string | null;
+    }>;
+    total?: unknown;
+  }) {
+    const fieldErrors: Record<string, string[]> = {};
+    if (!quotation.customerId && !quotation.customer?.id) {
+      fieldErrors.customerId = ['Dealer is required before sending this quotation.'];
+    }
+    if (!quotation.offeredDeliveryDate) {
+      fieldErrors.offeredDeliveryDate = ['Set the factory delivery date before sending this quotation.'];
+    }
+    const lines = quotation.lines ?? [];
+    if (lines.length === 0) {
+      fieldErrors.lines = ['Add at least one quotation line before sending.'];
+    }
+    lines.forEach((line, index) => {
+      const qty = Number(line.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        fieldErrors[`lines.${index}.quantity`] = [
+          `Set a valid quantity for ${line.description || 'this line'} before sending this quotation.`,
+        ];
+      }
+      if (this.sellingPriceMissing(line.unitPrice)) {
+        const complexity = this.normalizeComplexity(line.manufacturingComplexity);
+        const kind =
+          complexity === 'STANDARD'
+            ? ''
+            : `${complexity.charAt(0)}${complexity.slice(1).toLowerCase()} `;
+        const name = line.description?.trim() || 'this line';
+        fieldErrors[`lines.${index}.unitPrice`] = [
+          `Set a selling price for ${kind}${name} before sending this quotation.`,
+        ];
+      }
+    });
+    const total = Number(quotation.total);
+    if (lines.length > 0 && (!Number.isFinite(total) || total < 0)) {
+      fieldErrors.total = ['Final quotation total could not be calculated.'];
+    }
+    const keys = Object.keys(fieldErrors);
+    if (keys.length === 0) return;
+    const message = fieldErrors[keys[0]!]?.[0] ?? 'This quotation is not ready to send.';
+    throw new BadRequestException({
+      code: 'VALIDATION_ERROR',
+      message,
+      fieldErrors,
+    });
+  }
+
+  private async presentForClient(
+    quotation: Awaited<ReturnType<QuotationsService['getById']>> & { viewedAt?: Date | null },
+    user?: AuthUser,
+  ) {
+    const isDealer = Boolean(user?.customerId);
+    const commerciallyExpired = isQuotationCommerciallyExpired(
+      (quotation as { expirationDate?: Date | null }).expirationDate,
+    );
+    const canDecide = dealerCanDecideQuotation(
+      quotation.status,
+      (quotation as { expirationDate?: Date | null }).expirationDate,
+    );
+    const approvals = (quotation as { approvals?: Array<{ decision: string; comment: string | null }> })
+      .approvals;
+    const rejectionReason =
+      [...(approvals ?? [])].reverse().find((a) => a.decision === 'REJECTED')?.comment ?? null;
+
+    const productIds = (quotation.lines ?? [])
+      .map((l) => l.productId)
+      .filter((id): id is string => Boolean(id));
+    const [dealerPrices, products] = await Promise.all([
+      this.prisma.dealerPrice.findMany({
+        where: { customerId: quotation.customerId },
+        select: { productId: true, price: true },
+      }),
+      productIds.length
+        ? this.prisma.product.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, basePrice: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const dealerMap = new Map(dealerPrices.map((d) => [d.productId, Number(d.price)]));
+    const baseMap = new Map(
+      products.map((p) => [p.id, p.basePrice != null ? Number(p.basePrice) : null]),
+    );
+
+    const lines = (quotation.lines ?? []).map((line) => {
+      const complexity = this.normalizeComplexity(
+        (line as { manufacturingComplexity?: string | null }).manufacturingComplexity,
+      );
+      const ref =
+        (line.productId && dealerMap.get(line.productId)) ||
+        (line.productId ? baseMap.get(line.productId) : null) ||
+        null;
+      const referenceUnitPrice = ref != null && ref > 0 ? ref : null;
+      return {
+        ...line,
+        manufacturingComplexity: complexity,
+        priceRequired: this.sellingPriceMissing(line.unitPrice),
+        referenceUnitPrice,
+      };
+    });
+
+    const request = quotation.request as
+      | (NonNullable<typeof quotation.request> & {
+          documents?: Array<{ visibility?: string }>;
+        })
+      | null;
+    const documents = (request?.documents ?? []).filter((doc) =>
+      isDealer ? doc.visibility === 'CUSTOMER_VISIBLE' : true,
+    );
+
+    const presented = {
+      ...quotation,
+      lines,
+      commerciallyExpired,
+      canDecide,
+      rejectionReason,
+      request: request
+        ? {
+            ...request,
+            documents: isDealer ? documents : request.documents,
+          }
+        : request,
+    };
+
+    if (!isDealer) return presented;
+
+    const {
+      internalNotes: _internal,
+      approvals: _approvals,
+      approvalChain: _chain,
+      completedApprovalSteps: _steps,
+      pendingApproverRole: _pending,
+      ...dealerSafe
+    } = presented as typeof presented & {
+      internalNotes?: unknown;
+      approvals?: unknown;
+      approvalChain?: unknown;
+      completedApprovalSteps?: unknown;
+      pendingApproverRole?: unknown;
+    };
+    return dealerSafe;
+  }
+
+  /** Resolve product + seller unit price. STANDARD may prefill; MOD/CUSTOM never invent a price. */
   private async resolveSellerLines(
     customerId: string,
     lines: CreateQuotationDto['lines'],
@@ -366,17 +612,22 @@ export class QuotationsService {
     return lines.map((line) => {
       const product = matchProduct(line);
       const productId = line.productId ?? product?.id;
-      let unitPrice = Number(line.unitPrice);
-      if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
-        if (productId && dealerMap.has(productId)) {
-          unitPrice = dealerMap.get(productId)!;
-        } else if (product?.basePrice != null) {
-          unitPrice = Number(product.basePrice);
-        } else {
-          unitPrice = 0;
-        }
+      const complexity = this.normalizeComplexity(line.manufacturingComplexity);
+      const incoming = Number(line.unitPrice);
+      const catalogRef =
+        (productId && dealerMap.get(productId)) ||
+        (product?.basePrice != null ? Number(product.basePrice) : null) ||
+        null;
+      let unitPrice = Number.isFinite(incoming) && incoming > 0 ? incoming : 0;
+      if (this.sellingPriceMissing(unitPrice) && complexity === 'STANDARD') {
+        if (catalogRef != null && catalogRef > 0) unitPrice = catalogRef;
       }
-      return { ...line, productId, unitPrice };
+      return {
+        ...line,
+        productId,
+        unitPrice,
+        manufacturingComplexity: complexity,
+      };
     });
   }
 
@@ -386,12 +637,24 @@ export class QuotationsService {
     const lineData = resolvedLines.map((_, i) => this.buildLineData(resolvedLines, i));
     const totals = this.sumQuotation(lineData);
 
+    let requestOffered: Date | undefined;
+    if (dto.requestId) {
+      const rfq = await this.prisma.requestForQuotation.findUnique({
+        where: { id: dto.requestId },
+        select: { offeredDeliveryDate: true },
+      });
+      requestOffered = rfq?.offeredDeliveryDate ?? undefined;
+    }
+
     const quotation = await this.prisma.quotation.create({
       data: {
         number,
         customerId: dto.customerId,
         requestId: dto.requestId,
         expirationDate: dto.expirationDate ? new Date(dto.expirationDate) : undefined,
+        offeredDeliveryDate: dto.offeredDeliveryDate
+          ? new Date(dto.offeredDeliveryDate)
+          : requestOffered,
         paymentTerms: dto.paymentTerms,
         deliveryTerms: dto.deliveryTerms,
         customerNotes: dto.customerNotes,
@@ -423,8 +686,52 @@ export class QuotationsService {
   private assertStatus(quotation: { status: string }, allowed: string[], action: string) {
     if (!allowed.includes(quotation.status)) {
       throw new BadRequestException({
-        code: 'BAD_REQUEST',
+        code: 'INVALID_STATUS',
         message: `Cannot ${action} quotation in status ${quotation.status}.`,
+      });
+    }
+  }
+
+  private async dispatchQuoteSent(quotation: {
+    id: string;
+    number: string;
+    total: unknown;
+    currency: string;
+    customerId: string;
+    customer?: { email?: string | null; phone?: string | null } | null;
+  }) {
+    const vars = { number: quotation.number, total: String(quotation.total) };
+    const linkUrl = `/quotations/${quotation.id}`;
+
+    const portalUsers = await this.prisma.user.findMany({
+      where: { customerId: quotation.customerId, isActive: true },
+      select: { id: true },
+    });
+    for (const u of portalUsers) {
+      await this.notifications.sendFromTemplate({
+        templateCode: 'QUOTE_SENT',
+        channel: 'IN_APP',
+        to: { userId: u.id },
+        vars,
+        linkUrl,
+      });
+    }
+
+    const subject = `Quotation ${quotation.number}`;
+    const body = `Quotation ${quotation.number} — total ${quotation.total} ${quotation.currency}. View: ${linkUrl}`;
+
+    if (quotation.customer?.email) {
+      await this.email.send({
+        to: quotation.customer.email,
+        subject,
+        body,
+      });
+    }
+
+    if (quotation.customer?.phone) {
+      await this.whatsapp.send({
+        to: quotation.customer.phone,
+        body: `Quotation ${quotation.number} sent. Total ${quotation.total} ${quotation.currency}.`,
       });
     }
   }
@@ -447,8 +754,14 @@ export class QuotationsService {
     this.assertStatus(quotation, ['DRAFT'], 'update');
 
     const data: Prisma.QuotationUpdateInput = {};
+    if (dto.expirationDate !== undefined) {
+      data.expirationDate = dto.expirationDate ? new Date(dto.expirationDate) : null;
+    }
     if (dto.paymentTerms !== undefined) data.paymentTerms = dto.paymentTerms || null;
     if (dto.deliveryTerms !== undefined) data.deliveryTerms = dto.deliveryTerms || null;
+    if (dto.offeredDeliveryDate !== undefined) {
+      data.offeredDeliveryDate = dto.offeredDeliveryDate ? new Date(dto.offeredDeliveryDate) : null;
+    }
     if (dto.customerNotes !== undefined) data.customerNotes = dto.customerNotes || null;
     if (dto.internalNotes !== undefined) data.internalNotes = dto.internalNotes || null;
 
@@ -457,6 +770,16 @@ export class QuotationsService {
       const lineData = resolved.map((_, index) => this.buildLineData(resolved, index));
       const totals = this.sumQuotation(lineData);
       Object.assign(data, totals);
+
+      await this.writeAudit(user?.id, 'quotation.price-change', id, {
+        from: (quotation.lines ?? []).map((l) => ({
+          id: l.id,
+          unitPrice: String(l.unitPrice),
+        })),
+        to: lineData.map((l) => ({ description: l.description, unitPrice: l.unitPrice })),
+        fromTotal: String(quotation.total),
+        toTotal: String(totals.total),
+      }).catch(() => undefined);
 
       return this.prisma.$transaction(async (tx) => {
         await tx.quotationLine.deleteMany({ where: { quotationId: id } });
@@ -538,65 +861,64 @@ export class QuotationsService {
 
   async send(id: string, user?: AuthUser) {
     const quotation = await this.getById(id, user);
-    this.assertStatus(quotation, ['APPROVED'], 'send');
+    if ((ALREADY_WITH_DEALER as readonly string[]).includes(quotation.status)) {
+      await this.dispatchQuoteSent(quotation).catch((err: unknown) => {
+        this.logger.warn(
+          `Quotation ${quotation.number} already sent; notify retry failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+      return quotation;
+    }
+    this.assertStatus(quotation, ['DRAFT', 'INTERNAL_REVIEW', 'APPROVED'], 'send');
+    this.validateReadyToSend(quotation);
     const updated = await this.prisma.quotation.update({
       where: { id },
       data: { status: 'SENT', sentAt: new Date() },
       include: { lines: true, customer: true },
     });
 
-    const vars = { number: updated.number, total: String(updated.total) };
-    const linkUrl = `/quotations/${updated.id}`;
-
-    const portalUsers = await this.prisma.user.findMany({
-      where: { customerId: updated.customerId, isActive: true },
-      select: { id: true },
+    await this.dispatchQuoteSent(updated).catch((err: unknown) => {
+      this.logger.warn(
+        `Quotation ${updated.number} marked SENT; dealer notify failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     });
-    for (const u of portalUsers) {
-      await this.notifications.sendFromTemplate({
-        templateCode: 'QUOTE_SENT',
-        channel: 'IN_APP',
-        to: { userId: u.id },
-        vars,
-        linkUrl,
-      });
-    }
-
-    const subject = `Quotation ${updated.number}`;
-    const body = `Quotation ${updated.number} — total ${updated.total} ${updated.currency}. View: ${linkUrl}`;
-
-    if (updated.customer.email) {
-      await this.email.send({
-        to: updated.customer.email,
-        subject,
-        body,
-      });
-    }
-
-    if (updated.customer.phone) {
-      await this.whatsapp.send({
-        to: updated.customer.phone,
-        body: `Quotation ${updated.number} sent. Total ${updated.total} ${updated.currency}.`,
-      });
-    }
 
     if (quotation.requestId) {
-      await this.prisma.requestForQuotation.updateMany({
-        where: { id: quotation.requestId },
-        data: { status: 'QUOTED' },
-      });
+      await this.prisma.requestForQuotation
+        .updateMany({
+          where: { id: quotation.requestId },
+          data: { status: 'QUOTED' },
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `Quotation ${updated.number} SENT but RFQ ${quotation.requestId} was not marked QUOTED: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        });
     }
 
-    await this.writeAudit(user?.id, 'quotation.send', id, { status: 'SENT' });
+    await this.writeAudit(user?.id, 'quotation.send', id, { status: 'SENT' }).catch((err: unknown) => {
+      this.logger.warn(
+        `Quotation ${updated.number} SENT; audit write failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    });
     return updated;
   }
 
   async reject(id: string, user: AuthUser, comment?: string) {
     const quotation = await this.getById(id, user);
     if (user.customerId) {
-      this.assertStatus(quotation, ['SENT'], 'reject');
+      this.assertStatus(quotation, ['SENT', 'VIEWED'], 'reject');
+      await this.assertNotExpiredForDealer(quotation, user);
     } else {
-      this.assertStatus(quotation, ['INTERNAL_REVIEW', 'APPROVED'], 'reject');
+      this.assertStatus(quotation, [...STAFF_REJECT_STATUSES], 'reject');
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -628,12 +950,13 @@ export class QuotationsService {
   async accept(id: string, user: AuthUser, signatureData?: string) {
     this.assertDealerPrincipal(user);
     const quotation = await this.getById(id, user);
-    this.assertStatus(quotation, ['SENT'], 'accept');
+    this.assertStatus(quotation, ['SENT', 'VIEWED'], 'accept');
+    await this.assertNotExpiredForDealer(quotation, user);
 
     const requiredDeliveryDate =
-      this.parseDeliveryDate(quotation.deliveryTerms) ??
       (quotation.request as { requiredDeliveryDate?: Date | null } | null)?.requiredDeliveryDate ??
       undefined;
+    const committedDeliveryDate = quotation.offeredDeliveryDate ?? undefined;
 
     const requestRow = quotation.request as {
       deliveryAddress?: string | null;
@@ -677,7 +1000,7 @@ export class QuotationsService {
           await tx.$queryRaw`SELECT id FROM quotations WHERE id = ${id} FOR UPDATE`;
 
           const claimed = await tx.quotation.updateMany({
-            where: { id, status: 'SENT', archivedAt: null },
+            where: { id, status: { in: ['SENT', 'VIEWED'] }, archivedAt: null },
             data: {
               status: 'ACCEPTED',
               acceptedAt: new Date(),
@@ -734,6 +1057,7 @@ export class QuotationsService {
               paymentTerms: quotation.paymentTerms ?? undefined,
               deliveryAddress: requestRow?.deliveryAddress ?? undefined,
               requiredDeliveryDate: requiredDeliveryDate ?? undefined,
+              committedDeliveryDate: committedDeliveryDate ?? undefined,
               externalOrderNumber: requestRow?.externalOrderNumber ?? undefined,
               projectName: requestRow?.projectName ?? undefined,
               notes: quotation.deliveryTerms ?? undefined,
@@ -884,6 +1208,7 @@ export class QuotationsService {
     this.assertDealerPrincipal(user);
     const quotation = await this.getById(id, user);
     this.assertStatus(quotation, ['SENT', 'VIEWED'], 'request revision');
+    await this.assertNotExpiredForDealer(quotation, user);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.quotationApproval.create({
@@ -945,6 +1270,7 @@ export class QuotationsService {
       subtotal: line.subtotal,
       taxAmount: line.taxAmount,
       lineTotal: line.lineTotal,
+      manufacturingComplexity: line.manufacturingComplexity ?? undefined,
       sortOrder: index,
     }));
 
@@ -964,6 +1290,7 @@ export class QuotationsService {
           paymentTerms: quotation.paymentTerms ?? undefined,
           deliveryTerms: quotation.deliveryTerms ?? undefined,
           warrantyTerms: quotation.warrantyTerms ?? undefined,
+          offeredDeliveryDate: quotation.offeredDeliveryDate ?? undefined,
           customerNotes: quotation.customerNotes ?? undefined,
           internalNotes: quotation.internalNotes ?? undefined,
           salesRepId: quotation.salesRepId ?? user.id,

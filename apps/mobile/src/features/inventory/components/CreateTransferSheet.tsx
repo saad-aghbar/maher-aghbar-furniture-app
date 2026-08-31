@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -7,6 +7,7 @@ import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { CreateWarehouseTransferInput, InventoryItem, Warehouse } from '../api';
 import type { InventoryLifecycle } from '../preferWarehouseForReceive';
@@ -23,6 +24,7 @@ import {
 import { warehouseTypeForLifecycle } from '../preferWarehouseForReceive';
 import { selectInventoryItemCard } from '../selectInventory';
 import { useLabelVerifyScan } from '../useLabelVerifyScan';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
   formatPickQty,
   inventoryPickCopyKey,
@@ -60,7 +62,7 @@ export function CreateTransferSheet({
   onSubmit,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
-  const { theme, colors } = useTheme();
+  const { theme, colors, colorScheme } = useTheme();
   const { user } = useAuth();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.78);
@@ -255,9 +257,13 @@ export function CreateTransferSheet({
                         setError(null);
                       }}
                     />
-                    <Pressable
+                    <AnimatedPressable
+                      variant="button"
                       accessibilityRole="button"
-                      onPress={() => setPickOpen(true)}
+                      onPress={() => {
+                        void haptics.selection();
+                        setPickOpen(true);
+                      }}
                       style={{
                         alignSelf: isRTL ? 'flex-end' : 'flex-start',
                         paddingVertical: 4,
@@ -266,12 +272,16 @@ export function CreateTransferSheet({
                       <AppText variant="caption" color="brand" weight="semibold">
                         {t(copy.pickItem)}
                       </AppText>
-                    </Pressable>
+                    </AnimatedPressable>
                   </>
                 ) : (
-                  <Pressable
+                  <AnimatedPressable
+                    variant="button"
                     accessibilityRole="button"
-                    onPress={() => setPickOpen(true)}
+                    onPress={() => {
+                      void haptics.selection();
+                      setPickOpen(true);
+                    }}
                     style={{
                       minHeight: theme.sizes.touch.min,
                       borderWidth: 1,
@@ -280,7 +290,7 @@ export function CreateTransferSheet({
                       paddingHorizontal: theme.spacing.md,
                       justifyContent: 'center',
                       backgroundColor: colors.brandSoft,
-                      ...theme.elevation.card,
+                      ...orderBoardShadow(colorScheme),
                     }}
                   >
                     <AppText
@@ -291,7 +301,7 @@ export function CreateTransferSheet({
                     >
                       {t(copy.pickItem)}
                     </AppText>
-                  </Pressable>
+                  </AnimatedPressable>
                 )}
 
                 <ScanInventoryItemAction

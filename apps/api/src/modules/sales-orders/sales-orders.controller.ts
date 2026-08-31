@@ -96,6 +96,16 @@ export class SalesOrdersController {
   }
 
   @RequirePermissions('sales-order.update')
+  @Post(':id/committed-delivery')
+  setCommittedDelivery(
+    @Param('id') id: string,
+    @Body() body: { date: string; reason?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.salesOrders.setCommittedDeliveryDate(id, user, body.date, body.reason);
+  }
+
+  @RequirePermissions('sales-order.update')
   @Post(':id/confirm')
   confirm(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.salesOrders.confirm(id, user.id);

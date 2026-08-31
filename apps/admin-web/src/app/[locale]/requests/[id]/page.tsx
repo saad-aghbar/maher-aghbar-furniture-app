@@ -47,6 +47,9 @@ interface RequestItem {
   color?: string | null;
   notes?: string | null;
   manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
+  width?: number | string | null;
+  height?: number | string | null;
+  depth?: number | string | null;
 }
 
 interface RequestDetail {
@@ -58,6 +61,8 @@ interface RequestDetail {
   externalOrderNumber?: string | null;
   contactName?: string | null;
   deliveryAddress?: string | null;
+  requiredDeliveryDate?: string | null;
+  offeredDeliveryDate?: string | null;
   notes?: string | null;
   internalNotes?: string | null;
   priority?: string;
@@ -73,6 +78,11 @@ interface RequestDetail {
   items: RequestItem[];
   documents?: Array<{ id: string; fileName: string }>;
   quotations?: Array<{ id: string; number: string; status: string }>;
+}
+
+function localDealerMinimumRequestYmd(now = new Date()): string {
+  const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 4);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
 export default function AdminRfqDetailPage({ params }: { params: { id: string } }) {
@@ -93,6 +103,8 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
   const [draftLines, setDraftLines] = useState<LineItemDraft[]>([]);
   const [needsInfoOpen, setNeedsInfoOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  const [deliveryChangeDate, setDeliveryChangeDate] = useState('');
+  const [deliveryChangeReason, setDeliveryChangeReason] = useState('');
 
   function sourceLabel(value: string) {
     const map: Record<string, string> = {
@@ -113,6 +125,9 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
       setInternalNotes(r.internalNotes ?? '');
       setProjectName(r.projectName ?? '');
       setExternalOrderNumber(r.externalOrderNumber ?? '');
+      setDeliveryChangeDate(
+        (r.offeredDeliveryDate ?? r.requiredDeliveryDate ?? '').toString().slice(0, 10),
+      );
       setDraftLines(
         (r.items ?? []).map((item) =>
           emptyLineItem({
@@ -185,6 +200,27 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
     onError: (err) => setError(mutationErrorMessage(err)),
   });
 
+  const deliveryMutation = useMutation({
+    mutationFn: async (args: { kind: 'confirm' | 'change'; date: string; reason?: string }) => {
+      if (args.kind === 'confirm') {
+        return apiFetch(`/api/v1/requests/${params.id}/confirm-delivery`, {
+          method: 'POST',
+          body: JSON.stringify({ date: args.date }),
+        });
+      }
+      return apiFetch(`/api/v1/requests/${params.id}/change-delivery`, {
+        method: 'POST',
+        body: JSON.stringify({ date: args.date, reason: args.reason }),
+      });
+    },
+    onSuccess: async () => {
+      setMessage(tCommon('saved'));
+      setDeliveryChangeReason('');
+      await qc.invalidateQueries({ queryKey: ['admin-rfq', params.id] });
+    },
+    onError: (err) => setError(mutationErrorMessage(err)),
+  });
+
   const quoteMutation = useMutation({
     mutationFn: async () => {
       if (!data?.customer?.id || !data.items.length) {
@@ -195,18 +231,34 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
         body: JSON.stringify({
           customerId: data.customer.id,
           requestId: data.id,
-          deliveryTerms: data.deliveryAddress ?? undefined,
+          offeredDeliveryDate: data.offeredDeliveryDate ?? undefined,
           customerNotes: data.notes ?? undefined,
-          lines: data.items.map((item) => ({
-            description: item.productName,
-            quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
-            unitPrice: 0,
-            unit: 'pcs',
-            ...(item.material ? { material: item.material } : {}),
-            ...(item.fabric ? { fabric: item.fabric } : {}),
-            ...(item.color ? { color: item.color } : {}),
-            taxRate: 0.16,
-          })),
+          lines: data.items.map((item) => {
+            const complexity =
+              item.manufacturingComplexity === 'MODIFIED' ||
+              item.manufacturingComplexity === 'CUSTOM'
+                ? item.manufacturingComplexity
+                : item.manufacturingComplexity === 'STANDARD'
+                  ? 'STANDARD'
+                  : undefined;
+            const width = Number(item.width);
+            const height = Number(item.height);
+            const depth = Number(item.depth);
+            return {
+              description: item.productName,
+              quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
+              unitPrice: 0,
+              unit: 'pcs',
+              ...(item.material ? { material: item.material } : {}),
+              ...(item.fabric ? { fabric: item.fabric } : {}),
+              ...(item.color ? { color: item.color } : {}),
+              ...(complexity ? { manufacturingComplexity: complexity } : {}),
+              ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+              ...(Number.isFinite(height) && height > 0 ? { height } : {}),
+              ...(Number.isFinite(depth) && depth > 0 ? { depth } : {}),
+              taxRate: 0.16,
+            };
+          }),
         }),
       });
     },
@@ -259,6 +311,14 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
   const canClose = !['CLOSED', 'CANCELLED', 'QUOTED'].includes(data.status);
   const canQuote = ['READY_FOR_QUOTATION', 'UNDER_REVIEW', 'SUBMITTED'].includes(data.status);
   const isFactoryReview = ['SUBMITTED', 'UNDER_REVIEW', 'NEEDS_INFORMATION'].includes(data.status);
+  const dealerMinRequestYmd = localDealerMinimumRequestYmd();
+  const requestedYmd = data.requiredDeliveryDate
+    ? String(data.requiredDeliveryDate).slice(0, 10)
+    : '';
+  const confirmWouldOverrideLead = Boolean(requestedYmd && requestedYmd < dealerMinRequestYmd);
+  const changeWouldOverrideLead = Boolean(
+    deliveryChangeDate.trim() && deliveryChangeDate.trim() < dealerMinRequestYmd,
+  );
   const presentationKey = data.presentationKey;
 
   function lineComplexityLabel(code?: string | null) {
@@ -356,8 +416,68 @@ export default function AdminRfqDetailPage({ params }: { params: { id: string } 
               rows={3}
             />
           </div>
+          <div>
+            <dt className="text-sm text-[var(--maher-text-secondary)]">{tc('requestedDelivery')}</dt>
+            <dd className="font-medium" dir="ltr">
+              {data.requiredDeliveryDate ? String(data.requiredDeliveryDate).slice(0, 10) : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-sm text-[var(--maher-text-secondary)]">{tc('offeredDelivery')}</dt>
+            <dd className="font-medium" dir="ltr">
+              {data.offeredDeliveryDate ? String(data.offeredDeliveryDate).slice(0, 10) : '—'}
+            </dd>
+          </div>
+          <div className="sm:col-span-2">
+            {confirmWouldOverrideLead || changeWouldOverrideLead ? (
+              <Alert variant="warning">{tc('leadTimeOverrideWarning')}</Alert>
+            ) : null}
+          </div>
+          <div>
+            <Input
+              label={tc('changeDate')}
+              type="date"
+              value={deliveryChangeDate}
+              onChange={(e) => setDeliveryChangeDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <Input
+              label={tc('changeDateReason')}
+              value={deliveryChangeReason}
+              onChange={(e) => setDeliveryChangeReason(e.target.value)}
+            />
+          </div>
         </dl>
         <div className="maher-detail-sticky-actions mt-4 flex flex-wrap gap-2">
+          {data.requiredDeliveryDate && !confirmWouldOverrideLead ? (
+            <Button
+              variant="secondary"
+              loading={deliveryMutation.isPending}
+              onClick={() =>
+                deliveryMutation.mutate({
+                  kind: 'confirm',
+                  date: String(data.requiredDeliveryDate).slice(0, 10),
+                })
+              }
+            >
+              {tc('confirmDate')}
+            </Button>
+          ) : null}
+          <Button
+            variant="secondary"
+            loading={deliveryMutation.isPending}
+            disabled={!deliveryChangeDate.trim() || !deliveryChangeReason.trim()}
+            onClick={() =>
+              deliveryMutation.mutate({
+                kind: 'change',
+                date: deliveryChangeDate.trim(),
+                reason: deliveryChangeReason.trim(),
+              })
+            }
+          >
+            {tc('changeDate')}
+          </Button>
           <Button variant="secondary" onClick={() => saveMutation.mutate()} loading={saveMutation.isPending}>
             {tCommon('save')}
           </Button>

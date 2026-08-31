@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Linking,
-  Pressable,
-  ScrollView,
-  View,
-} from 'react-native';
+import { Linking, ScrollView, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -14,10 +10,14 @@ import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { manufacturingComplexityDisplayKey } from '@maher/types';
 import { isApiError } from '@/api/errors';
+import { toastMessageForError } from '@/api/queryClient';
 import { createQuotation } from '@/api/modules/quotations';
+import { seedOrdersDeskChip } from '@/features/sales-orders/ordersDeskContext';
 import { quotationLinesFromRequestItems } from './quotationLinesFromRequest';
 import {
   closeRequest,
+  confirmRequestDelivery,
+  changeRequestDelivery,
   getRequest,
   markRequestNeedsInformation,
   markRequestReadyForQuotation,
@@ -46,24 +46,21 @@ import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { ActionSheet, type ActionSheetItem } from '@/components/sheets/ActionSheet';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useLocale } from '@/i18n';
-import { haptics, ListItemEnter } from '@/motion';
-import { useTheme } from '@/theme';
-import {
-  OrderBoardCard,
-  OrderSectionHeader,
-} from '@/features/sales-orders/components/OrderBoardCard';
-import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
-import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { AdminQuotationPanel } from '@/features/quotations/AdminQuotationDetailScreen';
-import { RfqStageRail } from '@/features/requests/components/RfqStageRail';
+import { RequestIdentityBoard } from '@/features/requests/components/RequestIdentityBoard';
 import {
+  RfqStageRail,
   isRfqWaitingForReview,
   rfqIncompleteGaps,
   rfqStageFromData,
   type RfqWorkspaceStage,
 } from '@/features/requests/components/RfqStageRail';
+import { AnimatedPressable, haptics, ListItemEnter } from '@/motion';
+import { useTheme } from '@/theme';
 import type { RequestItem } from './types';
+import { localDealerMinimumRequestYmd, toDeliveryYmd } from './selectDeliveryAvailability';
 
 type Props = {
   requestId: string;
@@ -153,12 +150,24 @@ function MetaCell({
   ltr?: boolean;
 }) {
   const { theme } = useTheme();
+  const { isRTL, locale } = useLocale();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   return (
     <View style={{ flex: 1, minWidth: '42%', gap: theme.spacing.xs }}>
-      <AppText variant="caption" color="muted">
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
         {label}
       </AppText>
-      <AppText variant="label" weight="semibold" numberOfLines={2} dir={ltr ? 'ltr' : undefined}>
+      <AppText
+        variant="label"
+        weight={titleWeight}
+        numberOfLines={2}
+        dir={ltr ? 'ltr' : undefined}
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
         {value}
       </AppText>
     </View>
@@ -175,7 +184,7 @@ export function AdminRequestDetailScreen({
 }: Props) {
   const { user } = useAuth();
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -184,6 +193,12 @@ export function AdminRequestDetailScreen({
   const canUpdate = can(user, 'request.update');
   const canCreateQuote = can(user, 'quotation.create');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  const floorBtn = {
+    alignSelf: 'stretch' as const,
+    width: '100%' as const,
+    borderRadius: theme.radius.full,
+    minHeight: theme.sizes.touch.min,
+  };
 
   const [pickedStage, setPickedStage] = useState<RfqWorkspaceStage | undefined>(
     initialStage,
@@ -204,6 +219,8 @@ export function AdminRequestDetailScreen({
   const [draftLines, setDraftLines] = useState<
     Array<{ key: string; productName: string; quantity: string; notes: string }>
   >([]);
+  const [deliveryChangeDate, setDeliveryChangeDate] = useState('');
+  const [deliveryChangeReason, setDeliveryChangeReason] = useState('');
 
   useEffect(() => {
     if (initialStage) setPickedStage(initialStage);
@@ -217,12 +234,23 @@ export function AdminRequestDetailScreen({
   });
 
   const detail = query.data;
+  const dealerMinRequestYmd = localDealerMinimumRequestYmd();
+  const requestedDeliveryYmd = toDeliveryYmd(detail?.requiredDeliveryDate);
+  const confirmWouldOverrideLead =
+    Boolean(requestedDeliveryYmd && requestedDeliveryYmd < dealerMinRequestYmd);
+  const changeWouldOverrideLead = Boolean(
+    toDeliveryYmd(deliveryChangeDate) &&
+      (toDeliveryYmd(deliveryChangeDate) as string) < dealerMinRequestYmd,
+  );
 
   useEffect(() => {
     if (!detail) return;
     setExternalOrderNumber(detail.externalOrderNumber ?? '');
     setProjectName(detail.projectName ?? '');
     setInternalNotes(detail.internalNotes ?? '');
+    setDeliveryChangeDate(
+      (detail.offeredDeliveryDate ?? detail.requiredDeliveryDate ?? '').toString().slice(0, 10),
+    );
     setDraftLines(
       (detail.items ?? []).map((item, index) => ({
         key: item.id ?? `line-${index}`,
@@ -348,6 +376,31 @@ export function AdminRequestDetailScreen({
     },
   });
 
+  const deliveryMutation = useMutation({
+    mutationFn: async (args: { kind: 'confirm' | 'change'; date: string; reason?: string }) => {
+      if (args.kind === 'confirm') {
+        return confirmRequestDelivery(requestId, args.date);
+      }
+      const reason = args.reason?.trim();
+      if (!reason) {
+        throw new Error(t('mobile.adminRequest.dateReasonRequired'));
+      }
+      return changeRequestDelivery(requestId, args.date, reason);
+    },
+    onSuccess: async () => {
+      setError(null);
+      setDeliveryChangeReason('');
+      setMessage(t('mobile.adminRequest.statusUpdated'));
+      void haptics.confirmMedium();
+      await invalidate();
+    },
+    onError: (err) => {
+      setMessage(null);
+      setError(isApiError(err) ? toastMessageForError(err) : t('mobile.adminRequest.actionFailed'));
+      void haptics.error();
+    },
+  });
+
   const quoteMutation = useMutation({
     mutationFn: async () => {
       if (!detail?.customer?.id || !(detail.items?.length ?? 0)) {
@@ -356,7 +409,8 @@ export function AdminRequestDetailScreen({
       return createQuotation({
         customerId: detail.customer.id,
         requestId: detail.id,
-        deliveryTerms: detail.deliveryAddress ?? undefined,
+        deliveryTerms: undefined,
+        offeredDeliveryDate: detail.offeredDeliveryDate ?? undefined,
         customerNotes: detail.notes ?? undefined,
         lines: quotationLinesFromRequestItems(detail.items ?? []),
       });
@@ -522,9 +576,16 @@ export function AdminRequestDetailScreen({
   const status = detail.status;
   const canUnderReview = ['SUBMITTED', 'NEEDS_INFORMATION'].includes(status);
   const canReady = ['UNDER_REVIEW', 'NEEDS_INFORMATION', 'SUBMITTED'].includes(status);
-  const canNeedsInfo = ['SUBMITTED', 'UNDER_REVIEW'].includes(status);
+  const canNeedsInfo = ['SUBMITTED', 'UNDER_REVIEW', 'READY_FOR_QUOTATION'].includes(
+    status,
+  );
   const canClose = !['CLOSED', 'CANCELLED', 'QUOTED'].includes(status);
-  const canQuote = ['READY_FOR_QUOTATION', 'UNDER_REVIEW', 'SUBMITTED'].includes(status);
+  const canQuote = [
+    'READY_FOR_QUOTATION',
+    'UNDER_REVIEW',
+    'SUBMITTED',
+    'NEEDS_INFORMATION',
+  ].includes(status);
   const canSubmit = status === 'DRAFT' || status === 'NEEDS_INFORMATION';
   const isDraft = status === 'DRAFT';
   const isNeedsInfo = status === 'NEEDS_INFORMATION';
@@ -532,12 +593,40 @@ export function AdminRequestDetailScreen({
   const hasQuote = Boolean(activeQuotationId) || (detail.quotations?.length ?? 0) > 0;
   const hasOrder = Boolean(linkedSalesOrder);
   const quoteId = activeQuotationId ?? detail.quotations?.[0]?.id ?? null;
+  const canOpenQuotation = Boolean(quoteId) || status === 'QUOTED';
   const incompleteWarnings = collectIncompleteWarnings(detail, t);
+  const stage =
+    pickedStage ??
+    rfqStageFromData({ hasQuote, hasOrder, status: detail.status });
+  const statusPhrase = isRfqWaitingForReview(status)
+    ? t('mobile.adminRequest.waitingForReview')
+    : t(`statuses.${status}`);
+  const incompleteGaps = rfqIncompleteGaps(detail);
+  const needsInfoAsk = status === 'NEEDS_INFORMATION' ? detail.internalNotes?.trim() : '';
 
   const stageBadgeStatus =
     stage === 'order' && linkedSalesOrder
       ? linkedSalesOrder.status
       : detail.status;
+  const identityAccent =
+    status === 'NEEDS_INFORMATION' ? colors.warning : colors.brand;
+  const phaseLabel =
+    status === 'NEEDS_INFORMATION'
+      ? t('mobile.orders.presentation.needsInformation')
+      : status === 'SUBMITTED' || status === 'UNDER_REVIEW'
+        ? t('mobile.orders.presentation.waitingForReview')
+        : status === 'READY_FOR_QUOTATION' || status === 'QUOTED'
+          ? t('mobile.orders.presentation.quotation')
+          : linkedSalesOrder
+            ? t('mobile.orders.orderAcceptedSetup')
+            : t(
+                `mobile.orders.presentation.${status === 'DRAFT' ? 'draft' : 'waitingForReview'}`,
+              );
+  const phaseHint = linkedSalesOrder
+    ? t('mobile.adminRequest.acceptedToPreparing', {
+        number: linkedSalesOrder.number,
+      })
+    : null;
 
   let enter = 0;
   const nextIndex = () => enter++;
@@ -571,102 +660,55 @@ export function AdminRequestDetailScreen({
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'flex-start',
-            gap: theme.spacing.sm,
+            alignItems: 'center',
             minHeight: theme.sizes.touch.min,
           }}
         >
           <BackButton onPress={goBack} label={t('mobile.adminRequest.backToOrders')} />
-          <View style={{ flex: 1, minWidth: 0, gap: 2, paddingTop: 2 }}>
-            <AppText
-              variant="title"
-              weight={titleWeight}
-              dir="ltr"
-            >
-              {detail.number}
-            </AppText>
-            <AppText variant="caption" color="muted" numberOfLines={2}>
-              {dealerName}
-            </AppText>
-          </View>
-          {stageBadgeStatus ? (
-            <View style={{ justifyContent: 'flex-start', alignItems: 'center', maxWidth: '42%', paddingTop: 4 }}>
-              <StatusBadge
-                status={stageBadgeStatus}
-                label={
-                  stageBadgeStatus === status && isRfqWaitingForReview(status)
-                    ? statusPhrase
-                    : undefined
-                }
-                dot
-              />
-            </View>
-          ) : null}
         </View>
 
-        <RfqStageRail
-          stage={stage}
-          hasQuote={hasQuote}
-          hasOrder={hasOrder}
-          onChange={(next) => {
-            setPickedStage(next);
-            setMessage(null);
-            setError(null);
-          }}
-        />
+        <ListItemEnter index={nextIndex()}>
+          <RequestIdentityBoard
+            number={detail.number}
+            dealerName={dealerName}
+            status={stageBadgeStatus}
+            statusLabel={
+              stageBadgeStatus === status && isRfqWaitingForReview(status)
+                ? statusPhrase
+                : t(`statuses.${stageBadgeStatus}`)
+            }
+            phaseLabel={phaseLabel}
+            phaseHint={phaseHint}
+            imageUrl={galleryUris[0] ?? null}
+            accent={identityAccent}
+          />
+        </ListItemEnter>
 
-        {stage === 'request' ? (
-          <View
-            style={{
-              borderRadius: theme.radius.lg,
-              borderWidth: 1,
-              borderColor: colors.border,
-              backgroundColor: colors.surfaceSecondary,
-              padding: theme.spacing.md,
-              gap: 4,
+        <ListItemEnter index={nextIndex()}>
+          <RfqStageRail
+            stage={stage}
+            hasQuote={hasQuote}
+            hasOrder={hasOrder}
+            onChange={(next) => {
+              setPickedStage(next);
+              setMessage(null);
+              setError(null);
             }}
-          >
-            <AppText variant="caption" color="muted">
-              {t('mobile.adminRequest.phaseEyebrow')}
-            </AppText>
-            <AppText variant="label" weight="semibold">
-              {status === 'NEEDS_INFORMATION'
-                ? t('mobile.orders.presentation.needsInformation')
-                : status === 'SUBMITTED' || status === 'UNDER_REVIEW'
-                  ? t('mobile.orders.presentation.waitingForReview')
-                  : status === 'READY_FOR_QUOTATION' || status === 'QUOTED'
-                    ? t('mobile.orders.presentation.quotation')
-                    : linkedSalesOrder
-                      ? t('mobile.orders.orderAcceptedSetup')
-                      : t(`mobile.orders.presentation.${status === 'DRAFT' ? 'draft' : 'waitingForReview'}`)}
-            </AppText>
-            {linkedSalesOrder ? (
-              <AppText variant="caption" color="secondary">
-                {t('mobile.adminRequest.acceptedToPreparing', {
-                  number: linkedSalesOrder.number,
-                })}
-              </AppText>
-            ) : null}
-          </View>
-        ) : null}
-
-        {stage === 'request' && galleryUris.length > 0 ? (
-          <View style={{ marginHorizontal: -theme.spacing.lg }}>
-            <ImageCarousel uris={galleryUris} height={220} />
-          </View>
-        ) : null}
+          />
+        </ListItemEnter>
 
         {needsInfoAsk ? (
-          <OrderBoardCard accent={colors.brand}>
-            <OrderSectionHeader
-              icon="alert-circle-outline"
-              label={t('mobile.adminRequest.needsInfo')}
-              accent={colors.brand}
-            />
-            <AppText variant="label" weight="medium">
-              {needsInfoAsk}
-            </AppText>
-          </OrderBoardCard>
+          <ListItemEnter index={nextIndex()}>
+            <DealerBoard
+              title={t('mobile.adminRequest.needsInfo')}
+              titleWeight={titleWeight}
+              accentColor={colors.warning}
+            >
+              <AppText variant="label" weight="medium">
+                {needsInfoAsk}
+              </AppText>
+            </DealerBoard>
+          </ListItemEnter>
         ) : null}
         {message ? (
           <View
@@ -721,13 +763,11 @@ export function AdminRequestDetailScreen({
               }}
             />
           ) : (
-            <OrderBoardCard accent={colors.brand}>
-              <OrderSectionHeader
-                icon="receipt-outline"
-                label={t('mobile.adminRequest.stages.quotation')}
-                accent={colors.brand}
-              />
-              <AppText variant="label" weight="semibold">
+            <DealerBoard
+              title={t('mobile.adminRequest.stages.quotation')}
+              titleWeight={titleWeight}
+            >
+              <AppText variant="label" weight={titleWeight}>
                 {t('mobile.adminRequest.noQuotationYet')}
               </AppText>
               <AppText variant="caption" color="secondary">
@@ -739,29 +779,37 @@ export function AdminRequestDetailScreen({
                   onPress={() => quoteMutation.mutate()}
                   loading={quoteMutation.isPending}
                   disabled={!canCreateQuote}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
+                  style={floorBtn}
                 />
               ) : (
                 <SecondaryButton
                   label={t('mobile.adminRequest.stages.request')}
                   onPress={() => setPickedStage('request')}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
+                  style={floorBtn}
                 />
               )}
-            </OrderBoardCard>
+            </DealerBoard>
           )
         ) : null}
 
         {stage === 'order' ? (
-          <OrderBoardCard accent={colors.brand}>
-            <OrderSectionHeader
-              icon="cube-outline"
-              label={t('mobile.adminRequest.stages.order')}
-              accent={colors.brand}
-            />
+          <DealerBoard
+            title={t('mobile.adminRequest.stages.order')}
+            titleWeight={titleWeight}
+            accentColor={linkedSalesOrder ? colors.success : colors.brand}
+          >
             {linkedSalesOrder ? (
               <View style={{ gap: theme.spacing.md }}>
-                <View style={{ gap: theme.spacing.xs }}>
+                <View
+                  style={{
+                    borderRadius: theme.radius.lg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
+                    padding: theme.spacing.md,
+                    gap: theme.spacing.xs,
+                  }}
+                >
                   <AppText variant="caption" color="muted">
                     {t('mobile.adminRequest.openSalesOrder')}
                   </AppText>
@@ -774,14 +822,17 @@ export function AdminRequestDetailScreen({
                   label={t('mobile.adminRequest.openSalesOrder')}
                   onPress={() => {
                     void haptics.selection();
-                    router.push(`/(app)/(admin)/orders/${linkedSalesOrder.id}` as never);
+                    seedOrdersDeskChip('preparing');
+                    router.push(
+                      `/(app)/(admin)/orders/${linkedSalesOrder.id}?from=rfq` as never,
+                    );
                   }}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
+                  style={floorBtn}
                 />
               </View>
             ) : (
               <View style={{ gap: theme.spacing.sm }}>
-                <AppText variant="label" weight="semibold">
+                <AppText variant="label" weight={titleWeight}>
                   {t('mobile.adminRequest.orderStageEmpty')}
                 </AppText>
                 <AppText variant="caption" color="secondary">
@@ -790,44 +841,36 @@ export function AdminRequestDetailScreen({
                 <SecondaryButton
                   label={t('mobile.adminRequest.stages.quotation')}
                   onPress={() => setPickedStage('quotation')}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
+                  style={floorBtn}
                 />
               </View>
             )}
-          </OrderBoardCard>
+          </DealerBoard>
         ) : null}
 
         {stage === 'request' ? (
           <>
         {isNeedsInfo && detail.informationRequestReason?.trim() ? (
           <ListItemEnter index={nextIndex()}>
-            <OrderBoardCard
-              accent={colors.warning}
-              style={{ backgroundColor: colors.warningSoft }}
+            <DealerBoard
+              title={t('mobile.adminRequest.needsInfo')}
+              titleWeight={titleWeight}
+              accentColor={colors.warning}
             >
-              <OrderSectionHeader
-                icon="alert-circle-outline"
-                label={t('mobile.adminRequest.needsInfo')}
-                accent={colors.warning}
-              />
               <AppText variant="body" style={{ lineHeight: 22 }}>
                 {detail.informationRequestReason.trim()}
               </AppText>
-            </OrderBoardCard>
+            </DealerBoard>
           </ListItemEnter>
         ) : null}
 
         {incompleteWarnings.length > 0 ? (
           <ListItemEnter index={nextIndex()}>
-            <OrderBoardCard
-              accent={colors.warning}
-              style={{ backgroundColor: colors.warningSoft }}
+            <DealerBoard
+              title={t('mobile.adminRequest.incompleteWarning')}
+              titleWeight={titleWeight}
+              accentColor={colors.warning}
             >
-              <OrderSectionHeader
-                icon="warning-outline"
-                label={t('mobile.adminRequest.incompleteWarning')}
-                accent={colors.warning}
-              />
               <View style={{ gap: theme.spacing.xs }}>
                 {incompleteWarnings.map((w) => (
                   <AppText key={w} variant="caption" color="secondary">
@@ -835,18 +878,15 @@ export function AdminRequestDetailScreen({
                   </AppText>
                 ))}
               </View>
-            </OrderBoardCard>
+            </DealerBoard>
           </ListItemEnter>
         ) : null}
 
         <ListItemEnter index={nextIndex()}>
-          <OrderBoardCard accent={colors.brand}>
-            <OrderSectionHeader
-              icon="document-text-outline"
-              label={t('mobile.adminRequest.details')}
-              accent={colors.brand}
-            />
-
+          <DealerBoard
+            title={t('mobile.adminRequest.details')}
+            titleWeight={titleWeight}
+          >
             <View
               style={{
                 flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -887,17 +927,16 @@ export function AdminRequestDetailScreen({
               onPress={() => saveMutation.mutate()}
               loading={saveMutation.isPending}
               disabled={!canUpdate}
-              style={{ alignSelf: 'stretch', width: '100%' }}
+              style={floorBtn}
             />
-          </OrderBoardCard>
+          </DealerBoard>
         </ListItemEnter>
 
         <ListItemEnter index={nextIndex()}>
-          <OrderBoardCard>
-            <OrderSectionHeader
-              icon="list-outline"
-              label={t('mobile.adminRequest.lineItems')}
-            />
+          <DealerBoard
+            title={t('mobile.adminRequest.lineItems')}
+            titleWeight={titleWeight}
+          >
             {isDraft ? (
               <View style={{ gap: theme.spacing.sm }}>
                 {draftLines.length === 0 ? (
@@ -961,7 +1000,7 @@ export function AdminRequestDetailScreen({
                         onPress={() =>
                           setDraftLines((prev) => prev.filter((_, i) => i !== index))
                         }
-                        style={{ alignSelf: 'stretch', width: '100%' }}
+                        style={floorBtn}
                       />
                     ) : null}
                   </View>
@@ -980,7 +1019,7 @@ export function AdminRequestDetailScreen({
                         },
                       ])
                     }
-                    style={{ alignSelf: 'stretch', width: '100%' }}
+                    style={floorBtn}
                   />
                 ) : null}
               </View>
@@ -1014,8 +1053,8 @@ export function AdminRequestDetailScreen({
                     >
                       <AppText
                         variant="label"
-                        weight="semibold"
-                        style={{ flex: 1 }}
+                        weight={titleWeight}
+                        style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
                         numberOfLines={4}
                       >
                         {item.productName}
@@ -1076,7 +1115,11 @@ export function AdminRequestDetailScreen({
                         <AppText
                           variant="caption"
                           color="muted"
-                          style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}
+                          style={{
+                            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                            letterSpacing: locale === 'ar' ? 0 : 0.5,
+                            fontSize: 10,
+                          }}
                         >
                           {t('mobile.adminRequest.itemNotes')}
                         </AppText>
@@ -1090,7 +1133,11 @@ export function AdminRequestDetailScreen({
                         <AppText
                           variant="caption"
                           color="muted"
-                          style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }}
+                          style={{
+                            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                            letterSpacing: locale === 'ar' ? 0 : 0.5,
+                            fontSize: 10,
+                          }}
                         >
                           {t('mobile.adminRequest.specs')}
                         </AppText>
@@ -1104,15 +1151,14 @@ export function AdminRequestDetailScreen({
                 })}
               </View>
             )}
-          </OrderBoardCard>
+          </DealerBoard>
         </ListItemEnter>
 
         <ListItemEnter index={nextIndex()}>
-          <OrderBoardCard>
-            <OrderSectionHeader
-              icon="attach-outline"
-              label={t('mobile.adminRequest.attachments')}
-            />
+          <DealerBoard
+            title={t('mobile.adminRequest.attachments')}
+            titleWeight={titleWeight}
+          >
             <TextField
               label={t('mobile.adminRequest.attachUrl')}
               value={attachUrl}
@@ -1132,14 +1178,14 @@ export function AdminRequestDetailScreen({
                 }}
                 loading={uploadMutation.isPending}
                 disabled={!canUpdate || !attachUrl.trim()}
-                style={{ alignSelf: 'stretch', width: '100%' }}
+                style={floorBtn}
               />
               <PrimaryButton
                 label={t('mobile.adminRequest.upload')}
                 onPress={() => setUploadSheetOpen(true)}
                 loading={uploadMutation.isPending}
                 disabled={!canUpdate}
-                style={{ alignSelf: 'stretch', width: '100%' }}
+                style={floorBtn}
               />
             </View>
             <AppText variant="caption" color="muted">
@@ -1152,9 +1198,15 @@ export function AdminRequestDetailScreen({
             ) : (
               <View style={{ gap: theme.spacing.xs }}>
                 {detail.documents!.map((doc) => (
-                  <Pressable
+                  <AnimatedPressable
                     key={doc.id}
-                    onPress={() => void openDocument(doc.id)}
+                    variant="button"
+                    accessibilityRole="button"
+                    accessibilityLabel={doc.fileName}
+                    onPress={() => {
+                      void haptics.selection();
+                      void openDocument(doc.id);
+                    }}
                     style={{
                       paddingVertical: theme.spacing.md,
                       paddingHorizontal: theme.spacing.md,
@@ -1172,90 +1224,230 @@ export function AdminRequestDetailScreen({
                       weight="medium"
                       color="brand"
                       numberOfLines={1}
-                      style={{ flex: 1 }}
+                      style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
                     >
                       {doc.fileName}
                     </AppText>
-                    <AppText variant="caption" color="muted">
-                      {isRTL ? '‹' : '›'}
-                    </AppText>
-                  </Pressable>
+                    <Ionicons
+                      name={isRTL ? 'chevron-back' : 'chevron-forward'}
+                      size={16}
+                      color={colors.textMuted}
+                    />
+                  </AnimatedPressable>
                 ))}
               </View>
             )}
-          </OrderBoardCard>
+          </DealerBoard>
         </ListItemEnter>
 
         <ListItemEnter index={nextIndex()}>
-          <OrderBoardCard accent={colors.info}>
-            <OrderSectionHeader
-              icon="checkmark-done-outline"
-              label={t('mobile.adminRequest.factoryReview')}
-              accent={colors.info}
-            />
-            <View style={{ gap: theme.spacing.sm }}>
-              {canSubmit ? (
-                <SecondaryButton
-                  label={t('mobile.adminRequest.submit')}
-                  onPress={() => workflowMutation.mutate({ kind: 'submit' })}
-                  loading={workflowBusy}
-                  disabled={!canUpdate}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {canUnderReview ? (
-                <SecondaryButton
-                  label={t('mobile.adminRequest.underReview')}
-                  onPress={() => workflowMutation.mutate({ kind: 'underReview' })}
-                  loading={workflowBusy}
-                  disabled={!canUpdate}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {canReady ? (
-                <SecondaryButton
-                  label={t('mobile.adminRequest.readyForQuote')}
-                  onPress={() => workflowMutation.mutate({ kind: 'ready' })}
-                  loading={workflowBusy}
-                  disabled={!canUpdate}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {canNeedsInfo ? (
-                <TertiaryButton
-                  label={t('mobile.adminRequest.needsInfo')}
-                  disabled={!canUpdate || workflowBusy}
-                  onPress={() => setConfirm('needsInfo')}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {canClose ? (
-                <DestructiveButton
-                  label={t('mobile.adminRequest.closeRfq')}
-                  disabled={!canUpdate || workflowBusy}
-                  onPress={() => setConfirm('close')}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
-              {detail.customer?.id && canQuote && canCreateQuote ? (
-                <PrimaryButton
-                  label={t('mobile.adminRequest.createQuotation')}
-                  onPress={() => quoteMutation.mutate()}
-                  loading={quoteMutation.isPending}
-                  disabled={!canCreateQuote}
-                  style={{ alignSelf: 'stretch', width: '100%' }}
-                />
-              ) : null}
+          <DealerBoard
+            title={t('mobile.adminRequest.factoryReview')}
+            titleWeight={titleWeight}
+          >
+            <View
+              style={{
+                borderRadius: theme.radius.lg,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceSecondary,
+                padding: theme.spacing.md,
+                gap: theme.spacing.xs,
+              }}
+            >
+              <AppText
+                variant="caption"
+                color="muted"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {t('mobile.adminRequest.phaseEyebrow')}
+              </AppText>
+              <AppText
+                variant="label"
+                weight={titleWeight}
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {statusPhrase}
+              </AppText>
+              <AppText
+                variant="caption"
+                color="secondary"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {status === 'NEEDS_INFORMATION'
+                  ? t('mobile.adminRequest.nextAskDealer')
+                  : linkedSalesOrder ||
+                      (detail.quotations ?? []).some((q) => q.status === 'ACCEPTED')
+                    ? t('mobile.adminRequest.nextPrepareProduction')
+                    : (detail.quotations ?? []).some((q) =>
+                          ['SENT', 'VIEWED'].includes(q.status),
+                        )
+                      ? t('mobile.adminRequest.nextWaitingDealer')
+                      : t('mobile.adminRequest.nextPrepareQuote')}
+              </AppText>
             </View>
-          </OrderBoardCard>
+
+            {canUpdate ? (
+              <View
+                style={{
+                  borderRadius: theme.radius.lg,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceSecondary,
+                  padding: theme.spacing.md,
+                  gap: theme.spacing.sm,
+                }}
+              >
+                <AppText
+                  variant="caption"
+                  color="muted"
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {t('mobile.adminRequest.requestedDelivery')}
+                </AppText>
+                <AppText
+                  variant="label"
+                  weight={titleWeight}
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {detail.requiredDeliveryDate
+                    ? String(detail.requiredDeliveryDate).slice(0, 10)
+                    : '—'}
+                </AppText>
+                <AppText
+                  variant="caption"
+                  color="muted"
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {t('mobile.adminRequest.offeredDelivery')}
+                </AppText>
+                <AppText
+                  variant="label"
+                  weight={titleWeight}
+                  style={{ textAlign: isRTL ? 'right' : 'left' }}
+                >
+                  {detail.offeredDeliveryDate
+                    ? String(detail.offeredDeliveryDate).slice(0, 10)
+                    : '—'}
+                </AppText>
+                {confirmWouldOverrideLead || changeWouldOverrideLead ? (
+                  <AppText
+                    variant="caption"
+                    style={{ color: colors.warning, textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {t('mobile.adminRequest.leadTimeOverrideWarning')}
+                  </AppText>
+                ) : null}
+                {detail.requiredDeliveryDate && !confirmWouldOverrideLead ? (
+                  <SecondaryButton
+                    label={t('mobile.adminRequest.confirmDate')}
+                    onPress={() =>
+                      deliveryMutation.mutate({
+                        kind: 'confirm',
+                        date: String(detail.requiredDeliveryDate).slice(0, 10),
+                      })
+                    }
+                    loading={deliveryMutation.isPending}
+                    disabled={!canUpdate}
+                    style={floorBtn}
+                  />
+                ) : null}
+                <TextField
+                  label={t('mobile.adminRequest.changeDate')}
+                  value={deliveryChangeDate}
+                  onChangeText={setDeliveryChangeDate}
+                  placeholder="YYYY-MM-DD"
+                />
+                <TextField
+                  label={t('mobile.adminRequest.changeDateReason')}
+                  value={deliveryChangeReason}
+                  onChangeText={setDeliveryChangeReason}
+                />
+                <TertiaryButton
+                  label={t('mobile.adminRequest.changeDate')}
+                  disabled={!canUpdate || !deliveryChangeDate.trim() || !deliveryChangeReason.trim()}
+                  onPress={() =>
+                    deliveryMutation.mutate({
+                      kind: 'change',
+                      date: deliveryChangeDate.trim(),
+                      reason: deliveryChangeReason,
+                    })
+                  }
+                  style={floorBtn}
+                />
+              </View>
+            ) : null}
+
+            {canSubmit ? (
+              <SecondaryButton
+                label={t('mobile.adminRequest.submit')}
+                onPress={() => workflowMutation.mutate({ kind: 'submit' })}
+                loading={workflowBusy}
+                disabled={!canUpdate}
+                style={floorBtn}
+              />
+            ) : null}
+            {canUnderReview ? (
+              <SecondaryButton
+                label={t('mobile.adminRequest.underReview')}
+                onPress={() => workflowMutation.mutate({ kind: 'underReview' })}
+                loading={workflowBusy}
+                disabled={!canUpdate}
+                style={floorBtn}
+              />
+            ) : null}
+            {canReady ? (
+              <SecondaryButton
+                label={t('mobile.adminRequest.readyForQuote')}
+                onPress={() => workflowMutation.mutate({ kind: 'ready' })}
+                loading={workflowBusy}
+                disabled={!canUpdate}
+                style={floorBtn}
+              />
+            ) : null}
+            {canNeedsInfo ? (
+              <TertiaryButton
+                label={t('mobile.adminRequest.needsInfo')}
+                disabled={!canUpdate || workflowBusy}
+                onPress={() => setConfirm('needsInfo')}
+                style={floorBtn}
+              />
+            ) : null}
+            {canOpenQuotation ? (
+              <SecondaryButton
+                label={t('mobile.adminRequest.openQuotation')}
+                onPress={() => {
+                  void haptics.selection();
+                  setPickedStage('quotation');
+                }}
+                style={floorBtn}
+              />
+            ) : null}
+            {detail.customer?.id && canQuote && canCreateQuote ? (
+              <PrimaryButton
+                label={t('mobile.adminRequest.createQuotation')}
+                onPress={() => quoteMutation.mutate()}
+                loading={quoteMutation.isPending}
+                disabled={!canCreateQuote}
+                style={floorBtn}
+              />
+            ) : null}
+            {canClose ? (
+              <DestructiveButton
+                label={t('mobile.adminRequest.closeRfq')}
+                disabled={!canUpdate || workflowBusy}
+                onPress={() => setConfirm('close')}
+                style={floorBtn}
+              />
+            ) : null}
+          </DealerBoard>
         </ListItemEnter>
 
         <ListItemEnter index={nextIndex()}>
-          <OrderBoardCard>
-            <OrderSectionHeader
-              icon="receipt-outline"
-              label={t('mobile.adminRequest.quotations')}
-            />
+          <DealerBoard
+            title={t('mobile.adminRequest.quotations')}
+            titleWeight={titleWeight}
+          >
             {(detail.quotations?.length ?? 0) === 0 ? (
               <AppText variant="caption" color="muted">
                 {t('mobile.adminRequest.noQuotations')}
@@ -1263,8 +1455,9 @@ export function AdminRequestDetailScreen({
             ) : (
               <View style={{ gap: theme.spacing.sm }}>
                 {detail.quotations!.map((q) => (
-                  <Pressable
+                  <AnimatedPressable
                     key={q.id}
+                    variant="button"
                     accessibilityRole="button"
                     accessibilityLabel={q.number}
                     onPress={() => {
@@ -1283,40 +1476,47 @@ export function AdminRequestDetailScreen({
                       borderWidth: 1,
                       borderColor: colors.borderStrong,
                       backgroundColor: colors.surfaceSecondary,
-                      ...orderBoardShadow(colorScheme),
                     }}
                   >
-                    <AppText variant="label" weight="semibold" dir="ltr" style={{ flex: 1 }}>
+                    <AppText
+                      variant="label"
+                      weight={titleWeight}
+                      dir="ltr"
+                      style={{ flex: 1 }}
+                    >
                       {q.number}
                     </AppText>
                     <StatusBadge status={q.status} dot />
-                    <AppText variant="caption" color="muted">
-                      {isRTL ? '‹' : '›'}
-                    </AppText>
-                  </Pressable>
+                    <Ionicons
+                      name={isRTL ? 'chevron-back' : 'chevron-forward'}
+                      size={16}
+                      color={colors.textMuted}
+                    />
+                  </AnimatedPressable>
                 ))}
               </View>
             )}
-          </OrderBoardCard>
+          </DealerBoard>
         </ListItemEnter>
           </>
         ) : null}
 
         {incompleteGaps.length > 0 ? (
-          <OrderBoardCard accent={colors.warning}>
-            <OrderSectionHeader
-              icon="warning-outline"
-              label={t('mobile.adminRequest.gaps.title')}
-              accent={colors.warning}
-            />
-            <View style={{ gap: theme.spacing.xs }}>
-              {incompleteGaps.map((gap) => (
-                <AppText key={gap} variant="label" color="secondary">
-                  {`• ${t(`mobile.adminRequest.gaps.${gap}`)}`}
-                </AppText>
-              ))}
-            </View>
-          </OrderBoardCard>
+          <ListItemEnter index={nextIndex()}>
+            <DealerBoard
+              title={t('mobile.adminRequest.gaps.title')}
+              titleWeight={titleWeight}
+              accentColor={colors.warning}
+            >
+              <View style={{ gap: theme.spacing.xs }}>
+                {incompleteGaps.map((gap) => (
+                  <AppText key={gap} variant="label" color="secondary">
+                    {`• ${t(`mobile.adminRequest.gaps.${gap}`)}`}
+                  </AppText>
+                ))}
+              </View>
+            </DealerBoard>
+          </ListItemEnter>
         ) : null}
       </ScrollView>
 

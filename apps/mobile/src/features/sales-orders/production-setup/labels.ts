@@ -5,14 +5,12 @@ import type {
   OrderProductionSetupLine,
   SetupMaterialStatus,
 } from '../api';
+import { complexityBadgeKey as sharedComplexityBadgeKey } from '../orderManufacturingKind';
 
 export function complexityBadgeKey(
   complexity: ManufacturingComplexity | string | null | undefined,
 ): 'standard' | 'modified' | 'custom' {
-  const c = String(complexity ?? 'STANDARD').toUpperCase();
-  if (c === 'MODIFIED') return 'modified';
-  if (c === 'CUSTOM') return 'custom';
-  return 'standard';
+  return sharedComplexityBadgeKey(complexity);
 }
 
 export function materialStatusKey(status: SetupMaterialStatus | string | null | undefined): string {

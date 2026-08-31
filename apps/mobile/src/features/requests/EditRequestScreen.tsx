@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { can } from '@maher/permissions';
 import { isApiError } from '@/api/errors';
+import { toastMessageForError } from '@/api/queryClient';
 import {
   createCustomerAddress,
   listCustomerAddresses,
@@ -81,7 +82,7 @@ import {
   type AttachmentKind,
   type PendingAttachment,
 } from './pendingAttachment';
-import { selectDeliveryAvailability, toDeliveryYmd } from './selectDeliveryAvailability';
+import { availabilityMonthWindow, localDealerMinimumRequestYmd, selectDeliveryAvailability, toDeliveryYmd } from './selectDeliveryAvailability';
 import type { RequestDocument, RequestItem } from './types';
 
 function categoryFromDoc(doc: RequestDocument): AttachmentCategory {
@@ -399,14 +400,22 @@ export function EditRequestScreen({
     t('mobile.requestEdit.orderLockedHint');
 
   const productId = item?.productId?.trim() ?? '';
+  const availabilityWindow = availabilityMonthWindow(
+    requiredDeliveryDate.trim() || undefined,
+  );
+  const minRequestYmd = localDealerMinimumRequestYmd();
+  const requestedYmd = requiredDeliveryDate.trim();
+  const sendRequestedDate =
+    Boolean(requestedYmd) &&
+    isValidOptionalDate(requiredDeliveryDate) &&
+    requestedYmd >= minRequestYmd;
   const availabilityRequest: AvailabilityRequest | null =
     productId && Number(quantity) > 0
       ? {
           items: [{ productId, quantity: Math.max(1, Number(quantity) || 1) }],
-          requestedDeliveryDate:
-            requiredDeliveryDate.trim() && isValidOptionalDate(requiredDeliveryDate)
-              ? requiredDeliveryDate.trim()
-              : undefined,
+          requestedDeliveryDate: sendRequestedDate ? requestedYmd : undefined,
+          from: availabilityWindow.from,
+          to: availabilityWindow.to,
         }
       : null;
   const availabilityQuery = useAvailabilityQuery(availabilityRequest);
@@ -563,6 +572,15 @@ export function EditRequestScreen({
       void haptics.error();
       throw new Error(t('mobile.newOrder.errors.dateInvalid'));
     }
+    if (
+      requiredDeliveryDate.trim() &&
+      requiredDeliveryDate.trim() < localDealerMinimumRequestYmd()
+    ) {
+      setError(t('mobile.newOrder.delivery.leadTimeNotice'));
+      setShake((n) => n + 1);
+      void haptics.error();
+      throw new Error(t('mobile.newOrder.delivery.leadTimeNotice'));
+    }
 
     const dimensionsNotes = formatDimensionsNotes(dimensions);
     const customMeasurements = toRequestCustomMeasurements(
@@ -631,7 +649,7 @@ export function EditRequestScreen({
         setError(err.message);
         await query.refetch();
       } else if (!(err instanceof Error && err.message === orderReason)) {
-        setError(err instanceof Error ? err.message : t('mobile.requestEdit.saveFailed'));
+        setError(toastMessageForError(err) || t('mobile.requestEdit.saveFailed'));
       }
       setShake((n) => n + 1);
       void haptics.error();
@@ -688,7 +706,7 @@ export function EditRequestScreen({
         setError(err.message);
         await query.refetch();
       } else {
-        setError(err instanceof Error ? err.message : t('mobile.requestEdit.submitFailed'));
+        setError(toastMessageForError(err) || t('mobile.requestEdit.submitFailed'));
       }
       setShake((n) => n + 1);
       void haptics.error();

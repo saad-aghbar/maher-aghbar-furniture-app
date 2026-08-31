@@ -1,0 +1,20 @@
+---
+description: Mobile floor / board aesthetic for dealers, invoices, purchasing, users, reports, production, inventory, orders, and related parchment screens.
+globs: apps/mobile/src/features/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Mobile floor aesthetic
+
+When changing UI in these folders, follow `.cursor/skills/mobile-floor-aesthetic/SKILL.md`.
+
+- Boards on parchment: `radius.xl`, `borderStrong`, `surface`, `orderBoardShadow`, 3px brand rail at reading-start, header band, inset meta.
+- Press: `AnimatedPressable` + `haptics`. Cards `0.985`, buttons `0.97`.
+- Pop-ups: shared `BottomSheet` with the same boards/chips — not flat iOS forms.
+- Touch bars: copy `PurchasingTabBar` / `ReportsTabBar` / `ProductionHubJump` / `UsersSegmentRail` (pill bubble), floor triggers, `DealerSummaryRail`, or `OrdersRfqInboxChips` (Factory review 3+2 cells). No Material chips.
+- Arabic: `medium` titles, no uppercase. Money/codes `dir="ltr"`.
+- No white cards, traffic colors, FABs, or new hex outside existing wood-pill arrays.
+
+Canonical copies: `DealerBoard`, `InvoiceBoardCard`, `PurchaseOrderBoardCard`, `UserBoardCard`, `ReportsTabBar`, `ProductionOrderCard`, `ProductionIdentityBoard`, `ProductionMaterialUsageBoard`, `InventoryBoardCard`, `InventoryIdentityBoard`, `InventoryMaterialRow`, `OrdersRfqInboxChips`, `OrdersFilterButton`, `OrdersFilterSheet`, `RequestIdentityBoard`, `RfqStageRail`.
+
+Production, inventory, and orders may use a different stack (hub jump / lifecycle+section chrome / All orders vs Factory review) but the board recipe stays the same. No `DeskCard` / `SurfaceCard` / `colors.info` on those floors.

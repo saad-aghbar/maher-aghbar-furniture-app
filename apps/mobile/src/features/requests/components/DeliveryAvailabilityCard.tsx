@@ -174,8 +174,18 @@ export function DeliveryAvailabilityCard({
         </AppText>
       ) : null}
 
+      {display.kind === 'loading' || display.kind === 'unavailable' ? (
+        <AppText variant="caption" color="muted">
+          {t('mobile.newOrder.delivery.leadTimeNotice')}
+        </AppText>
+      ) : null}
+
       {showCalendar ? (
         <>
+          <AppText variant="caption" color="muted">
+            {t('mobile.newOrder.delivery.leadTimeNotice')}
+          </AppText>
+
           {display.earliestDate ? (
             <AppText variant="caption" color="secondary">
               {t('mobile.newOrder.delivery.earliest', {
@@ -243,7 +253,7 @@ export function DeliveryAvailabilityCard({
             monthCursor={cursor}
             onMonthChange={setCursor}
             dayMeta={dayMeta}
-            minDate={display.earliestDate ?? undefined}
+            minDate={display.earliestDate ?? display.minimumRequestDate ?? undefined}
             disableUnavailable
             variant="dealer"
             compact

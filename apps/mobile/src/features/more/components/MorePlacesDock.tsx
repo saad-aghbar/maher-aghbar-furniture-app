@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
@@ -14,6 +14,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import {
   filterAdminOverflowModules,
+  packOverflowPlaceRows,
   type AdminOverflowModule,
 } from '@/features/admin-home/adminOverflowModules';
 import { useLocale } from '@/i18n';
@@ -27,18 +28,19 @@ export function MorePlacesDock() {
   const { user } = useAuth();
   const router = useRouter();
   const reduce = useReducedMotion();
-  const { width } = useWindowDimensions();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const pad = theme.spacing.lg;
   const gap = theme.spacing.sm;
-  const fullW = width - pad * 2;
-  const halfW = (fullW - gap) / 2;
 
-  const places = useMemo(
-    () =>
-      filterAdminOverflowModules(user, 'more').filter((m) => m.key !== 'ai-chat'),
-    [user],
-  );
+  const places = useMemo(() => {
+    const seen = new Set<string>();
+    return filterAdminOverflowModules(user, 'more').filter((m) => {
+      if (m.key === 'ai-chat' || seen.has(m.key)) return false;
+      seen.add(m.key);
+      return true;
+    });
+  }, [user]);
+
+  const rows = useMemo(() => packOverflowPlaceRows(places), [places]);
 
   const Shell = reduce ? View : Animated.View;
   const shellProps = reduce
@@ -65,24 +67,28 @@ export function MorePlacesDock() {
         </AppText>
       </View>
 
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          flexWrap: 'wrap',
-          gap,
-        }}
-      >
-        {places.map((place, index) => (
-          <PlaceTile
-            key={place.key}
-            place={place}
-            index={index}
-            width={place.span === 'full' ? fullW : halfW}
-            onPress={() => {
-              void haptics.confirmLight();
-              router.push(place.href);
+      <View style={{ gap }}>
+        {rows.map((row, rowIndex) => (
+          <View
+            key={row.map((p) => p.key).join('-')}
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'stretch',
+              gap,
             }}
-          />
+          >
+            {row.map((place, colIndex) => (
+              <PlaceTile
+                key={place.key}
+                place={place}
+                index={rowIndex * 2 + colIndex}
+                onPress={() => {
+                  void haptics.confirmLight();
+                  router.push(place.href);
+                }}
+              />
+            ))}
+          </View>
         ))}
       </View>
     </Shell>
@@ -92,12 +98,10 @@ export function MorePlacesDock() {
 function PlaceTile({
   place,
   index,
-  width,
   onPress,
 }: {
   place: AdminOverflowModule;
   index: number;
-  width: number;
   onPress: () => void;
 }) {
   const { t, isRTL, locale } = useLocale();
@@ -126,14 +130,14 @@ function PlaceTile({
   }));
 
   return (
-    <Animated.View style={[{ width }, style]}>
+    <Animated.View style={[{ flex: 1, minWidth: 0 }, style]}>
       <AnimatedPressable
         variant="card"
         accessibilityRole="button"
         accessibilityLabel={t(place.labelKey)}
         onPress={onPress}
         style={{
-          minHeight: 112,
+          flex: 1,
           borderRadius: theme.radius.xl,
           borderWidth: 1,
           borderColor: colors.borderStrong,
@@ -171,7 +175,13 @@ function PlaceTile({
             color={colors.textMuted}
           />
         </View>
-        <View style={{ gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+        <View
+          style={{
+            gap: 2,
+            alignSelf: 'stretch',
+            alignItems: isRTL ? 'flex-end' : 'flex-start',
+          }}
+        >
           <AppText variant="label" weight={titleWeight} numberOfLines={1}>
             {t(place.labelKey)}
           </AppText>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
@@ -36,6 +37,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { useToast } from '@/components/feedback/Toast';
+import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import {
   addCalendarException,
   approveSchedule,
@@ -48,7 +50,8 @@ import {
   isOwnOrderSchedule,
   postFactorySync,
   postCapacityOptimizePreview,
-  postCapacityOptimizeApply,
+  generateSchedulePreview,
+  applyReviewedAllocations,
   recalculateSchedule,
   resolveAllAtRisk,
   resolveAllConflicts,
@@ -246,6 +249,11 @@ export function AdminSchedulingScreen() {
   const [optimizeStats, setOptimizeStats] = useState<OptimizeScheduleStats | null>(null);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
   const optimizePollRef = useRef<string | null>(null);
+  const optimizeStatsRef = useRef<OptimizeScheduleStats | null>(null);
+  const [unscheduledTarget, setUnscheduledTarget] = useState<{ id: string; number: string } | null>(
+    null,
+  );
+  const [placeUnscheduledBusy, setPlaceUnscheduledBusy] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [userPullRefreshing, setUserPullRefreshing] = useState(false);
@@ -365,6 +373,7 @@ export function AdminSchedulingScreen() {
     result?: Parameters<typeof optimizeStatsFromResult>[0];
   }) => {
     const stats = optimizeStatsFromResult(run.result);
+    optimizeStatsRef.current = stats;
     setOptimizeStats(stats);
     const phase = selectOptimizeSheetPhase({
       run: { status: run.status as 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED', result: run.result },
@@ -439,25 +448,44 @@ export function AdminSchedulingScreen() {
   const startCapacityOptimizeApply = () => {
     setOptimizeError(null);
     void (async () => {
+      const first = optimizeStatsRef.current?.previewMoves[0];
+      if (!first?.productionOrderId) {
+        setOptimizePhase('failed');
+        setOptimizeError(t('mobile.adminScheduling.optimize.failedBody'));
+        setOptimizeOpen(true);
+        return;
+      }
+      setOptimizePhase('applying');
       try {
-        const queued = await postCapacityOptimizeApply();
-        if (!queued.replanJobId) {
+        const preview = await generateSchedulePreview(first.productionOrderId);
+        const allocations = (preview.allocations ?? []).map((row) => ({
+          productionTaskId: row.productionTaskId ?? undefined,
+          employeeId: row.employeeId ?? null,
+          plannedStart:
+            typeof row.plannedStart === 'string'
+              ? row.plannedStart
+              : new Date(row.plannedStart).toISOString(),
+          plannedEnd:
+            typeof row.plannedEnd === 'string' ? row.plannedEnd : new Date(row.plannedEnd).toISOString(),
+        }));
+        if (!allocations.length) {
           setOptimizePhase('failed');
+          setOptimizeError(t('mobile.adminScheduling.optimize.failedBody'));
           return;
         }
-        await pollCapacityOptimize(queued.replanJobId, {
-          alreadyInProgress: queued.alreadyInProgress,
-          awaitingApply: true,
+        await applyReviewedAllocations(first.productionOrderId, {
+          allocations,
+          reason: 'capacity-suggestion',
         });
-      } catch (err) {
-        if (isApiError(err) && err.code === 'OPTIMIZE_ALREADY_IN_PROGRESS') {
-          setOptimizePhase('inProgress');
-          setOptimizeOpen(true);
-          if (err.runId) {
-            await pollCapacityOptimize(err.runId, { conflictInProgress: true, awaitingApply: true });
-          }
-          return;
+        setOptimizePhase('changed');
+        setOptimizeStats((prev) =>
+          prev ? { ...prev, moved: 1 } : { ...optimizeStatsRef.current!, moved: 1 },
+        );
+        void refetchAll();
+        for (const key of invalidateKeys.afterScheduleMutation()) {
+          void queryClient.invalidateQueries({ queryKey: key as readonly unknown[] });
         }
+      } catch (err) {
         setOptimizePhase('failed');
         setOptimizeError(toastMessageForError(err));
         setOptimizeOpen(true);
@@ -1306,6 +1334,47 @@ export function AdminSchedulingScreen() {
           ))}
         </View>
 
+        {(calendarQuery.data?.unscheduled?.length ?? 0) > 0 ? (
+          <ScheduleOrdersBoard
+            title={t('mobile.adminScheduling.unscheduledTitle')}
+            caption={t('mobile.adminScheduling.unscheduledHint')}
+            count={calendarQuery.data?.unscheduled?.length ?? 0}
+            search=""
+            onSearchChange={() => undefined}
+            showSearch={false}
+          >
+            {(calendarQuery.data?.unscheduled ?? []).slice(0, 12).map((row) => (
+              <AnimatedPressable
+                key={row.id}
+                variant="card"
+                accessibilityRole="button"
+                accessibilityLabel={row.number}
+                onPress={() => {
+                  void haptics.selection();
+                  setUnscheduledTarget({ id: row.id, number: row.number });
+                }}
+                style={{
+                  minHeight: theme.sizes.touch.min,
+                  borderRadius: theme.radius.lg,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceSecondary,
+                  paddingHorizontal: theme.spacing.md,
+                  paddingVertical: theme.spacing.sm,
+                  gap: theme.spacing.xs,
+                }}
+              >
+                <AppText variant="label" weight={titleWeight}>
+                  {row.number}
+                </AppText>
+                <AppText variant="caption" color="muted">
+                  {t('mobile.adminScheduling.unscheduledStatus')}
+                </AppText>
+              </AnimatedPressable>
+            ))}
+          </ScheduleOrdersBoard>
+        ) : null}
+
         {focus && focusEmptyKey ? (
           <View style={{ gap: theme.spacing.sm, opacity: focusUpdating ? 0.72 : 1 }}>
             <View
@@ -1979,6 +2048,60 @@ export function AdminSchedulingScreen() {
         onViewAttention={() => {
           setOptimizeOpen(false);
           setFocus('atRisk');
+        }}
+      />
+
+      <ConfirmationSheet
+        open={Boolean(unscheduledTarget)}
+        onClose={() => {
+          if (placeUnscheduledBusy) return;
+          setUnscheduledTarget(null);
+        }}
+        title={t('mobile.adminScheduling.unscheduledPlaceTitle')}
+        message={t('mobile.adminScheduling.unscheduledPlaceBody', {
+          number: unscheduledTarget?.number ?? '',
+        })}
+        confirmLabel={t('mobile.adminScheduling.unscheduledPlaceCta')}
+        cancelLabel={t('mobile.production.cancel')}
+        onConfirm={() => {
+          const target = unscheduledTarget;
+          if (!target) return;
+          setPlaceUnscheduledBusy(true);
+          void (async () => {
+            try {
+              const preview = await generateSchedulePreview(target.id);
+              const allocations = (preview.allocations ?? []).map((row) => ({
+                productionTaskId: row.productionTaskId ?? undefined,
+                employeeId: row.employeeId ?? null,
+                plannedStart:
+                  typeof row.plannedStart === 'string'
+                    ? row.plannedStart
+                    : new Date(row.plannedStart).toISOString(),
+                plannedEnd:
+                  typeof row.plannedEnd === 'string'
+                    ? row.plannedEnd
+                    : new Date(row.plannedEnd).toISOString(),
+              }));
+              if (!allocations.length) {
+                showToast({
+                  variant: 'error',
+                  message: t('mobile.adminScheduling.unscheduledPlaceFailed'),
+                });
+                return;
+              }
+              await applyReviewedAllocations(target.id, {
+                allocations,
+                reason: 'unscheduled-place',
+              });
+              setUnscheduledTarget(null);
+              void haptics.confirmMedium();
+              void refetchAll();
+            } catch (err) {
+              showToast({ variant: 'error', message: toastMessageForError(err) });
+            } finally {
+              setPlaceUnscheduledBusy(false);
+            }
+          })();
         }}
       />
 

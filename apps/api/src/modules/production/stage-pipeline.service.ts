@@ -494,11 +494,13 @@ export class StagePipelineService {
         },
       });
       if (po.salesOrderId) {
+        // First real executable task start → commercial In Production.
         await db.salesOrder.updateMany({
           where: {
             id: po.salesOrderId,
             status: {
               in: [
+                'DRAFT',
                 'CONFIRMED',
                 'READY_FOR_PRODUCTION',
                 'WAITING_FOR_PAYMENT',

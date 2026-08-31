@@ -17,11 +17,11 @@ import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { ListItemEnter } from '@/motion';
 import { useTheme } from '@/theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { openInvoicePdf } from './api';
 import { openPaymentPdf } from '@/api/modules/payments';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { ApplyCreditSheet } from './components/ApplyCreditSheet';
+import { EditInvoiceSheet } from './components/EditInvoiceSheet';
 import { InvoiceBalanceBoard } from './components/InvoiceBalanceBoard';
 import { InvoiceDetailHero } from './components/InvoiceDetailHero';
 import { InvoiceJofotaraBoard } from './components/InvoiceJofotaraBoard';
@@ -60,11 +60,13 @@ export function InvoiceDetailScreen({
   const { showToast } = useToast();
   const canRead = can(user, 'invoice.read');
   const canPay = can(user, 'payment.record');
+  const canEditInvoice = can(user, 'invoice.update');
   /** Dealers never edit finance from the handset. */
   const isDealer = Boolean(user?.customerId);
 
   const [payOpen, setPayOpen] = useState(false);
   const [creditOpen, setCreditOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
   const query = useInvoiceQuery(invoiceId, canRead);
@@ -170,7 +172,17 @@ export function InvoiceDetailScreen({
         keyboardShouldPersistTaps="handled"
       >
         <ListItemEnter index={0}>
-          <InvoiceDetailHero model={model} />
+          <InvoiceDetailHero
+            model={model}
+            onEdit={
+              canEditInvoice &&
+              !isDealer &&
+              model.status !== 'CANCELLED' &&
+              model.status !== 'VOID'
+                ? () => setEditOpen(true)
+                : undefined
+            }
+          />
         </ListItemEnter>
 
         <ListItemEnter index={1}>
@@ -236,6 +248,20 @@ export function InvoiceDetailScreen({
           customerId={model.customerId}
           remaining={model.outstanding}
           availableCredit={model.availableCredit}
+        />
+      ) : null}
+      {canEditInvoice && !isDealer && query.data ? (
+        <EditInvoiceSheet
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          invoice={query.data}
+          onSaved={() => {
+            showToast({
+              variant: 'success',
+              message: t('mobile.invoices.editSaved'),
+            });
+            void query.refetch();
+          }}
         />
       ) : null}
       {pdfDownloadSheet}

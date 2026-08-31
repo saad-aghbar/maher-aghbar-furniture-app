@@ -1,7 +1,8 @@
-import { StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { Divider } from '@/components/layout/Divider';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics, ProgressBar } from '@/motion';
 import { useTheme } from '@/theme';
@@ -20,11 +21,11 @@ function priorityLabel(priority: string, t: (key: string) => string): string {
 }
 
 /**
- * Floor task row: status, progress bar, assignee, priority — tap opens task sheet.
+ * Production task floor card — header band, inset assignee/plan, progress.
  */
 export function ProductionTaskCard({ task, onPress, onOpenFloor }: ProductionTaskCardProps) {
-  const { t, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { t, isRTL, locale, formatDateTime } = useLocale();
+  const { colors, theme, colorScheme } = useTheme();
 
   const pct = Math.max(0, Math.min(100, Math.round(task.progressPercent || 0)));
   const urgent = task.priority === 'URGENT' || task.priority === 'HIGH';
@@ -35,8 +36,7 @@ export function ProductionTaskCard({ task, onPress, onOpenFloor }: ProductionTas
       ? colors.warning
       : task.status === 'IN_PROGRESS' || pct > 0
         ? colors.brand
-        : colors.borderStrong;
-
+        : colors.brand;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
@@ -66,10 +66,11 @@ export function ProductionTaskCard({ task, onPress, onOpenFloor }: ProductionTas
             : colors.borderStrong,
         backgroundColor: colors.surface,
         overflow: 'hidden',
-        ...theme.elevation.card,
+        ...orderBoardShadow(colorScheme),
       }}
     >
       <View
+        pointerEvents="none"
         style={{
           position: 'absolute',
           top: 0,
@@ -77,46 +78,34 @@ export function ProductionTaskCard({ task, onPress, onOpenFloor }: ProductionTas
           ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
           backgroundColor: accent,
-          opacity: blocked || urgent ? 1 : 0.45,
+          opacity: blocked || urgent ? 0.9 : 0.55,
         }}
       />
 
       <View
         style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           gap: theme.spacing.sm,
-          paddingTop: theme.spacing.md,
-          paddingBottom: theme.spacing.md,
-          paddingHorizontal: theme.spacing.md,
+          paddingHorizontal: theme.spacing.lg,
+          paddingVertical: theme.spacing.md,
           ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          backgroundColor: colors.surfaceSecondary,
         }}
       >
         <View
           style={{
+            flex: 1,
+            minWidth: 0,
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'flex-start',
-            gap: theme.spacing.sm,
-          }}
-        >
-          <View style={{ flex: 1 }}>
-            <AppText variant="body" weight={titleWeight} numberOfLines={2}>
-              {task.name}
-            </AppText>
-          </View>
-          <Ionicons
-            name={isRTL ? 'chevron-back' : 'chevron-forward'}
-            size={18}
-            color={colors.textMuted}
-          />
-        </View>
-
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            flexWrap: 'wrap',
             alignItems: 'center',
             gap: theme.spacing.sm,
+            flexWrap: 'wrap',
           }}
         >
           <StatusBadge status={task.status} dot />
@@ -126,15 +115,72 @@ export function ProductionTaskCard({ task, onPress, onOpenFloor }: ProductionTas
             dot
           />
         </View>
+        <AppText variant="caption" color="brand" weight={titleWeight}>
+          {t('common.details')}
+        </AppText>
+      </View>
+
+      <View
+        style={{
+          padding: theme.spacing.lg,
+          gap: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+        }}
+      >
+        <AppText
+          variant="label"
+          weight={titleWeight}
+          numberOfLines={2}
+          style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 17 }}
+        >
+          {task.name}
+        </AppText>
 
         <View
           style={{
-            gap: theme.spacing.xs,
-            paddingTop: theme.spacing.xs,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: colors.border,
+            borderRadius: theme.radius.lg,
+            backgroundColor: colors.surfaceSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
+            overflow: 'hidden',
           }}
         >
+          <MetaRow
+            label={t('mobile.production.assignedWorker')}
+            value={
+              task.assigneeName
+                ? task.assigneeName
+                : t('mobile.production.unassigned')
+            }
+            isRTL={isRTL}
+            muted={!task.assigneeName}
+          />
+          {task.plannedCompletion ? (
+            <>
+              <Divider compact plain style={{ marginVertical: 0 }} />
+              <MetaRow
+                label={t('mobile.production.plannedDate')}
+                value={formatDateTime(task.plannedCompletion)}
+                isRTL={isRTL}
+              />
+            </>
+          ) : null}
+          {!task.canAssign && !task.isCompleted ? (
+            <>
+              <Divider compact plain style={{ marginVertical: 0 }} />
+              <MetaRow
+                label={t('mobile.production.stageAssignLockedShort')}
+                value="—"
+                isRTL={isRTL}
+                muted
+              />
+            </>
+          ) : null}
+        </View>
+
+        <View style={{ gap: theme.spacing.xs }}>
           <View
             style={{
               flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -143,14 +189,23 @@ export function ProductionTaskCard({ task, onPress, onOpenFloor }: ProductionTas
               gap: theme.spacing.sm,
             }}
           >
-            <AppText variant="caption" color="secondary">
+            <AppText
+              variant="caption"
+              color="muted"
+              style={{
+                flex: 1,
+                textAlign: isRTL ? 'right' : 'left',
+                fontSize: 10,
+                letterSpacing: locale === 'ar' ? 0 : 0.45,
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              }}
+            >
               {t('mobile.production.progress')}
             </AppText>
             <AppText
-              variant="caption"
-              weight="semibold"
-              style={{ color: accent }}
+              weight={titleWeight}
               dir="ltr"
+              style={{ color: accent, fontSize: 15 }}
             >
               {`${pct}%`}
             </AppText>
@@ -162,43 +217,61 @@ export function ProductionTaskCard({ task, onPress, onOpenFloor }: ProductionTas
             trackStyle={{ backgroundColor: colors.surfaceSecondary }}
           />
         </View>
-
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            gap: theme.spacing.xs,
-          }}
-        >
-          <Ionicons
-            name="person-outline"
-            size={14}
-            color={task.assigneeName ? colors.textSecondary : colors.textMuted}
-          />
-          <AppText
-            variant="caption"
-            color={task.assigneeName ? 'secondary' : 'muted'}
-            style={{ flex: 1 }}
-            numberOfLines={1}
-          >
-            {task.assigneeName
-              ? t('mobile.production.assignee', { name: task.assigneeName })
-              : t('mobile.production.unassigned')}
-          </AppText>
-          {!task.canAssign && !task.isCompleted ? (
-            <AppText variant="caption" color="muted" numberOfLines={1} style={{ maxWidth: '42%' }}>
-              {t('mobile.production.stageAssignLockedShort')}
-            </AppText>
-          ) : null}
-        </View>
-        {task.plannedCompletion ? (
-          <AppText variant="caption" color="secondary" numberOfLines={1}>
-            {t('mobile.production.plannedAt', {
-              when: formatDateTime(task.plannedCompletion),
-            })}
-          </AppText>
-        ) : null}
       </View>
     </AnimatedPressable>
+  );
+}
+
+function MetaRow({
+  label,
+  value,
+  isRTL,
+  muted,
+}: {
+  label: string;
+  value: string;
+  isRTL: boolean;
+  muted?: boolean;
+}) {
+  const { colors, theme } = useTheme();
+  const { locale } = useLocale();
+
+  return (
+    <View
+      style={{
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: theme.spacing.md,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm + 2,
+      }}
+    >
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'ar' ? 0 : 0.5,
+          fontSize: 10,
+          flexShrink: 0,
+          textAlign: isRTL ? 'right' : 'left',
+        }}
+      >
+        {label}
+      </AppText>
+      <AppText
+        weight="semibold"
+        numberOfLines={2}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          color: muted ? colors.textMuted : colors.textPrimary,
+          textAlign: isRTL ? 'left' : 'right',
+        }}
+      >
+        {value}
+      </AppText>
+    </View>
   );
 }

@@ -2,22 +2,20 @@ import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Pressable,
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
 import type { WorkflowListItem } from '@/api/modules/workflow';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/forms/AppTextInput';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useWorkflowsQuery } from '@/features/workflow/query';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { orderBoardShadow } from '../../components/orderFloorStyle';
 
 type Props = {
   open: boolean;
@@ -32,6 +30,9 @@ function isPublished(wf: WorkflowListItem): boolean {
   return Boolean(wf.activeVersion?.id);
 }
 
+/**
+ * Floor-aesthetic workflow picker — search + rail radio rows (WarehousePickList language).
+ */
 export function WorkflowPickerSheet({
   open,
   onClose,
@@ -40,6 +41,7 @@ export function WorkflowPickerSheet({
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const { height } = useWindowDimensions();
   const sheetHeight = Math.min(Math.round(height * 0.62), 560);
   const [q, setQ] = useState('');
@@ -102,50 +104,63 @@ export function WorkflowPickerSheet({
               const stageCount = item.activeVersion?._count?.nodes ?? null;
               const versionNumber = item.activeVersion?.versionNumber ?? null;
               return (
-                <Pressable
+                <AnimatedPressable
+                  variant="button"
                   onPress={() => {
                     void haptics.selection();
                     onPick(item);
                     onClose();
                   }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
                   style={{
-                    borderRadius: theme.radius.lg,
-                    borderWidth: 1,
+                    minHeight: theme.sizes.touch.min,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: selected ? 1.5 : 1,
                     borderColor: selected ? colors.brand : colors.borderStrong,
-                    backgroundColor: selected ? colors.brandSoft : colors.surface,
-                    padding: theme.spacing.md,
-                    gap: 4,
+                    backgroundColor: selected ? colors.brandSoft : colors.surfaceSecondary,
+                    paddingHorizontal: theme.spacing.md,
+                    paddingVertical: theme.spacing.sm,
+                    justifyContent: 'center',
+                    gap: 2,
+                    overflow: 'hidden',
                     ...orderBoardShadow(colorScheme),
                   }}
                 >
-                  <View
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      alignItems: 'center',
-                      gap: theme.spacing.sm,
-                    }}
-                  >
-                    <Ionicons
-                      name={selected ? 'radio-button-on' : 'radio-button-off'}
-                      size={20}
-                      color={selected ? colors.brand : colors.textMuted}
+                  {selected ? (
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        width: 3,
+                        backgroundColor: colors.brand,
+                        opacity: 0.9,
+                        ...(isRTL ? { right: 0 } : { left: 0 }),
+                      }}
                     />
-                    <View style={{ flex: 1 }}>
-                      <AppText variant="label" weight="semibold">
-                        {name}
-                      </AppText>
-                      <AppText variant="caption" color="secondary" dir="ltr">
-                        {item.code}
-                        {stageCount != null
-                          ? ` · ${t('mobile.productionSetup.stageCount', {
-                              n: stageCount,
-                            })}`
-                          : ''}
-                        {versionNumber != null ? ` · v${versionNumber}` : ''}
-                      </AppText>
-                    </View>
-                  </View>
-                </Pressable>
+                  ) : null}
+                  <AppText
+                    variant="label"
+                    weight={titleWeight}
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {name}
+                  </AppText>
+                  <AppText
+                    variant="caption"
+                    color="secondary"
+                    dir="ltr"
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {item.code}
+                    {stageCount != null
+                      ? ` · ${t('mobile.productionSetup.stageCount', { n: stageCount })}`
+                      : ''}
+                    {versionNumber != null ? ` · v${versionNumber}` : ''}
+                  </AppText>
+                </AnimatedPressable>
               );
             }}
           />

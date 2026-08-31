@@ -28,6 +28,17 @@ import { loadCatalogMap, mapRequestItemCreate } from './request-line-classify';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { firstImageDocument } from '../../common/helpers/document-image.util';
+import {
+  assertCommercialDateWrite,
+  toCommercialYmd,
+} from '../scheduling/domain/commercial-dates';
+import { ymdInTimezone } from '../scheduling/domain/factory-replan';
+import {
+  dealerDeliveryTooSoonBody,
+  dealerMinimumRequestYmd,
+  DEFAULT_FACTORY_TIMEZONE,
+  isDealerRequestTooSoon,
+} from '../scheduling/domain/dealer-request-lead';
 
 @Injectable()
 export class RequestsService {
@@ -82,6 +93,30 @@ export class RequestsService {
         code: 'FORBIDDEN',
         message: 'Dealers cannot perform factory review actions.',
       });
+    }
+  }
+
+  private async factoryTodayAndMin(now = new Date()): Promise<{
+    todayYmd: string;
+    minRequestYmd: string;
+  }> {
+    const row = await this.prisma.factoryCalendar.findFirst({
+      where: { isDefault: true },
+      select: { timezone: true },
+    });
+    const timezone = row?.timezone?.trim() || DEFAULT_FACTORY_TIMEZONE;
+    const todayYmd = ymdInTimezone(now, timezone);
+    return { todayYmd, minRequestYmd: dealerMinimumRequestYmd(todayYmd) };
+  }
+
+  private async assertDealerRequestedDeliveryDate(
+    user: AuthUser | undefined,
+    rawDate: string | undefined,
+  ) {
+    if (!user?.customerId || rawDate == null || !String(rawDate).trim()) return;
+    const { todayYmd } = await this.factoryTodayAndMin();
+    if (isDealerRequestTooSoon(rawDate, todayYmd)) {
+      throw new BadRequestException(dealerDeliveryTooSoonBody(user.preferredLanguage));
     }
   }
 
@@ -428,6 +463,8 @@ export class RequestsService {
       });
     }
 
+    await this.assertDealerRequestedDeliveryDate(opts?.user, dto.requiredDeliveryDate);
+
     // Dealers: never persist empty/UUID "names" — use the logged-in profile.
     // Fax defaults to the dealer company Customer.fax when left empty.
     if (opts?.user?.customerId) {
@@ -564,6 +601,8 @@ export class RequestsService {
       // Notes / dimensions may still change — preserve fabric from server rows.
       items = preserveFabricOnItems(existingItems, items);
     }
+
+    await this.assertDealerRequestedDeliveryDate(user, dto.requiredDeliveryDate);
 
     const catalogMap = items ? await loadCatalogMap(this.prisma, items) : new Map();
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -814,5 +853,75 @@ export class RequestsService {
       where: { id },
       data: { status: 'CLOSED' },
     });
+  }
+
+  async setOfferedDeliveryDate(
+    id: string,
+    user: AuthUser,
+    nextYmd: string,
+    reason?: string | null,
+  ) {
+    this.assertStaffReview(user);
+    const request = await this.getById(id, user);
+    const { minRequestYmd } = await this.factoryTodayAndMin();
+    const next = toCommercialYmd(nextYmd);
+    const leadOverride = Boolean(next && next < minRequestYmd);
+    if (leadOverride && !(reason?.trim())) {
+      throw new BadRequestException({
+        code: 'REASON_REQUIRED',
+        message: 'A reason is required to offer a delivery date earlier than the 4-day dealer notice.',
+      });
+    }
+    const write = assertCommercialDateWrite({
+      previousOfferedYmd: toCommercialYmd(request.offeredDeliveryDate),
+      requestedYmd: toCommercialYmd(request.requiredDeliveryDate),
+      nextYmd,
+      reason,
+    });
+    if (!write.ok) {
+      throw new BadRequestException({
+        code: write.code,
+        message:
+          write.code === 'REASON_REQUIRED'
+            ? 'A reason is required when changing the factory delivery date.'
+            : 'Invalid delivery date.',
+      });
+    }
+    const offered = new Date(`${toCommercialYmd(nextYmd)}T00:00:00.000Z`);
+    const updated = await this.prisma.requestForQuotation.update({
+      where: { id },
+      data: { offeredDeliveryDate: offered },
+      include: { items: true, customer: true },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: write.action === 'confirm' ? 'request.delivery.confirm' : 'request.delivery.change',
+        entityType: 'RequestForQuotation',
+        entityId: id,
+        newValues: {
+          action: write.action,
+          old: request.offeredDeliveryDate,
+          new: offered.toISOString(),
+          requested: request.requiredDeliveryDate,
+          reason: reason ?? null,
+          dealerLeadTimeOverride: leadOverride,
+          by: user.id,
+          at: new Date().toISOString(),
+        } as Prisma.InputJsonValue,
+      },
+    }).catch(() => undefined);
+    await this.prisma.scheduleChangeHistory.create({
+      data: {
+        requestId: id,
+        kind: 'commercial',
+        actorId: user.id,
+        reason: reason ?? null,
+        oldDate: request.offeredDeliveryDate,
+        newDate: offered,
+        payload: { action: write.action, dealerLeadTimeOverride: leadOverride },
+      },
+    }).catch(() => undefined);
+    return { ...updated, commercialAction: write.action };
   }
 }

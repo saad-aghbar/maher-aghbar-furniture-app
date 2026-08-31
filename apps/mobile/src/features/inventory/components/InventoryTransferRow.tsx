@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -19,13 +20,13 @@ type Props = {
 
 function transferAccent(
   status: string,
-  colors: { info: string; success: string; textMuted: string; warning: string },
+  colors: { brand: string; success: string; textMuted: string; warning: string },
 ): string {
   const key = status.toUpperCase();
   if (key === 'COMPLETED') return colors.success;
   if (key === 'CANCELLED') return colors.textMuted;
   if (key === 'IN_TRANSIT') return colors.warning;
-  return colors.info;
+  return colors.brand;
 }
 
 function WarehouseWell({
@@ -124,9 +125,10 @@ export function InventoryTransferRow({
   animateEnter = true,
 }: Props) {
   const { t, isRTL, formatDateTime, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const accent = transferAccent(transfer.status, colors);
+  const urgent = accent === colors.warning || accent === colors.error;
   const chevron = isRTL ? 'arrow-back' : 'arrow-forward';
   const routeLabel = t('mobile.inventory.transferRoute', {
     from: `${transfer.fromCode} · ${transfer.fromName}`,
@@ -135,20 +137,6 @@ export function InventoryTransferRow({
 
   const body = (
     <View style={{ gap: theme.spacing.sm }}>
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: theme.spacing.sm,
-        }}
-      >
-        <AppText variant="body" weight={titleWeight} style={{ flex: 1 }} numberOfLines={1}>
-          {transfer.number}
-        </AppText>
-        <StatusBadge status={transfer.status} dot />
-      </View>
-
       <View
         accessibilityLabel={routeLabel}
         style={{
@@ -211,19 +199,15 @@ export function InventoryTransferRow({
       <View
         style={{
           borderRadius: theme.radius.xl,
-          ...theme.elevation.card,
+          borderWidth: 1,
+          borderColor: colors.borderStrong,
+          backgroundColor: colors.surface,
+          overflow: 'hidden',
+          ...orderBoardShadow(colorScheme),
         }}
       >
-        <View
-          style={{
-            borderWidth: 1,
-            borderColor: colors.borderStrong,
-            borderRadius: theme.radius.xl,
-            backgroundColor: colors.surface,
-            overflow: 'hidden',
-          }}
-        >
           <View
+            pointerEvents="none"
             style={{
               position: 'absolute',
               top: 0,
@@ -231,10 +215,37 @@ export function InventoryTransferRow({
               ...(isRTL ? { right: 0 } : { left: 0 }),
               width: 3,
               backgroundColor: accent,
-              opacity: 0.85,
-              zIndex: 1,
+              opacity: urgent || accent === colors.success ? 0.9 : 0.55,
             }}
           />
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: theme.spacing.sm,
+              paddingHorizontal: theme.spacing.lg,
+              paddingVertical: theme.spacing.md,
+              ...(isRTL
+                ? { paddingRight: theme.spacing.lg + 4 }
+                : { paddingLeft: theme.spacing.lg + 4 }),
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+              backgroundColor: colors.surfaceSecondary,
+            }}
+          >
+            <StatusBadge status={transfer.status} dot />
+            <AppText
+              variant="caption"
+              color="brand"
+              weight={titleWeight}
+              dir="ltr"
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
+              {transfer.number}
+            </AppText>
+          </View>
           {onPress ? (
             <AnimatedPressable
               variant="card"
@@ -305,7 +316,6 @@ export function InventoryTransferRow({
               </AnimatedPressable>
             </View>
           ) : null}
-        </View>
       </View>
     </ListItemEnter>
   );

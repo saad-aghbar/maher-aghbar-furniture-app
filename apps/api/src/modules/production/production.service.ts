@@ -22,6 +22,7 @@ import {
   productionNotReadyException,
   type ExecutableTaskInput,
 } from './production-readiness';
+import { releasedToFactoryWhere } from './factory-release';
 import {
   intervalsOverlap,
   recommendWorkerBand,
@@ -184,33 +185,45 @@ export class ProductionService {
     startOfWeek.setHours(0, 0, 0, 0);
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    /** Factory board buckets only include Released-to-factory POs (not Orders Preparing). */
+    const factoryOnly = releasedToFactoryWhere();
+
     let bucketWhere: Prisma.ProductionOrderWhereInput = {};
     if (query.bucket === 'in_production') {
-      bucketWhere = { status: { in: [...inProductionStatuses] } };
+      bucketWhere = { ...factoryOnly, status: { in: [...inProductionStatuses] } };
     } else if (query.bucket === 'late') {
       bucketWhere = {
+        ...factoryOnly,
         requiredDeliveryDate: { lt: now },
         status: { notIn: ['COMPLETED', 'CANCELLED'] },
       };
     } else if (query.bucket === 'completed') {
-      bucketWhere = { status: { in: ['COMPLETED', 'READY_FOR_DELIVERY'] } };
+      bucketWhere = {
+        ...factoryOnly,
+        status: { in: ['COMPLETED', 'READY_FOR_DELIVERY'] },
+      };
     } else if (query.bucket === 'daily') {
       bucketWhere = {
+        ...factoryOnly,
         status: 'COMPLETED',
         actualCompletionDate: { gte: startOfDay },
       };
     } else if (query.bucket === 'weekly') {
       bucketWhere = {
+        ...factoryOnly,
         status: 'COMPLETED',
         actualCompletionDate: { gte: startOfWeek },
       };
     } else if (query.bucket === 'monthly') {
       bucketWhere = {
+        ...factoryOnly,
         status: 'COMPLETED',
         actualCompletionDate: { gte: startOfMonth },
       };
     } else if (query.bucket === 'needs_setup') {
+      // Post-release only — unreleased prep lives under Orders → Preparing.
       bucketWhere = {
+        ...factoryOnly,
         status: { in: ['DRAFT', 'PLANNED', 'READY'] },
         OR: [
           { tasks: { none: HAS_EXECUTABLE } },
@@ -219,8 +232,11 @@ export class ProductionService {
         ],
       };
     } else if (query.bucket === 'ready_to_start') {
+      // Ready for factory = released + locked plan, no executable task started yet.
       bucketWhere = {
+        ...factoryOnly,
         status: { in: ['DRAFT', 'PLANNED', 'READY'] },
+        actualStartDate: null,
         tasks: { some: HAS_EXECUTABLE },
         NOT: {
           OR: [
@@ -231,6 +247,7 @@ export class ProductionService {
       };
     } else if (query.bucket === 'on_floor') {
       bucketWhere = {
+        ...factoryOnly,
         status: 'IN_PROGRESS',
         OR: [
           { currentStageCode: null },
@@ -243,6 +260,7 @@ export class ProductionService {
       };
     } else if (query.bucket === 'blocked') {
       bucketWhere = {
+        ...factoryOnly,
         OR: [
           { status: { in: ['ON_HOLD', 'WAITING_FOR_MATERIALS'] } },
           {
@@ -257,6 +275,7 @@ export class ProductionService {
       };
     } else if (query.bucket === 'inspection_packaging') {
       bucketWhere = {
+        ...factoryOnly,
         OR: [
           { status: { in: ['QUALITY_CHECK', 'READY_FOR_PACKAGING'] } },
           {
@@ -829,6 +848,10 @@ export class ProductionService {
       !Number.isNaN(windowEnd.getTime());
 
     const overlapByWorker = new Set<string>();
+    const overlapWindowsByWorker = new Map<
+      string,
+      Array<{ start: string; end: string; label: string }>
+    >();
     if (windowOk && ids.length > 0) {
       const excludeTaskId = opts?.taskId?.trim() || undefined;
       const overlapping = await this.prisma.productionTask.findMany({
@@ -841,8 +864,10 @@ export class ProductionService {
         },
         select: {
           assignedEmployeeId: true,
+          name: true,
           plannedStart: true,
           plannedCompletion: true,
+          productionOrder: { select: { number: true } },
         },
       });
       for (const t of overlapping) {
@@ -850,6 +875,13 @@ export class ProductionService {
         const oStart = t.plannedStart ?? new Date(t.plannedCompletion.getTime() - 3600_000);
         if (intervalsOverlap(windowStart!, windowEnd!, oStart, t.plannedCompletion)) {
           overlapByWorker.add(t.assignedEmployeeId);
+          const list = overlapWindowsByWorker.get(t.assignedEmployeeId) ?? [];
+          list.push({
+            start: oStart.toISOString(),
+            end: t.plannedCompletion.toISOString(),
+            label: `${t.productionOrder?.number ?? ''} ${t.name}`.trim(),
+          });
+          overlapWindowsByWorker.set(t.assignedEmployeeId, list);
         }
       }
     }
@@ -860,8 +892,14 @@ export class ProductionService {
           0
         : false;
 
+    const durationMs =
+      windowOk && windowStart && windowEnd
+        ? Math.max(30 * 60_000, windowEnd.getTime() - windowStart.getTime())
+        : 2 * 60 * 60_000;
+
     const enriched = workers.map((w) => {
       const activeTaskCount = countById.get(w.id) ?? 0;
+      const overlapWindows = overlapWindowsByWorker.get(w.id) ?? [];
       const rec = recommendWorkerBand({
         id: w.id,
         firstName: w.firstName,
@@ -870,12 +908,26 @@ export class ProductionService {
         skillMatch: stageId ? true : !skillRequired, // already filtered by skill when stageId set
         hasOverlap: overlapByWorker.has(w.id),
       });
+      let suggestedWindow: { plannedStart: string; plannedCompletion: string } | null =
+        null;
+      if (overlapWindows.length > 0) {
+        const latestEndMs = Math.max(
+          ...overlapWindows.map((o) => new Date(o.end).getTime()),
+        );
+        const suggestedStart = new Date(latestEndMs);
+        suggestedWindow = {
+          plannedStart: suggestedStart.toISOString(),
+          plannedCompletion: new Date(latestEndMs + durationMs).toISOString(),
+        };
+      }
       return {
         ...w,
         activeTaskCount,
         recommendBand: rec.band,
         recommendReason: rec.reason,
         recommendReasonCode: rec.reasonCode,
+        overlapWindows: overlapWindows.length > 0 ? overlapWindows : undefined,
+        suggestedWindow: suggestedWindow ?? undefined,
       };
     });
 
@@ -920,13 +972,24 @@ export class ProductionService {
     return this.getById(id);
   }
 
-  async start(id: string) {
+  /**
+   * Release to factory — hard Preparing → Production boundary.
+   * Locks the approved plan, opens Production visibility (Ready for factory),
+   * unlocks eligible stages for workers. Does **not** mark the PO IN_PROGRESS;
+   * first real task start does that via StagePipelineService.onTaskStart.
+   */
+  async start(id: string, actorUserId?: string) {
     const order = await this.getById(id);
+
+    if (order.releasedToFactoryAt) {
+      return order;
+    }
+
     const allowed = ['DRAFT', 'PLANNED', 'READY', 'WAITING_FOR_MATERIALS'];
     if (!allowed.includes(order.status)) {
       throw new BadRequestException({
         code: 'BAD_REQUEST',
-        message: `Cannot start production order in status ${order.status}.`,
+        message: `Cannot release production order to factory in status ${order.status}.`,
       });
     }
 
@@ -949,26 +1012,106 @@ export class ProductionService {
       throw new BadRequestException(productionNotReadyException(readiness));
     }
 
+    const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       await tx.productionOrder.update({
         where: { id },
         data: {
-          status: 'IN_PROGRESS',
-          actualStartDate: new Date(),
+          // Stay pre-floor until a real task starts; READY marks released plan.
+          status: order.status === 'WAITING_FOR_MATERIALS' ? 'WAITING_FOR_MATERIALS' : 'READY',
+          releasedToFactoryAt: now,
+          releasedToFactoryById: actorUserId ?? order.createdById ?? null,
+        },
+      });
+      // Do NOT set SalesOrder IN_PRODUCTION here — that waits for first executable task start.
+      // Keep commercial SO on READY_FOR_PRODUCTION (or WAITING_FOR_MATERIALS) until then.
+      if (order.salesOrderId) {
+        await tx.salesOrder.updateMany({
+          where: {
+            id: order.salesOrderId,
+            status: {
+              in: ['DRAFT', 'CONFIRMED', 'WAITING_FOR_PAYMENT', 'READY_FOR_PRODUCTION'],
+            },
+          },
+          data: { status: 'READY_FOR_PRODUCTION' },
+        });
+      }
+      await this.pipeline.unlockReadyStages(id, tx);
+      await this.pipeline.rollupProgress(id, tx);
+      await tx.auditEvent.create({
+        data: {
+          userId: actorUserId ?? order.createdById ?? null,
+          action: 'production-order.release-to-factory',
+          entityType: 'ProductionOrder',
+          entityId: id,
+          newValues: {
+            releasedToFactoryAt: now.toISOString(),
+            salesOrderId: order.salesOrderId,
+            salesOrderStatus: 'READY_FOR_PRODUCTION',
+          },
+        },
+      });
+    });
+
+    return this.getById(id);
+  }
+
+  /**
+   * Edit plan — Ready to start → Preparing.
+   * Clears factory release, unlocks the plan for admin edits, keeps SO in a Preparing-compatible status.
+   * Rejected once any executable task has started.
+   */
+  async returnToPreparing(id: string, actorUserId?: string) {
+    const order = await this.getById(id);
+
+    if (!order.releasedToFactoryAt) {
+      return order;
+    }
+
+    const status = String(order.status ?? '').toUpperCase();
+    const executionStarted =
+      Boolean(order.actualStartDate) ||
+      ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(
+        status,
+      );
+    if (executionStarted) {
+      throw new BadRequestException({
+        code: 'ALREADY_IN_PRODUCTION',
+        message: 'Cannot unlock the plan after production work has started.',
+      });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productionOrder.update({
+        where: { id },
+        data: {
+          status: 'PLANNED',
+          releasedToFactoryAt: null,
+          releasedToFactoryById: null,
         },
       });
       if (order.salesOrderId) {
         await tx.salesOrder.updateMany({
           where: {
             id: order.salesOrderId,
-            status: { not: 'WAITING_FOR_MATERIALS' },
+            status: { in: ['READY_FOR_PRODUCTION', 'WAITING_FOR_MATERIALS'] },
           },
-          data: { status: 'IN_PRODUCTION' },
+          data: { status: 'READY_FOR_PRODUCTION' },
         });
       }
-      // Unlock only stages with no prerequisites (e.g. MATERIAL_PREP)
-      await this.pipeline.unlockReadyStages(id, tx);
-      await this.pipeline.rollupProgress(id, tx);
+      await tx.auditEvent.create({
+        data: {
+          userId: actorUserId ?? order.createdById ?? null,
+          action: 'production-order.return-to-preparing',
+          entityType: 'ProductionOrder',
+          entityId: id,
+          newValues: {
+            releasedToFactoryAt: null,
+            salesOrderId: order.salesOrderId,
+            salesOrderStatus: 'READY_FOR_PRODUCTION',
+          },
+        },
+      });
     });
 
     return this.getById(id);

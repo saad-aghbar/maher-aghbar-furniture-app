@@ -100,6 +100,9 @@ interface PoDetail {
     sizeBytes?: number | null;
     createdAt?: string | null;
   }>;
+  whatsappSentAt?: string | null;
+  whatsappLastBody?: string | null;
+  whatsappLastTo?: string | null;
 }
 
 interface Warehouse {
@@ -136,6 +139,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
   const [error, setError] = useState<string | null>(null);
   const [approveOpen, setApproveOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
+  const [whatsappBody, setWhatsappBody] = useState<string | null>(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [warehouseId, setWarehouseId] = useState('');
   const [receivedQtys, setReceivedQtys] = useState<Record<string, string>>({});
@@ -167,10 +171,20 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
 
   const sendMutation = useMutation({
     mutationFn: () =>
-      apiFetch(`/api/v1/purchase-orders/${params.id}/send`, { method: 'POST' }),
-    onSuccess: async () => {
+      apiFetch<{
+        purchaseOrder: { id: string };
+        whatsapp: { ok: boolean; to: string | null; body: string };
+      }>(`/api/v1/purchase-orders/${params.id}/send`, { method: 'POST' }),
+    onSuccess: async (result) => {
       setSendOpen(false);
-      setBanner(tc('purchaseOrderSent'));
+      setWhatsappBody(result.whatsapp.body);
+      if (result.whatsapp.ok && result.whatsapp.to) {
+        setBanner(tc('whatsappSentOk', { to: result.whatsapp.to }));
+      } else if (!result.whatsapp.to) {
+        setBanner(tc('whatsappNoPhone'));
+      } else {
+        setBanner(tc('whatsappSentFailed'));
+      }
       await queryClient.invalidateQueries({ queryKey: ['purchase-order', params.id] });
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
     },
@@ -287,7 +301,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
   const po = detailQuery.data;
   const lines = po.lines ?? [];
   const canApprove = po.status === 'DRAFT' || po.status === 'PENDING_APPROVAL';
-  const canSend = po.status === 'APPROVED';
+  const canSend = po.status === 'APPROVED' || po.status === 'SENT';
   const canReceive = ['APPROVED', 'SENT', 'PARTIALLY_RECEIVED'].includes(po.status);
   const existingInvoice = (po.supplierInvoices ?? [])[0];
   const canCreateInvoice =
@@ -349,7 +363,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
             ) : null}
             {canSend ? (
               <Button variant="secondary" onClick={() => setSendOpen(true)}>
-                {tc('sendPurchaseOrder')}
+                {po.status === 'SENT' ? tc('resendWhatsapp') : tc('sendPurchaseOrder')}
               </Button>
             ) : null}
             {canReceive ? (
@@ -406,6 +420,30 @@ export default function PurchaseOrderDetailPage({ params }: { params: { id: stri
       />
 
       {banner ? <Alert variant="success">{banner}</Alert> : null}
+      {whatsappBody || po.whatsappLastBody ? (
+        <Alert variant="info">
+          <p className="font-medium">{tc('whatsappMessage')}</p>
+          {(po.whatsappLastTo || null) && (
+            <p className="text-sm text-text-secondary" dir="ltr">
+              {po.whatsappLastTo}
+            </p>
+          )}
+          <pre className="mt-2 whitespace-pre-wrap text-sm" dir="ltr">
+            {whatsappBody || po.whatsappLastBody}
+          </pre>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-2"
+            onClick={() => {
+              void navigator.clipboard.writeText(whatsappBody || po.whatsappLastBody || '');
+              setBanner(tc('copyWhatsapp'));
+            }}
+          >
+            {tc('copyWhatsapp')}
+          </Button>
+        </Alert>
+      ) : null}
       {error ? <Alert variant="error">{error}</Alert> : null}
 
       <div className="maher-stagger space-y-6">

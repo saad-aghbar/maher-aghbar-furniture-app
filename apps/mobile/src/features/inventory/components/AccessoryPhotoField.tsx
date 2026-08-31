@@ -12,6 +12,7 @@ import {
 } from '../accessoryPhotoUpload';
 import { useAccessoryCamera } from './AccessoryCameraProvider';
 import { AccessoryPhotoSourceSheet } from './AccessoryPhotoSourceSheet';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
   /** Existing remote URL (edit) or local preview while picking. */
@@ -29,7 +30,7 @@ export function AccessoryPhotoField({
   onUploadingChange,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const { showToast } = useToast();
   const { openAccessoryCamera } = useAccessoryCamera();
   const [busyLocal, setBusyLocal] = useState(false);
@@ -106,7 +107,7 @@ export function AccessoryPhotoField({
           opacity: busy ? 0.6 : 1,
           alignItems: 'center',
           justifyContent: 'center',
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         }}
       >
         {previewUri ? (

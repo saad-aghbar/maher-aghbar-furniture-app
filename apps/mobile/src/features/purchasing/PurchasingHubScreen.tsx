@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,7 +8,8 @@ import { can } from '@maher/permissions';
 import { localizedName } from '@maher/i18n';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
-import { listWarehouses } from '@/api/modules/inventory';
+import { listLowStock, listWarehouses } from '@/api/modules/inventory';
+import { queryKeys } from '@/api/queryKeys';
 import type { MaterialDemandRow } from '@/api/modules/purchasing';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -28,7 +30,6 @@ import { surfaceListBottomInset } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { CreatePurchaseOrderSheet } from './components/CreatePurchaseOrderSheet';
 import { CreatePurchaseRequestSheet } from './components/CreatePurchaseRequestSheet';
-import { CreateSupplierSheet } from './components/CreateSupplierSheet';
 import { NeedsToBuyBoard } from './components/NeedsToBuyBoard';
 import { PurchaseOrderBoardCard } from './components/PurchaseOrderBoardCard';
 import { PurchaseRequestBoardCard } from './components/PurchaseRequestBoardCard';
@@ -64,6 +65,8 @@ import {
   selectSupplierInvoiceCard,
   type DraftMaterialLine,
 } from './selectPurchase';
+
+const LIST_BOTTOM_EXTRA = 48;
 
 type NeedsCartEntry = {
   inventoryItemId: string;
@@ -127,7 +130,7 @@ export function PurchasingHubScreen() {
   const canSi = can(user, 'supplier-invoice.read');
   const canCreatePo = can(user, 'purchase-order.create');
   const canCreatePr = can(user, 'purchase-request.create');
-  const canManageSupplier = can(user, 'supplier.manage');
+  const canReadSupplier = can(user, 'supplier.read');
   const canInventory = can(user, 'inventory.read');
 
   const routeParams = useLocalSearchParams<{
@@ -158,7 +161,6 @@ export function PurchasingHubScreen() {
   const [createPoOpen, setCreatePoOpen] = useState(false);
   const [createPoInitialLines, setCreatePoInitialLines] = useState<DraftMaterialLine[] | undefined>();
   const [createPrOpen, setCreatePrOpen] = useState(false);
-  const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [needsCart, setNeedsCart] = useState<Record<string, NeedsCartEntry>>({});
@@ -352,13 +354,7 @@ export function PurchasingHubScreen() {
         ? t('mobile.purchasing.searchRequests')
         : t('mobile.purchasing.searchInvoices');
 
-  const supplierChipRaw = t('mobile.purchasing.newSupplierShort');
-  const supplierChipLabel =
-    supplierChipRaw !== 'mobile.purchasing.newSupplierShort'
-      ? supplierChipRaw
-      : t('catalog.newSupplier') !== 'catalog.newSupplier'
-        ? t('catalog.newSupplier')
-        : 'Supplier';
+  const supplierChipLabel = t('mobile.purchasing.suppliers');
 
   if (!canPo && !canPr && !canSi) {
     return (
@@ -481,6 +477,17 @@ export function PurchasingHubScreen() {
                 setStatus('ALL');
               }}
             />
+            <AppText
+              variant="caption"
+              color="muted"
+              style={{ textAlign: isRTL ? 'right' : 'left' }}
+            >
+              {tab === 'orders'
+                ? t('mobile.purchasing.tabOrdersHint')
+                : tab === 'requests'
+                  ? t('mobile.purchasing.tabRequestsHint')
+                  : t('mobile.purchasing.tabInvoicesHint')}
+            </AppText>
 
             <View
               style={{
@@ -512,14 +519,14 @@ export function PurchasingHubScreen() {
                     pill
                   />
                 </View>
-                {canManageSupplier ? (
+                {canReadSupplier ? (
                   <AnimatedPressable
                     variant="button"
                     accessibilityRole="button"
-                    accessibilityLabel={t('catalog.newSupplier')}
+                    accessibilityLabel={t('mobile.purchasing.suppliers')}
                     onPress={() => {
                       void haptics.selection();
-                      setCreateSupplierOpen(true);
+                      router.push('/(app)/(admin)/purchasing/suppliers' as Href);
                     }}
                     style={{
                       height: PURCHASING_CHROME_CONTROL_H,
@@ -546,7 +553,7 @@ export function PurchasingHubScreen() {
                         borderColor: colors.brand,
                       }}
                     >
-                      <Ionicons name="add" size={16} color={colors.brand} />
+                      <Ionicons name="people-outline" size={16} color={colors.brand} />
                     </View>
                     <AppText
                       variant="caption"
@@ -752,12 +759,6 @@ export function PurchasingHubScreen() {
           onCreated={(id) =>
             router.push(`/(app)/(admin)/purchasing/requests/${id}` as Href)
           }
-        />
-      ) : null}
-      {canManageSupplier ? (
-        <CreateSupplierSheet
-          open={createSupplierOpen}
-          onClose={() => setCreateSupplierOpen(false)}
         />
       ) : null}
     </AppScreen>

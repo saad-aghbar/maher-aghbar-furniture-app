@@ -3,7 +3,8 @@
 import { ListPage } from '@/components/list-page';
 import { Link } from '@/i18n/navigation';
 import { StatusBadge } from '@maher/ui';
-import { useTranslations } from 'next-intl';
+import { presentQuotationStatus } from '@maher/i18n';
+import { useLocale, useTranslations } from 'next-intl';
 
 interface Row {
   id: string;
@@ -11,9 +12,11 @@ interface Row {
   version: number;
   status: string;
   total?: string | number;
+  commerciallyExpired?: boolean;
 }
 
 export default function CustomerQuotationsPage() {
+  const locale = useLocale();
   const t = useTranslations('quotations');
   const tCommon = useTranslations('common');
 
@@ -38,7 +41,12 @@ export default function CustomerQuotationsPage() {
         {
           key: 'status',
           header: tCommon('status'),
-          render: (r) => <StatusBadge status={r.status} />,
+          render: (r) => (
+            <StatusBadge
+              status={r.status}
+              label={presentQuotationStatus(locale, r.status, r.commerciallyExpired)}
+            />
+          ),
         },
       ]}
     />

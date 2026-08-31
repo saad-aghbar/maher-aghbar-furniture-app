@@ -183,7 +183,7 @@ describe('selectProduction', () => {
     expect(zero.actualManufacturingCost).toBeNull();
   });
 
-  it('filters workers to the stage department', () => {
+  it('prefers stage department but falls back to full list when none match', () => {
     const workers = [
       {
         id: 'a',
@@ -201,6 +201,7 @@ describe('selectProduction', () => {
     expect(workersForStage(workers, 'CUTTING')).toHaveLength(1);
     expect(workersForStage(workers, 'CUTTING')[0]?.id).toBe('a');
     expect(workersForStage(workers, null)).toHaveLength(2);
+    expect(workersForStage(workers, 'UPHOLSTERY')).toHaveLength(2);
   });
 });
 

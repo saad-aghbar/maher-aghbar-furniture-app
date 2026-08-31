@@ -13,7 +13,7 @@ import {
 } from '@/api/modules/inventory';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { useLocale } from '@/i18n';
+import { chevronForwardName, rowDirection, startEdge, useLocale } from '@/i18n';
 import { AnimatedPressable, CountUp, haptics, softFadeDown, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
 

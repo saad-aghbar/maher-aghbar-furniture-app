@@ -289,6 +289,7 @@ describe('DeliveryLoadService', () => {
       inventory as any,
       pipeline as any,
       notifications as any,
+      { ensureFromSalesOrder: jest.fn().mockResolvedValue(undefined) } as any,
     );
     return { service, prisma, inventory };
   }

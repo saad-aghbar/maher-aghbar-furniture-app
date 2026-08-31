@@ -33,6 +33,7 @@
   "tax": "ضريبة القيمة المضافة",
   "paymentTerms": "شروط الدفع",
   "deliveryTerms": "شروط التسليم",
+  "factoryDelivery": "تسليم المصنع",
   "notes": "ملاحظات",
   "specs": "المواصفات",
   "awaitingRevision": "بانتظار عرض معدّل",
@@ -58,5 +59,31 @@
   "deliveryCity": "مدينة التسليم",
   "preferredDeliveryDate": "تاريخ التسليم المفضل",
   "attachment": "المرفق",
-  "submitFailed": "تعذر إرسال الطلب"
+  "submitFailed": "تعذر إرسال الطلب",
+  "sendQuotation": "إرسال عرض السعر",
+  "issueQuotation": "إصدار عرض السعر",
+  "priceRequired": "السعر مطلوب",
+  "referencePrice": "مرجع الكتالوج / سعر التاجر",
+  "revised": "مُعدَّل",
+  "rejectionReason": "سبب الرفض",
+  "rejectReasonPlaceholder": "السعر، مدة التسليم، المواصفات، إلغاء العميل، أو سبب آخر",
+  "rejectReasonOptional": "السبب (اختياري)",
+  "expiredCannotAccept": "انتهت صلاحية عرض السعر.",
+  "cannotSendTitle": "تعذر إرسال عرض السعر",
+  "complexityLabel": "النوع",
+  "complexity": {
+    "STANDARD": "قياسي",
+    "MODIFIED": "معدَّل",
+    "CUSTOM": "مخصص"
+  },
+  "statusPresentment": {
+    "DRAFT": "مسودة",
+    "READY_TO_SEND": "جاهز للإرسال",
+    "SENT_WAITING": "مُرسل / بانتظار التاجر",
+    "ACCEPTED": "مقبول",
+    "REJECTED": "مرفوض",
+    "EXPIRED": "منتهي",
+    "REVISION_REQUESTED": "طُلب تعديل",
+    "CANCELLED": "ملغى"
+  }
 }

@@ -1,10 +1,10 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
-import { useTheme, type ThemeColors } from '@/theme';
-import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { useTheme } from '@/theme';
 import {
   RFQ_PATH_STEPS,
   RFQ_WORKSPACE_STAGES,
@@ -16,6 +16,11 @@ import {
 } from '../rfqWorkspaceStage';
 
 export type { RfqWorkspaceStage };
+export {
+  isRfqWaitingForReview,
+  rfqIncompleteGaps,
+  rfqStageFromData,
+} from '../rfqWorkspaceStage';
 
 type Props = {
   stage: RfqWorkspaceStage;
@@ -26,35 +31,15 @@ type Props = {
 
 const STAGES = RFQ_WORKSPACE_STAGES;
 
-function stageTint(colors: ThemeColors, key: RfqWorkspaceStage) {
-  switch (key) {
-    case 'request':
-      return { tint: colors.brand, soft: colors.brandSoft };
-    case 'quotation':
-      return { tint: colors.info, soft: colors.infoSoft };
-    case 'order':
-      return { tint: colors.success, soft: colors.successSoft };
-  }
-}
-
-function StageIcon({
-  stageKey,
-  color,
-}: {
-  stageKey: RfqWorkspaceStage;
-  color: string;
-}) {
-  const name =
-    stageKey === 'request'
-      ? 'document-text-outline'
-      : stageKey === 'quotation'
-        ? 'receipt-outline'
-        : 'cube-outline';
-  return <Ionicons name={name} size={14} color={color} />;
-}
+const STAGE_ICON: Record<RfqWorkspaceStage, keyof typeof Ionicons.glyphMap> = {
+  request: 'document-text-outline',
+  quotation: 'receipt-outline',
+  order: 'cube-outline',
+};
 
 /**
- * Floor-board stage spine for unapproved orders — same language as OrdersStageSpine.
+ * Request → Quotation → Order spine — period cells on a parchment board.
+ * Selected = brandSoft + 3px bottom bar. Never `colors.info`.
  */
 export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
   const { t, isRTL, locale } = useLocale();
@@ -80,7 +65,6 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
     return hasOrder;
   };
 
-  /** Workflow completion only — never mark done just for visiting. */
   const completed = (key: RfqWorkspaceStage) => {
     if (key === 'request') return hasQuote || hasOrder;
     if (key === 'quotation') return hasOrder;
@@ -99,109 +83,118 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
       }}
     >
       <View
+        pointerEvents="none"
         style={{
           position: 'absolute',
           top: 0,
           bottom: 0,
-          ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
           backgroundColor: colors.brand,
-          opacity: 0.5,
+          opacity: 0.55,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
         }}
       />
 
       <View
         style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
           gap: theme.spacing.sm,
-          padding: theme.spacing.md,
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: theme.spacing.sm + 2,
           ...(isRTL
             ? { paddingRight: theme.spacing.md + 4 }
             : { paddingLeft: theme.spacing.md + 4 }),
+          backgroundColor: colors.surfaceSecondary,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
         }}
       >
         <View
           style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
+            width: 28,
+            height: 28,
+            borderRadius: 14,
             alignItems: 'center',
-            gap: theme.spacing.sm,
+            justifyContent: 'center',
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
           }}
         >
-          <View
+          <Ionicons name="git-branch-outline" size={14} color={colors.brand} />
+        </View>
+        <View style={{ flex: 1, gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+          <AppText
+            variant="caption"
+            weight={titleWeight}
             style={{
-              width: 28,
-              height: 28,
-              borderRadius: 14,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.surfaceSecondary,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.border,
+              color: colors.brand,
+              letterSpacing: locale === 'ar' ? 0 : 0.5,
+              textTransform: locale === 'ar' ? 'none' : 'uppercase',
+              fontSize: 11,
+              lineHeight: 14,
             }}
           >
-            <Ionicons name="git-branch-outline" size={14} color={colors.brand} />
-          </View>
-          <View style={{ flex: 1, gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-            <AppText
-              variant="caption"
-              weight={titleWeight}
-              style={{
-                color: colors.brand,
-                letterSpacing: locale === 'ar' ? 0 : 1.2,
-                textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                fontSize: 11,
-                lineHeight: 14,
-              }}
-            >
-              {t('mobile.adminRequest.eyebrow')}
-            </AppText>
-            <View
-              accessibilityLabel={t('mobile.adminRequest.stageHint')}
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-              }}
-            >
-              {RFQ_PATH_STEPS.map((key, index) => {
-                const tone = rfqPathTone(key, reached);
-                return (
-                  <View
-                    key={key}
-                    style={{
-                      flexDirection: isRTL ? 'row-reverse' : 'row',
-                      alignItems: 'center',
-                    }}
-                  >
-                    {index > 0 ? (
-                      <AppText
-                        variant="caption"
-                        color="muted"
-                        maxFontSizeMultiplier={1.15}
-                        style={{ fontSize: 11, lineHeight: 15, marginHorizontal: 4 }}
-                      >
-                        {isRTL ? '←' : '→'}
-                      </AppText>
-                    ) : null}
+            {t('mobile.adminRequest.eyebrow')}
+          </AppText>
+          <View
+            accessibilityLabel={t('mobile.adminRequest.stageHint')}
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            {RFQ_PATH_STEPS.map((key, index) => {
+              const tone = rfqPathTone(key, reached);
+              return (
+                <View
+                  key={key}
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                  }}
+                >
+                  {index > 0 ? (
                     <AppText
                       variant="caption"
-                      color={tone === 'upcoming' ? 'muted' : 'secondary'}
-                      weight={tone === 'current' ? titleWeight : 'regular'}
+                      color="muted"
                       maxFontSizeMultiplier={1.15}
-                      style={{
-                        fontSize: 11,
-                        lineHeight: 15,
-                        opacity: tone === 'upcoming' ? 0.55 : 1,
-                      }}
+                      style={{ fontSize: 11, lineHeight: 15, marginHorizontal: 4 }}
                     >
-                      {pathLabel(key)}
+                      {isRTL ? '←' : '→'}
                     </AppText>
-                  </View>
-                );
-              })}
-            </View>
+                  ) : null}
+                  <AppText
+                    variant="caption"
+                    color={tone === 'upcoming' ? 'muted' : 'secondary'}
+                    weight={tone === 'current' ? titleWeight : 'regular'}
+                    maxFontSizeMultiplier={1.15}
+                    style={{
+                      fontSize: 11,
+                      lineHeight: 15,
+                      opacity: tone === 'upcoming' ? 0.55 : 1,
+                    }}
+                  >
+                    {pathLabel(key)}
+                  </AppText>
+                </View>
+              );
+            })}
           </View>
         </View>
+      </View>
 
+      <View
+        style={{
+          gap: theme.spacing.sm,
+          padding: theme.spacing.sm + 2,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.sm + 6 }
+            : { paddingLeft: theme.spacing.sm + 6 }),
+        }}
+      >
         <View
           style={{
             height: 6,
@@ -211,7 +204,7 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
             flexDirection: isRTL ? 'row-reverse' : 'row',
             gap: 2,
             padding: 1.5,
-            borderWidth: StyleSheet.hairlineWidth,
+            borderWidth: 1,
             borderColor: colors.border,
           }}
         >
@@ -235,115 +228,96 @@ export function RfqStageRail({ stage, onChange, hasQuote, hasOrder }: Props) {
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            gap: theme.spacing.xs,
+            gap: theme.spacing.sm,
           }}
         >
-          {STAGES.map((key, index) => {
-            const { tint, soft } = stageTint(colors, key);
+          {STAGES.map((key) => {
             const active = stage === key;
             const unlocked = available(key);
             const done = completed(key) && !active;
             const muted = !unlocked && !active;
+            const ink = done ? colors.success : colors.brand;
 
             return (
-              <View key={key} style={{ flex: 1, opacity: muted ? 0.4 : 1 }}>
-                <AnimatedPressable
-                  variant="button"
-                  disabled={muted}
-                  onPress={() => {
-                    if (muted) return;
-                    void haptics.selection();
-                    onChange(key);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active, disabled: muted }}
-                  accessibilityLabel={labelFor(key)}
+              <AnimatedPressable
+                key={key}
+                variant="button"
+                disabled={muted}
+                onPress={() => {
+                  if (muted) return;
+                  void haptics.selection();
+                  onChange(key);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active, disabled: muted }}
+                accessibilityLabel={labelFor(key)}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 64,
+                  opacity: muted ? 0.4 : 1,
+                  borderRadius: theme.radius.lg,
+                  borderWidth: 1,
+                  borderColor: active ? colors.brand : colors.borderStrong,
+                  backgroundColor: active ? colors.brandSoft : colors.surfaceSecondary,
+                  paddingVertical: theme.spacing.sm,
+                  paddingHorizontal: theme.spacing.xs,
+                  overflow: 'hidden',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                }}
+              >
+                {active ? (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 3,
+                      backgroundColor: colors.brand,
+                    }}
+                  />
+                ) : null}
+                <View
                   style={{
-                    paddingTop: theme.spacing.sm,
-                    paddingBottom: theme.spacing.sm,
-                    paddingHorizontal: 6,
-                    borderRadius: theme.radius.md,
-                    backgroundColor: active ? soft : colors.surfaceSecondary,
-                    borderWidth: active ? 1.5 : StyleSheet.hairlineWidth,
-                    borderColor: active ? tint : colors.border,
+                    width: 26,
+                    height: 26,
+                    borderRadius: 13,
                     alignItems: 'center',
-                    gap: 6,
+                    justifyContent: 'center',
+                    backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: active || done ? ink : colors.border,
                   }}
                 >
-                  <View
-                    style={{
-                      width: 36,
-                      height: 36,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: colors.surface,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: active || done ? tint : colors.border,
-                      }}
-                    >
-                      {done ? (
-                        <Ionicons name="checkmark" size={14} color={tint} />
-                      ) : (
-                        <StageIcon stageKey={key} color={tint} />
-                      )}
-                    </View>
-                    <View
-                      style={{
-                        position: 'absolute',
-                        ...(isRTL ? { left: -2 } : { right: -2 }),
-                        top: -2,
-                        minWidth: 16,
-                        height: 16,
-                        paddingHorizontal: 3,
-                        borderRadius: 8,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: active ? tint : colors.surface,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: active || done ? tint : colors.border,
-                      }}
-                    >
-                      <AppText
-                        variant="caption"
-                        weight="semibold"
-                        dir="ltr"
-                        style={{
-                          color: active ? colors.onBrand : tint,
-                          fontSize: 9,
-                          lineHeight: 11,
-                          fontVariant: ['tabular-nums'],
-                        }}
-                      >
-                        {String(index + 1)}
-                      </AppText>
-                    </View>
-                  </View>
-                  <AppText
-                    variant="caption"
-                    numberOfLines={1}
-                    align="center"
-                    weight={active ? titleWeight : 'regular'}
-                    maxFontSizeMultiplier={1.05}
-                    style={{
-                      fontSize: isRTL ? 10 : 11,
-                      lineHeight: 13,
-                      textAlign: 'center',
-                      color: active ? tint : colors.textSecondary,
-                    }}
-                  >
-                    {labelFor(key)}
-                  </AppText>
-                </AnimatedPressable>
-              </View>
+                  {done ? (
+                    <Ionicons name="checkmark" size={14} color={ink} />
+                  ) : (
+                    <Ionicons
+                      name={STAGE_ICON[key]}
+                      size={13}
+                      color={active ? colors.brand : colors.textSecondary}
+                    />
+                  )}
+                </View>
+                <AppText
+                  variant="caption"
+                  numberOfLines={2}
+                  align="center"
+                  weight={active ? titleWeight : 'medium'}
+                  maxFontSizeMultiplier={1.05}
+                  style={{
+                    fontSize: 11,
+                    lineHeight: 13,
+                    color: active ? colors.brand : colors.textSecondary,
+                  }}
+                >
+                  {labelFor(key)}
+                </AppText>
+              </AnimatedPressable>
             );
           })}
         </View>

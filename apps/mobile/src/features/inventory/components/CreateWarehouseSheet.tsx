@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Pressable } from 'react-native';
+import { View } from 'react-native';
 import { isApiError } from '@/api/errors';
 import { toastMessageForError } from '@/api/queryClient';
 import { AppText } from '@/components/AppText';
@@ -7,7 +7,7 @@ import { useToast } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { Warehouse, WarehouseType } from '../api';
 import { useCreateWarehouseMutation } from '../query';
@@ -138,12 +138,19 @@ export function CreateWarehouseSheet({
             icon="business-outline"
             onPress={() => setTypeSheet(true)}
           />
-          <Pressable onPress={() => setIsDefault((v) => !v)}>
+          <AnimatedPressable
+            variant="button"
+            accessibilityRole="button"
+            onPress={() => {
+              void haptics.selection();
+              setIsDefault((v) => !v);
+            }}
+          >
             <AppText variant="caption">
               {isDefault ? '☑ ' : '☐ '}
               {label('inventory.isDefault', 'Default for this type')}
             </AppText>
-          </Pressable>
+          </AnimatedPressable>
           <InventorySheetFooter
             primaryLabel={t('mobile.inventory.saveItem')}
             onPrimary={submit}

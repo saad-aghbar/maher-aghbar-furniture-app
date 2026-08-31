@@ -171,9 +171,9 @@ describe('selectAvailabilityDayMeta', () => {
     expect(meta['2026-09-05']?.tone).toBe('half'); // Saturday alternative
     // Alternative Thursday → half
     expect(meta['2026-09-10']?.tone).toBe('half');
-    // Working day after earliest with no chip → selectable empty
-    expect(meta['2026-09-02']?.tone).toBe('empty');
-    expect(meta['2026-09-02']?.disabled).toBe(false);
+    // Working day after earliest with no chip and no days[] → not selectable
+    expect(meta['2026-09-02']?.tone).toBe('busy');
+    expect(meta['2026-09-02']?.disabled).toBe(true);
   });
 
   it('honors an explicit workingDays set', () => {
@@ -193,5 +193,86 @@ describe('selectAvailabilityDayMeta', () => {
     expect(meta['2026-09-01']?.tone).toBe('light');
     expect(meta['2026-09-05']?.tone).toBe('half');
     expect(meta['2026-09-02']?.tone).toBe('closed');
+  });
+
+  it('never lets the dealer select a HIGH_LOAD day even when it is after earliest', () => {
+    const display = selectDeliveryAvailability({
+      hasItems: true,
+      isLoading: false,
+      isError: false,
+      result: {
+        ...calculated,
+        days: [
+          { date: '2026-09-01', status: 'available', selectable: true, reason: null },
+          { date: '2026-09-02', status: 'unavailable', selectable: false, reason: 'HIGH_LOAD' },
+          { date: '2026-09-03', status: 'unavailable', selectable: false, reason: 'CLOSED_DAY' },
+        ],
+      },
+    });
+    const meta = selectAvailabilityDayMeta({
+      display,
+      year: 2026,
+      monthIndex: 8,
+    });
+    expect(meta['2026-09-01']?.disabled).toBe(false);
+    expect(meta['2026-09-02']?.disabled).toBe(true);
+    expect(meta['2026-09-03']?.disabled).toBe(true);
+  });
+
+  it('disables today through day+3 and can still refuse day+4 via factory rules', () => {
+    const display = selectDeliveryAvailability({
+      hasItems: true,
+      isLoading: false,
+      isError: false,
+      result: {
+        ...calculated,
+        earliestAvailableDate: '2026-09-14',
+        suggestedDeliveryDate: '2026-09-14',
+        alternativeDates: ['2026-09-14', '2026-09-18'],
+        minimumRequestDate: '2026-09-14',
+        days: [
+          { date: '2026-09-10', status: 'available', selectable: true, reason: null },
+          { date: '2026-09-11', status: 'available', selectable: true, reason: null },
+          { date: '2026-09-12', status: 'available', selectable: true, reason: null },
+          { date: '2026-09-13', status: 'available', selectable: true, reason: null },
+          { date: '2026-09-14', status: 'available', selectable: true, reason: null },
+        ],
+      },
+    });
+    const meta = selectAvailabilityDayMeta({
+      display,
+      year: 2026,
+      monthIndex: 8,
+    });
+    expect(meta['2026-09-10']?.disabled).toBe(true);
+    expect(meta['2026-09-11']?.disabled).toBe(true);
+    expect(meta['2026-09-12']?.disabled).toBe(true);
+    expect(meta['2026-09-13']?.disabled).toBe(true);
+    expect(meta['2026-09-14']?.disabled).toBe(false);
+    expect(display.minimumRequestDate).toBe('2026-09-14');
+
+    const factoryBlocksDay4 = selectDeliveryAvailability({
+      hasItems: true,
+      isLoading: false,
+      isError: false,
+      result: {
+        ...calculated,
+        earliestAvailableDate: '2026-09-18',
+        suggestedDeliveryDate: '2026-09-18',
+        minimumRequestDate: '2026-09-14',
+        days: [
+          { date: '2026-09-14', status: 'unavailable', selectable: false, reason: 'TOO_EARLY' },
+          { date: '2026-09-18', status: 'available', selectable: true, reason: null },
+        ],
+      },
+    });
+    const blocked = selectAvailabilityDayMeta({
+      display: factoryBlocksDay4,
+      year: 2026,
+      monthIndex: 8,
+    });
+    expect(factoryBlocksDay4.earliestDate).toBe('2026-09-18');
+    expect(blocked['2026-09-14']?.disabled).toBe(true);
+    expect(blocked['2026-09-18']?.disabled).toBe(false);
   });
 });

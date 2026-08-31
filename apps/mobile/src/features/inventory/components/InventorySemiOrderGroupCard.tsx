@@ -120,7 +120,7 @@ export function InventorySemiOrderGroupCard({
 
   const accent =
     dominant === 'station'
-      ? colors.info
+      ? colors.brand
       : dominant === 'warehouse'
         ? colors.success
         : dominant === 'received'
@@ -159,7 +159,7 @@ export function InventorySemiOrderGroupCard({
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: 0.85,
+            opacity: dominant === 'received' ? 0.9 : 0.55,
           }}
         />
 
@@ -219,16 +219,16 @@ export function InventorySemiOrderGroupCard({
                 paddingHorizontal: 8,
                 paddingVertical: 4,
                 borderRadius: theme.radius.full,
-                backgroundColor: colors.infoSoft,
+                backgroundColor: colors.brandSoft,
                 borderWidth: 1,
-                borderColor: colors.info,
+                borderColor: colors.brand,
               }}
             >
               <AppText
                 variant="caption"
-                weight="semibold"
+                weight={titleWeight}
                 numberOfLines={1}
-                style={{ color: colors.info, fontSize: 11 }}
+                style={{ color: colors.brand, fontSize: 11 }}
               >
                 {t('mobile.inventory.semiOrderProgress', {
                   active: String(counts.active),
@@ -399,8 +399,8 @@ export function InventorySemiOrderGroupCard({
             <StatusChip
               count={counts.atStation}
               label={t('mobile.inventory.semiOrderChipStation')}
-              soft={colors.infoSoft}
-              ink={colors.info}
+              soft={colors.brandSoft}
+              ink={colors.brand}
               isRTL={isRTL}
             />
             {counts.used > 0 ? (

@@ -123,7 +123,9 @@ export class WorkflowSnapshotService {
   }
 
   /**
-   * Assign a published workflow to a production order that has no snapshot yet.
+   * Assign / replace a published workflow on a production order.
+   * Preparing (not factory-released, no started tasks): existing snapshot is torn down
+   * and rebuilt so plan tasks follow the new workflow.
    */
   async assignWorkflowToProductionOrder(
     productionOrderId: string,
@@ -131,34 +133,117 @@ export class WorkflowSnapshotService {
     userId?: string,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const po = await tx.productionOrder.findUnique({ where: { id: productionOrderId } });
+      const po = await tx.productionOrder.findUnique({
+        where: { id: productionOrderId },
+        include: {
+          salesOrderLine: {
+            include: {
+              productionSetup: {
+                include: {
+                  materialRequirements: { orderBy: { sortOrder: 'asc' as const } },
+                },
+              },
+            },
+          },
+        },
+      });
       if (!po) {
         throw new BadRequestException({
           code: 'NOT_FOUND',
           message: 'Production order not found.',
         });
       }
+
+      const status = String(po.status ?? '').toUpperCase();
+      const factoryStarted =
+        Boolean(po.releasedToFactoryAt) ||
+        Boolean(po.actualStartDate) ||
+        [
+          'IN_PROGRESS',
+          'ON_HOLD',
+          'QUALITY_CHECK',
+          'READY_FOR_PACKAGING',
+          'READY_FOR_DELIVERY',
+          'COMPLETED',
+        ].includes(status);
+      if (factoryStarted) {
+        throw new BadRequestException({
+          code: 'ORDER_WORKFLOW_LOCKED',
+          message: 'Cannot change workflow after Confirm / factory work has started.',
+        });
+      }
+
+      const startedTasks = await tx.productionTask.count({
+        where: {
+          productionOrderId,
+          status: {
+            in: [
+              'IN_PROGRESS',
+              'PAUSED',
+              'BLOCKED',
+              'READY_FOR_INSPECTION',
+              'COMPLETED',
+            ],
+          },
+        },
+      });
+      if (startedTasks > 0) {
+        throw new BadRequestException({
+          code: 'ORDER_WORKFLOW_LOCKED',
+          message: 'Cannot change workflow after a task has started.',
+        });
+      }
+
       const existing = await tx.productionOrderWorkflowSnapshot.findUnique({
         where: { productionOrderId },
       });
+
       if (existing) {
-        throw new BadRequestException({
-          code: 'ORDER_WORKFLOW_LOCKED',
-          message: 'Production order already has a workflow snapshot.',
+        await tx.scheduleAllocation.deleteMany({
+          where: { productionTask: { productionOrderId } },
+        });
+        await tx.productionTaskMaterialUsage.deleteMany({ where: { productionOrderId } });
+        await tx.taskTimeEntry.deleteMany({
+          where: { task: { productionOrderId } },
+        });
+        await tx.taskBlocker.deleteMany({
+          where: { task: { productionOrderId } },
+        });
+        await tx.productionTask.deleteMany({ where: { productionOrderId } });
+        await tx.productionStageInstance.deleteMany({ where: { productionOrderId } });
+        await tx.productionOrderWorkflowSnapshot.delete({
+          where: { productionOrderId },
+        });
+        await tx.productionOrder.update({
+          where: { id: productionOrderId },
+          data: {
+            currentStageCode: null,
+            progressPercent: 0,
+            status: status === 'DRAFT' ? 'DRAFT' : 'PLANNED',
+          },
         });
       }
-      const started = await tx.productionStageInstance.count({
-        where: {
-          productionOrderId,
-          status: { in: ['IN_PROGRESS', 'COMPLETED'] },
-        },
-      });
-      if (started > 0) {
-        throw new BadRequestException({
-          code: 'ORDER_WORKFLOW_LOCKED',
-          message: 'Cannot assign workflow after production has started.',
+
+      if (po.salesOrderLineId) {
+        await tx.salesOrderLineSetup.updateMany({
+          where: { salesOrderLineId: po.salesOrderLineId },
+          data: {
+            workflowId,
+            workflowConfirmedAt: new Date(),
+          },
         });
       }
+
+      const mats = po.salesOrderLine?.productionSetup?.materialRequirements ?? [];
+      const materialOverrides = mats
+        .filter((m) => m.inventoryItemId && m.sku)
+        .map((m) => ({
+          inventoryItemId: m.inventoryItemId!,
+          sku: m.sku!,
+          qtyPerUnit: Number(m.expectedQty),
+          unit: m.unit || 'pcs',
+          required: true as const,
+        }));
 
       const snapshot = await this.createSnapshotForProductionOrder(
         {
@@ -169,6 +254,7 @@ export class WorkflowSnapshotService {
           specifications: po.specifications,
           createdById: userId,
           workflowId,
+          materialOverrides: materialOverrides.length ? materialOverrides : undefined,
         },
         tx,
       );
@@ -178,6 +264,19 @@ export class WorkflowSnapshotService {
           message: 'Could not create workflow snapshot for this order.',
         });
       }
+
+      await tx.auditEvent.create({
+        data: {
+          userId: userId ?? null,
+          action: existing
+            ? 'production-order.workflow.replace'
+            : 'production-order.workflow.assign',
+          entityType: 'ProductionOrder',
+          entityId: productionOrderId,
+          newValues: { workflowId, replaced: Boolean(existing) },
+        },
+      });
+
       return snapshot;
     });
   }

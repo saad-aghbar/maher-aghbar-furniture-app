@@ -34,8 +34,24 @@ export type AvailabilityRequest = {
   items: AvailabilityItemInput[];
   /** ISO date the dealer wants delivery by. */
   requestedDeliveryDate?: string;
+  from?: string;
+  to?: string;
   /** Admin-only: check availability on behalf of a specific dealer. */
   customerId?: string;
+};
+
+export type AvailabilityDay = {
+  date: string;
+  status: 'available' | 'unavailable';
+  selectable: boolean;
+  reason?: string | null;
+};
+
+export type AvailabilityAdminDay = {
+  date: string;
+  status: 'available' | 'high_load' | 'closed' | 'unavailable';
+  reason: string | null;
+  loadPercent?: number;
 };
 
 export type AvailabilityResult = {
@@ -47,6 +63,12 @@ export type AvailabilityResult = {
   alternativeDates: string[];
   estimateConfidence: ScheduleEstimateConfidence;
   requiresAdminEstimateReview: boolean;
+  from?: string;
+  to?: string;
+  days?: AvailabilityDay[];
+  adminDays?: AvailabilityAdminDay[];
+  /** Factory-local today + 4 calendar days. Dealer requests before this are rejected. */
+  minimumRequestDate?: string | null;
 };
 
 /** Dealer-safe check for whether items can be delivered by a target date. */
@@ -238,6 +260,49 @@ export async function recalculateSchedule(
 ): Promise<ProductionScheduleDetail> {
   return apiPost<ProductionScheduleDetail>(
     `/scheduling/orders/${encodeURIComponent(productionOrderId)}/recalculate`,
+    body,
+  );
+}
+
+export type ReviewedAllocationMoveInput = {
+  allocationId?: string;
+  productionTaskId?: string;
+  employeeId: string | null;
+  plannedStart: string;
+  plannedEnd: string;
+  sortOrder?: number;
+};
+
+export type GenerateSchedulePreview = {
+  preview?: boolean;
+  persist?: boolean;
+  productionOrderId?: string;
+  allocations?: Array<{
+    productionTaskId?: string | null;
+    employeeId?: string | null;
+    plannedStart: string | Date;
+    plannedEnd: string | Date;
+    estimatedMinutes?: number;
+  }>;
+};
+
+/** Preview a plan — never writes. Apply with applyReviewedAllocations. */
+export async function generateSchedulePreview(
+  productionOrderId: string,
+): Promise<GenerateSchedulePreview> {
+  return apiPost<GenerateSchedulePreview>(
+    `/scheduling/orders/${encodeURIComponent(productionOrderId)}/generate`,
+    {},
+  );
+}
+
+/** Persist the exact worker/date/time list Admin reviewed. */
+export async function applyReviewedAllocations(
+  productionOrderId: string,
+  body: { allocations: ReviewedAllocationMoveInput[]; reason?: string },
+): Promise<ProductionScheduleDetail | GenerateSchedulePreview> {
+  return apiPost(
+    `/scheduling/orders/${encodeURIComponent(productionOrderId)}/apply-moves`,
     body,
   );
 }
@@ -583,6 +648,16 @@ export type CalendarResponse = {
   } | unknown;
   days: CalendarDay[];
   orders: ScheduleOrderCard[];
+  unscheduled?: Array<{
+    id: string;
+    number: string;
+    status: string;
+    productDescription: string;
+    requiredDeliveryDate?: string | null;
+    committedDeliveryDate?: string | null;
+    planningStatus?: 'UNSCHEDULED';
+    priority?: string | null;
+  }>;
 };
 
 export async function getCalendar(params: {

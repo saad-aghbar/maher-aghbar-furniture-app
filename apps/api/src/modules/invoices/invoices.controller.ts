@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
@@ -14,7 +14,7 @@ import { InvoicesService } from './invoices.service';
 import { PaymentsService } from '../payments/payments.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ListInvoicesDto } from './dto/invoice.dto';
+import { ListInvoicesDto, UpdateInvoiceDto } from './dto/invoice.dto';
 import type { AuthUser } from '@maher/types';
 
 class CreateInvoiceDto {
@@ -87,6 +87,16 @@ export class InvoicesController {
       { invoiceId: id, amount: dto.amount, idempotencyKey: dto.idempotencyKey },
       user.id,
     );
+  }
+
+  @Patch(':id')
+  @RequirePermissions('invoice.update')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateInvoiceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.invoices.update(id, dto, user.id);
   }
 
   @Post()

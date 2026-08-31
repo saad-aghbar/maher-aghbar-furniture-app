@@ -45,8 +45,10 @@ import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCa
 import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
+  classifyTaskQualityKind,
+  countPriorFails,
   isLastStageQualityFloor,
-  resolveTaskQualityKind,
+  isQcFailResult,
   type TaskQualityKind,
 } from '@/features/quality/taskQualityKind';
 import { useLocale } from '@/i18n';
@@ -106,11 +108,6 @@ import {
 import { QcFailSheet } from '@/features/quality/components/QcFailSheet';
 import { ReinspectionBanner } from '@/features/quality/components/ReinspectionBanner';
 import { ReworkFloorBanner } from '@/features/quality/components/ReworkFloorBanner';
-import {
-  classifyTaskQualityKind,
-  countPriorFails,
-  isQcFailResult,
-} from '@/features/quality/taskQualityKind';
 
 if (
   Platform.OS === 'android' &&
@@ -1033,8 +1030,13 @@ export function TaskDetailScreen({
   const deadlineLabel = vm.deadline
     ? formatDateTime(vm.deadline)
     : t('mobile.tasks.noDeadline');
-  const qualityKind = raw ? resolveTaskQualityKind(raw) : null;
-  const hideProductionChrome = isLastStageQualityFloor(qualityKind);
+  const floorQualityKind: TaskQualityKind =
+    qualityKind === 'inspection' ||
+    qualityKind === 'reinspection' ||
+    qualityKind === 'packaging'
+      ? qualityKind
+      : null;
+  const hideProductionChrome = isLastStageQualityFloor(floorQualityKind);
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
@@ -1047,7 +1049,7 @@ export function TaskDetailScreen({
       <View style={{ paddingHorizontal: pad }}>
         <TaskDetailNav
           onBack={onBack}
-          title={taskDetailNavTitle(qualityKind, t)}
+          title={taskDetailNavTitle(floorQualityKind, t)}
           subtitle={vm.orderNumber}
           trailing={
             <StatusBadge
@@ -1385,32 +1387,40 @@ export function TaskDetailScreen({
               isRTL={isRTL}
               locale={locale}
             >
+              {vm.notes ? (
+                <View style={{ gap: 4, marginBottom: theme.spacing.sm }}>
+                  <AppText
+                    variant="caption"
+                    weight="semibold"
+                    color="muted"
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {t('mobile.tasks.workerInstructions')}
+                  </AppText>
+                  <AppText
+                    variant="body"
+                    weight={titleWeight}
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {vm.notes}
+                  </AppText>
+                </View>
+              ) : null}
               <AppText
                 variant="caption"
                 weight="semibold"
                 color="muted"
                 style={{ textAlign: isRTL ? 'right' : 'left', marginBottom: 4 }}
               >
-                {t('mobile.tasks.instructions')}
+                {vm.notes
+                  ? t('mobile.tasks.stageGuide')
+                  : t('mobile.tasks.instructions')}
               </AppText>
               <AppText
                 variant="body"
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
                 {vm.instructions || t('mobile.tasks.noInstructions')}
-              </AppText>
-            </FloorSection>
-          ) : null}
-
-          {vm.notes ? (
-            <FloorSection
-              title={t('mobile.tasks.notes')}
-              isRTL={isRTL}
-              locale={locale}
-              sentenceCaseStamp={hideProductionChrome}
-            >
-              <AppText variant="body" style={{ textAlign: isRTL ? 'right' : 'left' }}>
-                {vm.notes}
               </AppText>
             </FloorSection>
           ) : null}

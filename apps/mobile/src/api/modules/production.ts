@@ -1,6 +1,7 @@
 import type { PaginatedResponse } from '@maher/types';
-import { apiGet, apiPatch, apiPost } from '../client';
+import { apiGet, apiPatch, apiPost, apiPut } from '../client';
 import { toSearchParams, type PageParams } from '../pagination';
+import type { ProductionSetupBehavior, ProductionSetupStage } from './workflow';
 
 export type ProductionListBucket =
   | 'all'
@@ -119,6 +120,14 @@ export type ProductionOrderListItem = {
     number: string;
     externalOrderNumber?: string | null;
   } | null;
+  salesOrderLine?: {
+    id: string;
+    description?: string | null;
+    productionSetup?: {
+      workflowId?: string | null;
+      manufacturingName?: string | null;
+    } | null;
+  } | null;
   currentStage?: {
     code: string;
     nameEn?: string | null;
@@ -126,6 +135,9 @@ export type ProductionOrderListItem = {
     nameHe?: string | null;
   } | null;
   readiness?: ProductionReadiness | null;
+  releasedToFactoryAt?: string | null;
+  releasedToFactoryById?: string | null;
+  actualStartDate?: string | null;
 };
 
 export type ProductionBlocker = {
@@ -175,6 +187,7 @@ export type ProductionTask = {
     resolvedAt?: string | null;
   }>;
   stageDefinition?: {
+    id?: string;
     code?: string;
     nameEn?: string;
     nameAr?: string | null;
@@ -240,6 +253,12 @@ export type ProductionOrderDetail = ProductionOrderListItem & {
 
 export type RecommendBand = 'recommended' | 'busy' | 'conflict' | 'other';
 
+export type WorkerOverlapWindow = {
+  start: string;
+  end: string;
+  label: string;
+};
+
 export type AssignableWorker = {
   id: string;
   firstName: string;
@@ -250,6 +269,11 @@ export type AssignableWorker = {
   recommendBand?: RecommendBand;
   recommendReason?: string | null;
   recommendReasonCode?: string | null;
+  overlapWindows?: WorkerOverlapWindow[];
+  suggestedWindow?: {
+    plannedStart: string;
+    plannedCompletion: string;
+  } | null;
   department?: {
     id: string;
     code: string;
@@ -294,10 +318,158 @@ export async function startProductionOrder(id: string) {
   return apiPost<ProductionOrderDetail>(`/production-orders/${encodeURIComponent(id)}/start`);
 }
 
+/** Ready to start → Preparing: clear release, unlock plan for edits. */
+export async function returnProductionOrderToPreparing(id: string) {
+  return apiPost<ProductionOrderDetail>(
+    `/production-orders/${encodeURIComponent(id)}/return-to-preparing`,
+  );
+}
+
 /** Repair missing floor tasks from stage instances (legacy demos / partial releases). */
 export async function ensureProductionPlanTasks(id: string) {
   return apiPost<{ created: number }>(
     `/production-orders/${encodeURIComponent(id)}/ensure-plan-tasks`,
+  );
+}
+
+export type OrderPlanBomLine = {
+  inventoryItemId?: string | null;
+  sku: string;
+  qty: number;
+  exists: boolean;
+  imageUrl?: string | null;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  nameHe?: string | null;
+  unit?: string | null;
+  category?: string | null;
+  source?: string;
+  needsReview?: boolean;
+  unitCost?: number | null;
+};
+
+export type OrderPlanSetupTask = {
+  id: string;
+  number: string;
+  name: string;
+  status: string;
+  assignedEmployeeId?: string | null;
+  plannedStart?: string | null;
+  plannedCompletion?: string | null;
+  /** Worker-facing instructions for this task (shown on the worker portal). */
+  notes?: string | null;
+  stageDefinitionId?: string | null;
+  stageDefinition?: {
+    id?: string;
+    code?: string;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    responsibleDepartment?: string | null;
+  } | null;
+  assigneeName?: string | null;
+};
+
+export type OrderPlanSetupResponse = {
+  productionOrderId: string;
+  salesOrderId: string | null;
+  salesOrderLineId: string | null;
+  planEditable: boolean;
+  factoryReleased: boolean;
+  product?: {
+    id: string;
+    sku?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+    imageUrl?: string | null;
+  } | null;
+  salesOrder?: {
+    id: string;
+    number: string;
+    customer?: {
+      id: string;
+      name?: string | null;
+      nameEn?: string | null;
+      nameAr?: string | null;
+      nameHe?: string | null;
+    } | null;
+  } | null;
+  workflow: {
+    id: string;
+    code?: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+  } | null;
+  bomLines: OrderPlanBomLine[];
+  stages: ProductionSetupStage[];
+  warehouses: Array<{
+    id: string;
+    nameEn: string;
+    nameAr: string;
+    nameHe?: string | null;
+    type: string;
+    isDefault: boolean;
+  }>;
+  tasks: OrderPlanSetupTask[];
+  readiness: {
+    hasWorkflow: boolean;
+    hasMaterials: boolean;
+    hasExecutableTasks?: boolean;
+    assignment: { required: number; assigned: number; missing: string[] };
+    dates?: { required: number; ready: number; missing: string[] };
+    canConfirm: boolean;
+  };
+};
+
+export async function getOrderPlanSetup(productionOrderId: string) {
+  return apiGet<OrderPlanSetupResponse>(
+    `/production-orders/${encodeURIComponent(productionOrderId)}/plan-setup`,
+  );
+}
+
+export async function putOrderPlanSetup(
+  productionOrderId: string,
+  body: {
+    workflowId?: string | null;
+    bomLines?: Array<{
+      inventoryItemId?: string | null;
+      sku?: string | null;
+      displayName?: string | null;
+      category?: string | null;
+      unit?: string;
+      expectedQty: number;
+      source?: 'CATALOG' | 'FACTORY_MODIFIED' | 'CUSTOM';
+      needsReview?: boolean;
+    }>;
+    stages?: Array<{
+      workflowNodeId: string;
+      stageDefinitionId: string;
+      behavior: ProductionSetupBehavior;
+      consumesRawMaterials?: boolean;
+      consumesSemiFinished?: boolean;
+      outputNameEn?: string | null;
+      outputNameAr?: string | null;
+      outputNameHe?: string | null;
+      outputQtyPerUnit?: number | null;
+      expectedPieceCount?: number | null;
+      pieceLabels?: Array<{ nameEn: string; nameAr?: string | null; nameHe?: string | null }> | null;
+      defaultWarehouseId?: string | null;
+      consumeOutputIds?: string[];
+      consumeWorkflowNodeIds?: string[];
+      materialInputs?: Array<{
+        sku: string;
+        qtyPerUnit: number;
+        unit?: string;
+        inventoryItemId?: string | null;
+      }>;
+    }>;
+  },
+) {
+  return apiPut<OrderPlanSetupResponse>(
+    `/production-orders/${encodeURIComponent(productionOrderId)}/plan-setup`,
+    body,
   );
 }
 

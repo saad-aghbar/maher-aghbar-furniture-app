@@ -415,4 +415,72 @@ describe('ManufacturingCostService', () => {
       }),
     );
   });
+
+  it('values draft usage from the live map so actual/variance update during production', async () => {
+    const prisma = {
+      productionOrder: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'po-1',
+          number: 'PO-1',
+          status: 'IN_PROGRESS',
+          quantity: 1,
+          salesOrderId: 'so-1',
+          salesOrderLineId: 'line-1',
+          product: { nameEn: 'Sofa' },
+        }),
+      },
+      salesOrderLineSetup: {
+        findUnique: jest.fn().mockResolvedValue({
+          salesOrderLine: { quantity: 1 },
+          materialRequirements: [
+            {
+              sku: 'FAB-1',
+              displayName: 'Velvet',
+              category: 'FABRIC',
+              expectedQty: 10,
+              inventoryItem: { sku: 'FAB-1', nameEn: 'Velvet', category: 'FABRIC' },
+            },
+          ],
+        }),
+      },
+      productionTaskMaterialUsage: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'u1',
+            productionOrderId: 'po-1',
+            taskId: 't1',
+            sku: 'FAB-1',
+            expectedQty: 10,
+            actualQty: 8,
+            returnedQty: 0,
+            scrapQty: 0,
+            unitCost: null,
+            extendedCost: null,
+            valuedAt: null,
+            finalizedAt: null,
+            inventoryItem: { nameEn: 'Velvet', category: 'FABRIC', itemClass: 'RAW_MATERIAL' },
+            task: {
+              isRework: false,
+              stageDefinition: { code: 'CUT' },
+              assignedEmployee: null,
+            },
+          },
+        ]),
+      },
+      inventoryItem: {
+        findMany: jest.fn().mockResolvedValue([{ sku: 'FAB-1', standardCost: 5 }]),
+      },
+      inventoryTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    const payload = await makeService(prisma as never).forProductionOrder('po-1', adminUser());
+    expect(payload.status).toBe('IN_PROGRESS');
+    expect(payload.estimated.total).toBe(50);
+    expect(payload.actual.total).toBe(40);
+    expect(payload.actual.toDate).toBe(40);
+    expect(payload.variance.cost).toBe(-10);
+    expect(payload.bySku[0]?.costedQty).toBe(8);
+    expect(payload.bySku[0]?.actualCost).toBe(40);
+    expect(payload.incomplete).toBe(false);
+  });
 });

@@ -250,8 +250,9 @@ function remapOrdersParams(params: URLSearchParams) {
   }
 
   if (params.get('late') === 'true') {
-    if (!params.has('chip')) params.set('chip', 'needs_attention');
+    // Soft badge on home buckets — no Attention chip.
     params.set('late', 'true');
+    params.delete('chip');
   }
 
   const setup = params.get('setup');
@@ -262,8 +263,9 @@ function remapOrdersParams(params: URLSearchParams) {
 
   const disposition = params.get('disposition');
   if (disposition) {
-    if (!params.has('chip')) params.set('chip', 'needs_attention');
+    // Soft badge — land on All orders
     params.set('disposition', disposition);
+    params.delete('chip');
   }
 
   const filter = params.get('filter');

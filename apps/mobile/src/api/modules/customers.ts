@@ -12,6 +12,7 @@ export type CustomerMetrics = {
   invoicedTotal?: number;
   paidTotal?: number;
   outstandingTotal?: number;
+  availableCredit?: number;
 };
 
 export type CustomerContact = {

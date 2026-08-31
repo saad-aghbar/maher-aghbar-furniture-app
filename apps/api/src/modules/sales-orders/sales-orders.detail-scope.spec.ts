@@ -7,6 +7,7 @@ import type { SequenceService } from '../../common/sequence.service';
 const DEALER_LEAK_KEYS = [
   'manufacturingCost',
   'costBreakdown',
+  'costMaterialLines',
   'productionPrice',
   'profit',
   'manufacturingCosting',

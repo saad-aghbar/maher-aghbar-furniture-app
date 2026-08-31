@@ -13,11 +13,9 @@ import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { roundMoney } from '../../common/helpers/money.util';
-import type { ListSupplierInvoicesDto } from './dto/supplier-invoice.dto';
+import type { ListSupplierInvoicesDto, UpdateSupplierInvoiceDto } from './dto/supplier-invoice.dto';
 
 const INVOICEABLE_PO: PurchaseOrderStatus[] = [
-  PurchaseOrderStatus.APPROVED,
-  PurchaseOrderStatus.SENT,
   PurchaseOrderStatus.PARTIALLY_RECEIVED,
   PurchaseOrderStatus.RECEIVED,
   PurchaseOrderStatus.CLOSED,
@@ -101,8 +99,9 @@ export class SupplierInvoicesService {
     }
     if (!INVOICEABLE_PO.includes(po.status)) {
       throw new BadRequestException({
-        code: 'BAD_REQUEST',
-        message: 'Purchase order must be approved or later to create a supplier invoice.',
+        code: 'SUPPLIER_INVOICE_NOT_READY',
+        message:
+          'Supplier invoice is created only after goods are received into a warehouse.',
       });
     }
 
@@ -120,9 +119,10 @@ export class SupplierInvoicesService {
       });
     }
 
-    if (dto.goodsReceiptId) {
+    let goodsReceiptId = dto.goodsReceiptId?.trim() || undefined;
+    if (goodsReceiptId) {
       const grn = await this.prisma.goodsReceipt.findFirst({
-        where: { id: dto.goodsReceiptId, purchaseOrderId: po.id },
+        where: { id: goodsReceiptId, purchaseOrderId: po.id },
       });
       if (!grn) {
         throw new BadRequestException({
@@ -130,6 +130,20 @@ export class SupplierInvoicesService {
           message: 'Goods receipt does not belong to this purchase order.',
         });
       }
+    } else {
+      const latestGrn = await this.prisma.goodsReceipt.findFirst({
+        where: { purchaseOrderId: po.id },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (!latestGrn) {
+        throw new BadRequestException({
+          code: 'SUPPLIER_INVOICE_NOT_READY',
+          message:
+            'Confirm a goods receipt into a warehouse before creating a supplier invoice.',
+        });
+      }
+      goodsReceiptId = latestGrn.id;
     }
 
     const number = await this.sequences.next('SINV', 'SINV');
@@ -153,7 +167,7 @@ export class SupplierInvoicesService {
         number,
         supplierId: po.supplierId,
         purchaseOrderId: po.id,
-        goodsReceiptId: dto.goodsReceiptId,
+        goodsReceiptId,
         dueDate,
         currency: po.currency,
         status: InvoiceStatus.ISSUED,
@@ -180,6 +194,194 @@ export class SupplierInvoicesService {
     });
 
     return invoice;
+  }
+
+  /** Staff edit — notes, due date, and line amounts (recalculates totals). */
+  async update(id: string, dto: UpdateSupplierInvoiceDto, userId: string) {
+    const invoice = await this.prisma.supplierInvoice.findFirst({
+      where: { id, archivedAt: null },
+      include: { lines: true },
+    });
+    if (!invoice) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Supplier invoice not found.',
+      });
+    }
+    if (
+      invoice.status === InvoiceStatus.CANCELLED ||
+      invoice.status === InvoiceStatus.VOID
+    ) {
+      throw new BadRequestException({
+        code: 'INVOICE_LOCKED',
+        message: 'Cancelled or void invoices cannot be edited.',
+      });
+    }
+
+    const paid = Number(invoice.paidAmount) || 0;
+
+    let subtotal = Number(invoice.subtotal);
+    let taxTotal = Number(invoice.taxTotal);
+    let total = Number(invoice.total);
+    let lineCreates:
+      | Array<{
+          description: string;
+          quantity: Prisma.Decimal | number;
+          unitPrice: Prisma.Decimal | number;
+          taxRate: Prisma.Decimal | number;
+          lineTotal: Prisma.Decimal | number;
+          sortOrder: number;
+        }>
+      | undefined;
+
+    if (dto.lines) {
+      if (dto.lines.length === 0) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Invoice must keep at least one line.',
+        });
+      }
+      lineCreates = dto.lines.map((l, i) => {
+        const qty = Number(roundMoney(Number(l.quantity)));
+        const unit = Number(roundMoney(Number(l.unitPrice)));
+        const taxRate = Number(roundMoney(Number(l.taxRate ?? 0)));
+        const net = Number(roundMoney(qty * unit));
+        const tax = Number(roundMoney(net * (taxRate / 100)));
+        return {
+          description: l.description.trim() || 'Line',
+          quantity: qty,
+          unitPrice: unit,
+          taxRate,
+          lineTotal: Number(roundMoney(net + tax)),
+          sortOrder: i,
+        };
+      });
+      subtotal = Number(
+        roundMoney(
+          lineCreates.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice), 0),
+        ),
+      );
+      taxTotal = Number(
+        roundMoney(
+          lineCreates.reduce((s, l) => {
+            const net = Number(l.quantity) * Number(l.unitPrice);
+            return s + net * (Number(l.taxRate) / 100);
+          }, 0),
+        ),
+      );
+      total = Number(roundMoney(subtotal + taxTotal));
+    }
+
+    if (total + 1e-9 < paid) {
+      throw new BadRequestException({
+        code: 'INVOICE_TOTAL_BELOW_PAID',
+        message: 'Invoice total cannot be less than amount already paid.',
+      });
+    }
+
+    const outstanding = Number(roundMoney(Math.max(0, total - paid)));
+    const nextDue =
+      dto.dueDate !== undefined
+        ? dto.dueDate
+          ? new Date(dto.dueDate)
+          : null
+        : invoice.dueDate;
+    let status = invoice.status;
+    if (invoice.status !== InvoiceStatus.DRAFT) {
+      if (outstanding <= 0.001) status = InvoiceStatus.PAID;
+      else if (paid > 0.001) status = InvoiceStatus.PARTIALLY_PAID;
+      else if (nextDue && nextDue.getTime() < Date.now() && outstanding > 0.001) {
+        status = InvoiceStatus.OVERDUE;
+      } else {
+        status = InvoiceStatus.ISSUED;
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (lineCreates) {
+        await tx.supplierInvoiceLine.deleteMany({ where: { supplierInvoiceId: id } });
+        await tx.supplierInvoiceLine.createMany({
+          data: lineCreates.map((l) => ({ ...l, supplierInvoiceId: id })),
+        });
+      }
+      await tx.supplierInvoice.update({
+        where: { id },
+        data: {
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.dueDate !== undefined
+            ? { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }
+            : {}),
+          ...(lineCreates
+            ? {
+                subtotal,
+                taxTotal,
+                total,
+                outstandingAmount: outstanding,
+                status,
+              }
+            : dto.dueDate !== undefined
+              ? { status }
+              : {}),
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'supplier-invoice.update',
+          entityType: 'SupplierInvoice',
+          entityId: id,
+          newValues: {
+            notes: dto.notes,
+            dueDate: dto.dueDate,
+            lines: Boolean(lineCreates),
+            total,
+          },
+        },
+      });
+    });
+
+    return this.get(id);
+  }
+
+  /** Idempotent — creates after first warehouse receipt when none exists yet. */
+  async ensureFromPurchaseOrder(
+    purchaseOrderId: string,
+    userId: string,
+    goodsReceiptId?: string,
+  ) {
+    const existing = await this.prisma.supplierInvoice.findFirst({
+      where: {
+        purchaseOrderId,
+        status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID] },
+        archivedAt: null,
+      },
+    });
+    if (existing) return existing;
+    try {
+      return await this.createFromPurchaseOrder(
+        { purchaseOrderId, goodsReceiptId },
+        userId,
+      );
+    } catch (err) {
+      if (err instanceof BadRequestException) {
+        const body = err.getResponse();
+        if (
+          typeof body === 'object' &&
+          body &&
+          'code' in body &&
+          body.code === 'SUPPLIER_INVOICE_EXISTS'
+        ) {
+          return this.prisma.supplierInvoice.findFirstOrThrow({
+            where: {
+              purchaseOrderId,
+              status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.VOID] },
+              archivedAt: null,
+            },
+          });
+        }
+      }
+      throw err;
+    }
   }
 
   async recordPayment(

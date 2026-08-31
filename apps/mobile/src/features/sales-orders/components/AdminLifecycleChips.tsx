@@ -16,7 +16,7 @@ import {
   type AdminOrderLifecycle,
 } from '../adminOrderLifecycle';
 
-export type AdminLifecycleChipKey = 'all' | Exclude<AdminOrderLifecycle, 'rfq'>;
+export type AdminLifecycleChipKey = 'all' | Exclude<AdminOrderLifecycle, 'rfq' | 'needs_attention'>;
 
 export const ADMIN_LIFECYCLE_CHIPS: AdminLifecycleChipKey[] = [
   'all',
@@ -26,18 +26,19 @@ export const ADMIN_LIFECYCLE_CHIPS: AdminLifecycleChipKey[] = [
   'ready_to_ship',
   'shipped',
   'delivered',
-  'needs_attention',
 ];
 
 /** Board tray order — Sales Order path only (RFQs live in Customer Requests desk). */
-export const ADMIN_LIFECYCLE_SECTION_ORDER: Exclude<AdminOrderLifecycle, 'rfq'>[] = [
+export const ADMIN_LIFECYCLE_SECTION_ORDER: Exclude<
+  AdminOrderLifecycle,
+  'rfq' | 'needs_attention'
+>[] = [
   'preparing',
   'ready_to_start',
   'in_production',
   'ready_to_ship',
   'shipped',
   'delivered',
-  'needs_attention',
 ];
 
 type Props = {
@@ -48,8 +49,6 @@ type Props = {
 
 function stationTint(colors: ThemeColors, key: AdminLifecycleChipKey) {
   switch (key) {
-    case 'needs_attention':
-      return { ink: colors.warning, soft: colors.warningSoft };
     case 'ready_to_start':
       return { ink: colors.success, soft: colors.successSoft };
     case 'in_production':
@@ -70,8 +69,6 @@ function stationIcon(key: AdminLifecycleChipKey): keyof typeof Ionicons.glyphMap
   switch (key) {
     case 'all':
       return 'grid-outline';
-    case 'needs_attention':
-      return 'alert-circle-outline';
     case 'preparing':
       return 'hourglass-outline';
     case 'ready_to_start':
@@ -84,6 +81,8 @@ function stationIcon(key: AdminLifecycleChipKey): keyof typeof Ionicons.glyphMap
       return 'car-outline';
     case 'delivered':
       return 'checkmark-done-outline';
+    default:
+      return 'ellipse-outline';
   }
 }
 

@@ -4,17 +4,19 @@ import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InvoiceDetailModel } from '../selectInvoice';
 
 type Props = {
   model: InvoiceDetailModel;
+  onEdit?: () => void;
 };
 
 /**
  * Invoice identity hero — document board with status strip, number, dealer, order chips.
  */
-export function InvoiceDetailHero({ model }: Props) {
+export function InvoiceDetailHero({ model, onEdit }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -62,9 +64,37 @@ export function InvoiceDetailHero({ model }: Props) {
         }}
       >
         <StatusBadge status={model.status} dot />
-        <AppText variant="caption" color="brand" weight="semibold">
-          {t('accounting.detail')}
-        </AppText>
+        {onEdit ? (
+          <AnimatedPressable
+            variant="button"
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.invoices.edit')}
+            onPress={() => {
+              void haptics.selection();
+              onEdit();
+            }}
+            style={{
+              minHeight: 36,
+              paddingHorizontal: theme.spacing.md,
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: colors.brand,
+              backgroundColor: colors.surface,
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <Ionicons name="create-outline" size={16} color={colors.brand} />
+            <AppText variant="caption" weight={titleWeight} color="brand">
+              {t('mobile.invoices.edit')}
+            </AppText>
+          </AnimatedPressable>
+        ) : (
+          <AppText variant="caption" color="brand" weight="semibold">
+            {t('accounting.detail')}
+          </AppText>
+        )}
       </View>
 
       <View

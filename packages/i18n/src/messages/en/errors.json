@@ -70,6 +70,7 @@
   "NO_SOURCE": "No source document was provided.",
   "AI_INTAKE_FAILED": "AI intake processing failed.",
   "INVALID_STATUS": "This action is not allowed in the current status.",
+  "QUOTATION_EXPIRED": "This quotation has expired.",
   "WEBHOOK_DISABLED": "Webhook is disabled.",
   "OFFLINE": "You are offline",
 
@@ -148,5 +149,6 @@
   "SETUP_DELIVERY_MUST_NOT_PRODUCE": "Delivery checks packages onto the truck and must not create stocked inventory.",
   "SETUP_PACKAGING_MUST_PRODUCE_FINISHED": "Packaging must produce the finished product with ship packages.",
   "SETUP_PACKAGING_MUST_CONSUME_SEMI": "Packaging must take the upstream semi-finished kit.",
-  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "Inspection must take the upstream semi-finished kit to confirm."
+  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "Inspection must take the upstream semi-finished kit to confirm.",
+  "DELIVERY_DATE_TOO_SOON": "Choose a delivery date at least 4 days from today."
 }

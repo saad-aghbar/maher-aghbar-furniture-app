@@ -16,6 +16,7 @@ import { ImageCarousel } from '@/features/sales-orders/components/ImageCarousel'
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { productionBoardShadow } from '../productionFloorStyle';
 
 type Props = {
@@ -41,32 +42,12 @@ function stageName(kit: WipKitCard, locale: string): string {
 
 function kitAccent(
   status: string,
-  colors: { info: string; warning: string; success: string; brand: string },
+  colors: { warning: string; success: string; brand: string },
 ): string {
   if (status === 'CLAIMED') return colors.warning;
-  if (status === 'READY') return colors.info;
+  if (status === 'READY') return colors.success;
   if (status === 'CONSUMED') return colors.success;
   return colors.brand;
-}
-
-function SectionEyebrow({ label }: { label: string }) {
-  const { locale, isRTL } = useLocale();
-  const { colors } = useTheme();
-  return (
-    <AppText
-      variant="caption"
-      weight={locale === 'ar' ? 'regular' : 'medium'}
-      style={{
-        letterSpacing: locale === 'ar' ? 0 : 0.8,
-        textTransform: locale === 'ar' ? 'none' : 'uppercase',
-        fontSize: 10,
-        color: colors.brand,
-        textAlign: isRTL ? 'right' : 'left',
-      }}
-    >
-      {label}
-    </AppText>
-  );
 }
 
 function FactRow({
@@ -230,12 +211,26 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
                 ...productionBoardShadow(colorScheme),
               }}
             >
-              <View style={{ height: 3, backgroundColor: accent, opacity: 0.9 }} />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  width: 3,
+                  backgroundColor: accent,
+                  opacity: 0.9,
+                  ...(isRTL ? { right: 0 } : { left: 0 }),
+                }}
+              />
               <View
                 style={{
                   padding: theme.spacing.lg,
                   alignItems: 'center',
                   gap: theme.spacing.md,
+                  ...(isRTL
+                    ? { paddingRight: theme.spacing.lg + 4 }
+                    : { paddingLeft: theme.spacing.lg + 4 }),
                 }}
               >
                 <View
@@ -273,6 +268,7 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
                 void haptics.selection();
                 setShowQr(false);
               }}
+              style={{ borderRadius: theme.radius.full, minHeight: theme.sizes.touch.min }}
             />
           </View>
         ) : (
@@ -381,14 +377,9 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
               </View>
             </View>
 
-            <View style={{ gap: theme.spacing.sm }}>
-              <SectionEyebrow label={t('mobile.production.wipKitFacts')} />
+            <DealerBoard title={t('mobile.production.wipKitFacts')} titleWeight={titleWeight} contentStyle={{ padding: 0, gap: 0 }}>
               <View
                 style={{
-                  borderRadius: theme.radius.xl,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  backgroundColor: colors.surfaceSecondary,
                   paddingHorizontal: theme.spacing.md,
                 }}
               >
@@ -463,17 +454,12 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
                   />
                 ) : null}
               </View>
-            </View>
+            </DealerBoard>
 
             {kit.pieces.length > 0 ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                <SectionEyebrow label={t('mobile.production.wipKitPiecesList')} />
+              <DealerBoard title={t('mobile.production.wipKitPiecesList')} titleWeight={titleWeight} contentStyle={{ padding: 0, gap: 0 }}>
                 <View
                   style={{
-                    borderRadius: theme.radius.xl,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    backgroundColor: colors.surfaceSecondary,
                     overflow: 'hidden',
                   }}
                 >
@@ -510,18 +496,13 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
                     );
                   })}
                 </View>
-              </View>
+              </DealerBoard>
             ) : null}
 
             {materials.length > 0 || kit.materialOverageNotes ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                <SectionEyebrow label={t('mobile.production.wipKitMaterials')} />
+              <DealerBoard title={t('mobile.production.wipKitMaterials')} titleWeight={titleWeight} contentStyle={{ padding: 0, gap: 0 }}>
                 <View
                   style={{
-                    borderRadius: theme.radius.xl,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    backgroundColor: colors.surfaceSecondary,
                     overflow: 'hidden',
                   }}
                 >
@@ -559,7 +540,7 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
                     </View>
                   ) : null}
                 </View>
-              </View>
+              </DealerBoard>
             ) : null}
 
             <PrimaryButton
@@ -569,6 +550,7 @@ export function ProductionWipKitSheet({ open, kit, onClose }: Props) {
                 setShowQr(true);
               }}
               leading={<Ionicons name="qr-code-outline" size={18} color={colors.onBrand} />}
+              style={{ borderRadius: theme.radius.full, minHeight: theme.sizes.touch.min }}
             />
           </>
         )}

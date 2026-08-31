@@ -3,13 +3,12 @@ import { ActivityIndicator, View, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { ToastClearance } from '@/components/feedback/Toast';
-import { Divider } from '@/components/layout/Divider';
-import { SearchActionRow } from '@/components/layout/SearchActionRow';
+import { TextField } from '@/components/forms/TextField';
 import { useLocale } from '@/i18n';
 import { rowDirection } from '@/i18n/rtl';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
-import { InventorySearchField } from './InventorySearchField';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
   InventorySectionTabs,
   type InventoryHomeSection,
@@ -19,6 +18,7 @@ import {
   type InventoryLifecycle,
 } from './InventoryLifecycleTabs';
 import { InventoryFilterButton } from './InventoryFilterButton';
+import { InventoryBoardCard } from './InventoryBoardCard';
 
 type Props = {
   title: string;
@@ -50,7 +50,7 @@ type Props = {
   children?: ReactNode;
 };
 
-const TOOL_WELL = 40;
+const TOOL_WELL = 44;
 
 /** Floor chrome — stays mounted across section switches (no full-page fade). */
 export function InventoryCompositionChrome({
@@ -67,7 +67,6 @@ export function InventoryCompositionChrome({
   onSync,
   syncing,
   canSync,
-  onRefresh,
   createLabel,
   onCreate,
   canCreate,
@@ -117,12 +116,7 @@ export function InventoryCompositionChrome({
             style={{
               letterSpacing: locale === 'ar' ? 0 : 1.4,
               textTransform: locale === 'ar' ? 'none' : 'uppercase',
-              color:
-                lifecycle === 'semiFinished'
-                  ? colors.info
-                  : lifecycle === 'finished'
-                    ? colors.success
-                    : colors.brand,
+              color: colors.brand,
             }}
           >
             {lifecycleEyebrow}
@@ -145,12 +139,11 @@ export function InventoryCompositionChrome({
         ) : null}
       </View>
 
-      <InventoryLifecycleTabs active={lifecycle} onChange={onLifecycleChange} />
-      <InventorySectionTabs active={section} onChange={onSectionChange} />
+      <InventoryBoardCard contentStyle={{ gap: theme.spacing.md }}>
+        <InventoryLifecycleTabs active={lifecycle} onChange={onLifecycleChange} />
+        <InventorySectionTabs active={section} onChange={onSectionChange} />
 
-      {showSearch && setSearchInput ? (
-        <View style={{ gap: theme.spacing.sm }}>
-          <Divider compact />
+        {showSearch && setSearchInput ? (
           <View
             style={{
               flexDirection: rowDir,
@@ -191,26 +184,26 @@ export function InventoryCompositionChrome({
               />
             ) : null}
           </View>
-        </View>
-      ) : scanVisible ? (
-        <View
-          style={{
-            flexDirection: rowDir,
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: theme.spacing.sm,
-          }}
-        >
-          <FloorActionButton
-            label={scanLabel!}
-            accessibilityLabel={scanLabel!}
-            icon="qr-code-outline"
-            tone="soft"
-            iconOnly
-            onPress={() => onScan?.()}
-          />
-        </View>
-      ) : null}
+        ) : scanVisible ? (
+          <View
+            style={{
+              flexDirection: rowDir,
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: theme.spacing.sm,
+            }}
+          >
+            <FloorActionButton
+              label={scanLabel!}
+              accessibilityLabel={scanLabel!}
+              icon="qr-code-outline"
+              tone="soft"
+              iconOnly
+              onPress={() => onScan?.()}
+            />
+          </View>
+        ) : null}
+      </InventoryBoardCard>
 
       {createVisible || warehouseVisible ? (
         <View
@@ -247,50 +240,6 @@ export function InventoryCompositionChrome({
   );
 }
 
-function FloorIconButton({
-  icon,
-  accessibilityLabel,
-  loading,
-  onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  accessibilityLabel: string;
-  loading?: boolean;
-  onPress: () => void;
-}) {
-  const { colors, theme } = useTheme();
-  const size = theme.sizes.touch.min;
-
-  return (
-    <AnimatedPressable
-      variant="button"
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      disabled={loading}
-      onPress={() => {
-        void haptics.selection();
-        onPress();
-      }}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: 1,
-        borderColor: colors.brand,
-        backgroundColor: colors.background,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {loading ? (
-        <ActivityIndicator size="small" color={colors.brand} />
-      ) : (
-        <Ionicons name={icon} size={18} color={colors.brand} />
-      )}
-    </AnimatedPressable>
-  );
-}
-
 function FloorActionButton({
   label,
   accessibilityLabel,
@@ -311,7 +260,7 @@ function FloorActionButton({
   onPress: () => void;
 }) {
   const { locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const solid = tone === 'solid';
 
   return (
@@ -339,7 +288,7 @@ function FloorActionButton({
         justifyContent: 'center',
         gap: theme.spacing.xs,
         overflow: 'hidden',
-        ...theme.elevation.card,
+        ...orderBoardShadow(colorScheme),
         ...style,
       }}
     >

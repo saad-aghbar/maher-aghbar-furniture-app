@@ -4,6 +4,7 @@ import { flattenPaginatedPages, getNextPageParamFromMeta } from '@/api/infinite'
 import {
   approvePurchaseOrder,
   approvePurchaseRequest,
+  archiveSupplier,
   convertPurchaseRequest,
   createPurchaseOrder,
   createPurchaseRequest,
@@ -19,10 +20,14 @@ import {
   listSuppliers,
   receivePurchaseOrder,
   sendPurchaseOrder,
+  sendPurchaseRequestToSupplier,
+  updateSupplier,
+  updateSupplierInvoice,
   type CreatePurchaseOrderInput,
   type CreatePurchaseRequestInput,
   type CreateSupplierInput,
   type GoodsReceiptInput,
+  type UpdateSupplierInput,
 } from './api';
 
 type ListFilters = {
@@ -109,6 +114,21 @@ export function useSupplierInvoiceQuery(id: string | undefined, enabled: boolean
   });
 }
 
+export function useUpdateSupplierInvoiceMutation(invoiceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof updateSupplierInvoice>[1]) =>
+      updateSupplierInvoice(invoiceId, body),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceLists() }),
+        qc.invalidateQueries({ queryKey: queryKeys.purchasing.invoiceDetail(invoiceId) }),
+        qc.invalidateQueries({ queryKey: queryKeys.invoices.lists() }),
+      ]);
+    },
+  });
+}
+
 export function useSuppliersQuery(enabled: boolean, q?: string) {
   return useQuery({
     queryKey: queryKeys.purchasing.suppliers({ q }),
@@ -141,12 +161,32 @@ export function useCreatePurchaseRequestMutation() {
   });
 }
 
+function invalidateSuppliers(qc: ReturnType<typeof useQueryClient>) {
+  return qc.invalidateQueries({ queryKey: [...queryKeys.purchasing.all, 'suppliers'] });
+}
+
 export function useCreateSupplierMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateSupplierInput) => createSupplier(body),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: [...queryKeys.purchasing.all, 'suppliers'] }),
+    onSuccess: () => invalidateSuppliers(qc),
+  });
+}
+
+export function useUpdateSupplierMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: UpdateSupplierInput }) =>
+      updateSupplier(id, body),
+    onSuccess: () => invalidateSuppliers(qc),
+  });
+}
+
+export function useArchiveSupplierMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => archiveSupplier(id),
+    onSuccess: () => invalidateSuppliers(qc),
   });
 }
 
@@ -204,6 +244,15 @@ export function usePurchaseRequestActionMutation(id: string) {
     convert: useMutation({
       mutationFn: () => convertPurchaseRequest(id),
       onSuccess: invalidate,
+    }),
+    sendToSupplier: useMutation({
+      mutationFn: () => sendPurchaseRequestToSupplier(id),
+      onSuccess: async (result) => {
+        await invalidate();
+        await qc.invalidateQueries({
+          queryKey: queryKeys.purchasing.detail(result.purchaseOrder.id),
+        });
+      },
     }),
   };
 }

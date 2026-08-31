@@ -1,5 +1,6 @@
 import { View } from 'react-native';
 import { AppText } from '@/components/AppText';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 
@@ -87,30 +88,19 @@ type Props = {
 
 /** Compact terminal lifecycle strip on admin mobile production detail. */
 export function ProductionLifecycleStrip({ poStatus, currentStageCode, deliveryStatus }: Props) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const current = deriveStep({ poStatus, currentStageCode, deliveryStatus });
   const idx = STEPS.indexOf(current);
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
-    <View
-      style={{
-        gap: theme.spacing.xs,
-        padding: theme.spacing.md,
-        borderRadius: theme.radius.lg,
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.surfaceSecondary,
-      }}
-    >
-      <AppText variant="caption" color="secondary" weight="semibold">
-        {t('lifecycle.timelineProduction')}
-      </AppText>
+    <DealerBoard title={t('lifecycle.timelineProduction')} titleWeight={titleWeight}>
       <View
         style={{
           flexDirection: isRTL ? 'row-reverse' : 'row',
           flexWrap: 'wrap',
-          gap: 6,
+          gap: theme.spacing.sm,
         }}
       >
         {STEPS.map((step, stepIdx) => {
@@ -119,24 +109,39 @@ export function ProductionLifecycleStrip({ poStatus, currentStageCode, deliveryS
           const factory = factoryHint(step, current, t);
           const delivery = deliveryHint(step, current, t);
           return (
-            <View key={step} style={{ gap: 2, maxWidth: '32%' }}>
+            <View key={step} style={{ gap: 4, maxWidth: '32%' }}>
               <View
                 style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: theme.radius.md,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: 6,
+                  minHeight: 32,
+                  borderRadius: theme.radius.lg,
                   backgroundColor: active
                     ? colors.brandSoft
                     : done
-                      ? colors.surface
-                      : 'transparent',
+                      ? colors.surfaceSecondary
+                      : colors.surface,
                   borderWidth: 1,
                   borderColor: active ? colors.brand : colors.border,
+                  overflow: 'hidden',
                 }}
               >
+                {active ? (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 3,
+                      backgroundColor: colors.brand,
+                    }}
+                  />
+                ) : null}
                 <AppText
                   variant="caption"
-                  weight={active ? 'semibold' : 'regular'}
+                  weight={active ? titleWeight : 'regular'}
                   color={active ? 'brand' : done ? 'secondary' : 'muted'}
                   numberOfLines={1}
                 >
@@ -152,6 +157,6 @@ export function ProductionLifecycleStrip({ poStatus, currentStageCode, deliveryS
           );
         })}
       </View>
-    </View>
+    </DealerBoard>
   );
 }

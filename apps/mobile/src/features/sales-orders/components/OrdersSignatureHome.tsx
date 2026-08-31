@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from 'react';
 import {
   LayoutAnimation,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   SectionList,
@@ -66,17 +65,12 @@ import {
 } from './OrdersFilterChips';
 import { OrdersListSkeleton } from './OrdersListSkeleton';
 import { OrdersProgressCard, type OrdersProgressCardModel } from './OrdersProgressCard';
+import {
+  OrdersRfqInboxChips,
+  RFQ_SUBCHIP_STATUSES,
+  type RfqInboxSubchip,
+} from './OrdersRfqInboxChips';
 import { OrdersStageSpine } from './OrdersStageSpine';
-
-type RfqInboxSubchip = 'all' | 'waiting' | 'needs_info' | 'quoted' | 'drafts';
-
-const RFQ_SUBCHIP_STATUSES: Record<RfqInboxSubchip, string[] | null> = {
-  all: null,
-  waiting: ['SUBMITTED', 'UNDER_REVIEW'],
-  needs_info: ['NEEDS_INFORMATION'],
-  quoted: ['READY_FOR_QUOTATION', 'QUOTED'],
-  drafts: ['DRAFT'],
-};
 
 if (
   Platform.OS === 'android' &&
@@ -260,7 +254,6 @@ export function OrdersSignatureHome({
 }: Props) {
   const { t } = useLocale();
   const { colors, theme } = useTheme();
-  const insets = useSafeAreaInsets();
   const reduce = useReducedMotion();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -478,51 +471,7 @@ export function OrdersSignatureHome({
                 />
               ) : null}
               {deskMode === 'requests' ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{
-                    gap: theme.spacing.sm,
-                    paddingVertical: 2,
-                  }}
-                >
-                  {(
-                    [
-                      'all',
-                      'waiting',
-                      'needs_info',
-                      'quoted',
-                      'drafts',
-                    ] as RfqInboxSubchip[]
-                  ).map((key) => {
-                    const selected = rfqSubchip === key;
-                    return (
-                      <Pressable
-                        key={key}
-                        onPress={() => {
-                          void haptics.selection();
-                          setRfqSubchip(key);
-                        }}
-                        style={{
-                          paddingHorizontal: theme.spacing.md,
-                          paddingVertical: theme.spacing.sm,
-                          borderRadius: theme.radius.lg,
-                          borderWidth: 1,
-                          borderColor: selected ? colors.brand : colors.borderStrong,
-                          backgroundColor: selected ? colors.brandSoft : colors.surface,
-                        }}
-                      >
-                        <AppText
-                          variant="caption"
-                          weight={selected ? 'semibold' : 'medium'}
-                          style={{ color: selected ? colors.brand : colors.textSecondary }}
-                        >
-                          {t(`mobile.orders.rfqInbox.${key}`)}
-                        </AppText>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
+                <OrdersRfqInboxChips value={rfqSubchip} onChange={setRfqSubchip} />
               ) : null}
             </>
           ) : (
@@ -759,7 +708,7 @@ export function OrdersSignatureHome({
                   : undefined
               }
             />
-          </ListItemEnter>
+          </OrderRowMotion>
         );
       }}
     />

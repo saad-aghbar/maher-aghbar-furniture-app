@@ -1,17 +1,16 @@
 import type { Href } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
-import { FlatList, Image, Platform, Pressable, RefreshControl, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Image, Platform, RefreshControl, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { StatusBadge } from '@/components/badges/StatusBadge';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
-import { useToast, toastCopy } from '@/components/feedback/Toast';
+import { ToastClearance, useToast, toastCopy } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { FloatingActionDock } from '@/components/layout/FloatingActionDock';
 import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
@@ -19,7 +18,7 @@ import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { useLocale } from '@/i18n';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
-import { ListItemEnter, haptics, useReducedMotion } from '@/motion';
+import { AnimatedPressable, haptics, useReducedMotion } from '@/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme';
 import {
@@ -31,11 +30,13 @@ import { useAccessoryCamera } from './components/AccessoryCameraProvider';
 import { AccessoryPhotoSourceSheet } from './components/AccessoryPhotoSourceSheet';
 import { AddStockSheet } from './components/AddStockSheet';
 import { InventoryQrSheet, qrItemFromCard } from './components/InventoryQrSheet';
+import { InventoryAdjustmentHistoryBoard } from './components/InventoryAdjustmentHistoryBoard';
 import {
   InventoryBoardCard,
   InventoryQtyStrip,
-  InventorySectionHeader,
 } from './components/InventoryBoardCard';
+import { InventoryIdentityBoard } from './components/InventoryIdentityBoard';
+import { InventoryReceiveDock } from './components/InventoryReceiveDock';
 import { InventoryDetailSkeleton } from './components/InventorySkeleton';
 import { openInventoryLabelPdf, openInventoryQrLabelPdf } from './api';
 import { toGoodsReceiptArgs } from './stockMoveSubmit';
@@ -60,42 +61,10 @@ type InventoryItemDetailScreenProps = {
   itemId: string;
 };
 
-function lifecycleEyebrow(
-  itemClass: string | null | undefined,
-  t: (key: string) => string,
-): string {
-  if (itemClass === 'FINISHED_GOOD') return t('mobile.inventory.pulseEyebrowFinished');
-  if (itemClass === 'SEMI_FINISHED_GOOD') return t('mobile.inventory.pulseEyebrowSemi');
-  return t('mobile.inventory.pulseEyebrow');
-}
-
-function txIcon(type: string): keyof typeof Ionicons.glyphMap {
-  switch (type) {
-    case 'PURCHASE_RECEIPT':
-    case 'FINISHED_GOODS_RECEIPT':
-      return 'download-outline';
-    case 'PRODUCTION_ISSUE':
-    case 'DELIVERY_ISSUE':
-      return 'arrow-up-outline';
-    case 'PRODUCTION_RETURN':
-    case 'CUSTOMER_RETURN':
-      return 'return-down-back-outline';
-    case 'WAREHOUSE_TRANSFER':
-      return 'swap-horizontal-outline';
-    case 'SCRAP':
-    case 'DAMAGE':
-      return 'warning-outline';
-    case 'INVENTORY_ADJUSTMENT':
-      return 'options-outline';
-    default:
-      return 'cube-outline';
-  }
-}
-
 export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenProps) {
   const { user } = useAuth();
-  const { t, locale, formatDateTime, isRTL } = useLocale();
-  const { theme, colors } = useTheme();
+  const { t, locale, isRTL } = useLocale();
+  const { theme, colors, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
@@ -110,6 +79,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
   const pendingPrintAfterQrRef = useRef(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoSourceOpen, setPhotoSourceOpen] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
   const itemQuery = useInventoryItemQuery(itemId, allowed);
   const txQuery = useInventoryTransactionsInfiniteQuery(itemId, allowed);
@@ -145,6 +115,18 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
 
   const refreshing =
     (itemQuery.isRefetching || txQuery.isRefetching) && !txQuery.isFetchingNextPage;
+
+  useEffect(() => {
+    if (!historyExpanded) return;
+    if (txQuery.hasNextPage && !txQuery.isFetchingNextPage) {
+      void txQuery.fetchNextPage();
+    }
+  }, [
+    historyExpanded,
+    txQuery.hasNextPage,
+    txQuery.isFetchingNextPage,
+    txQuery.fetchNextPage,
+  ]);
 
   const showReceive = canReceive && detail?.isActive && !detail?.archivedAt && detail?.itemClass !== 'FINISHED_GOOD';
   const stickyPad = showReceive
@@ -289,10 +271,8 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
 
   if ((itemQuery.isError && !itemQuery.data) || !detail) {
     const itemClass = itemQuery.data?.itemClass;
-    const finished =
-      finishedDeepLink || itemClass === 'FINISHED_GOOD';
-    const semi =
-      semiDeepLink || itemClass === 'SEMI_FINISHED_GOOD';
+    const finished = itemClass === 'FINISHED_GOOD';
+    const semi = itemClass === 'SEMI_FINISHED_GOOD';
     const landmark = finished
       ? t('mobile.inventory.finishedOrderTitle')
       : semi
@@ -369,44 +349,29 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
       edges={{ top: true, bottom: false }}
     >
       {showOfflineBanner ? <OfflineBanner /> : null}
-      <FlatList
-        data={transactions}
-        keyExtractor={(row) => row.id}
+      <ScrollView
         contentContainerStyle={{
-          gap: theme.spacing.md,
+          gap: theme.spacing.lg,
           paddingBottom: stickyPad,
           flexGrow: 1,
         }}
-        ListHeaderComponentStyle={{ width: '100%', alignSelf: 'stretch' }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />
+          <RefreshControl
+            tintColor={colors.brand}
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+          />
         }
-        onEndReached={() => {
-          if (txQuery.hasNextPage && !txQuery.isFetchingNextPage) {
-            void txQuery.fetchNextPage();
-          }
-        }}
-        onEndReachedThreshold={0.4}
-        ListHeaderComponent={
+      >
           <HeaderShell
             {...headerEnter}
             style={{
               width: '100%',
               alignSelf: 'stretch',
               gap: theme.spacing.lg,
-              marginBottom: theme.spacing.md,
             }}
           >
             <View style={{ gap: theme.spacing.sm }}>
-              {eyebrow ? (
-                <AppText
-                  variant="caption"
-                  weight={locale === 'ar' ? 'regular' : 'medium'}
-                  style={{ color: colors.brand }}
-                >
-                  {eyebrow}
-                </AppText>
-              ) : null}
               <View
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -415,40 +380,37 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                 }}
               >
                 <ScreenBackLead fallback={'/(app)/(admin)/(tabs)/inventory' as Href} />
-                <View
-                  style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: theme.radius.lg,
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.borderStrong,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    ...theme.elevation.rest,
-                  }}
-                >
-                  <Ionicons name={heroIcon} size={22} color={heroAccent} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0, gap: theme.spacing.xs }}>
+                {eyebrow ? (
                   <AppText
-                    variant="title"
-                    weight={locale === 'ar' ? 'medium' : 'semibold'}
-                    numberOfLines={2}
+                    variant="caption"
+                    weight={locale === 'ar' ? 'regular' : 'medium'}
+                    style={{
+                      flex: 1,
+                      color: colors.brand,
+                      letterSpacing: locale === 'ar' ? 0 : 0.5,
+                      textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                      fontSize: 11,
+                    }}
                   >
-                    {detail.name}
+                    {eyebrow}
                   </AppText>
-                  <AppText variant="caption" color="muted" weight="regular" dir="ltr">
-                    {detail.sku}
-                    {materialTypeLabel ? ` · ${materialTypeLabel}` : ''}
-                  </AppText>
-                </View>
-                <StatusBadge status={stockStatus} label={stockLabel} dot />
+                ) : null}
               </View>
+              <InventoryIdentityBoard
+                name={detail.name}
+                sku={detail.sku}
+                meta={materialTypeLabel}
+                status={stockStatus}
+                statusLabel={stockLabel}
+                accent={heroAccent}
+                icon={heroIcon}
+                imageUrl={showsSkuPhoto ? null : detail.imageUrl}
+              />
             </View>
 
             {showsSkuPhoto && (detail.imageUrl || canEditPhoto) ? (
-              <Pressable
+              <AnimatedPressable
+                variant="card"
                 accessibilityRole={canEditPhoto ? 'button' : 'image'}
                 accessibilityLabel={
                   detail.imageUrl
@@ -468,7 +430,7 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   opacity: photoBusy || updateItemMutation.isPending ? 0.65 : 1,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  ...theme.elevation.card,
+                  ...orderBoardShadow(colorScheme),
                 }}
               >
                 {detail.imageUrl ? (
@@ -490,23 +452,13 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                     </AppText>
                   </View>
                 )}
-              </Pressable>
+              </AnimatedPressable>
             ) : null}
 
-            <InventoryBoardCard accent={heroAccent}>
-              <AppText
-                variant="caption"
-                color="muted"
-                weight={locale === 'ar' ? 'regular' : 'medium'}
-                style={{
-                  letterSpacing: locale === 'ar' ? 0 : 0.6,
-                  textTransform: locale === 'ar' ? 'none' : 'uppercase',
-                  fontSize: 11,
-                  lineHeight: 14,
-                }}
-              >
-                {t('mobile.inventory.currentQuantity')}
-              </AppText>
+            <InventoryBoardCard
+              title={t('mobile.inventory.currentQuantity')}
+              accent={heroAccent}
+            >
               {showBreakdown ? (
                 <InventoryQtyStrip
                   onHand={detail.onHand}
@@ -550,57 +502,62 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
                   marginTop: theme.spacing.sm,
                 }}
               >
-                <Pressable
+                <AnimatedPressable
+                  variant="button"
                   accessibilityRole="button"
+                  accessibilityLabel={t('mobile.inventory.qrCode')}
                   onPress={() => {
                     void haptics.selection();
                     setQrOpen(true);
                   }}
                   style={{
-                    minHeight: 36,
+                    minHeight: 40,
                     paddingHorizontal: theme.spacing.md,
-                    borderRadius: theme.radius.xl,
+                    borderRadius: theme.radius.full,
                     borderWidth: 1,
-                    borderColor: colors.borderStrong,
+                    borderColor: colors.brand,
+                    backgroundColor: colors.brandSoft,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <AppText variant="caption" weight="semibold" color="brand">
+                  <AppText variant="caption" weight={locale === 'ar' ? 'medium' : 'semibold'} color="brand">
                     {t('mobile.inventory.qrCode')}
                   </AppText>
-                </Pressable>
-                <Pressable
+                </AnimatedPressable>
+                <AnimatedPressable
+                  variant="button"
                   accessibilityRole="button"
+                  accessibilityLabel={t('mobile.inventory.labelPdf')}
                   onPress={() => {
                     void haptics.selection();
                     openLabelPdf();
                   }}
                   style={{
-                    minHeight: 36,
+                    minHeight: 40,
                     paddingHorizontal: theme.spacing.md,
-                    borderRadius: theme.radius.xl,
+                    borderRadius: theme.radius.full,
                     borderWidth: 1,
-                    borderColor: colors.borderStrong,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceSecondary,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <AppText variant="caption" weight="semibold" color="brand">
+                  <AppText variant="caption" weight={locale === 'ar' ? 'medium' : 'semibold'} color="brand">
                     {t('mobile.inventory.labelPdf')}
                   </AppText>
-                </Pressable>
+                </AnimatedPressable>
               </View>
             </InventoryBoardCard>
 
             {detail.balances.length > 0 ? (
               <View style={{ gap: theme.spacing.sm }}>
-                <InventorySectionHeader
-                  icon="business-outline"
-                  label={t('mobile.inventory.byWarehouse')}
+                <InventoryBoardCard
+                  title={t('mobile.inventory.byWarehouse')}
+                  padded={false}
                   accent={heroAccent}
-                />
-                <InventoryBoardCard padded={false} accent={heroAccent}>
+                >
                   {detail.balances.map((b, i) => (
                     <View
                       key={b.warehouseId}
@@ -643,155 +600,20 @@ export function InventoryItemDetailScreen({ itemId }: InventoryItemDetailScreenP
               </View>
             ) : null}
 
-            <View style={{ marginTop: theme.spacing.xs }}>
-              <InventorySectionHeader
-                icon="time-outline"
-                label={t('mobile.inventory.adjustmentHistory')}
-                accent={colors.info}
-              />
-            </View>
+            <InventoryAdjustmentHistoryBoard
+              rows={transactions}
+              loading={txQuery.isLoading}
+              loadingMore={txQuery.isFetchingNextPage}
+              hasMore={txQuery.hasNextPage}
+              expanded={historyExpanded}
+              onToggle={() => setHistoryExpanded((open) => !open)}
+            />
           </HeaderShell>
-        }
-        ListEmptyComponent={
-          txQuery.isLoading ? (
-            <AppText variant="caption" color="secondary">
-              {t('mobile.inventory.loadingHistory')}
-            </AppText>
-          ) : (
-            <EmptyState title={t('mobile.inventory.emptyHistoryTitle')} />
-          )
-        }
-        renderItem={({ item, index }) => {
-          const typeKey = `mobile.inventory.txType.${item.type}`;
-          const typeLabel = t(typeKey);
-          const resolvedType =
-            typeLabel === typeKey ? t('mobile.inventory.txType.OTHER') : typeLabel;
-          const qtyPositive = item.quantityLabel.trim().startsWith('+');
-          const qtyNegative = item.quantityLabel.trim().startsWith('-');
-
-          return (
-            <ListItemEnter index={index}>
-              <View
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                  paddingVertical: theme.spacing.md,
-                  paddingHorizontal: theme.spacing.md,
-                  paddingLeft: isRTL ? theme.spacing.md : theme.spacing.md + 4,
-                  paddingRight: isRTL ? theme.spacing.md + 4 : theme.spacing.md,
-                  borderRadius: theme.radius.xl,
-                  backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: colors.borderStrong,
-                  overflow: 'hidden',
-                  ...theme.elevation.card,
-                }}
-              >
-                <View
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    ...(isRTL ? { right: 0 } : { left: 0 }),
-                    width: 3,
-                    backgroundColor: qtyNegative
-                      ? colors.warning
-                      : qtyPositive
-                        ? colors.success
-                        : colors.brand,
-                    opacity: 0.75,
-                  }}
-                />
-                <View
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: qtyNegative
-                      ? colors.warningSoft
-                      : qtyPositive
-                        ? colors.successSoft
-                        : colors.surfaceSecondary,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <Ionicons
-                    name={txIcon(item.type)}
-                    size={16}
-                    color={
-                      qtyNegative
-                        ? colors.warning
-                        : qtyPositive
-                          ? colors.success
-                          : colors.brand
-                    }
-                  />
-                </View>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <AppText
-                    variant="body"
-                    weight={locale === 'ar' ? 'medium' : 'semibold'}
-                    numberOfLines={1}
-                  >
-                    {resolvedType}
-                  </AppText>
-                  <AppText variant="caption" color="muted" numberOfLines={1}>
-                    {item.warehouseName} · {formatDateTime(item.createdAt)}
-                  </AppText>
-                  {item.notes ? (
-                    <AppText variant="caption" color="secondary" numberOfLines={2}>
-                      {item.notes}
-                    </AppText>
-                  ) : null}
-                  {item.showCost && item.costLabel ? (
-                    <AppText variant="caption" color="secondary" dir="ltr">
-                      {t('mobile.inventory.cost', { value: item.costLabel })}
-                    </AppText>
-                  ) : null}
-                </View>
-                <View
-                  style={{
-                    paddingHorizontal: theme.spacing.sm,
-                    paddingVertical: 4,
-                    borderRadius: theme.radius.md,
-                    backgroundColor: qtyNegative
-                      ? colors.warningSoft
-                      : qtyPositive
-                        ? colors.successSoft
-                        : colors.surfaceSecondary,
-                    borderWidth: 1,
-                    borderColor: qtyNegative
-                      ? colors.warning
-                      : qtyPositive
-                        ? colors.success
-                        : colors.border,
-                  }}
-                >
-                  <AppText
-                    variant="caption"
-                    weight={locale === 'ar' ? 'medium' : 'semibold'}
-                    color={qtyNegative ? 'warning' : qtyPositive ? 'success' : 'primary'}
-                    dir="ltr"
-                  >
-                    {item.quantityLabel}
-                  </AppText>
-                </View>
-              </View>
-            </ListItemEnter>
-          );
-        }}
-      />
+      </ScrollView>
 
       {showReceive ? (
         <FloatingActionDock floating>
-          <PrimaryButton
-            label={t('mobile.inventory.receive')}
-            onPress={() => setAddOpen(true)}
-          />
+          <InventoryReceiveDock onPress={() => setAddOpen(true)} />
         </FloatingActionDock>
       ) : null}
 

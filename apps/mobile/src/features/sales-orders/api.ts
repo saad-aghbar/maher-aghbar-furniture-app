@@ -32,6 +32,7 @@ export {
   type SetupValidationIssue,
   type SetupMaterialRequirement,
   type SetupEstimatedCostSummary,
+  type SetupActualCostSummary,
   type SetupLineFabric,
   type ManufacturingComplexity,
   type SetupMaterialStatus,

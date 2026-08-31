@@ -37,6 +37,49 @@ export function quotationLineDims(line: {
   return parts.length ? parts.map(String).join('×') : null;
 }
 
+export function quotationComplexity(
+  value: string | null | undefined,
+): 'STANDARD' | 'MODIFIED' | 'CUSTOM' {
+  if (value === 'MODIFIED' || value === 'CUSTOM') return value;
+  return 'STANDARD';
+}
+
+export function sellingPriceMissing(unitPrice: number | string | null | undefined): boolean {
+  const n = Number(unitPrice);
+  return !Number.isFinite(n) || n <= 0;
+}
+
+/** Same fallback the draft PATCH uses when a line has no stored rate. */
+export const DEFAULT_QUOTATION_TAX_RATE = 0.16;
+
+export function quotationLineTaxRate(
+  taxRate: number | string | null | undefined,
+): number {
+  if (taxRate == null || taxRate === '') return DEFAULT_QUOTATION_TAX_RATE;
+  const n = Number(taxRate);
+  return Number.isFinite(n) ? n : DEFAULT_QUOTATION_TAX_RATE;
+}
+
+/** Live quote money while unit prices are still being typed (not yet saved). */
+export function quotationDraftTotals(
+  lines: Array<{
+    unitPrice: number | string | null | undefined;
+    quantity: number | string | null | undefined;
+    taxRate?: number | string | null;
+  }>,
+): { subtotal: number; tax: number; total: number } {
+  let subtotal = 0;
+  let tax = 0;
+  for (const line of lines) {
+    const net = sellingPriceMissing(line.unitPrice)
+      ? 0
+      : (quotationLineNet(line.unitPrice, line.quantity) ?? 0);
+    subtotal += net;
+    tax += net * quotationLineTaxRate(line.taxRate);
+  }
+  return { subtotal, tax, total: subtotal + tax };
+}
+
 export function quotationLineSpecs(line: {
   material?: string | null;
   fabric?: string | null;

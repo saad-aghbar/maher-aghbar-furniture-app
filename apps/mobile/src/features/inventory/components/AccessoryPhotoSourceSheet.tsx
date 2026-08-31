@@ -6,6 +6,7 @@ import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { InventorySheetFooter } from './InventorySheetFooter';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
   open: boolean;
@@ -29,7 +30,7 @@ export function AccessoryPhotoSourceSheet({
   onRemovePhoto,
 }: Props) {
   const { t, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const pendingActionRef = useRef<(() => void) | null>(null);
 
@@ -116,7 +117,7 @@ export function AccessoryPhotoSourceSheet({
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
-                ...theme.elevation.card,
+                ...orderBoardShadow(colorScheme),
               }}
             >
               <AppText

@@ -22,7 +22,6 @@ import { Divider } from '@/components/layout/Divider';
 import { ScrollableScreen } from '@/components/layout/ScrollableScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { MoreBoard } from '@/features/more/components/MoreBoard';
-import { DevTestsEntryRow } from '@/dev/component-lab/screens/DevTestsEntryRow';
 import { useLocale } from '@/i18n';
 import { rolesLabel } from '@/i18n/roleLabel';
 import { haptics, useReducedMotion } from '@/motion';
@@ -286,10 +285,6 @@ export function WorkerProfileScreen() {
         </Animated.View>
 
         <Divider />
-
-        <Animated.View entering={enter(160)}>
-          <DevTestsEntryRow />
-        </Animated.View>
 
         <Animated.View entering={enter(180)}>
           <DestructiveButton

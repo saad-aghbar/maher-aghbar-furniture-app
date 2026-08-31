@@ -57,21 +57,25 @@ describe('rfqStageFromData', () => {
 });
 
 describe('rfq path honest to backend', () => {
-  it('does not paint Accepted / Preparing as reached while Quoted', () => {
+  it('does not paint Accepted as reached while Quoted', () => {
     const reached = rfqPathReachedIndex({ hasQuote: true, hasOrder: false });
     expect(reached).toBe(1);
     expect(rfqPathTone('request', reached)).toBe('done');
     expect(rfqPathTone('quotation', reached)).toBe('current');
     expect(rfqPathTone('accepted', reached)).toBe('upcoming');
-    expect(rfqPathTone('preparing', reached)).toBe('upcoming');
     expect(rfqSegmentFilled('accepted', reached)).toBe(false);
-    expect(rfqSegmentFilled('preparing', reached)).toBe(false);
+  });
+
+  it('Accepted is current when sales order exists (Preparing is Orders, not RFQ)', () => {
+    const reached = rfqPathReachedIndex({ hasQuote: true, hasOrder: true });
+    expect(reached).toBe(2);
+    expect(rfqPathTone('accepted', reached)).toBe('current');
+    expect(rfqSegmentFilled('accepted', reached)).toBe(true);
   });
 
   it('does not paint later path steps as done while waiting for review', () => {
     const reached = rfqPathReachedIndex({ hasQuote: false, hasOrder: false });
     expect(rfqPathTone('accepted', reached)).toBe('upcoming');
-    expect(rfqPathTone('preparing', reached)).toBe('upcoming');
     expect(rfqSegmentFilled('quotation', reached)).toBe(false);
   });
 });

@@ -1,7 +1,8 @@
 import { View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { localizedName } from '@maher/i18n';
 import { AppText } from '@/components/AppText';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
 import { InventorySkuThumb } from '@/features/inventory/components/InventorySkuThumb';
 import { useLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -76,7 +77,7 @@ function MetricCell({
     >
       <AppText
         variant="heading"
-        weight="semibold"
+        weight={emphasize ? 'semibold' : 'medium'}
         dir="ltr"
         align="center"
         style={{ color: color ?? (emphasize ? colors.brand : colors.textPrimary) }}
@@ -90,9 +91,11 @@ function MetricCell({
   );
 }
 
+const MEDIA = 56;
+
 function UsageRow({ row }: { row: ProductionMaterialUsageLine }) {
   const { t, locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const name = localizedName(locale, {
     nameEn: row.nameEn,
@@ -100,18 +103,27 @@ function UsageRow({ row }: { row: ProductionMaterialUsageLine }) {
     nameHe: row.nameHe,
   });
   const accent = statusColor(row.status, colors);
+  const tense =
+    row.status === 'OVER'
+      ? colors.error
+      : row.status === 'UNDER' || row.status === 'EXTRA'
+        ? colors.warning
+        : colors.borderStrong;
+  const meta = [row.sku, row.unit].filter(Boolean).join(' · ');
 
   return (
     <View
       style={{
-        borderRadius: theme.radius.lg,
+        borderRadius: theme.radius.xl,
         borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.surfaceSecondary,
+        borderColor: tense,
+        backgroundColor: colors.surface,
         overflow: 'hidden',
+        ...productionBoardShadow(colorScheme),
       }}
     >
       <View
+        pointerEvents="none"
         style={{
           position: 'absolute',
           top: 0,
@@ -119,46 +131,78 @@ function UsageRow({ row }: { row: ProductionMaterialUsageLine }) {
           ...(isRTL ? { right: 0 } : { left: 0 }),
           width: 3,
           backgroundColor: accent,
+          opacity: row.status === 'ON_TARGET' || row.status === 'UNUSED' ? 0.55 : 0.9,
         }}
       />
+
       <View
         style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           gap: theme.spacing.sm,
-          padding: theme.spacing.md,
+          paddingHorizontal: theme.spacing.lg,
+          paddingVertical: theme.spacing.md,
           ...(isRTL
-            ? { paddingRight: theme.spacing.md + 4 }
-            : { paddingLeft: theme.spacing.md + 4 }),
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          backgroundColor: colors.surfaceSecondary,
+        }}
+      >
+        <AppText
+          variant="caption"
+          weight={titleWeight}
+          numberOfLines={1}
+          style={{ flex: 1, color: accent, fontSize: 11 }}
+        >
+          {statusLabel(row.status, t)}
+        </AppText>
+        {row.sku ? (
+          <AppText variant="caption" color="muted" weight={titleWeight} dir="ltr" numberOfLines={1}>
+            {row.sku}
+          </AppText>
+        ) : null}
+      </View>
+
+      <View
+        style={{
+          padding: theme.spacing.lg,
+          gap: theme.spacing.md,
+          ...(isRTL
+            ? { paddingRight: theme.spacing.lg + 4 }
+            : { paddingLeft: theme.spacing.lg + 4 }),
         }}
       >
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'center',
-            gap: theme.spacing.sm,
+            gap: theme.spacing.md,
           }}
         >
-          <InventorySkuThumb uri={row.imageUrl} size={36} rounded="full" />
-          <View style={{ flex: 1, gap: 2 }}>
-            <AppText variant="body" weight={titleWeight} numberOfLines={2}>
+          <InventorySkuThumb uri={row.imageUrl} size={MEDIA} rounded="lg" />
+          <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+            <AppText
+              variant="label"
+              weight={titleWeight}
+              numberOfLines={2}
+              style={{ textAlign: isRTL ? 'right' : 'left', fontSize: 16 }}
+            >
               {name}
             </AppText>
-            <AppText variant="caption" color="muted" numberOfLines={1} dir="ltr">
-              {[row.sku, row.unit].filter(Boolean).join(' · ')}
-            </AppText>
-          </View>
-          <View
-            style={{
-              paddingHorizontal: theme.spacing.sm,
-              paddingVertical: 4,
-              borderRadius: theme.radius.full,
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: accent,
-            }}
-          >
-            <AppText variant="caption" weight="semibold" style={{ color: accent }}>
-              {statusLabel(row.status, t)}
-            </AppText>
+            {meta ? (
+              <AppText
+                variant="caption"
+                color="secondary"
+                numberOfLines={1}
+                dir="ltr"
+                style={{ textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {meta}
+              </AppText>
+            ) : null}
           </View>
         </View>
 
@@ -166,8 +210,8 @@ function UsageRow({ row }: { row: ProductionMaterialUsageLine }) {
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'stretch',
-            borderRadius: theme.radius.md,
-            backgroundColor: colors.surface,
+            borderRadius: theme.radius.lg,
+            backgroundColor: colors.surfaceSecondary,
             borderWidth: 1,
             borderColor: colors.border,
             paddingVertical: theme.spacing.sm,
@@ -199,89 +243,41 @@ function UsageRow({ row }: { row: ProductionMaterialUsageLine }) {
 }
 
 export function ProductionMaterialUsageBoard({ materials }: Props) {
-  const { t, locale, isRTL } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
+  const { t, locale } = useLocale();
+  const { colors, theme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
   return (
-    <View
-      style={{
-        borderRadius: theme.radius.xl,
-        borderWidth: 1,
-        borderColor: colors.borderStrong,
-        backgroundColor: colors.surface,
-        overflow: 'hidden',
-        ...productionBoardShadow(colorScheme),
-      }}
-    >
-      <View style={{ height: 3, backgroundColor: colors.brand, opacity: 0.45 }} />
-      <View style={{ padding: theme.spacing.md, gap: theme.spacing.md }}>
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
-          }}
-        >
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colors.brandSoft,
-            }}
-          >
-            <Ionicons name="layers-outline" size={18} color={colors.brand} />
-          </View>
-          <View style={{ flex: 1, gap: 2 }}>
-            <AppText
-              variant="caption"
-              weight="semibold"
-              style={productionSectionLabelStyle(locale, colors.brand)}
-            >
-              {t('mobile.production.usageEyebrow')}
-            </AppText>
-            <AppText variant="heading" weight={titleWeight}>
-              {t('mobile.production.materials')}
-            </AppText>
-          </View>
-          <AppText variant="caption" weight="semibold" dir="ltr" color="muted">
+    <View style={{ gap: theme.spacing.md }}>
+      <DealerBoard
+        title={t('mobile.production.materials')}
+        titleWeight={titleWeight}
+        trailing={
+          <AppText variant="caption" weight={titleWeight} dir="ltr" color="muted">
             {materials.length}
           </AppText>
-        </View>
-
+        }
+      >
+        <AppText
+          variant="caption"
+          weight={titleWeight}
+          style={productionSectionLabelStyle(locale, colors.brand)}
+        >
+          {t('mobile.production.usageEyebrow')}
+        </AppText>
         <AppText variant="caption" color="muted">
           {t('mobile.production.usageHint')}
         </AppText>
+      </DealerBoard>
 
-        {materials.length === 0 ? (
-          <View
-            style={{
-              borderRadius: theme.radius.lg,
-              borderWidth: 1,
-              borderColor: colors.border,
-              backgroundColor: colors.surfaceSecondary,
-              padding: theme.spacing.md,
-              gap: theme.spacing.xs,
-            }}
-          >
-            <AppText variant="body" weight="medium">
-              {t('mobile.production.usageEmptyTitle')}
-            </AppText>
-            <AppText variant="caption" color="muted">
-              {t('mobile.production.usageEmptyBody')}
-            </AppText>
-          </View>
-        ) : (
-          <View style={{ gap: theme.spacing.sm }}>
-            {materials.map((row) => (
-              <UsageRow key={row.inventoryItemId} row={row} />
-            ))}
-          </View>
-        )}
-      </View>
+      {materials.length === 0 ? (
+        <DealerEmptyPanel
+          icon="layers-outline"
+          text={`${t('mobile.production.usageEmptyTitle')}. ${t('mobile.production.usageEmptyBody')}`}
+        />
+      ) : (
+        materials.map((row) => <UsageRow key={row.inventoryItemId} row={row} />)
+      )}
     </View>
   );
 }

@@ -4,4 +4,5 @@ export {
   getInvoice,
   listInvoices,
   openInvoicePdf,
+  updateInvoice,
 } from '@/api/modules/invoices';

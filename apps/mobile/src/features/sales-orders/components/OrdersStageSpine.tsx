@@ -27,6 +27,8 @@ import {
   type OrdersStageFocus,
   type OrdersStageKey,
 } from '../stageCounts';
+
+type JourneyKey = OrdersStageFocus;
 import { orderBoardShadow } from './orderFloorStyle';
 
 type Props = {
@@ -35,7 +37,7 @@ type Props = {
   onStageFocusChange: (next: OrdersStageFocus) => void;
 };
 
-function stageTint(colors: ThemeColors, key: OrdersStageKey): { tint: string; soft: string } {
+function stageTint(colors: ThemeColors, key: JourneyKey): { tint: string; soft: string } {
   switch (key) {
     case 'pending':
       return { tint: colors.brand, soft: colors.brandSoft };

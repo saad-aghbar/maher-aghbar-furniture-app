@@ -35,6 +35,7 @@ import { OrdersSearchBar } from './components/OrdersSearchBar';
 import {
   countActiveOrderFilters,
   defaultOrdersFilterDraft,
+  matchesKindFilter,
   OrdersFilterSheet,
   type OrdersFilterDealerOption,
   type OrdersFilterDraft,
@@ -49,6 +50,7 @@ import type { AdminLifecycleChipKey } from './components/AdminLifecycleChips';
 import type { AdminOrdersDeskMode } from './components/AdminOrdersDeskSwitch';
 import { matchOrdersSearch } from './matchOrdersSearch';
 import { ORDERS_COMPOSITION } from './ordersComposition';
+import { consumeOrdersDeskChip } from './ordersDeskContext';
 import { flattenOrdersPages, useOrdersInfiniteQuery } from './query';
 import {
   toAdminOrderCard,
@@ -121,6 +123,12 @@ export function OrdersListScreen({
   const [applied, setApplied] = useState<OrdersFilterDraft>(defaultDraft);
 
   useEffect(() => {
+    const seeded = consumeOrdersDeskChip();
+    if (seeded && variant === 'admin') {
+      setAdminDeskMode('orders');
+      setAdminLifecycleFocus(seeded);
+    }
+
     const rawDesk = Array.isArray(params.desk) ? params.desk[0] : params.desk;
     if (variant === 'admin' && (rawDesk === 'requests' || rawDesk === 'rfq')) {
       setAdminDeskMode('requests');
@@ -136,7 +144,6 @@ export function OrdersListScreen({
     if (!raw && rawLate !== 'true') return;
 
     const adminKeys = new Set([
-      'needs_attention',
       'preparing',
       'ready_to_start',
       'in_production',
@@ -150,9 +157,10 @@ export function OrdersListScreen({
       setAdminLifecycleFocus('all');
       return;
     }
-    if (variant === 'admin' && rawLate === 'true') {
+    if (variant === 'admin' && (rawLate === 'true' || raw === 'needs_attention')) {
+      // Attention is no longer a chip — land on All so overdue/hold stay visible with badges.
       setAdminDeskMode('orders');
-      setAdminLifecycleFocus('needs_attention');
+      setAdminLifecycleFocus('all');
       return;
     }
     if (variant === 'admin' && raw && adminKeys.has(raw)) {
@@ -475,7 +483,9 @@ export function OrdersListScreen({
   }, [items, locale, requestsQuery.data, variant]);
 
   const adminSalesOrderCards: AdminOrderCardModel[] = useMemo(() => {
-    const orders = refinedSalesOrders.map((item) => toAdminOrderCard(item, locale));
+    const orders = refinedSalesOrders
+      .map((item) => toAdminOrderCard(item, locale))
+      .filter((row) => matchesKindFilter(row.manufacturingKind, applied.kinds));
     const seen = new Set<string>();
     return orders.filter((row) => {
       const key = `order:${row.id}`;
@@ -483,7 +493,7 @@ export function OrdersListScreen({
       seen.add(key);
       return true;
     });
-  }, [locale, refinedSalesOrders]);
+  }, [applied.kinds, locale, refinedSalesOrders]);
 
   /** Desk stream — Sales Orders and Customer Requests never share one list. */
   const adminCards: AdminOrderCardModel[] = useMemo(() => {

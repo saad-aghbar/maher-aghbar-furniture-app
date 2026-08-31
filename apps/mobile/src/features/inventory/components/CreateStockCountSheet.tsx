@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -7,7 +7,7 @@ import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { CreateInventoryStockCountInput, InventoryItem, Warehouse } from '../api';
 import type { InventoryLifecycle } from '../preferWarehouseForReceive';
@@ -25,6 +25,7 @@ import { warehouseTypeForLifecycle } from '../preferWarehouseForReceive';
 import { selectInventoryItemCard } from '../selectInventory';
 import { useLabelVerifyScan } from '../useLabelVerifyScan';
 import { inventoryPickCopyKey } from '../selectInventoryPick';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 type Props = {
   open: boolean;
@@ -52,7 +53,7 @@ export function CreateStockCountSheet({
   onSubmit,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
-  const { theme, colors } = useTheme();
+  const { theme, colors, colorScheme } = useTheme();
   const { user } = useAuth();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.78);
@@ -173,7 +174,8 @@ export function CreateStockCountSheet({
                   {(['PERIODIC', 'SURPRISE'] as const).map((k) => {
                     const selectedKind = kind === k;
                     return (
-                      <Pressable
+                      <AnimatedPressable
+                        variant="button"
                         key={k}
                         onPress={() => {
                           void haptics.selection();
@@ -190,7 +192,7 @@ export function CreateStockCountSheet({
                           backgroundColor: selectedKind
                             ? colors.brandSoft
                             : colors.surface,
-                          ...theme.elevation.card,
+                          ...orderBoardShadow(colorScheme),
                         }}
                       >
                         <AppText
@@ -200,7 +202,7 @@ export function CreateStockCountSheet({
                         >
                           {t(`mobile.inventory.countKind.${k}`)}
                         </AppText>
-                      </Pressable>
+                      </AnimatedPressable>
                     );
                   })}
                 </View>
@@ -246,9 +248,13 @@ export function CreateStockCountSheet({
                         setError(null);
                       }}
                     />
-                    <Pressable
+                    <AnimatedPressable
+                      variant="button"
                       accessibilityRole="button"
-                      onPress={() => setPickOpen(true)}
+                      onPress={() => {
+                        void haptics.selection();
+                        setPickOpen(true);
+                      }}
                       style={{
                         alignSelf: isRTL ? 'flex-end' : 'flex-start',
                         paddingVertical: 4,
@@ -257,12 +263,16 @@ export function CreateStockCountSheet({
                       <AppText variant="caption" color="brand" weight="semibold">
                         {t(copy.pickItem)}
                       </AppText>
-                    </Pressable>
+                    </AnimatedPressable>
                   </>
                 ) : (
-                  <Pressable
+                  <AnimatedPressable
+                    variant="button"
                     accessibilityRole="button"
-                    onPress={() => setPickOpen(true)}
+                    onPress={() => {
+                      void haptics.selection();
+                      setPickOpen(true);
+                    }}
                     style={{
                       minHeight: theme.sizes.touch.min,
                       borderWidth: 1,
@@ -271,7 +281,7 @@ export function CreateStockCountSheet({
                       paddingHorizontal: theme.spacing.md,
                       justifyContent: 'center',
                       backgroundColor: colors.brandSoft,
-                      ...theme.elevation.card,
+                      ...orderBoardShadow(colorScheme),
                     }}
                   >
                     <AppText
@@ -282,7 +292,7 @@ export function CreateStockCountSheet({
                     >
                       {t(copy.pickItem)}
                     </AppText>
-                  </Pressable>
+                  </AnimatedPressable>
                 )}
 
                 <ScanInventoryItemAction

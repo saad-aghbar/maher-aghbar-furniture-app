@@ -19,6 +19,11 @@ import {
 import {
   buildMaterialCostMap,
   calculateOrderCosts,
+  costBreakdownFromMaterialRows,
+  costMaterialLinesFromBomRows,
+  costMaterialLinesFromCatalogLines,
+  productionPriceFromBreakdown,
+  setupBomRowsFromOrder,
   type CostLine,
   type MaterialCostMap,
   type OrderCostResult,
@@ -49,6 +54,10 @@ import {
   resolveSalesOrderCancelPhase,
   type CancelPhase,
 } from './sales-order-cancel-phase';
+import {
+  assertCommercialDateWrite,
+  toCommercialYmd,
+} from '../scheduling/domain/commercial-dates';
 
 function stripSalesOrderCosts<T extends object>(order: T, user?: AuthUser): T {
   if (!user?.customerId) return order;
@@ -56,6 +65,7 @@ function stripSalesOrderCosts<T extends object>(order: T, user?: AuthUser): T {
 
   delete copy.manufacturingCost;
   delete copy.costBreakdown;
+  delete copy.costMaterialLines;
   delete copy.productionPrice;
   delete copy.profit;
   delete copy.manufacturingCosting;
@@ -143,6 +153,19 @@ function maxProgress(
 ): number | null {
   if (!productionOrders?.length) return null;
   return Math.max(...productionOrders.map((po) => Number(po.progressPercent ?? 0)));
+}
+
+/** Worst line complexity wins: CUSTOM > MODIFIED > STANDARD. */
+function resolveOrderManufacturingComplexity(
+  complexities: Array<string | null | undefined>,
+): 'STANDARD' | 'MODIFIED' | 'CUSTOM' {
+  let worst: 'STANDARD' | 'MODIFIED' | 'CUSTOM' = 'STANDARD';
+  for (const raw of complexities) {
+    const c = String(raw ?? 'STANDARD').toUpperCase();
+    if (c === 'CUSTOM') return 'CUSTOM';
+    if (c === 'MODIFIED') worst = 'MODIFIED';
+  }
+  return worst;
 }
 
 type PoWithStage = {
@@ -489,6 +512,7 @@ export class SalesOrdersService {
               unitPrice: true,
               lineTotal: true,
               productId: true,
+              manufacturingComplexity: true,
               product: {
                 select: {
                   id: true,
@@ -511,6 +535,8 @@ export class SalesOrdersService {
               status: true,
               currentStageCode: true,
               progressPercent: true,
+              releasedToFactoryAt: true,
+              actualStartDate: true,
               tasks: {
                 where: {
                   status: { not: 'CANCELLED' },
@@ -525,6 +551,9 @@ export class SalesOrdersService {
                 },
               },
             },
+          },
+          productionSetup: {
+            select: { status: true, releasedAt: true },
           },
           deliveries: {
             select: { id: true, status: true, deliveryDate: true },
@@ -573,6 +602,14 @@ export class SalesOrdersService {
           materialCosts,
           fallbackSellerTotal: row.total,
         });
+        const storedMfg =
+          row.manufacturingCost != null ? Number(row.manufacturingCost) : null;
+        const storedOk = storedMfg != null && Number.isFinite(storedMfg) && storedMfg > 0;
+        const productionPrice = storedOk ? storedMfg! : costs.productionPrice;
+        const costBreakdown =
+          (row.costBreakdown as OrderCostResult['costBreakdown'] | null | undefined) ??
+          costs.costBreakdown;
+        const profit = Number(costs.sellerPrice) - productionPrice;
         const primaryLine = hydratedLines[0] ?? row.lines[0];
         const title = primaryLine?.product
           ? primaryLine.product.nameEn ||
@@ -633,6 +670,19 @@ export class SalesOrdersService {
                   : null
           : null;
 
+        const productionOrders = row.productionOrders ?? [];
+        const executionStarted = productionOrders.some(
+          (po) =>
+            Boolean(po.actualStartDate) ||
+            ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(
+              String(po.status ?? '').toUpperCase(),
+            ),
+        );
+        const releasedToFactory =
+          executionStarted ||
+          productionOrders.some((po) => Boolean(po.releasedToFactoryAt));
+        const productionSetupStatus = row.productionSetup?.status ?? null;
+
         const base = stripSalesOrderCosts(
           {
             ...row,
@@ -642,8 +692,8 @@ export class SalesOrdersService {
                   request: requestWithoutStorageKeys,
                 }
               : row.quotation,
-            manufacturingCost: costs.productionPrice,
-            costBreakdown: costs.costBreakdown,
+            manufacturingCost: productionPrice,
+            costBreakdown,
             progressPercent: maxProgress(row.productionOrders),
             currentStage: isDealer
               ? null
@@ -652,9 +702,21 @@ export class SalesOrdersService {
             imageUrl,
             lineCount: row.lines.length,
             sellerPrice: costs.sellerPrice,
-            productionPrice: costs.productionPrice,
-            profit: costs.profit,
+            productionPrice,
+            profit,
             deliveryStatus: latestDelivery?.status ?? null,
+            productionSetupStatus,
+            productionSetupRequired:
+              row.status === 'DRAFT' && (row.productionOrders?.length ?? 0) === 0,
+            releasedToFactory,
+            executionStarted,
+            manufacturingComplexity: resolveOrderManufacturingComplexity(
+              row.lines.map((l) => l.manufacturingComplexity),
+            ),
+            workerAssignmentRequired:
+              productionSetupStatus === 'RELEASED' &&
+              (row.productionOrders?.length ?? 0) > 0 &&
+              !releasedToFactory,
             productionReadinessSummary: !isDealer
               ? {
                   productionOrderCount: poReadiness.length,
@@ -922,6 +984,8 @@ export class SalesOrdersService {
         status: po.status,
         currentStageCode: po.currentStageCode,
         progressPercent: po.progressPercent,
+        releasedToFactoryAt: po.releasedToFactoryAt ?? null,
+        actualStartDate: po.actualStartDate ?? null,
         stages,
         // PO-level flat photo list stays admin-only; dealers get stage.photos instead.
         photos: isDealer ? [] : photos,
@@ -981,41 +1045,71 @@ export class SalesOrdersService {
       this.loadDealerPrices(order.customerId),
     ]);
     const hydratedLines = await this.hydrateLineProducts(order.lines);
-    const costs = this.costsForLines(hydratedLines, {
+    const catalogCosts = this.costsForLines(hydratedLines, {
       customerId: order.customerId,
       dealerPrices,
       materialCosts,
       fallbackSellerTotal: order.total,
     });
 
-    if (!user?.customerId && order.status !== SalesOrderStatus.DRAFT) {
-      await this.prisma.salesOrder.update({
-        where: { id: order.id },
-        data: {
-          manufacturingCost: costs.productionPrice,
-          costBreakdown: costs.costBreakdown as Prisma.InputJsonValue,
-        },
-      });
-    }
+    const setupRows = setupBomRowsFromOrder({
+      lines: order.lines ?? [],
+      setupLines: order.productionSetup?.lines ?? [],
+    });
+    const setupBreakdown =
+      setupRows.length > 0
+        ? costBreakdownFromMaterialRows(setupRows, materialCosts)
+        : null;
+    const setupPrice = setupBreakdown
+      ? productionPriceFromBreakdown(setupBreakdown)
+      : null;
+    const useSetup = setupPrice != null && setupPrice > 0;
 
-    // Draft: prefer factory-edited costs when present; otherwise use live BOM calc.
+    const costMaterialLines = user?.customerId
+      ? []
+      : setupRows.length > 0
+        ? costMaterialLinesFromBomRows(setupRows, materialCosts)
+        : costMaterialLinesFromCatalogLines(hydratedLines, materialCosts);
+
     const storedBreakdown =
-      order.status === SalesOrderStatus.DRAFT && order.costBreakdown != null
+      order.costBreakdown != null
         ? (order.costBreakdown as OrderCostResult['costBreakdown'])
         : null;
     const storedMfg =
-      order.status === SalesOrderStatus.DRAFT && order.manufacturingCost != null
-        ? Number(order.manufacturingCost)
-        : null;
-    const productionPrice =
-      storedMfg != null && Number.isFinite(storedMfg)
-        ? storedMfg
-        : costs.productionPrice;
-    const costBreakdown = storedBreakdown ?? costs.costBreakdown;
-    const profit =
-      storedMfg != null && Number.isFinite(storedMfg)
-        ? Number(costs.sellerPrice) - productionPrice
-        : costs.profit;
+      order.manufacturingCost != null ? Number(order.manufacturingCost) : null;
+    const storedOk = storedMfg != null && Number.isFinite(storedMfg) && storedMfg > 0;
+
+    // Prefer saved plan BOM → stored factory costs → live catalog product BOM.
+    // Never overwrite factory-saved costs with catalog on read.
+    const productionPrice = useSetup
+      ? setupPrice!
+      : storedOk
+        ? storedMfg!
+        : catalogCosts.productionPrice;
+    const costBreakdown = useSetup
+      ? setupBreakdown!
+      : (storedBreakdown ?? catalogCosts.costBreakdown);
+    const profit = Number(catalogCosts.sellerPrice) - productionPrice;
+    const costs = {
+      ...catalogCosts,
+      productionPrice,
+      costBreakdown,
+      profit,
+    };
+
+    if (
+      !user?.customerId &&
+      useSetup &&
+      (!storedOk || Math.abs((storedMfg ?? 0) - setupPrice!) > 0.009)
+    ) {
+      await this.prisma.salesOrder.update({
+        where: { id: order.id },
+        data: {
+          manufacturingCost: setupPrice!,
+          costBreakdown: setupBreakdown!,
+        },
+      });
+    }
 
     const request = order.quotation?.request ?? null;
     const aiJob = request?.aiJobs?.[0] ?? null;
@@ -1128,6 +1222,7 @@ export class SalesOrdersService {
       ...orderWithoutContracts,
       manufacturingCost: productionPrice,
       costBreakdown,
+      costMaterialLines,
       productionOrders,
       productionReadinessSummary,
       progressPercent: maxProgress(productionOrders),
@@ -1146,9 +1241,46 @@ export class SalesOrdersService {
         order.status === 'DRAFT' &&
         (!productionOrders || productionOrders.length === 0),
       productionSetupStatus: order.productionSetup?.status ?? null,
+      manufacturingComplexity: resolveOrderManufacturingComplexity(
+        (order.lines ?? []).map((l) => l.manufacturingComplexity),
+      ),
+      /** True when setup created POs but Release to factory has not locked the plan yet. */
       workerAssignmentRequired:
         order.productionSetup?.status === 'RELEASED' &&
-        (productionOrders?.length ?? 0) > 0,
+        (productionOrders?.length ?? 0) > 0 &&
+        !(productionOrders ?? []).some((po) => Boolean(po.releasedToFactoryAt)) &&
+        !(productionOrders ?? []).some(
+          (po) =>
+            Boolean(po.actualStartDate) ||
+            ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(
+              String(po.status ?? '').toUpperCase(),
+            ),
+        ),
+      /** Released to factory (plan locked) — may still be Ready for factory. */
+      releasedToFactory: (productionOrders ?? []).some(
+        (po) =>
+          Boolean(po.releasedToFactoryAt) ||
+          Boolean(po.actualStartDate) ||
+          ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(
+            String(po.status ?? '').toUpperCase(),
+          ),
+      ),
+      /** First executable task has started — Orders In Production. */
+      executionStarted: (productionOrders ?? []).some(
+        (po) =>
+          Boolean(po.actualStartDate) ||
+          ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(
+            String(po.status ?? '').toUpperCase(),
+          ),
+      ),
+      releasedToFactoryAt:
+        (productionOrders ?? [])
+          .map((po) => po.releasedToFactoryAt)
+          .filter(Boolean)
+          .sort(
+            (a, b) =>
+              new Date(String(a)).getTime() - new Date(String(b)).getTime(),
+          )[0] ?? null,
       productionSetup: user?.customerId
         ? order.productionSetup
           ? {
@@ -2076,5 +2208,72 @@ export class SalesOrdersService {
       }
     }
     return bestScore >= 1 ? best?.imageUrl ?? null : null;
+  }
+
+  async setCommittedDeliveryDate(id: string, user: AuthUser, nextYmd: string, reason?: string | null) {
+    if (user.customerId) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Dealers cannot change the committed delivery date.',
+      });
+    }
+    const order = await this.getById(id, user);
+    const write = assertCommercialDateWrite({
+      previousOfferedYmd: toCommercialYmd(order.committedDeliveryDate),
+      requestedYmd: toCommercialYmd(order.requiredDeliveryDate),
+      nextYmd,
+      reason,
+    });
+    if (!write.ok) {
+      throw new BadRequestException({
+        code: write.code,
+        message:
+          write.code === 'REASON_REQUIRED'
+            ? 'A reason is required when changing the committed delivery date.'
+            : 'Invalid delivery date.',
+      });
+    }
+    const next = new Date(`${toCommercialYmd(nextYmd)}T00:00:00.000Z`);
+    const previous = order.committedDeliveryDate;
+    const updated = await this.prisma.salesOrder.update({
+      where: { id },
+      data: { committedDeliveryDate: next },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: write.action === 'confirm' ? 'sales-order.delivery.confirm' : 'sales-order.delivery.change',
+        entityType: 'SalesOrder',
+        entityId: id,
+        newValues: {
+          old: previous,
+          new: next.toISOString(),
+          reason: reason ?? null,
+          by: user.id,
+          at: new Date().toISOString(),
+        } as Prisma.InputJsonValue,
+      },
+    }).catch(() => undefined);
+    await this.prisma.scheduleChangeHistory.create({
+      data: {
+        salesOrderId: id,
+        kind: 'commercial',
+        actorId: user.id,
+        reason: reason ?? null,
+        oldDate: previous,
+        newDate: next,
+        payload: { action: write.action },
+      },
+    }).catch(() => undefined);
+    if (write.action === 'change') {
+      await this.notifications
+        .notifyCustomerUsers(order.customerId, {
+          templateCode: 'DELIVERY_DATE_CONFIRMED',
+          vars: { number: order.number, date: toCommercialYmd(nextYmd) ?? '' },
+          linkUrl: `/sales-orders/${id}`,
+        })
+        .catch(() => undefined);
+    }
+    return { ...updated, commercialAction: write.action };
   }
 }

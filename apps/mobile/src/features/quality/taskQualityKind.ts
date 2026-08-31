@@ -39,3 +39,38 @@ export function resolveTaskQualityKind(input: QualityKindInput): TaskQualityKind
 export function isLastStageQualityFloor(kind: TaskQualityKind): boolean {
   return kind === 'inspection' || kind === 'reinspection' || kind === 'packaging';
 }
+
+const QC_FAIL_RESULTS = ['FAILED_REWORK_REQUIRED', 'BLOCKED'] as const;
+
+export type ClassifiedTaskQualityKind =
+  | 'production'
+  | 'inspection'
+  | 'reinspection'
+  | 'packaging'
+  | 'rework';
+
+export function isQcFailResult(result: string | null | undefined): boolean {
+  return Boolean(result && (QC_FAIL_RESULTS as readonly string[]).includes(result));
+}
+
+export function countPriorFails(
+  inspections?: Array<{ result?: string | null }> | null,
+): number {
+  return (inspections ?? []).filter((row) => isQcFailResult(row.result)).length;
+}
+
+/** Floor classification for task detail — production, QC, packaging, or rework. */
+export function classifyTaskQualityKind(input: {
+  stageCode?: string | null;
+  executionKind?: string | null;
+  isRework?: boolean | null;
+  priorFailCount?: number | null;
+}): ClassifiedTaskQualityKind {
+  if (input.isRework) return 'rework';
+  const resolved = resolveTaskQualityKind({
+    stageCode: input.stageCode,
+    executionKind: input.executionKind,
+    isReinspection: (input.priorFailCount ?? 0) > 0,
+  });
+  return resolved ?? 'production';
+}

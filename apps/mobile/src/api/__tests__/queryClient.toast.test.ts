@@ -88,7 +88,7 @@ describe('global query error toasts', () => {
   });
 
   it('still toasts real screen failures that are not the worker queue', () => {
-    const server = new ApiError('boom', { status: 500, code: 'INTERNAL_ERROR' }));
+    const server = new ApiError('boom', { status: 500, code: 'INTERNAL_ERROR' });
     expect(shouldToastApiError(server)).toBe(true);
     expect(shouldSkipGlobalQueryErrorToast(['purchasing', 'detail', 'p1'])).toBe(false);
     expect(shouldSkipGlobalQueryErrorToast(['inventory', 'detail', 'i1'])).toBe(false);

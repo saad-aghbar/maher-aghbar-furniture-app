@@ -92,6 +92,7 @@ export type ProductionTaskRow = {
   plannedStart: string | null;
   plannedCompletion: string | null;
   stageCode: string | null;
+  stageDefinitionId: string | null;
   dependsOnCodes: string[];
 };
 
@@ -219,13 +220,14 @@ export function resolveDepartmentLabel(
   return humanizeDeptCode(code);
 }
 
-/** Workers whose department matches the stage’s responsible department. */
+/** Prefer workers in the stage department; if none match, keep the full list (skill-filtered by API). */
 export function workersForStage(
   workers: AssignableWorker[],
   stageDept?: string | null,
 ): AssignableWorker[] {
   if (!stageDept) return workers;
-  return workers.filter((w) => w.department?.code === stageDept);
+  const matched = workers.filter((w) => w.department?.code === stageDept);
+  return matched.length > 0 ? matched : workers;
 }
 
 export function selectProductionDetail(
@@ -283,6 +285,7 @@ export function selectProductionDetail(
       plannedCompletion:
         task.plannedCompletion ?? task.timing?.plannedCompletion ?? null,
       stageCode,
+      stageDefinitionId: task.stageDefinition?.id ?? null,
       dependsOnCodes: stageCode ? dependsByCode.get(stageCode) ?? [] : [],
     };
   });

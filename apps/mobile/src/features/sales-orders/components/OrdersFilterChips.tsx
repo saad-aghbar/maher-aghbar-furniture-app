@@ -132,17 +132,19 @@ function chipIcon(chip: StatusChipKey): keyof typeof Ionicons.glyphMap {
 }
 
 function accentFor(
-  colors: { textPrimary: string; textSecondary: string },
+  chip: StatusChipKey,
+  colors: {
+    textSecondary: string;
+    brand: string;
+    warning: string;
+    success: string;
+  },
   focused: boolean,
 ): string {
   if (!focused) return colors.textSecondary;
-  if (chip === 'drafts') return colors.brand;
-  if (chip === 'waiting') return colors.info;
-  if (chip === 'needsInformation') return colors.warning;
-  if (chip === 'pending') return colors.warning;
-  if (chip === 'production') return colors.info;
-  if (chip === 'ready') return colors.brand;
-  if (chip === 'shipped') return colors.warning;
+  if (chip === 'needsInformation' || chip === 'pending' || chip === 'shipped') {
+    return colors.warning;
+  }
   if (chip === 'delivered') return colors.success;
   return colors.brand;
 }

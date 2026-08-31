@@ -11,6 +11,7 @@ import {
   selectInventoryItemCard,
 } from '../selectInventory';
 import { InventorySkuThumb } from './InventorySkuThumb';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 
 export type InlineScanSelectMode =
   | 'confirm'
@@ -39,7 +40,7 @@ export function InventoryScanSelectInline({
   onUseMaterial,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const card = item ? selectInventoryItemCard(item, locale) : null;
   const materialTypeLabel = formatInventoryMaterialType(card?.materialType, t);
   const canUse = mode === 'confirm' && Boolean(onUseMaterial) && Boolean(card);
@@ -65,7 +66,7 @@ export function InventoryScanSelectInline({
         backgroundColor: colors.surface,
         padding: theme.spacing.md,
         gap: theme.spacing.md,
-        ...theme.elevation.card,
+        ...orderBoardShadow(colorScheme),
       }}
     >
       {card ? (
@@ -189,7 +190,7 @@ function ActionPill({
   onPress: () => void;
   brand?: boolean;
 }) {
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   return (
     <Pressable
       accessibilityRole="button"

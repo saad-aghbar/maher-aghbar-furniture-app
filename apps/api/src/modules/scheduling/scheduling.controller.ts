@@ -4,8 +4,10 @@ import type { AuthUser } from '@maher/types';
 import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import {
+  ApplyReviewedAllocationsDto,
   ApproveScheduleDto,
   AvailabilityRequestDto,
+  BulkShiftPreviewDto,
   CalendarExceptionDto,
   DealerDateChangeDto,
   ListCalendarQuery,
@@ -58,8 +60,18 @@ export class SchedulingController {
 
   @RequirePermissions('schedule.settings.manage')
   @Delete('calendar-settings/exceptions/:date')
-  deleteCalendarException(@Param('date') date: string, @CurrentUser() user: AuthUser) {
-    return this.scheduling.deleteException(date, user.id);
+  deleteCalendarException(
+    @Param('date') date: string,
+    @CurrentUser() user: AuthUser,
+    @Query('confirmImpact') confirmImpact?: string,
+  ) {
+    return this.scheduling.deleteException(date, user.id, confirmImpact === 'true' || confirmImpact === '1');
+  }
+
+  @RequirePermissions('schedule.settings.manage')
+  @Get('calendar-settings/exceptions/:date/impact')
+  exceptionImpact(@Param('date') date: string) {
+    return this.scheduling.previewDayImpact(date);
   }
 
   @RequirePermissions('schedule.manage')
@@ -176,10 +188,81 @@ export class SchedulingController {
     return this.scheduling.getOrderSchedule(productionOrderId);
   }
 
+  @RequirePermissions('schedule.read')
+  @Get('unscheduled')
+  listUnscheduled() {
+    return this.scheduling.listUnscheduledOrders();
+  }
+
+  @RequirePermissions('schedule.read')
+  @Get('attention')
+  listAttention() {
+    return this.scheduling.listAttentionQueue();
+  }
+
+  @RequirePermissions('schedule.read')
+  @Get('orders/:productionOrderId/history')
+  scheduleHistory(@Param('productionOrderId') productionOrderId: string) {
+    return this.scheduling.listScheduleHistory(productionOrderId);
+  }
+
   @RequirePermissions('schedule.manage')
   @Post('orders/:productionOrderId/generate')
   generate(@Param('productionOrderId') productionOrderId: string, @CurrentUser() user: AuthUser) {
-    return this.scheduling.generateForProductionOrder(productionOrderId, user.id);
+    return this.scheduling.generateForProductionOrder(productionOrderId, user.id, { persist: false });
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('orders/:productionOrderId/apply-moves')
+  applyMoves(
+    @Param('productionOrderId') productionOrderId: string,
+    @Body() dto: ApplyReviewedAllocationsDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.scheduling.applyReviewedAllocations(
+      productionOrderId,
+      user.id,
+      dto.allocations.map((a) => ({
+        allocationId: a.allocationId,
+        productionTaskId: a.productionTaskId,
+        employeeId: a.employeeId ?? null,
+        plannedStart: a.plannedStart,
+        plannedEnd: a.plannedEnd,
+        sortOrder: a.sortOrder,
+      })),
+      dto.reason,
+    );
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('orders/:productionOrderId/bulk-shift/preview')
+  previewBulkShift(
+    @Param('productionOrderId') productionOrderId: string,
+    @Body() dto: BulkShiftPreviewDto,
+  ) {
+    return this.scheduling.previewBulkShift(productionOrderId, dto.days ?? 1);
+  }
+
+  @RequirePermissions('schedule.manage')
+  @Post('orders/:productionOrderId/bulk-shift/apply')
+  applyBulkShift(
+    @Param('productionOrderId') productionOrderId: string,
+    @Body() dto: ApplyReviewedAllocationsDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.scheduling.applyBulkShift(
+      productionOrderId,
+      user.id,
+      dto.allocations.map((a) => ({
+        allocationId: a.allocationId,
+        productionTaskId: a.productionTaskId,
+        employeeId: a.employeeId ?? null,
+        plannedStart: a.plannedStart,
+        plannedEnd: a.plannedEnd,
+        sortOrder: a.sortOrder,
+      })),
+      dto.reason,
+    );
   }
 
   @RequirePermissions('schedule.manage')

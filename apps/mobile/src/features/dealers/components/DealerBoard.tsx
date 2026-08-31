@@ -14,6 +14,8 @@ type Props = {
   contentStyle?: StyleProp<ViewStyle>;
   /** Skip brand rail (rare nested panels). */
   hideAccent?: boolean;
+  /** Override brand edge (late / blockers use error). */
+  accentColor?: string;
 };
 
 /** Parchment floor section board — header band + body, matches invoice/return language. */
@@ -25,9 +27,12 @@ export function DealerBoard({
   style,
   contentStyle,
   hideAccent = false,
+  accentColor,
 }: Props) {
   const { isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
+  const rail = accentColor ?? colors.brand;
+  const railOpacity = accentColor && accentColor !== colors.brand ? 0.9 : 0.55;
 
   return (
     <View
@@ -52,8 +57,8 @@ export function DealerBoard({
             bottom: 0,
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
-            backgroundColor: colors.brand,
-            opacity: 0.55,
+            backgroundColor: rail,
+            opacity: railOpacity,
           }}
         />
       )}

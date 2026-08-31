@@ -2,12 +2,11 @@ export const RFQ_WORKSPACE_STAGES = ['request', 'quotation', 'order'] as const;
 
 export type RfqWorkspaceStage = (typeof RFQ_WORKSPACE_STAGES)[number];
 
-/** Factory path chrome — longer than the three workspace tabs. */
+/** Factory path chrome — Accepted is the commercial handoff; Preparing lives on Orders. */
 export const RFQ_PATH_STEPS = [
   'request',
   'quotation',
   'accepted',
-  'preparing',
 ] as const;
 
 export type RfqPathStep = (typeof RFQ_PATH_STEPS)[number];
@@ -44,14 +43,14 @@ export function rfqStageFromData(args: {
 
 /**
  * Farthest factory-path index the record has actually reached.
- * Accepted / Preparing stay upcoming until a sales order exists.
+ * Sales order exists → Accepted (Open Sales Order → Orders Preparing).
  * Visiting a tab must not advance this.
  */
 export function rfqPathReachedIndex(args: {
   hasQuote: boolean;
   hasOrder: boolean;
 }): number {
-  if (args.hasOrder) return 2;
+  if (args.hasOrder) return 2; // accepted
   if (args.hasQuote) return 1;
   return 0;
 }

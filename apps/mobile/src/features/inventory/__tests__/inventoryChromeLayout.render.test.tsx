@@ -1,5 +1,6 @@
 import { render } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
+import { ToastProvider } from '@/components/feedback/Toast';
 import { LocaleProvider } from '@/i18n';
 import { ThemeProvider } from '@/theme';
 import { InventoryCompositionChrome } from '../components/InventoryCompositionChrome';
@@ -30,7 +31,9 @@ function Wrapper({
 }) {
   return (
     <ThemeProvider initialMode="light">
-      <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>
+      <LocaleProvider initialLocale={locale}>
+        <ToastProvider>{children}</ToastProvider>
+      </LocaleProvider>
     </ThemeProvider>
   );
 }

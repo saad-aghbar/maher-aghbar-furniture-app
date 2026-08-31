@@ -31,7 +31,7 @@ export function InventoryFilterButton({ onPress, activeCount = 0 }: Props) {
         onPress();
       }}
       style={{
-        minHeight: 40,
+        minHeight: 48,
         paddingHorizontal: theme.spacing.md,
         paddingVertical: theme.spacing.sm,
         borderRadius: theme.radius.xl,

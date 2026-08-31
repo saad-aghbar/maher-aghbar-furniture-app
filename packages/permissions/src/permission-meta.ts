@@ -366,6 +366,16 @@ export const PERMISSION_META = {
     'רישום חשבוניות ספק.',
     { requires: ['supplier-invoice.read'] },
   ),
+  'supplier-invoice.update': m(
+    'purchasing',
+    'Update supplier invoices',
+    'تعديل فواتير المورّدين',
+    'עדכון חשבוניות ספק',
+    'Edit supplier invoice details.',
+    'تعديل تفاصيل فواتير المورّدين.',
+    'עריכת פרטי חשבוניות ספק.',
+    { ...SENSITIVE, requires: ['supplier-invoice.read'] },
+  ),
   'supplier-payment.record': m(
     'purchasing',
     'Record supplier payments',

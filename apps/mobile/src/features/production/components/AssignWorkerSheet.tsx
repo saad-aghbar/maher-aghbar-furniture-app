@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { PrimaryButton } from '@/components/buttons/PrimaryButton';
-import { SecondaryButton } from '@/components/buttons/SecondaryButton';
-import { InlineDateCalendar, todayYmd } from '@/components/calendar';
+import { InlineDateCalendar } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerFormFooter } from '@/features/dealers/components/dealerSheetForm';
 import { useLocale } from '@/i18n';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { buildDueIso, hoursMinutesToTotalMinutes } from '@/features/tasks/formatDuration';
 import type { AssignableWorker, RecommendBand } from '@/api/modules/production';
+import {
+  defaultAssignWindowParts,
+  parseScheduleConflicts,
+  parseSuggestedWindow,
+  type ScheduleConflictItem,
+} from '../assignWindow';
+import { productionInsetStyle } from '../productionFloorStyle';
+import { AssignConflictBoard } from './AssignConflictBoard';
 import { HoursMinutesRow } from './HoursMinutesRow';
 
 export type AssignWorkerPayload = {
@@ -20,6 +30,11 @@ export type AssignWorkerPayload = {
   overrideConflict?: boolean;
 };
 
+export type AssignScheduleConflict = {
+  conflicts: ScheduleConflictItem[];
+  suggestedWindow?: { plannedStart: string; plannedCompletion: string } | null;
+};
+
 type AssignWorkerSheetProps = {
   open: boolean;
   onClose: () => void;
@@ -27,8 +42,14 @@ type AssignWorkerSheetProps = {
   loading?: boolean;
   title: string;
   currentEmployeeId?: string | null;
+  initialPlannedStart?: string | null;
+  initialPlannedCompletion?: string | null;
+  initialEstimatedMinutes?: number | null;
   /** When true, conflict-band workers can be submitted with overrideConflict. */
   canOverrideConflict?: boolean;
+  /** Server conflict from a failed assign — keep sheet open and guide time change. */
+  scheduleConflict?: AssignScheduleConflict | null;
+  onClearScheduleConflict?: () => void;
   /** Notify parent when date window changes so assignable-workers can refetch conflicts. */
   onWindowChange?: (window: {
     plannedStart?: string;
@@ -52,6 +73,30 @@ function bandLabelKey(band: RecommendBand): string {
   }
 }
 
+function applyIsoWindow(
+  plannedStart: string,
+  plannedCompletion: string,
+  setters: {
+    setStartDate: (v: string) => void;
+    setStartHour: (v: string) => void;
+    setStartMinute: (v: string) => void;
+    setDueDate: (v: string) => void;
+    setDueHour: (v: string) => void;
+    setDueMinute: (v: string) => void;
+  },
+) {
+  const parts = defaultAssignWindowParts({
+    plannedStart,
+    plannedCompletion,
+  });
+  setters.setStartDate(parts.start.ymd);
+  setters.setStartHour(parts.start.hour);
+  setters.setStartMinute(parts.start.minute);
+  setters.setDueDate(parts.due.ymd);
+  setters.setDueHour(parts.due.hour);
+  setters.setDueMinute(parts.due.minute);
+}
+
 export function AssignWorkerSheet({
   open,
   onClose,
@@ -59,19 +104,25 @@ export function AssignWorkerSheet({
   loading,
   title,
   currentEmployeeId,
+  initialPlannedStart,
+  initialPlannedCompletion,
+  initialEstimatedMinutes,
   canOverrideConflict = false,
+  scheduleConflict = null,
+  onClearScheduleConflict,
   onWindowChange,
   onSubmit,
 }: AssignWorkerSheetProps) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [q, setQ] = useState('');
   const [selectedId, setSelectedId] = useState(currentEmployeeId ?? '');
-  const [startDate, setStartDate] = useState(todayYmd());
+  const [startDate, setStartDate] = useState(todayYmdFallback());
   const [startHour, setStartHour] = useState('8');
   const [startMinute, setStartMinute] = useState('00');
-  const [dueDate, setDueDate] = useState(todayYmd());
-  const [dueHour, setDueHour] = useState('17');
+  const [dueDate, setDueDate] = useState(todayYmdFallback());
+  const [dueHour, setDueHour] = useState('10');
   const [dueMinute, setDueMinute] = useState('00');
   const [estHours, setEstHours] = useState('');
   const [estMinutes, setEstMinutes] = useState('');
@@ -80,19 +131,23 @@ export function AssignWorkerSheet({
   useEffect(() => {
     if (!open) return;
     setSelectedId(currentEmployeeId ?? '');
-    setStartDate(todayYmd());
-    setStartHour('8');
-    setStartMinute('00');
-    setDueDate(todayYmd());
-    setDueHour('17');
-    setDueMinute('00');
-    setEstHours('');
-    setEstMinutes('');
+    const parts = defaultAssignWindowParts({
+      plannedStart: initialPlannedStart,
+      plannedCompletion: initialPlannedCompletion,
+      estimatedMinutes: initialEstimatedMinutes,
+    });
+    setStartDate(parts.start.ymd);
+    setStartHour(parts.start.hour);
+    setStartMinute(parts.start.minute);
+    setDueDate(parts.due.ymd);
+    setDueHour(parts.due.hour);
+    setDueMinute(parts.due.minute);
+    setEstHours(parts.estHours);
+    setEstMinutes(parts.estMinutes);
     setOverrideConflict(false);
     setQ('');
-  }, [open, currentEmployeeId]);
+  }, [open, currentEmployeeId, initialPlannedStart, initialPlannedCompletion, initialEstimatedMinutes]);
 
-  // Debounce date window → parent refetch for conflict recommendations
   useEffect(() => {
     if (!open || !onWindowChange) return;
     const id = setTimeout(() => {
@@ -161,10 +216,34 @@ export function AssignWorkerSheet({
     [selectedId, workers],
   );
   const selectedIsConflict = selectedWorker?.recommendBand === 'conflict';
+  const serverConflicts = parseScheduleConflicts(scheduleConflict?.conflicts);
+  const showConflictPanel = selectedIsConflict || serverConflicts.length > 0;
+
+  const suggested =
+    parseSuggestedWindow(scheduleConflict?.suggestedWindow) ??
+    selectedWorker?.suggestedWindow ??
+    null;
+
+  const applySuggested = () => {
+    if (!suggested) return;
+    applyIsoWindow(suggested.plannedStart, suggested.plannedCompletion, {
+      setStartDate,
+      setStartHour,
+      setStartMinute,
+      setDueDate,
+      setDueHour,
+      setDueMinute,
+    });
+    setOverrideConflict(false);
+    onClearScheduleConflict?.();
+  };
 
   const submit = () => {
     if (!selectedId) return;
-    if (selectedIsConflict && !canOverrideConflict) return;
+    if (selectedIsConflict && !canOverrideConflict && !overrideConflict) {
+      // Prefer fixing the window — don't submit into a known conflict.
+      return;
+    }
     if (selectedIsConflict && canOverrideConflict && !overrideConflict) return;
 
     const plannedStart = buildDueIso(
@@ -198,7 +277,8 @@ export function AssignWorkerSheet({
   };
 
   const conflictBlocksSubmit =
-    selectedIsConflict && (!canOverrideConflict || !overrideConflict);
+    (selectedIsConflict || serverConflicts.length > 0) &&
+    (!canOverrideConflict || !overrideConflict);
 
   return (
     <BottomSheet open={open} onClose={onClose} title={title} fitContent>
@@ -208,212 +288,205 @@ export function AssignWorkerSheet({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ gap: theme.spacing.md }}
       >
-        <TextField
-          value={q}
-          onChangeText={setQ}
-          placeholder={t('mobile.production.searchWorkers')}
-          autoCorrect={false}
-          returnKeyType="search"
-        />
-        <ScrollView style={{ maxHeight: 280 }}>
-          <View style={{ gap: theme.spacing.md }}>
-            {grouped.map((group) => (
-              <View key={group.band ?? 'all'} style={{ gap: theme.spacing.sm }}>
-                {group.band ? (
-                  <AppText
-                    variant="caption"
-                    weight="semibold"
-                    style={{ color: colors.brand }}
-                  >
-                    {t(bandLabelKey(group.band))}
-                  </AppText>
-                ) : null}
-                {group.workers.map((w) => {
-                  const selected = w.id === selectedId;
-                  const name = `${w.firstName} ${w.lastName}`.trim();
-                  const activeCount = w.activeTaskCount ?? 0;
-                  const conflict = w.recommendBand === 'conflict';
-                  return (
-                    <Pressable
-                      key={w.id}
-                      onPress={() => {
-                        setSelectedId(w.id);
-                        setOverrideConflict(false);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      style={{
-                        minHeight: 72,
-                        borderWidth: 1,
-                        borderColor: selected
-                          ? conflict
-                            ? colors.error
-                            : colors.brand
-                          : colors.borderMuted,
-                        backgroundColor: selected
-                          ? conflict
-                            ? colors.errorSoft
-                            : colors.brandSoft
-                          : colors.surfaceElevated,
-                        borderRadius: theme.radius.lg,
-                        paddingHorizontal: theme.spacing.md,
-                        paddingVertical: theme.spacing.sm,
-                        justifyContent: 'center',
-                        gap: 2,
-                      }}
+        <DealerBoard title={t('mobile.production.searchWorkers')} titleWeight={titleWeight}>
+          <TextField
+            value={q}
+            onChangeText={setQ}
+            placeholder={t('mobile.production.searchWorkers')}
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          <ScrollView style={{ maxHeight: 280 }} nestedScrollEnabled>
+            <View style={{ gap: theme.spacing.md }}>
+              {grouped.map((group) => (
+                <View key={group.band ?? 'all'} style={{ gap: theme.spacing.sm }}>
+                  {group.band ? (
+                    <AppText
+                      variant="caption"
+                      weight={titleWeight}
+                      style={{ color: colors.brand }}
                     >
-                      <AppText
-                        weight={selected ? 'semibold' : 'regular'}
-                        style={{ textAlign: isRTL ? 'right' : 'left', width: '100%' }}
-                      >
-                        {name}
-                      </AppText>
-                      {w.recommendReason ? (
-                        <AppText
-                          variant="caption"
-                          color={conflict ? 'error' : 'secondary'}
-                          numberOfLines={2}
-                          style={{ textAlign: isRTL ? 'right' : 'left', width: '100%' }}
-                        >
-                          {w.recommendReason}
-                        </AppText>
-                      ) : null}
-                      <View
-                        style={{
-                          flexDirection: isRTL ? 'row-reverse' : 'row',
-                          flexWrap: 'wrap',
-                          gap: theme.spacing.sm,
-                          alignItems: 'center',
-                          alignSelf: isRTL ? 'flex-end' : 'flex-start',
-                        }}
-                      >
-                        {w.department ? (
-                          <AppText variant="caption" color="secondary">
-                            {w.department.nameEn}
-                          </AppText>
-                        ) : null}
-                        <AppText variant="caption" color="muted">
-                          {t('mobile.production.activeTasks', { count: activeCount })}
-                        </AppText>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ))}
-            {filtered.length === 0 ? (
-              <AppText variant="caption" color="secondary">
-                {t('mobile.production.noWorkers')}
-              </AppText>
-            ) : null}
-          </View>
-        </ScrollView>
-
-        {selectedIsConflict ? (
-          <View
-            style={{
-              padding: theme.spacing.md,
-              borderRadius: theme.radius.lg,
-              borderWidth: 1,
-              borderColor: colors.error,
-              backgroundColor: colors.errorSoft,
-              gap: theme.spacing.sm,
-            }}
-          >
-            <AppText variant="caption" weight="semibold" style={{ color: colors.error }}>
-              {t('mobile.production.conflictWarningTitle')}
-            </AppText>
-            <AppText variant="caption" style={{ color: colors.error }}>
-              {selectedWorker?.recommendReason ||
-                t('mobile.production.conflictWarningBody')}
-            </AppText>
-            {canOverrideConflict ? (
-              <Pressable
-                onPress={() => setOverrideConflict((v) => !v)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: overrideConflict }}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
-                  minHeight: 44,
-                }}
-              >
-                <View
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 6,
-                    borderWidth: 1.5,
-                    borderColor: colors.error,
-                    backgroundColor: overrideConflict ? colors.error : 'transparent',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {overrideConflict ? (
-                    <AppText variant="caption" weight="semibold" style={{ color: '#fff' }}>
-                      ✓
+                      {t(bandLabelKey(group.band))}
                     </AppText>
                   ) : null}
+                  {group.workers.map((w) => {
+                    const selected = w.id === selectedId;
+                    const name = `${w.firstName} ${w.lastName}`.trim();
+                    const conflict = w.recommendBand === 'conflict';
+                    return (
+                      <AnimatedPressable
+                        key={w.id}
+                        variant="button"
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected }}
+                        onPress={() => {
+                          void haptics.selection();
+                          setSelectedId(w.id);
+                          setOverrideConflict(false);
+                          onClearScheduleConflict?.();
+                        }}
+                        style={{
+                          minHeight: theme.sizes.touch.min,
+                          borderRadius: theme.radius.lg,
+                          borderWidth: 1,
+                          borderColor: selected
+                            ? conflict
+                              ? colors.warning
+                              : colors.brand
+                            : colors.border,
+                          backgroundColor: selected
+                            ? conflict
+                              ? colors.surfaceSecondary
+                              : colors.surface
+                            : colors.surface,
+                          paddingHorizontal: theme.spacing.md,
+                          flexDirection: isRTL ? 'row-reverse' : 'row',
+                          alignItems: 'center',
+                          gap: theme.spacing.sm,
+                        }}
+                      >
+                        <View
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 5,
+                            backgroundColor: conflict ? colors.warning : colors.brand,
+                            opacity: selected ? 1 : 0.35,
+                          }}
+                        />
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <AppText
+                            variant="label"
+                            weight={titleWeight}
+                            style={{
+                              color: conflict ? colors.warning : colors.textPrimary,
+                              textAlign: isRTL ? 'right' : 'left',
+                            }}
+                          >
+                            {name}
+                          </AppText>
+                          {w.recommendReason ? (
+                            <AppText
+                              variant="caption"
+                              color={conflict ? 'warning' : 'secondary'}
+                              numberOfLines={2}
+                              style={{ textAlign: isRTL ? 'right' : 'left' }}
+                            >
+                              {w.recommendReason}
+                            </AppText>
+                          ) : w.activeTaskCount != null ? (
+                            <AppText
+                              variant="caption"
+                              color="muted"
+                              style={{ textAlign: isRTL ? 'right' : 'left' }}
+                            >
+                              {t('mobile.production.activeTasksCount', {
+                                count: w.activeTaskCount,
+                              })}
+                            </AppText>
+                          ) : null}
+                        </View>
+                        {selected ? (
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={20}
+                            color={conflict ? colors.warning : colors.brand}
+                          />
+                        ) : null}
+                      </AnimatedPressable>
+                    );
+                  })}
                 </View>
-                <AppText variant="caption" style={{ flex: 1, color: colors.error }}>
-                  {t('mobile.production.overrideConflict')}
-                </AppText>
-              </Pressable>
-            ) : (
-              <AppText variant="caption" color="muted">
-                {t('mobile.production.conflictNoOverride')}
-              </AppText>
-            )}
-          </View>
+              ))}
+            </View>
+          </ScrollView>
+        </DealerBoard>
+
+        {showConflictPanel ? (
+          <AssignConflictBoard
+            overlaps={selectedWorker?.overlapWindows}
+            conflicts={serverConflicts}
+            reason={selectedWorker?.recommendReason}
+            canOverride={canOverrideConflict}
+            overrideChecked={overrideConflict}
+            onToggleOverride={() => setOverrideConflict((v) => !v)}
+            hasSuggestedSlot={Boolean(suggested)}
+            onUseSuggestedSlot={applySuggested}
+          />
         ) : null}
 
-        <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
-          {t('mobile.production.startDate')}
-        </AppText>
-        <InlineDateCalendar value={startDate} onSelect={setStartDate} resetKey={open} />
-        <HoursMinutesRow
-          sectionLabel={t('mobile.production.startTime')}
-          hours={startHour}
-          minutes={startMinute}
-          onHoursChange={setStartHour}
-          onMinutesChange={setStartMinute}
-          hoursLabel={t('mobile.production.dueHour')}
-          minutesLabel={t('mobile.production.dueMinute')}
-        />
+        <DealerBoard
+          title={t('mobile.production.taskWindowTitle')}
+          titleWeight={titleWeight}
+        >
+          <AppText variant="caption" color="muted">
+            {t('mobile.production.taskWindowHint')}
+          </AppText>
+          <View style={productionInsetStyle(theme, colors)}>
+            <AppText variant="caption" weight={titleWeight} color="secondary">
+              {t('mobile.production.startDate')}
+            </AppText>
+            <InlineDateCalendar value={startDate} onSelect={setStartDate} resetKey={open} />
+            <HoursMinutesRow
+              sectionLabel={t('mobile.production.startTime')}
+              hours={startHour}
+              minutes={startMinute}
+              onHoursChange={setStartHour}
+              onMinutesChange={setStartMinute}
+              hoursLabel={t('mobile.production.dueHour')}
+              minutesLabel={t('mobile.production.dueMinute')}
+            />
+            <AppText
+              variant="caption"
+              weight={titleWeight}
+              color="secondary"
+              style={{ marginTop: theme.spacing.sm }}
+            >
+              {t('mobile.production.dueDate')}
+            </AppText>
+            <InlineDateCalendar
+              value={dueDate}
+              onSelect={setDueDate}
+              resetKey={`${open}-due`}
+            />
+            <HoursMinutesRow
+              sectionLabel={t('mobile.production.dueTime')}
+              hours={dueHour}
+              minutes={dueMinute}
+              onHoursChange={setDueHour}
+              onMinutesChange={setDueMinute}
+              hoursLabel={t('mobile.production.dueHour')}
+              minutesLabel={t('mobile.production.dueMinute')}
+            />
+            <HoursMinutesRow
+              sectionLabel={t('mobile.production.estimateDuration')}
+              hours={estHours}
+              minutes={estMinutes}
+              onHoursChange={setEstHours}
+              onMinutesChange={setEstMinutes}
+              hoursLabel={t('mobile.production.estimateHours')}
+              minutesLabel={t('mobile.production.estimateMinutes')}
+            />
+          </View>
+        </DealerBoard>
 
-        <AppText variant="caption" weight="semibold" style={{ color: colors.brand }}>
-          {t('mobile.production.dueDate')}
-        </AppText>
-        <InlineDateCalendar value={dueDate} onSelect={setDueDate} resetKey={`${open}-due`} />
-        <HoursMinutesRow
-          sectionLabel={t('mobile.production.dueTime')}
-          hours={dueHour}
-          minutes={dueMinute}
-          onHoursChange={setDueHour}
-          onMinutesChange={setDueMinute}
-          hoursLabel={t('mobile.production.dueHour')}
-          minutesLabel={t('mobile.production.dueMinute')}
-        />
-        <HoursMinutesRow
-          sectionLabel={t('mobile.production.estimateDuration')}
-          hours={estHours}
-          minutes={estMinutes}
-          onHoursChange={setEstHours}
-          onMinutesChange={setEstMinutes}
-          hoursLabel={t('mobile.production.estimateHours')}
-          minutesLabel={t('mobile.production.estimateMinutes')}
-        />
-
-        <PrimaryButton
-          label={t('mobile.production.confirmAssign')}
+        <DealerFormFooter
+          confirmLabel={
+            conflictBlocksSubmit
+              ? t('mobile.production.fixWindowThenAssign')
+              : t('mobile.production.confirmAssign')
+          }
+          onConfirm={submit}
+          onCancel={onClose}
           loading={loading}
-          disabled={!selectedId || loading || conflictBlocksSubmit}
-          onPress={submit}
+          disabled={!selectedId || Boolean(loading) || conflictBlocksSubmit}
         />
-        <SecondaryButton label={t('mobile.production.cancel')} onPress={onClose} />
       </ScrollView>
     </BottomSheet>
   );
+}
+
+function todayYmdFallback(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

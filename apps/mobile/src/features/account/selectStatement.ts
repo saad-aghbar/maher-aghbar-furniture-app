@@ -4,6 +4,23 @@ export type StatementTypeFilter = 'all' | 'INVOICE' | 'PAYMENT';
 
 export type StatementDatePreset = 'all' | '30d' | '90d';
 
+export type StatementPdfRange = {
+  from?: string;
+  to?: string;
+};
+
+/** All-time, or a closed YYYY-MM-DD range (single-day if only start is set). */
+export function statementRangeFromDraft(
+  mode: 'all' | 'custom',
+  start: string,
+  end: string,
+): StatementPdfRange {
+  if (mode === 'all' || !start.trim()) return {};
+  const a = start.trim();
+  const b = end.trim() || a;
+  return a <= b ? { from: a, to: b } : { from: b, to: a };
+}
+
 export type StatementSummaryModel = {
   customerLabel: string;
   /** Canonical Piece 7 — Σ open invoice remaining. */

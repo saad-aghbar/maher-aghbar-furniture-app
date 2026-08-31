@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -59,7 +60,7 @@ export function InventoryStockCountRow({
   animateEnter = true,
 }: Props) {
   const { t, isRTL, formatDateTime, locale } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const posted = count.status === 'POSTED';
   const accent = posted ? colors.success : colors.brand;
@@ -72,20 +73,6 @@ export function InventoryStockCountRow({
 
   const body = (
     <View style={{ gap: theme.spacing.sm }}>
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: theme.spacing.sm,
-        }}
-      >
-        <AppText variant="body" weight={titleWeight} style={{ flex: 1 }} numberOfLines={1}>
-          {count.number}
-        </AppText>
-        <StatusBadge status={count.status} label={statusLabel} dot />
-      </View>
-
       <View
         style={{
           gap: 4,
@@ -170,19 +157,15 @@ export function InventoryStockCountRow({
       <View
         style={{
           borderRadius: theme.radius.xl,
-          ...theme.elevation.card,
+          borderWidth: 1,
+          borderColor: colors.borderStrong,
+          backgroundColor: colors.surface,
+          overflow: 'hidden',
+          ...orderBoardShadow(colorScheme),
         }}
       >
-        <View
-          style={{
-            borderWidth: 1,
-            borderColor: colors.borderStrong,
-            borderRadius: theme.radius.xl,
-            backgroundColor: colors.surface,
-            overflow: 'hidden',
-          }}
-        >
           <View
+            pointerEvents="none"
             style={{
               position: 'absolute',
               top: 0,
@@ -190,10 +173,37 @@ export function InventoryStockCountRow({
               ...(isRTL ? { right: 0 } : { left: 0 }),
               width: 3,
               backgroundColor: accent,
-              opacity: 0.85,
-              zIndex: 1,
+              opacity: posted ? 0.9 : 0.55,
             }}
           />
+          <View
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: theme.spacing.sm,
+              paddingHorizontal: theme.spacing.lg,
+              paddingVertical: theme.spacing.md,
+              ...(isRTL
+                ? { paddingRight: theme.spacing.lg + 4 }
+                : { paddingLeft: theme.spacing.lg + 4 }),
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+              backgroundColor: colors.surfaceSecondary,
+            }}
+          >
+            <StatusBadge status={count.status} label={statusLabel} dot />
+            <AppText
+              variant="caption"
+              color="brand"
+              weight={titleWeight}
+              dir="ltr"
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
+              {count.number}
+            </AppText>
+          </View>
           {onPress ? (
             <AnimatedPressable
               variant="card"
@@ -262,7 +272,6 @@ export function InventoryStockCountRow({
               </AnimatedPressable>
             </View>
           ) : null}
-        </View>
       </View>
     </ListItemEnter>
   );

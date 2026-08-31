@@ -45,7 +45,6 @@ export default function AppLayout() {
             name="search/index"
             options={{ animation: 'slide_from_bottom' }}
           />
-          <Stack.Screen name="search" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="_forbidden" />
         </Stack>
         {/* Keep tab chrome for app-level pushes (search / notifications). */}

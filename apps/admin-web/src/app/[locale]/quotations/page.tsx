@@ -30,7 +30,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from '@maher/ui';
-import { localizedName } from '@maher/i18n';
+import { localizedName, presentQuotationStatus } from '@maher/i18n';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
@@ -43,6 +43,7 @@ interface QuotationRow {
   total?: string | number;
   status: string;
   expirationDate?: string | null;
+  commerciallyExpired?: boolean;
   customer?: {
     id: string;
     name: string;
@@ -95,6 +96,7 @@ function QuotationsPageInner() {
   const [lines, setLines] = useState<LineItemDraft[]>([emptyLineItem()]);
   const [paymentTerms, setPaymentTerms] = useState('');
   const [deliveryTerms, setDeliveryTerms] = useState('');
+  const [offeredDeliveryDate, setOfferedDeliveryDate] = useState('');
   const [notes, setNotes] = useState('');
   const [taxRate, setTaxRate] = useState('0.16');
 
@@ -126,6 +128,7 @@ function QuotationsPageInner() {
     setLines([emptyLineItem()]);
     setPaymentTerms('');
     setDeliveryTerms('');
+    setOfferedDeliveryDate('');
     setNotes('');
     setTaxRate('0.16');
     setFormError(null);
@@ -155,6 +158,7 @@ function QuotationsPageInner() {
           customerId,
           paymentTerms: paymentTerms.trim() || undefined,
           deliveryTerms: deliveryTerms.trim() || undefined,
+          offeredDeliveryDate: offeredDeliveryDate.trim() || undefined,
           customerNotes: notes.trim() || undefined,
           lines: payloadLines,
         }),
@@ -300,7 +304,10 @@ function QuotationsPageInner() {
                     {row.expirationDate ? row.expirationDate.slice(0, 10) : '—'}
                   </TableNumericCell>
                   <TableCell>
-                    <StatusBadge status={row.status} />
+                    <StatusBadge
+                      status={row.status}
+                      label={presentQuotationStatus(locale, row.status, row.commerciallyExpired)}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
@@ -382,6 +389,12 @@ function QuotationsPageInner() {
               label={tc('deliveryTerms')}
               value={deliveryTerms}
               onChange={(e) => setDeliveryTerms(e.target.value)}
+            />
+            <Input
+              label={t('factoryDelivery')}
+              type="date"
+              value={offeredDeliveryDate}
+              onChange={(e) => setOfferedDeliveryDate(e.target.value)}
             />
             <Input
               label={tc('notes')}

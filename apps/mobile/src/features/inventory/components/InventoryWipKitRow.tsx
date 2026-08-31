@@ -4,6 +4,7 @@ import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, ListItemEnter, haptics } from '@/motion';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useTheme } from '@/theme';
 import type { WipKitCard } from '@/api/modules/inventory';
 
@@ -60,7 +61,7 @@ function MetaChip({
  */
 export function InventoryWipKitRow({ kit, index, animateEnter = true, onPress }: Props) {
   const { t, locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const name = localizedProduct(kit, locale);
   const stage = kit.stageInstance.stageDefinition;
@@ -76,7 +77,7 @@ export function InventoryWipKitRow({ kit, index, animateEnter = true, onPress }:
     kit.status === 'CLAIMED'
       ? colors.warning
       : kit.status === 'READY'
-        ? colors.info
+        ? colors.success
         : colors.textMuted;
 
   return (
@@ -94,14 +95,13 @@ export function InventoryWipKitRow({ kit, index, animateEnter = true, onPress }:
           borderWidth: 1,
           borderColor: colors.borderStrong,
           borderRadius: theme.radius.xl,
-          padding: theme.spacing.md,
           backgroundColor: colors.surface,
-          gap: theme.spacing.sm,
           overflow: 'hidden',
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <View
+          pointerEvents="none"
           style={{
             position: 'absolute',
             top: 0,
@@ -109,34 +109,52 @@ export function InventoryWipKitRow({ kit, index, animateEnter = true, onPress }:
             ...(isRTL ? { right: 0 } : { left: 0 }),
             width: 3,
             backgroundColor: accent,
-            opacity: 0.85,
+            opacity: kit.status === 'READY' || kit.status === 'CLAIMED' ? 0.9 : 0.45,
           }}
         />
 
         <View
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
-            alignItems: 'flex-start',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: theme.spacing.sm,
+            paddingHorizontal: theme.spacing.lg,
+            paddingVertical: theme.spacing.md,
+            ...(isRTL
+              ? { paddingRight: theme.spacing.lg + 4 }
+              : { paddingLeft: theme.spacing.lg + 4 }),
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surfaceSecondary,
+          }}
+        >
+          <StatusBadge status={kit.status} dot />
+          <AppText variant="caption" color="brand" weight={titleWeight}>
+            {t('mobile.inventory.wipTapForQr')}
+          </AppText>
+        </View>
+
+        <View
+          style={{
+            padding: theme.spacing.lg,
             gap: theme.spacing.sm,
             ...(isRTL
-              ? { paddingRight: 4 }
-              : { paddingLeft: 4 }),
+              ? { paddingRight: theme.spacing.lg + 4 }
+              : { paddingLeft: theme.spacing.lg + 4 }),
+          }}
+        >
+        <View
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'flex-start',
+            gap: theme.spacing.sm,
           }}
         >
           <View style={{ flex: 1, gap: 4 }}>
-            <View
-              style={{
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: theme.spacing.sm,
-              }}
-            >
-              <AppText variant="body" weight={titleWeight} style={{ flex: 1 }} numberOfLines={2}>
-                {name}
-              </AppText>
-              <StatusBadge status={kit.status} />
-            </View>
+            <AppText variant="body" weight={titleWeight} style={{ flex: 1 }} numberOfLines={2}>
+              {name}
+            </AppText>
             <AppText variant="caption" color="muted" numberOfLines={1} dir="ltr">
               {kit.qrCode}
             </AppText>
@@ -160,10 +178,7 @@ export function InventoryWipKitRow({ kit, index, animateEnter = true, onPress }:
             label={`${kit.pieces.length}/${kit.expectedPieceCount}`}
           />
         </View>
-
-        <AppText variant="caption" color="brand">
-          {t('mobile.inventory.wipTapForQr')}
-        </AppText>
+        </View>
       </AnimatedPressable>
     </ListItemEnter>
   );

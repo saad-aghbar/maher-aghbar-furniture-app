@@ -36,7 +36,7 @@ export function DealerPaymentsScreen() {
   const { t, isRTL, locale, formatCurrency, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { user } = useAuth();
-  const { isOffline } = useNetwork();
+  const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
   const customerId = user?.customerId ?? null;
@@ -93,10 +93,10 @@ export function DealerPaymentsScreen() {
   return (
     <AppScreen
       backFallback={BACK_FALLBACK}
-      edges={['top', 'left', 'right']}
-      contentContainerStyle={{ paddingBottom: SURFACE_TAB_BAR_CLEARANCE + theme.spacing.xl }}
+      edges={{ top: true }}
+      style={{ paddingBottom: SURFACE_TAB_BAR_CLEARANCE + theme.spacing.xl }}
     >
-      <OfflineBanner visible={isOffline} />
+      {showOfflineBanner ? <OfflineBanner /> : null}
       {pdfDownloadSheet}
       <View style={{ gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg }}>
         <View style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}>
@@ -243,7 +243,7 @@ export function DealerPaymentsScreen() {
         {paymentsQuery.isError ? (
           <ErrorState
             title={t('mobile.account.paymentsErrorTitle')}
-            body={t('mobile.account.paymentsErrorBody')}
+            description={t('mobile.account.paymentsErrorBody')}
             onRetry={() => {
               void paymentsQuery.refetch();
               void financeQuery.refetch();
@@ -353,7 +353,7 @@ function PaymentRowCard({
         </AppText>
       ) : null}
       <AnimatedPressable
-        variant="soft"
+        variant="button"
         onPress={() => {
           void haptics.confirmLight();
           onPdf();

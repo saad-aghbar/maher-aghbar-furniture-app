@@ -1,21 +1,26 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
 import type { Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
-import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
 import { useNetwork } from '@/components/network/NetworkProvider';
-import { formatCurrency, formatNumber } from '@/i18n/format';
+import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
+import { formatCurrency } from '@/i18n/format';
 import { useLocale } from '@/i18n';
-import { AnimatedPressable, haptics } from '@/motion';
+import { ListItemEnter } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useTheme } from '@/theme';
+import { ReportsMetricGrid } from './components/ReportsMetricGrid';
+import { ReportsMoneyRows } from './components/ReportsMoneyRows';
+import { ReportsPeriodChrome } from './components/ReportsPeriodChrome';
+import { ReportsStatusRows } from './components/ReportsStatusRows';
+import { ReportsTabBar } from './components/ReportsTabBar';
 import {
   useDashboardReportQuery,
   useFinancialReportQuery,
@@ -23,27 +28,25 @@ import {
   useSalesReportQuery,
 } from './query';
 import {
-  reportsDateRangeParts,
   reportsPeriodRange,
   selectDashboardSnapshot,
   selectStatusRows,
   type ReportsCategory,
   type ReportsPeriod,
-  type StatusCountRow,
 } from './selectReports';
 
 const BACK_FALLBACK = '/(app)/(admin)/(tabs)/more' as Href;
 
-const PERIODS: ReportsPeriod[] = ['today', 'week', 'month'];
 const CATEGORIES: ReportsCategory[] = ['dashboard', 'sales', 'production', 'financial'];
 
-const PERIOD_KEY: Record<ReportsPeriod, string> = {
-  today: 'mobile.reports.today',
-  week: 'mobile.reports.thisWeek',
-  month: 'mobile.reports.thisMonth',
+const CATEGORY_TAB_KEY: Record<ReportsCategory, string> = {
+  dashboard: 'mobile.reports.tabs.dashboard',
+  sales: 'mobile.reports.tabs.sales',
+  production: 'mobile.reports.tabs.production',
+  financial: 'mobile.reports.tabs.financial',
 };
 
-const CATEGORY_KEY: Record<ReportsCategory, string> = {
+const CATEGORY_TITLE_KEY: Record<ReportsCategory, string> = {
   dashboard: 'accounting.reportDashboard',
   sales: 'accounting.reportSales',
   production: 'accounting.reportProduction',
@@ -51,7 +54,7 @@ const CATEGORY_KEY: Record<ReportsCategory, string> = {
 };
 
 function ReportsTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
-  const { t, isRTL } = useLocale();
+  const { t, isRTL, locale } = useLocale();
   const { theme } = useTheme();
   const leadSize = theme.sizes.touch.min;
 
@@ -84,7 +87,10 @@ function ReportsTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
         variant="caption"
         color="muted"
         align="center"
-        style={{ paddingHorizontal: theme.spacing.lg }}
+        style={{
+          paddingHorizontal: theme.spacing.lg,
+          letterSpacing: locale === 'ar' ? 0 : 0.2,
+        }}
       >
         {t('accounting.reportsSubtitle')}
       </AppText>
@@ -92,241 +98,31 @@ function ReportsTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
   );
 }
 
-function ChipRow<T extends string>({
-  items,
-  value,
-  onChange,
-  labelFor,
-}: {
-  items: T[];
-  value: T;
-  onChange: (next: T) => void;
-  labelFor: (item: T) => string;
-}) {
+function SectionEyebrow({ label }: { label: string }) {
   const { isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        gap: theme.spacing.sm,
-        paddingVertical: 2,
-      }}
-    >
-      {items.map((item) => {
-        const active = item === value;
-        const label = labelFor(item);
-        return (
-          <AnimatedPressable
-            key={item}
-            variant="button"
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={label}
-            onPress={() => {
-              if (item === value) return;
-              void haptics.selection();
-              onChange(item);
-            }}
-            style={{
-              flexShrink: 0,
-              paddingHorizontal: theme.spacing.md,
-              paddingVertical: theme.spacing.sm,
-              minHeight: 36,
-              borderRadius: theme.radius.full,
-              backgroundColor: colors.surface,
-              borderWidth: 1.5,
-              borderColor: active ? colors.brand : colors.border,
-              justifyContent: 'center',
-            }}
-          >
-            <AppText
-              variant="caption"
-              weight={active ? titleWeight : 'medium'}
-              numberOfLines={1}
-              style={{ color: colors.textPrimary, fontSize: 13, lineHeight: 16 }}
-            >
-              {label}
-            </AppText>
-          </AnimatedPressable>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-function DateRangeLine({ from, to }: { from: string; to: string }) {
-  const { locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
-  const parts = reportsDateRangeParts(locale, { from, to });
-
-  return (
-    <View
+    <AppText
+      variant="caption"
+      color="muted"
       style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: theme.spacing.sm,
+        textAlign: isRTL ? 'right' : 'left',
+        fontSize: 10,
+        letterSpacing: locale === 'ar' ? 0 : 0.45,
+        textTransform: locale === 'ar' ? 'none' : 'uppercase',
       }}
     >
-      <AppText variant="caption" color="muted" style={{ color: colors.textSecondary }}>
-        {parts.start}
-      </AppText>
-      <AppText variant="caption" color="muted" style={{ color: colors.textSecondary }}>
-        {parts.dash}
-      </AppText>
-      <AppText variant="caption" color="muted" style={{ color: colors.textSecondary }}>
-        {parts.end}
-      </AppText>
-    </View>
-  );
-}
-
-function MetricGrid({
-  metrics,
-}: {
-  metrics: ReturnType<typeof selectDashboardSnapshot>;
-}) {
-  const { t, isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-
-  return (
-    <View
-      style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        flexWrap: 'wrap',
-        gap: theme.spacing.sm,
-      }}
-    >
-      {metrics.map((metric) => (
-        <View
-          key={metric.key}
-          style={{
-            width: '48%',
-            flexGrow: 1,
-            minWidth: 140,
-            borderRadius: theme.radius.lg,
-            borderWidth: 1,
-            borderColor: colors.borderStrong,
-            backgroundColor: colors.surface,
-            padding: theme.spacing.md,
-            gap: 6,
-            ...orderBoardShadow(colorScheme),
-          }}
-        >
-          <AppText
-            variant="caption"
-            color="muted"
-            style={{
-              textAlign: isRTL ? 'right' : 'left',
-              fontSize: 11,
-              lineHeight: 14,
-            }}
-          >
-            {t(metric.labelKey)}
-          </AppText>
-          <AppText
-            weight={titleWeight}
-            dir="ltr"
-            numberOfLines={1}
-            style={{
-              textAlign: isRTL ? 'right' : 'left',
-              color: colors.textPrimary,
-              fontSize: 18,
-              lineHeight: 22,
-            }}
-          >
-            {metric.value}
-          </AppText>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function StatusRows({ rows }: { rows: StatusCountRow[] }) {
-  const { t, isRTL, locale } = useLocale();
-  const { colors, theme } = useTheme();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-
-  if (rows.length === 0) {
-    return <EmptyState title={t('accounting.noData')} />;
-  }
-
-  return (
-    <View style={{ gap: theme.spacing.sm }}>
-      {rows.map((row) => {
-        const statusKey = `statuses.${row.status}`;
-        const statusLabel = t(statusKey);
-        return (
-          <View
-            key={row.status}
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: theme.spacing.md,
-              paddingVertical: theme.spacing.xs,
-            }}
-          >
-            <AppText
-              variant="body"
-              style={{
-                flex: 1,
-                textAlign: isRTL ? 'right' : 'left',
-              }}
-            >
-              {statusLabel === statusKey ? row.status : statusLabel}
-            </AppText>
-            <AppText weight={titleWeight} dir="ltr" style={{ color: colors.textPrimary }}>
-              {row.total != null
-                ? `${formatNumber(locale, row.count, { maximumFractionDigits: 0 })} · ${formatCurrency(locale, row.total)}`
-                : formatNumber(locale, row.count, { maximumFractionDigits: 0 })}
-            </AppText>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-function ReportCard({ title, children }: { title: string; children: ReactNode }) {
-  const { locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-
-  return (
-    <View
-      style={{
-        borderRadius: theme.radius.xl,
-        borderWidth: 1,
-        borderColor: colors.borderStrong,
-        backgroundColor: colors.surface,
-        padding: theme.spacing.lg,
-        gap: theme.spacing.md,
-        ...orderBoardShadow(colorScheme),
-      }}
-    >
-      <AppText variant="heading" weight={titleWeight}>
-        {`● ${title}`}
-      </AppText>
-      {children}
-    </View>
+      {label}
+    </AppText>
   );
 }
 
 /**
- * Admin Reports — leftover polish only: live date language, Financial chip in full.
+ * Admin Reports — floor boards: category pill, period chrome, parchment ledgers.
  */
 export function ReportsScreen() {
   const { user } = useAuth();
-  const { t, locale, isRTL } = useLocale();
-  const { theme } = useTheme();
+  const { t, locale } = useLocale();
+  const { colors, theme } = useTheme();
   const { showOfflineBanner } = useNetwork();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
@@ -392,49 +188,80 @@ export function ReportsScreen() {
 
   const aging = financialQuery.data?.aging;
   const agingRows = aging
-    ? ([
-        ['accounting.agingCurrent', aging.current],
-        ['accounting.agingD1_30', aging.d1_30],
-        ['accounting.agingD31_60', aging.d31_60],
-        ['accounting.agingD61_90', aging.d61_90],
-        ['accounting.agingOlder', aging.older],
-      ] as const)
+    ? [
+        {
+          key: 'current',
+          label: t('accounting.agingCurrent'),
+          value: formatCurrency(locale, Number(aging.current) || 0),
+        },
+        {
+          key: 'd1',
+          label: t('accounting.agingD1_30'),
+          value: formatCurrency(locale, Number(aging.d1_30) || 0),
+        },
+        {
+          key: 'd31',
+          label: t('accounting.agingD31_60'),
+          value: formatCurrency(locale, Number(aging.d31_60) || 0),
+          tone: 'warning' as const,
+        },
+        {
+          key: 'd61',
+          label: t('accounting.agingD61_90'),
+          value: formatCurrency(locale, Number(aging.d61_90) || 0),
+          tone: 'error' as const,
+        },
+        {
+          key: 'older',
+          label: t('accounting.agingOlder'),
+          value: formatCurrency(locale, Number(aging.older) || 0),
+          tone: 'error' as const,
+        },
+      ]
     : [];
 
   if (categories.length === 0) {
     return (
       <AppScreen>
         <ReportsTitle titleWeight={titleWeight} />
-        <EmptyState title={t('mobile.noReportsAccess')} />
+        <DealerEmptyPanel text={t('mobile.noReportsAccess')} icon="lock-closed-outline" />
       </AppScreen>
     );
   }
 
   const activeCategory = categories.includes(category) ? category : categories[0]!;
+  const showPeriod = activeCategory === 'sales' || activeCategory === 'production';
+  const hasBody = Boolean(activeQuery.data);
+  const loading = activeQuery.isLoading && !activeQuery.data;
 
   return (
     <AppScreen>
       {showOfflineBanner ? <OfflineBanner /> : null}
       <ReportsTitle titleWeight={titleWeight} />
 
-      <ChipRow
-        items={PERIODS}
-        value={period}
-        onChange={setPeriod}
-        labelFor={(item) => t(PERIOD_KEY[item])}
-      />
-      <DateRangeLine from={range.from} to={range.to} />
-      <ChipRow
-        items={categories}
+      <ReportsTabBar
+        tabs={categories.map((key) => ({
+          key,
+          label: t(CATEGORY_TAB_KEY[key]),
+        }))}
         value={activeCategory}
         onChange={setCategory}
-        labelFor={(item) => t(CATEGORY_KEY[item])}
       />
+
+      {showPeriod ? (
+        <ReportsPeriodChrome
+          period={period}
+          from={range.from}
+          to={range.to}
+          onChange={setPeriod}
+        />
+      ) : null}
 
       <ScrollView
         style={{ flex: 1 }}
         refreshControl={
           <RefreshControl
+            tintColor={colors.brand}
             refreshing={Boolean(activeQuery.isFetching && !activeQuery.isLoading)}
             onRefresh={() => {
               void activeQuery.refetch();
@@ -456,59 +283,67 @@ export function ReportsScreen() {
           />
         ) : null}
 
+        {loading ? (
+          <ListItemEnter index={0}>
+            <DealerBoard title={t(CATEGORY_TITLE_KEY[activeCategory])} titleWeight={titleWeight}>
+              <ActivityIndicator color={colors.brand} />
+            </DealerBoard>
+          </ListItemEnter>
+        ) : null}
+
         {activeCategory === 'dashboard' && dashboardQuery.data ? (
-          <ReportCard title={t('accounting.reportDashboard')}>
-            <MetricGrid metrics={snapshot} />
-          </ReportCard>
+          <ListItemEnter index={0}>
+            <DealerBoard title={t('accounting.reportDashboard')} titleWeight={titleWeight}>
+              <ReportsMetricGrid metrics={snapshot} />
+            </DealerBoard>
+          </ListItemEnter>
         ) : null}
 
         {activeCategory === 'sales' && salesQuery.data ? (
-          <ReportCard title={t('accounting.reportSales')}>
-            <AppText variant="label" color="muted">
-              {t('accounting.ordersByStatus')}
-            </AppText>
-            <StatusRows rows={salesRows} />
-          </ReportCard>
+          <ListItemEnter index={0}>
+            <DealerBoard title={t('accounting.reportSales')} titleWeight={titleWeight}>
+              <SectionEyebrow label={t('accounting.ordersByStatus')} />
+              <ReportsStatusRows rows={salesRows} />
+            </DealerBoard>
+          </ListItemEnter>
         ) : null}
 
         {activeCategory === 'production' && productionQuery.data ? (
-          <ReportCard title={t('accounting.reportProduction')}>
-            <AppText variant="label" color="muted">
-              {t('accounting.ordersByStatus')}
-            </AppText>
-            <StatusRows rows={productionOrderRows} />
-            <AppText variant="label" color="muted">
-              {t('accounting.tasksByStatus')}
-            </AppText>
-            <StatusRows rows={productionTaskRows} />
-          </ReportCard>
+          <>
+            <ListItemEnter index={0}>
+              <DealerBoard title={t('accounting.ordersByStatus')} titleWeight={titleWeight}>
+                <ReportsStatusRows rows={productionOrderRows} />
+              </DealerBoard>
+            </ListItemEnter>
+            <ListItemEnter index={1}>
+              <DealerBoard title={t('accounting.tasksByStatus')} titleWeight={titleWeight}>
+                <ReportsStatusRows rows={productionTaskRows} />
+              </DealerBoard>
+            </ListItemEnter>
+          </>
         ) : null}
 
         {activeCategory === 'financial' && financialQuery.data ? (
-          <ReportCard title={t('accounting.reportFinancial')}>
-            <AppText variant="label" color="muted">
-              {t('accounting.arAging')}
-            </AppText>
-            {agingRows.map(([key, amount]) => (
-              <View
-                key={key}
-                style={{
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  justifyContent: 'space-between',
-                  gap: theme.spacing.md,
-                }}
-              >
-                <AppText variant="body">{t(key)}</AppText>
-                <AppText weight={titleWeight} dir="ltr">
-                  {formatCurrency(locale, Number(amount) || 0)}
-                </AppText>
-              </View>
-            ))}
-            <AppText variant="label" color="muted">
-              {t('accounting.invoicesByStatus')}
-            </AppText>
-            <StatusRows rows={financialRows} />
-          </ReportCard>
+          <>
+            <ListItemEnter index={0}>
+              <DealerBoard title={t('accounting.arAging')} titleWeight={titleWeight}>
+                {agingRows.length > 0 ? (
+                  <ReportsMoneyRows rows={agingRows} />
+                ) : (
+                  <DealerEmptyPanel nested compact text={t('accounting.noData')} />
+                )}
+              </DealerBoard>
+            </ListItemEnter>
+            <ListItemEnter index={1}>
+              <DealerBoard title={t('accounting.invoicesByStatus')} titleWeight={titleWeight}>
+                <ReportsStatusRows rows={financialRows} />
+              </DealerBoard>
+            </ListItemEnter>
+          </>
+        ) : null}
+
+        {!loading && !activeQuery.isError && !hasBody ? (
+          <DealerEmptyPanel text={t('accounting.noData')} icon="stats-chart-outline" />
         ) : null}
       </ScrollView>
     </AppScreen>

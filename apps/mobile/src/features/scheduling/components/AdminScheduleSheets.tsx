@@ -2415,17 +2415,31 @@ export function OptimizeScheduleSheet({
               />
             </View>
           ) : null}
+          {stats?.previewMoves.slice(0, 6).map((move) => (
+            <AppText key={move.productionOrderId} variant="caption" color="secondary">
+              {`${move.number} · ${move.daysEarlier}`}
+            </AppText>
+          ))}
           {stats?.emptyDays.slice(0, 4).map((day) => (
             <AppText key={day.ymd} variant="caption" color="secondary">
               {`${day.ymd} · ${t(day.causeKey)}`}
             </AppText>
           ))}
-          <SheetFooter
-            confirmLabel={t('mobile.adminScheduling.optimize.applyCta')}
-            cancelLabel={t('mobile.adminScheduling.optimize.done')}
-            onConfirm={() => onApply?.()}
-            onCancel={onClose}
-          />
+          {stats && stats.wouldMove > 0 ? (
+            <SheetFooter
+              confirmLabel={t('mobile.adminScheduling.optimize.applyCta')}
+              cancelLabel={t('mobile.adminScheduling.optimize.done')}
+              onConfirm={() => onApply?.()}
+              onCancel={onClose}
+            />
+          ) : (
+            <SheetFooter
+              confirmLabel={t('mobile.adminScheduling.optimize.done')}
+              cancelLabel={t('mobile.adminScheduling.optimize.done')}
+              onConfirm={onClose}
+              onCancel={onClose}
+            />
+          )}
         </ScrollView>
       ) : showingResult ? (
         <ScrollView

@@ -7,6 +7,7 @@ import { useTheme } from '@/theme';
 import type { InventoryItem } from '../api';
 import { formatInventoryMaterialType } from '../selectInventory';
 import { InventorySkuThumb } from './InventorySkuThumb';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
   InventoryScanMatchResult,
   type InventoryScanMatchCurrent,
@@ -46,7 +47,7 @@ export function KnownItemLabelConfirm({
   onUseScanned,
 }: Props) {
   const { t, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const materialTypeLabel = formatInventoryMaterialType(current.materialType, t);
   const kind = resultKind;
   const scanned = resultScanned;
@@ -89,7 +90,7 @@ export function KnownItemLabelConfirm({
                   : colors.surface,
           padding: theme.spacing.md,
           gap: theme.spacing.md,
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <View

@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
+import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -16,6 +12,8 @@ import { ToastClearance } from '@/components/feedback/Toast';
 import { TextField } from '@/components/forms/TextField';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { useNetwork } from '@/components/network/NetworkProvider';
+import { DealerEmptyPanel } from '@/features/dealers/components/DealerEmptyPanel';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import {
   AnimatedPressable,
@@ -69,9 +67,9 @@ const BOARD_BUCKETS = new Set<string>([
 export function ProductionOverviewScreen() {
   const { user, refreshUser } = useAuth();
   const { t, locale, isRTL } = useLocale();
-  const { theme, colors } = useTheme();
+  const { theme, colors, colorScheme } = useTheme();
   const { showOfflineBanner } = useNetwork();
-  const insets = useSafeAreaInsets();
+  const listBottomPad = theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE;
   const router = useRouter();
   const params = useLocalSearchParams<{ bucket?: string; section?: string; quality?: string }>();
   const listRef = useRef<FlatList>(null);
@@ -177,9 +175,7 @@ export function ProductionOverviewScreen() {
   if (initialLoad) {
     return (
       <AppScreen>
-        <AppText variant="title" weight="semibold">
-          {t('mobile.production.title')}
-        </AppText>
+        <ProductionHubTitle titleWeight={locale === 'ar' ? 'medium' : 'semibold'} />
         <ProductionListSkeleton />
       </AppScreen>
     );
@@ -190,9 +186,7 @@ export function ProductionOverviewScreen() {
       <AppScreen>
         {showOfflineBanner ? <OfflineBanner /> : null}
         <ToastClearance />
-        <AppText variant="title" weight={locale === 'ar' ? 'medium' : 'semibold'}>
-          {t('mobile.production.title')}
-        </AppText>
+        <ProductionHubTitle titleWeight={locale === 'ar' ? 'medium' : 'semibold'} />
         <ErrorState
           title={t('mobile.production.errorTitle')}
           description={t('mobile.production.errorBody')}
@@ -262,6 +256,7 @@ export function ProductionOverviewScreen() {
         }}
         refreshControl={
           <RefreshControl
+            tintColor={colors.brand}
             refreshing={refreshing}
             onRefresh={() => {
               void summaryQuery.refetch();
@@ -286,22 +281,8 @@ export function ProductionOverviewScreen() {
                 {t('mobile.production.updatingList')}
               </AppText>
             ) : null}
-            <View style={{ gap: theme.spacing.xs }}>
-              <ToastClearance />
-              <AppText
-                variant="caption"
-                weight={locale === 'ar' ? 'regular' : 'medium'}
-                style={{ color: colors.brand }}
-              >
-                {t('mobile.production.pulseEyebrow')}
-              </AppText>
-              <AppText variant="title" weight={titleWeight}>
-                {t('mobile.production.title')}
-              </AppText>
-              <AppText variant="caption" color="muted">
-                {t('mobile.production.subtitle')}
-              </AppText>
-            </View>
+            <ToastClearance />
+            <ProductionHubTitle titleWeight={titleWeight} />
 
             {canWorkflow ? (
               <AnimatedPressable
@@ -312,16 +293,32 @@ export function ProductionOverviewScreen() {
                 }}
                 style={{
                   borderRadius: theme.radius.xl,
-                  borderWidth: StyleSheet.hairlineWidth,
+                  borderWidth: 1,
                   borderColor: colors.borderStrong,
                   backgroundColor: colors.surface,
+                  overflow: 'hidden',
                   paddingHorizontal: theme.spacing.lg,
                   paddingVertical: theme.spacing.md,
-                  gap: theme.spacing.xs,
+                  ...(isRTL
+                    ? { paddingRight: theme.spacing.lg + 4 }
+                    : { paddingLeft: theme.spacing.lg + 4 }),
+                  ...orderBoardShadow(colorScheme),
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('mobile.production.workflow.title')}
               >
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    ...(isRTL ? { right: 0 } : { left: 0 }),
+                    width: 3,
+                    backgroundColor: colors.brand,
+                    opacity: 0.55,
+                  }}
+                />
                 <View
                   style={{
                     flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -330,17 +327,33 @@ export function ProductionOverviewScreen() {
                     gap: theme.spacing.md,
                   }}
                 >
+                  <View
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 14,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: colors.brandSoft,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <Ionicons name="git-network-outline" size={14} color={colors.brand} />
+                  </View>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <AppText variant="body" weight="semibold">
+                    <AppText variant="label" weight={titleWeight}>
                       {t('mobile.production.workflow.title')}
                     </AppText>
                     <AppText variant="caption" color="muted">
                       {t('mobile.production.workflow.subtitle')}
                     </AppText>
                   </View>
-                  <AppText variant="body" color="brand" weight="semibold">
-                    {isRTL ? '←' : '→'}
-                  </AppText>
+                  <Ionicons
+                    name={isRTL ? 'chevron-back' : 'chevron-forward'}
+                    size={18}
+                    color={colors.brand}
+                  />
                 </View>
               </AnimatedPressable>
             ) : null}
@@ -353,29 +366,44 @@ export function ProductionOverviewScreen() {
                   borderWidth: 1,
                   borderColor: colors.borderStrong,
                   overflow: 'hidden',
-                  ...theme.elevation.card,
+                  ...orderBoardShadow(colorScheme),
                 }}
               >
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    ...(isRTL ? { right: 0 } : { left: 0 }),
+                    width: 3,
+                    backgroundColor: colors.brand,
+                    opacity: 0.55,
+                  }}
+                />
                 <View
                   style={{
                     paddingHorizontal: theme.spacing.md,
                     paddingTop: theme.spacing.md,
                     paddingBottom: theme.spacing.sm,
+                    ...(isRTL
+                      ? { paddingRight: theme.spacing.md + 4 }
+                      : { paddingLeft: theme.spacing.md + 4 }),
                     flexDirection: isRTL ? 'row-reverse' : 'row',
                     alignItems: 'baseline',
                     justifyContent: 'space-between',
                     gap: theme.spacing.sm,
-                    backgroundColor: colors.surfaceElevated,
-                    borderBottomWidth: StyleSheet.hairlineWidth,
-                    borderBottomColor: colors.borderMuted,
+                    backgroundColor: colors.surfaceSecondary,
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
                   }}
                 >
                   <AppText
                     variant="caption"
-                    weight="semibold"
+                    weight={titleWeight}
                     style={{
                       color: colors.brand,
-                      letterSpacing: locale === 'ar' ? 0 : 1.1,
+                      letterSpacing: locale === 'ar' ? 0 : 0.55,
                       textTransform: locale === 'ar' ? 'none' : 'uppercase',
                       fontSize: 10,
                       lineHeight: 12,
@@ -394,7 +422,9 @@ export function ProductionOverviewScreen() {
                   style={{
                     padding: theme.spacing.sm,
                     gap: theme.spacing.sm,
-                    backgroundColor: colors.background,
+                    ...(isRTL
+                      ? { paddingRight: theme.spacing.sm + 4 }
+                      : { paddingLeft: theme.spacing.sm + 4 }),
                   }}
                 >
                   <MetricRow
@@ -413,7 +443,17 @@ export function ProductionOverviewScreen() {
               </View>
             ) : null}
 
-            <View style={{ gap: theme.spacing.md }}>
+            <View
+              style={{
+                borderRadius: theme.radius.xl,
+                borderWidth: 1,
+                borderColor: colors.borderStrong,
+                backgroundColor: colors.surface,
+                padding: theme.spacing.md,
+                gap: theme.spacing.md,
+                ...orderBoardShadow(colorScheme),
+              }}
+            >
               <ProductionDealerBar
                 label={dealerLabel}
                 onPress={() => setDealerSheetOpen(true)}
@@ -431,6 +471,7 @@ export function ProductionOverviewScreen() {
                 autoCorrect={false}
                 autoCapitalize="none"
                 returnKeyType="search"
+                pill
               />
             </View>
           </View>
@@ -439,13 +480,9 @@ export function ProductionOverviewScreen() {
           listQuery.isFetching && cards.length === 0 ? (
             <ProductionListSkeleton />
           ) : cards.length === 0 && !listQuery.isFetching ? (
-            <EmptyState
-              title={
-                q
-                  ? t('mobile.production.searchEmpty')
-                  : t('mobile.production.emptyTitle')
-              }
-              description={
+            <DealerEmptyPanel
+              icon="construct-outline"
+              text={
                 dealerLabel
                   ? t('mobile.production.emptyDealerBody', { dealer: dealerLabel })
                   : q
@@ -494,6 +531,35 @@ export function ProductionOverviewScreen() {
         }}
       />
     </AppScreen>
+  );
+}
+
+function ProductionHubTitle({ titleWeight }: { titleWeight: 'medium' | 'semibold' }) {
+  const { t, locale } = useLocale();
+  const { theme, colors } = useTheme();
+
+  return (
+    <View style={{ gap: theme.spacing.xs }}>
+      <AppText
+        variant="caption"
+        color="muted"
+        align="center"
+        style={{
+          color: colors.brand,
+          letterSpacing: locale === 'ar' ? 0 : 0.55,
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          fontSize: 10,
+        }}
+      >
+        {t('mobile.production.pulseEyebrow')}
+      </AppText>
+      <AppText variant="largeTitle" weight={titleWeight} align="center">
+        {t('mobile.production.title')}
+      </AppText>
+      <AppText variant="caption" color="muted" align="center">
+        {t('mobile.production.subtitle')}
+      </AppText>
+    </View>
   );
 }
 
@@ -554,32 +620,34 @@ function MetricRow({
             onPress={() => onSelect(item.key)}
             style={{
               flex: 1,
-              minHeight: 104,
+              minHeight: 96,
               borderRadius: theme.radius.lg,
-              paddingTop: theme.spacing.md + 4,
-              paddingBottom: theme.spacing.md,
+              paddingTop: theme.spacing.md,
+              paddingBottom: theme.spacing.md + 4,
               paddingHorizontal: theme.spacing.sm,
               alignItems: 'center',
               justifyContent: 'center',
               gap: 6,
-              backgroundColor: isSelected ? soft : colors.surface,
-              borderWidth: isSelected ? 1.5 : 1,
-              borderColor: isSelected ? tint : colors.borderMuted,
+              backgroundColor: isSelected ? soft : colors.surfaceSecondary,
+              borderWidth: 1,
+              borderColor: isSelected ? tint : colors.borderStrong,
               overflow: 'hidden',
               ...(isSelected ? theme.elevation.rest : null),
             }}
           >
-            <View
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 3,
-                backgroundColor: tint,
-                opacity: isSelected ? 1 : 0.35,
-              }}
-            />
+            {isSelected ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 3,
+                  backgroundColor: tint,
+                }}
+              />
+            ) : null}
             <AppText
               variant="caption"
               align="center"
@@ -595,8 +663,10 @@ function MetricRow({
               }
               style={{
                 color: isSelected ? tint : colors.textMuted,
-                fontSize: 11,
-                lineHeight: 14,
+                fontSize: 10,
+                lineHeight: 13,
+                letterSpacing: locale === 'ar' ? 0 : 0.35,
+                textTransform: locale === 'ar' ? 'none' : 'uppercase',
               }}
             >
               {item.label}

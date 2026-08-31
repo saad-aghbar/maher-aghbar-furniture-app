@@ -19,7 +19,8 @@ import {
   TableRow,
 } from '@maher/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { presentQuotationStatus } from '@maher/i18n';
+import { useLocale, useTranslations } from 'next-intl';
 import { useRef, useState } from 'react';
 import { dealerCanDecideQuotation } from '@/lib/dealer-quotation-ui';
 
@@ -53,12 +54,15 @@ interface Quotation {
   deliveryTerms?: string | null;
   customerNotes?: string | null;
   expirationDate?: string | null;
+  commerciallyExpired?: boolean;
+  rejectionReason?: string | null;
   acceptanceSignature?: string | null;
   lines: QuoteLine[];
   salesOrders?: Array<{ id: string; number: string; status: string }>;
 }
 
 export default function QuotationDetailPage({ params }: { params: { id: string } }) {
+  const locale = useLocale();
   const t = useTranslations('quotations');
   const tc = useTranslations('catalog');
   const tCommon = useTranslations('common');
@@ -67,6 +71,7 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
   const [loading, setLoading] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [revisionComment, setRevisionComment] = useState('');
+  const [rejectComment, setRejectComment] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const { data, isLoading } = useQuery({
@@ -120,7 +125,7 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
           ? JSON.stringify({ signatureData: signatureData() })
           : path === 'request-revision'
             ? JSON.stringify({ comment: revisionComment.trim() || undefined })
-            : JSON.stringify({});
+            : JSON.stringify({ comment: rejectComment.trim() || undefined });
       await apiFetch(`/api/v1/quotations/${params.id}/${path}`, { method: 'POST', body });
       await qc.invalidateQueries({ queryKey: ['quotation', params.id] });
       await qc.invalidateQueries({ queryKey: ['customer-orders'] });
@@ -140,7 +145,8 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
     );
   }
 
-  const canDecide = dealerCanDecideQuotation(data.status);
+  const canDecide = dealerCanDecideQuotation(data.status, data.commerciallyExpired);
+  const statusLabel = presentQuotationStatus(locale, data.status, data.commerciallyExpired);
   const so = data.salesOrders?.[0];
 
   return (
@@ -149,7 +155,12 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
       <PageHero
         tone="soft"
         title={data.number}
-        meta={<StatusBadge status={data.status} />}
+        meta={
+          <StatusBadge
+            status={data.commerciallyExpired ? 'EXPIRED' : data.status}
+            label={statusLabel}
+          />
+        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-lg font-semibold">
@@ -167,7 +178,14 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
 
       {error ? <Alert variant="error">{error}</Alert> : null}
       {data.status === 'ACCEPTED' ? <Alert variant="success">{t('accepted')}</Alert> : null}
-      {data.status === 'REJECTED' ? <Alert variant="error">{t('reject')}</Alert> : null}
+      {data.status === 'REJECTED' ? (
+        <Alert variant="error">
+          {t('reject')}
+          {data.rejectionReason ? ` — ${data.rejectionReason}` : ''}
+        </Alert>
+      ) : null}
+      {data.commerciallyExpired ? <Alert variant="warning">{t('expiredCannotAccept')}</Alert> : null}
+      {(data.version ?? 1) > 1 ? <Alert variant="info">{t('revised')}</Alert> : null}
       {data.status === 'REVISION_REQUESTED' ? (
         <Alert variant="info">{t('revisionRequested')}</Alert>
       ) : null}
@@ -256,7 +274,9 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
                     <TableCell>{[spec, dims].filter(Boolean).join(' · ') || '—'}</TableCell>
                     <TableCell>{String(line.quantity)}</TableCell>
                     <TableCell>{String(line.unitPrice)}</TableCell>
-                    <TableCell>{String(line.lineTotal)}</TableCell>
+                    <TableCell>
+                      {(Number(line.unitPrice) * Number(line.quantity) || 0).toFixed(2)}
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -294,6 +314,16 @@ export default function QuotationDetailPage({ params }: { params: { id: string }
               <Button onClick={() => act('accept')} loading={loading}>
                 {t('accept')}
               </Button>
+              <div className="w-full space-y-2">
+                <label className="block text-sm text-text-secondary">{t('rejectReasonOptional')}</label>
+                <textarea
+                  className="w-full rounded-[var(--maher-radius-md)] border border-border bg-surface px-3 py-2 text-sm"
+                  rows={2}
+                  value={rejectComment}
+                  onChange={(e) => setRejectComment(e.target.value)}
+                  placeholder={t('rejectReasonPlaceholder')}
+                />
+              </div>
               <Button variant="danger" onClick={() => act('reject')} loading={loading}>
                 {t('reject')}
               </Button>

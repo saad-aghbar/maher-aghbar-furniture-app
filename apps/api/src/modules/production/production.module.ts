@@ -21,6 +21,7 @@ import { WipKitService } from './wip-kit.service';
 import { WipKitController } from './wip-kit.controller';
 import { ManufacturingCostService } from './manufacturing-cost.service';
 import { ManufacturingCostController } from './manufacturing-cost.controller';
+import { OrderPlanSetupService } from './order-plan-setup.service';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { ManufacturingCostController } from './manufacturing-cost.controller';
     ProductionReworkService,
     ProductionSetupService,
     OrderProductionSetupService,
+    OrderPlanSetupService,
     WorkflowVersionService,
     WorkflowSnapshotService,
     OrderWorkflowGraphService,
@@ -60,6 +62,7 @@ import { ManufacturingCostController } from './manufacturing-cost.controller';
     WorkflowSnapshotService,
     OrderWorkflowGraphService,
     OrderProductionSetupService,
+    OrderPlanSetupService,
     WipKitService,
     ManufacturingCostService,
   ],

@@ -130,6 +130,202 @@ function categoryBucket(category?: string): keyof OrderCostResult['costBreakdown
   return null;
 }
 
+export type CostCategoryKey = 'fabric' | 'wood' | 'foam' | 'accessories';
+
+export function costCategoryKey(category?: string | null, sku?: string | null): CostCategoryKey {
+  const bucket =
+    categoryBucket(category ?? undefined) ?? categoryBucket(sku ?? undefined);
+  if (bucket === 'fabricCost') return 'fabric';
+  if (bucket === 'woodCost') return 'wood';
+  if (bucket === 'foamCost') return 'foam';
+  return 'accessories';
+}
+
+export type CostMaterialLineView = {
+  sku: string;
+  name: string;
+  category: CostCategoryKey;
+  qty: number;
+  unitCost: number;
+  lineCost: number;
+  inventoryItemId?: string | null;
+};
+
+export type BomCostRow = {
+  sku?: string | null;
+  category?: string | null;
+  qty: number;
+  unitCost?: number;
+  name?: string | null;
+  inventoryItemId?: string | null;
+};
+
+export function emptyOrderCostBreakdown(): OrderCostResult['costBreakdown'] {
+  return {
+    fabricQty: 0,
+    fabricCost: 0,
+    woodQty: 0,
+    woodCost: 0,
+    foamQty: 0,
+    foamCost: 0,
+    accessoriesQty: 0,
+    accessoriesCost: 0,
+  };
+}
+
+export function productionPriceFromBreakdown(
+  breakdown: OrderCostResult['costBreakdown'],
+): number {
+  return Number(
+    roundMoney(
+      breakdown.fabricCost +
+        breakdown.woodCost +
+        breakdown.foamCost +
+        breakdown.accessoriesCost,
+    ),
+  );
+}
+
+/**
+ * Roll up order/plan BOM rows into fabric/wood/foam/accessories totals.
+ * `qty` should already include line quantity (expectedQty × line qty).
+ */
+export function costBreakdownFromMaterialRows(
+  rows: BomCostRow[],
+  materialCosts: MaterialCostMap = new Map(),
+): OrderCostResult['costBreakdown'] {
+  const breakdown = emptyOrderCostBreakdown();
+  for (const row of rows) {
+    const qty = num(row.qty);
+    if (qty <= 0) continue;
+    const unit = resolveBomLineUnitCost(row.sku ?? undefined, row.unitCost, materialCosts);
+    const lineCost = qty * unit;
+    const bucket =
+      categoryBucket(row.category ?? undefined) ?? categoryBucket(row.sku ?? undefined);
+    if (bucket === 'fabricCost') {
+      breakdown.fabricQty += qty;
+      breakdown.fabricCost += lineCost;
+    } else if (bucket === 'woodCost') {
+      breakdown.woodQty += qty;
+      breakdown.woodCost += lineCost;
+    } else if (bucket === 'foamCost') {
+      breakdown.foamQty += qty;
+      breakdown.foamCost += lineCost;
+    } else {
+      breakdown.accessoriesQty += qty;
+      breakdown.accessoriesCost += lineCost;
+    }
+  }
+  return breakdown;
+}
+
+/** Flatten sales-order line setup material requirements into priced BOM rows. */
+export function setupBomRowsFromOrder(input: {
+  lines: Array<{ id: string; quantity?: unknown }>;
+  setupLines?: Array<{
+    salesOrderLineId?: string | null;
+    materialRequirements?: Array<{
+      sku?: string | null;
+      category?: string | null;
+      expectedQty?: unknown;
+      displayName?: string | null;
+      inventoryItemId?: string | null;
+      unitCost?: unknown;
+    }> | null;
+  }> | null;
+}): BomCostRow[] {
+  const qtyByLineId = new Map(
+    input.lines.map((line) => [line.id, Math.max(1, num(line.quantity, 1))]),
+  );
+  const rows: BomCostRow[] = [];
+  for (const setupLine of input.setupLines ?? []) {
+    const lineQty = setupLine.salesOrderLineId
+      ? (qtyByLineId.get(setupLine.salesOrderLineId) ?? 1)
+      : 1;
+    for (const m of setupLine.materialRequirements ?? []) {
+      const expected = num(m.expectedQty);
+      if (expected <= 0) continue;
+      rows.push({
+        sku: m.sku ?? null,
+        category: m.category ?? null,
+        qty: expected * lineQty,
+        name: m.displayName ?? null,
+        inventoryItemId: m.inventoryItemId ?? null,
+        unitCost: m.unitCost != null ? num(m.unitCost) : undefined,
+      });
+    }
+  }
+  return rows;
+}
+
+/** Line items for manufacturing-cost “chosen materials” (staff). */
+export function costMaterialLinesFromBomRows(
+  rows: BomCostRow[],
+  materialCosts: MaterialCostMap = new Map(),
+): CostMaterialLineView[] {
+  const byKey = new Map<string, CostMaterialLineView>();
+  for (const row of rows) {
+    const qty = num(row.qty);
+    if (qty <= 0) continue;
+    const sku = (row.sku ?? '').trim() || '—';
+    const category = costCategoryKey(row.category, sku);
+    const unitCost = resolveBomLineUnitCost(sku === '—' ? undefined : sku, row.unitCost, materialCosts);
+    const lineCost = Number(roundMoney(qty * unitCost));
+    const mapKey = `${category}:${sku.toUpperCase()}`;
+    const prev = byKey.get(mapKey);
+    if (prev) {
+      prev.qty = Number(roundMoney(prev.qty + qty));
+      prev.lineCost = Number(roundMoney(prev.lineCost + lineCost));
+      prev.unitCost =
+        prev.qty > 0 ? Number(roundMoney(prev.lineCost / prev.qty)) : prev.unitCost;
+      continue;
+    }
+    byKey.set(mapKey, {
+      sku,
+      name: (row.name ?? '').trim() || sku,
+      category,
+      qty: Number(roundMoney(qty)),
+      unitCost: Number(roundMoney(unitCost)),
+      lineCost,
+      inventoryItemId: row.inventoryItemId ?? null,
+    });
+  }
+  return [...byKey.values()].sort((a, b) => {
+    const c = a.category.localeCompare(b.category);
+    return c !== 0 ? c : a.sku.localeCompare(b.sku);
+  });
+}
+
+/** Catalog product BOM → chosen-material lines (when no plan setup BOM). */
+export function costMaterialLinesFromCatalogLines(
+  lines: Array<{
+    quantity?: unknown;
+    product?: {
+      nameEn?: string | null;
+      bomDefaults?: unknown;
+    } | null;
+  }>,
+  materialCosts: MaterialCostMap = new Map(),
+): CostMaterialLineView[] {
+  const rows: BomCostRow[] = [];
+  for (const line of lines) {
+    const lineQty = Math.max(1, num(line.quantity, 1));
+    const bom = asBom(line.product?.bomDefaults);
+    for (const m of bom?.materials ?? []) {
+      const qty = num(m.qty) * lineQty;
+      if (qty <= 0) continue;
+      rows.push({
+        sku: m.sku ?? null,
+        category: m.category ?? null,
+        qty,
+        unitCost: m.unitCost,
+        name: m.sku ?? null,
+      });
+    }
+  }
+  return costMaterialLinesFromBomRows(rows, materialCosts);
+}
+
 /** Per-unit production cost from product BOM + current material costs. */
 export function productionUnitCost(
   product: CostProduct | null | undefined,

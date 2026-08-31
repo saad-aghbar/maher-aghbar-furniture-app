@@ -2,7 +2,8 @@ import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { DeskCard, ProductThumb } from '@/components/desk';
-import { useLocale } from '@/i18n';
+import { DirectionalIcon } from '@/components/DirectionalIcon';
+import { alignStart, useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
@@ -405,6 +406,9 @@ function AdminCommercialCard({
             </AppText>
             <AppText variant="caption" color="secondary" numberOfLines={1} dir="ltr">
               {isRfq ? `${t('mobile.orders.customerRequestLabel')} · ${order.number}` : soQty}
+              {!isRfq && order.manufacturingKind
+                ? ` · ${t(`mobile.orders.journey.kind.${order.manufacturingKind}`)}`
+                : ''}
             </AppText>
             <View
               style={{
@@ -524,6 +528,20 @@ function AdminCommercialCard({
                   {attentionReason ?? lifecycleLabel}
                 </AppText>
               </View>
+              {order.manufacturingKind && order.kind !== 'rfq' ? (
+                <View
+                  style={{
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: 5,
+                    borderRadius: theme.radius.md,
+                    backgroundColor: colors.surfaceSecondary,
+                  }}
+                >
+                  <AppText variant="caption" weight="semibold" color="secondary">
+                    {t(`mobile.orders.journey.kind.${order.manufacturingKind}`)}
+                  </AppText>
+                </View>
+              ) : null}
               {order.deliveryDate ? (
                 <AppText variant="caption" color="muted">
                   {formatDate(order.deliveryDate)}

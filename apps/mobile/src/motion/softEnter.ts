@@ -17,7 +17,6 @@ export function softFadeDown(delayMs = 0) {
     .duration(durations.micro)
     .easing(ease)
     .withInitialValues({
-      opacity: 0,
       transform: [{ translateY: 4 }],
     });
 }
@@ -29,7 +28,6 @@ export function softFadeSide(isRTL: boolean, delayMs = 0) {
     .duration(durations.micro)
     .easing(ease)
     .withInitialValues({
-      opacity: 0,
       transform: [{ translateX: fromX }],
     });
 }

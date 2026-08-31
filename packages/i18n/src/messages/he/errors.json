@@ -70,6 +70,7 @@
   "NO_SOURCE": "לא סופק מסמך מקור.",
   "AI_INTAKE_FAILED": "עיבוד קליטת ה-AI נכשל.",
   "INVALID_STATUS": "פעולה זו אינה מותרת במצב הנוכחי.",
+  "QUOTATION_EXPIRED": "תוקף הצעת המחיר פג.",
   "WEBHOOK_DISABLED": "ה-Webhook מושבת.",
   "OFFLINE": "אין חיבור לאינטרנט",
 
@@ -148,5 +149,6 @@
   "SETUP_DELIVERY_MUST_NOT_PRODUCE": "מסירה מסמנת חבילות על המשאית ואינה יוצרת מלאי.",
   "SETUP_PACKAGING_MUST_PRODUCE_FINISHED": "אריזה חייבת לייצר את המוצר המוגמר עם חבילות משלוח.",
   "SETUP_PACKAGING_MUST_CONSUME_SEMI": "אריזה חייבת לקחת את הקיט החצי-מוגמר ממעלה הזרם.",
-  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "בדיקה חייבת לקחת את הקיט החצי-מוגמר לאישור."
+  "SETUP_INSPECTION_MUST_CONSUME_SEMI": "בדיקה חייבת לקחת את הקיט החצי-מוגמר לאישור.",
+  "DELIVERY_DATE_TOO_SOON": "בחרו תאריך אספקה לפחות ארבעה ימים מהיום."
 }

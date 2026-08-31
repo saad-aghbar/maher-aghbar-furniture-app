@@ -90,6 +90,9 @@ function makeService(existing?: Partial<{
     productionOrder: { findFirst: jest.fn().mockResolvedValue(null) },
     auditEvent: { create: jest.fn() },
     customer: { findUnique: jest.fn() },
+    factoryCalendar: {
+      findFirst: jest.fn().mockResolvedValue({ timezone: 'Asia/Amman' }),
+    },
     $transaction: jest.fn(async (arg: unknown) => {
       if (Array.isArray(arg)) return Promise.all(arg as Promise<unknown>[]);
       return (arg as (t: any) => Promise<unknown>)(prisma);

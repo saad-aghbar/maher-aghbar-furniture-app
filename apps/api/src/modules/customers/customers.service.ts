@@ -19,6 +19,8 @@ import {
 } from './dto/customer.dto';
 import { TRANSLATE_PROVIDER } from '../../integrations/integrations.module';
 import { encryptPortalPassword } from '../../common/helpers/secret-box';
+import { roundMoney } from '../../common/helpers/money.util';
+import { money, paymentUnallocated } from '../payments/dealer-finance';
 
 const CLOSED_ORDER_STATUSES: SalesOrderStatus[] = [
   SalesOrderStatus.DELIVERED,
@@ -199,7 +201,7 @@ export class CustomersService {
     });
     if (!customer) throw new NotFoundException({ code: 'NOT_FOUND', message: 'Customer not found.' });
 
-    const [orderGroups, invoiceSum] = await Promise.all([
+    const [orderGroups, invoiceSum, payments] = await Promise.all([
       this.prisma.salesOrder.groupBy({
         by: ['status'],
         where: {
@@ -221,7 +223,20 @@ export class CustomersService {
           outstandingAmount: true,
         },
       }),
+      this.prisma.payment.findMany({
+        where: { customerId: id },
+        select: { amount: true, allocations: { select: { amount: true } } },
+      }),
     ]);
+
+    let availableCredit = 0;
+    for (const pay of payments) {
+      availableCredit += paymentUnallocated(
+        money(pay.amount),
+        pay.allocations.map((allocation) => money(allocation.amount)),
+      );
+    }
+    availableCredit = Number(roundMoney(availableCredit));
 
     let waiting = 0;
     let inWork = 0;
@@ -244,6 +259,7 @@ export class CustomersService {
       invoicedTotal: Number(invoiceSum._sum.total ?? 0),
       paidTotal: Number(invoiceSum._sum.paidAmount ?? 0),
       outstandingTotal: Number(invoiceSum._sum.outstandingAmount ?? 0),
+      availableCredit,
     };
   }
 

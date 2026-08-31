@@ -47,6 +47,8 @@ export type SalesOrderListItem = {
   /** Piece 1/2 — accepted SO awaiting production setup release */
   productionSetupRequired?: boolean;
   productionSetupStatus?: string | null;
+  /** Worst line complexity: STANDARD | MODIFIED | CUSTOM */
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
   customer?: {
     id: string;
     name: string | null;
@@ -60,7 +62,14 @@ export type SalesOrderListItem = {
     number: string;
     status?: string;
     progressPercent?: number | null;
+    releasedToFactoryAt?: string | null;
+    actualStartDate?: string | null;
   }> | null;
+  /** True after Release to factory — leaves Orders Preparing. */
+  releasedToFactory?: boolean;
+  /** True after first executable factory task has started. */
+  executionStarted?: boolean;
+  workerAssignmentRequired?: boolean;
 };
 
 export type SalesOrderListFilters = PageParams & {
@@ -174,6 +183,16 @@ export type SalesOrderDetail = {
   productionPrice?: number | string | null;
   manufacturingCost?: number | string | null;
   costBreakdown?: Record<string, number | string | null> | null;
+  /** Staff — plan/catalog BOM line items for manufacturing cost “chosen materials”. */
+  costMaterialLines?: Array<{
+    sku: string;
+    name: string;
+    category: 'fabric' | 'wood' | 'foam' | 'accessories';
+    qty: number;
+    unitCost: number;
+    lineCost: number;
+    inventoryItemId?: string | null;
+  }> | null;
   profit?: number | string | null;
   /** Piece 5 — slim usage actual manufacturing cost (staff with inventory.cost.read). */
   manufacturingCosting?: {
@@ -258,9 +277,16 @@ export type SalesOrderDetail = {
   productionReadinessSummary?: SalesOrderProductionReadinessSummary | null;
   /** Piece 1: accepted SO awaiting Prepare production (confirm). */
   productionSetupRequired?: boolean;
-  /** Piece 2: setup released; floor still needs worker assignment. */
+  /** Piece 2: setup released; floor still needs worker assignment (pre–Release to factory). */
   workerAssignmentRequired?: boolean;
   productionSetupStatus?: string | null;
+  /** Worst line complexity: STANDARD | MODIFIED | CUSTOM */
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
+  /** Hard Preparing → Production boundary crossed. */
+  releasedToFactory?: boolean;
+  releasedToFactoryAt?: string | null;
+  /** First executable factory task has started. */
+  executionStarted?: boolean;
   /** Piece 7 — commercial price gate + line statuses (admin). */
   commercialSummary?: CommercialSummary | null;
   commercialGrossDifference?: CommercialGrossDifference | null;
@@ -664,6 +690,9 @@ export type OrderProductionSetup = {
   status: SalesOrderProductionSetupStatus | string;
   releasedAt: string | null;
   releasedById: string | null;
+  /** Preparing: materials/path/packaging stay editable until Confirm. */
+  planEditable?: boolean;
+  factoryReleased?: boolean;
   salesOrder: {
     id: string;
     number: string;

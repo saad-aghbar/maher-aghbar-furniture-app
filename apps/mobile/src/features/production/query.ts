@@ -15,12 +15,15 @@ import {
   listProductionOrders,
   pauseProductionTask,
   startProductionOrder,
+  returnProductionOrderToPreparing,
   unblockTask,
   updateProductionOrder,
   updateProductionTaskNotes,
   getProductionOrderMaterials,
   getProductionOrderMaterialUsage,
   returnProductionUnusedMaterial,
+  getOrderPlanSetup,
+  putOrderPlanSetup,
   type ProductionListBucket,
   type ProductionPriority,
 } from './api';
@@ -81,6 +84,33 @@ export function useProductionOrderQuery(id: string | undefined, enabled: boolean
   });
 }
 
+export function useOrderPlanSetupQuery(productionOrderId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.production.planSetup(productionOrderId ?? ''),
+    queryFn: () => getOrderPlanSetup(productionOrderId!),
+    enabled: Boolean(productionOrderId) && enabled,
+    staleTime: 10_000,
+  });
+}
+
+export function usePutOrderPlanSetupMutation(productionOrderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof putOrderPlanSetup>[1]) =>
+      putOrderPlanSetup(productionOrderId, body),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({
+          queryKey: queryKeys.production.planSetup(productionOrderId),
+        }),
+        qc.invalidateQueries({ queryKey: queryKeys.production.detail(productionOrderId) }),
+        qc.invalidateQueries({ queryKey: queryKeys.production.all }),
+        qc.invalidateQueries({ queryKey: queryKeys.salesOrders.all }),
+      ]);
+    },
+  });
+}
+
 export function useAssignableWorkersQuery(
   enabled: boolean,
   q?: string,
@@ -106,8 +136,14 @@ async function invalidateProduction(
   await Promise.all([
     qc.invalidateQueries({ queryKey: queryKeys.production.lists() }),
     qc.invalidateQueries({ queryKey: queryKeys.production.summary() }),
+    qc.invalidateQueries({ queryKey: queryKeys.salesOrders.all }),
     orderId
       ? qc.invalidateQueries({ queryKey: queryKeys.production.detail(orderId) })
+      : Promise.resolve(),
+    orderId
+      ? qc.invalidateQueries({
+          queryKey: queryKeys.production.planSetup(orderId),
+        })
       : Promise.resolve(),
   ]);
 }
@@ -141,6 +177,17 @@ export function useStartProductionMutation(orderId: string) {
   return useMutation({
     mutationFn: () => startProductionOrder(orderId),
     onSuccess: () => invalidateProduction(qc, orderId),
+  });
+}
+
+export function useReturnProductionToPreparingMutation(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => returnProductionOrderToPreparing(orderId),
+    onSuccess: () => {
+      invalidateProduction(qc, orderId);
+      void qc.invalidateQueries({ queryKey: queryKeys.salesOrders.lists() });
+    },
   });
 }
 

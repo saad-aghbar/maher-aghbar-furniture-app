@@ -350,14 +350,8 @@ export class ManufacturingCostService {
     poStatuses: string[];
     includeTrace?: boolean;
   }): ManufacturingCostingPayload {
-    const costMapNeeded = new Set<string>();
-    for (const p of input.planned) costMapNeeded.add(p.sku);
-    for (const u of input.usages) {
-      if (u.unitCost == null && u.finalizedAt) costMapNeeded.add(u.sku);
-    }
-
-    // Live map only for planned estimate + legacy unfinalized valuation fallback.
     // FINAL stability: prefer stored extendedCost/unitCost on usage rows.
+    // Draft usage is valued provisionally in hydrateEstimated from the live map.
     const buckets = emptyBuckets();
     const bySkuMap = new Map<string, ManufacturingCostSkuRow>();
 
@@ -374,6 +368,7 @@ export class ManufacturingCostService {
     let reworkCost = 0;
     let anyFinalized = false;
     let anyUncosted = false;
+    let anyDraftCosted = false;
     let allUsagesFinalized = true;
     let latestFinal: Date | null = null;
 
@@ -389,6 +384,7 @@ export class ManufacturingCostService {
       const scrap = Number(u.scrapQty ?? 0);
       const costedQty = actual + scrap - returned;
       const issuedQty = actual + returned + scrap;
+      if (!u.finalizedAt && costedQty > 0) anyDraftCosted = true;
       const unitCost =
         u.unitCost != null && Number(u.unitCost) > 0 ? Number(u.unitCost) : null;
       const storedExt =
@@ -401,7 +397,8 @@ export class ManufacturingCostService {
           : unitCost != null && costedQty > 0
             ? money(unitCost * costedQty)
             : null;
-      if (costedQty > 0 && actualCost == null) anyUncosted = true;
+      // Finalized rows without valuation stay incomplete; draft rows wait for live hydrate.
+      if (costedQty > 0 && actualCost == null && u.finalizedAt) anyUncosted = true;
 
       const scrapLine =
         unitCost != null && scrap > 0 ? money(unitCost * scrap) : 0;
@@ -437,19 +434,8 @@ export class ManufacturingCostService {
       bySkuMap.set(u.sku, row);
     }
 
-    // Fill estimated costs from live map for planned rows (planned may drift — that's OK;
-    // estimated is not historically frozen the same way as actual).
-    // We resolve map lazily only when needed.
-    let liveMap: MaterialCostMap | null = null;
-    const ensureMap = async () => {
-      if (liveMap) return liveMap;
-      liveMap = await this.loadLiveMap([...costMapNeeded]);
-      return liveMap;
-    };
-
     // Synchronous path: use stored unit costs for estimate when available on row;
-    // otherwise leave estimated null until we hydrate below — buildPayload is sync,
-    // so estimate uses planned × any known unitCost from usage or 0→null.
+    // otherwise leave estimated null until hydrateEstimated fills from the live map.
     for (const row of bySkuMap.values()) {
       if (row.plannedQty > 0 && row.unitCost != null) {
         row.estimatedCost = money(row.plannedQty * row.unitCost);
@@ -468,8 +454,6 @@ export class ManufacturingCostService {
           ? money(row.unitCost * row.scrapQty)
           : 0;
     }
-
-    void ensureMap; // reserved for async hydrate callers
 
     const anyEstimated = [...bySkuMap.values()].some((r) => r.estimatedCost != null);
     const anyActual = [...bySkuMap.values()].some((r) => r.actualCost != null);
@@ -493,7 +477,7 @@ export class ManufacturingCostService {
       status = 'INCOMPLETE';
     } else if (poAtFinalBoundary && allUsagesFinalized && anyFinalized && !anyUncosted) {
       status = 'FINAL';
-    } else if (anyFinalized) {
+    } else if (anyFinalized || anyDraftCosted || anyActual) {
       status = 'IN_PROGRESS';
     } else {
       status = 'ESTIMATED_ONLY';
@@ -732,15 +716,28 @@ export class ManufacturingCostService {
   }
 
   /**
-   * Hydrate planned estimated costs using live map (estimated is not frozen).
-   * Called from forSalesOrder/forProductionOrder after build when estimates missing.
+   * Hydrate planned estimated + in-progress actual from the live inventory map.
+   * Estimated is never frozen. Draft (unfinalized) usage gets a provisional actual
+   * so Actual / Variance update throughout production; finalize still freezes
+   * stored unitCost/extendedCost for FINAL stability.
    */
   async hydrateEstimated(
     payload: ManufacturingCostingPayload,
   ): Promise<ManufacturingCostingPayload> {
-    const need = payload.bySku.filter((r) => r.plannedQty > 0 && r.estimatedCost == null);
-    if (!need.length) return payload;
-    const map = await this.loadLiveMap(need.map((r) => r.sku));
+    const needEst = payload.bySku.filter(
+      (r) => r.plannedQty > 0 && r.estimatedCost == null,
+    );
+    // Provisional actual only while production is open — FINAL / INCOMPLETE keep frozen rows.
+    const allowProvisionalActual =
+      payload.status === 'ESTIMATED_ONLY' || payload.status === 'IN_PROGRESS';
+    const needAct = allowProvisionalActual
+      ? payload.bySku.filter((r) => r.costedQty > 0 && r.actualCost == null)
+      : [];
+    const skus = [
+      ...new Set([...needEst, ...needAct].map((r) => r.sku).filter(Boolean)),
+    ];
+    const map = skus.length ? await this.loadLiveMap(skus) : new Map();
+
     const buckets = emptyBuckets();
     for (const row of payload.bySku) {
       if (row.plannedQty > 0 && row.estimatedCost == null) {
@@ -748,34 +745,93 @@ export class ManufacturingCostService {
         if (u != null && u > 0) {
           row.unitCost = row.unitCost ?? u;
           row.estimatedCost = money(row.plannedQty * u);
-          if (row.actualCost != null) {
-            row.varianceCost = money(row.actualCost - row.estimatedCost);
-          }
         }
+      }
+      if (allowProvisionalActual && row.costedQty > 0 && row.actualCost == null) {
+        const u =
+          row.unitCost != null && row.unitCost > 0
+            ? row.unitCost
+            : map.has(row.sku)
+              ? map.get(row.sku)!
+              : null;
+        if (u != null && u > 0) {
+          row.unitCost = row.unitCost ?? u;
+          row.actualCost = money(row.costedQty * u);
+          row.costAvailable = true;
+        }
+      }
+      if (row.estimatedCost != null && row.actualCost != null) {
+        row.varianceCost = money(row.actualCost - row.estimatedCost);
       }
       const cat = categoryKey(row.category);
       buckets[cat]!.plannedQty += row.plannedQty;
       buckets[cat]!.actualQty += row.costedQty;
       buckets[cat]!.estimatedCost += row.estimatedCost ?? 0;
       buckets[cat]!.actualCost += row.actualCost ?? 0;
+      buckets[cat]!.scrapCost +=
+        row.unitCost != null && row.scrapQty > 0
+          ? money(row.unitCost * row.scrapQty)
+          : 0;
     }
+
     const anyEstimated = payload.bySku.some((r) => r.estimatedCost != null);
+    const anyActual = payload.bySku.some((r) => r.actualCost != null);
     payload.estimated.total = anyEstimated
       ? money(payload.bySku.reduce((s, r) => s + (r.estimatedCost ?? 0), 0))
       : null;
+    if (allowProvisionalActual || anyActual) {
+      payload.actual.total = anyActual
+        ? money(payload.bySku.reduce((s, r) => s + (r.actualCost ?? 0), 0))
+        : null;
+      payload.actual.toDate = payload.actual.total;
+    }
+
     for (const [k, b] of Object.entries(buckets)) {
       payload.estimated.byCategory[k] = {
         qty: b.plannedQty,
         cost: money(b.estimatedCost),
       };
+      if (allowProvisionalActual) {
+        payload.actual.byCategory[k] = {
+          qty: b.actualQty,
+          cost: money(b.actualCost),
+          scrapCost: money(b.scrapCost),
+        };
+      }
     }
+
     if (payload.estimated.total != null && payload.actual.total != null) {
       payload.variance.cost = money(payload.actual.total - payload.estimated.total);
       payload.variance.pct =
         payload.estimated.total > 0
           ? money((payload.variance.cost / payload.estimated.total) * 100)
           : null;
+    } else if (allowProvisionalActual) {
+      payload.variance.cost = null;
+      payload.variance.pct = null;
     }
+
+    if (allowProvisionalActual) {
+      payload.incompleteSkus = payload.bySku
+        .filter((r) => r.costedQty > 0 && !r.costAvailable)
+        .map((r) => ({
+          sku: r.sku,
+          displayName: r.displayName,
+          costedQty: r.costedQty,
+        }));
+      // Draft gaps stay on the SKU list; card status stays IN_PROGRESS (cost to date).
+      payload.incomplete = false;
+    }
+
+    // Promote ESTIMATED_ONLY → IN_PROGRESS once materials are being consumed.
+    if (
+      payload.status === 'ESTIMATED_ONLY' &&
+      (payload.actual.total != null ||
+        payload.bySku.some((r) => r.costedQty > 0))
+    ) {
+      payload.status = 'IN_PROGRESS';
+    }
+
     return payload;
   }
 }

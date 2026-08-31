@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { Href } from 'expo-router';
 import { ActivityIndicator, Image, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
@@ -23,7 +24,7 @@ import { haptics } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
 import { ReturnPhotoGallery } from './components/ReturnPhotoGallery';
-import { useResolveReturnMutation, useReturnQuery } from './query';
+import { useResolveReturnMutation, useReturnQuery, useSetReturnFateMutation } from './query';
 import {
   returnLifecycleBadgeStatus,
   returnNextActionKey,

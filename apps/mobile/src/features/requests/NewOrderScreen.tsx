@@ -20,6 +20,7 @@ import {
 } from '@/api/modules/requests';
 import { uploadFile } from '@/api/modules/uploads';
 import { queryKeys } from '@/api/queryKeys';
+import { toastMessageForError } from '@/api/queryClient';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { SecondaryButton } from '@/components/buttons/SecondaryButton';
@@ -46,7 +47,7 @@ import {
   DealerSectionHeader,
 } from '@/features/dealer-ui';
 import { DeliveryAvailabilityCard } from './components/DeliveryAvailabilityCard';
-import { selectDeliveryAvailability } from './selectDeliveryAvailability';
+import { availabilityMonthWindow, localDealerMinimumRequestYmd, selectDeliveryAvailability } from './selectDeliveryAvailability';
 import {
   type DealerAiIntakeState,
   previewNeedsInfo,
@@ -469,14 +470,22 @@ export function NewOrderScreen() {
     unitPrice != null && Number.isFinite(qtyNum) && qtyNum > 0 ? unitPrice * qtyNum : null;
   const currency = productQuery.data?.priceCurrency || 'ILS';
 
+  const availabilityWindow = availabilityMonthWindow(
+    requiredDeliveryDate.trim() || undefined,
+  );
+  const minRequestYmd = localDealerMinimumRequestYmd();
+  const requestedYmd = requiredDeliveryDate.trim();
+  const sendRequestedDate =
+    Boolean(requestedYmd) &&
+    isValidOptionalDate(requiredDeliveryDate) &&
+    requestedYmd >= minRequestYmd;
   const availabilityRequest: AvailabilityRequest | null =
     productId.trim() && isValidQuantity(quantity)
       ? {
           items: [{ productId, quantity: clampOrderQuantity(quantity) }],
-          requestedDeliveryDate:
-            requiredDeliveryDate.trim() && isValidOptionalDate(requiredDeliveryDate)
-              ? requiredDeliveryDate.trim()
-              : undefined,
+          requestedDeliveryDate: sendRequestedDate ? requestedYmd : undefined,
+          from: availabilityWindow.from,
+          to: availabilityWindow.to,
         }
       : null;
   const availabilityQuery = useAvailabilityQuery(availabilityRequest);
@@ -530,6 +539,11 @@ export function NewOrderScreen() {
     }
     if (!isValidOptionalDate(requiredDeliveryDate)) {
       fail(t('mobile.newOrder.errors.dateInvalid'));
+      return false;
+    }
+    const requested = requiredDeliveryDate.trim();
+    if (requested && requested < localDealerMinimumRequestYmd()) {
+      fail(t('mobile.newOrder.delivery.leadTimeNotice'));
       return false;
     }
     setError(null);
@@ -803,9 +817,7 @@ export function NewOrderScreen() {
       void haptics.confirmMedium();
     } catch (err) {
       fail(
-        err instanceof Error && err.message
-          ? err.message
-          : t('mobile.newOrder.errors.saveFailed'),
+        toastMessageForError(err) || t('mobile.newOrder.errors.saveFailed'),
       );
     } finally {
       setBusy(false);
@@ -854,9 +866,7 @@ export function NewOrderScreen() {
     } catch (err) {
       submitLock.current = false;
       fail(
-        err instanceof Error && err.message
-          ? err.message
-          : t('mobile.newOrder.errors.submitFailed'),
+        toastMessageForError(err) || t('mobile.newOrder.errors.submitFailed'),
       );
     } finally {
       setBusy(false);

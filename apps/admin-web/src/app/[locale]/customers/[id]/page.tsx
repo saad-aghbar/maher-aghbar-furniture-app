@@ -55,6 +55,7 @@ interface CustomerDetail {
   doneOrdersCount?: number;
   paidTotal?: number;
   outstandingTotal?: number;
+  availableCredit?: number;
   contacts?: Array<{ id: string; name: string; phone?: string; email?: string; position?: string }>;
   addresses?: Array<{
     id: string;
@@ -343,7 +344,10 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
         <div className="maher-list-card rounded-2xl border border-border bg-surface px-5 py-4">
           <p className="text-[11px] text-text-tertiary">{tAccounting('accountCredit')}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight" dir="ltr">
-            {money(financeQuery.data?.availableCredit ?? 0, tCommon('currency'))}
+            {money(
+              financeQuery.data?.availableCredit ?? data.availableCredit ?? 0,
+              tCommon('currency'),
+            )}
           </p>
         </div>
       </div>

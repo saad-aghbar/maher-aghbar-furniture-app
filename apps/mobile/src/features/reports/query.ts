@@ -18,7 +18,7 @@ export function useDashboardReportQuery(enabled: boolean) {
 
 export function useSalesReportQuery(range: ReportsDateRange, enabled: boolean) {
   return useQuery({
-    queryKey: queryKeys.reports.sales(range.from, range.to),
+    queryKey: queryKeys.reports.sales(`${range.from}|${range.to}`),
     queryFn: () => getSalesReport(range),
     enabled,
   });
@@ -26,7 +26,7 @@ export function useSalesReportQuery(range: ReportsDateRange, enabled: boolean) {
 
 export function useProductionReportQuery(range: ReportsDateRange, enabled: boolean) {
   return useQuery({
-    queryKey: queryKeys.reports.production(range.from, range.to),
+    queryKey: queryKeys.reports.production(`${range.from}|${range.to}`),
     queryFn: () => getProductionReport(range),
     enabled,
   });

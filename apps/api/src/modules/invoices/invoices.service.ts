@@ -14,7 +14,7 @@ import { paginatedMeta, pageSkipTake } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { roundMoney } from '../../common/helpers/money.util';
 import { JOFOTARA_PROVIDER } from '../../integrations/integrations.module';
-import type { ListInvoicesDto } from './dto/invoice.dto';
+import { ListInvoicesDto, UpdateInvoiceDto } from './dto/invoice.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   classifyInvoice,
@@ -176,6 +176,149 @@ export class InvoicesService {
         overdueAmount: finance.overdueAmount,
       },
     };
+  }
+
+  /** Staff edit — notes, dates, and line amounts (recalculates totals). */
+  async update(id: string, dto: UpdateInvoiceDto, userId: string) {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, archivedAt: null },
+      include: { lines: true },
+    });
+    if (!invoice) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Invoice not found.' });
+    }
+    if (
+      invoice.status === InvoiceStatus.CANCELLED ||
+      invoice.status === InvoiceStatus.VOID
+    ) {
+      throw new BadRequestException({
+        code: 'INVOICE_LOCKED',
+        message: 'Cancelled or void invoices cannot be edited.',
+      });
+    }
+
+    const paid = Number(invoice.paidAmount) || 0;
+
+    let subtotal = Number(invoice.subtotal);
+    let taxTotal = Number(invoice.taxTotal);
+    let total = Number(invoice.total);
+    let lineCreates:
+      | Array<{
+          description: string;
+          quantity: Prisma.Decimal | number;
+          unitPrice: Prisma.Decimal | number;
+          taxRate: Prisma.Decimal | number;
+          lineTotal: Prisma.Decimal | number;
+          sortOrder: number;
+        }>
+      | undefined;
+
+    if (dto.lines) {
+      if (dto.lines.length === 0) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Invoice must keep at least one line.',
+        });
+      }
+      lineCreates = dto.lines.map((l, i) => {
+        const qty = Number(roundMoney(Number(l.quantity)));
+        const unit = Number(roundMoney(Number(l.unitPrice)));
+        const taxRate = Number(roundMoney(Number(l.taxRate ?? 0)));
+        const net = Number(roundMoney(qty * unit));
+        const tax = Number(roundMoney(net * (taxRate / 100)));
+        return {
+          description: l.description.trim() || 'Line',
+          quantity: qty,
+          unitPrice: unit,
+          taxRate,
+          lineTotal: Number(roundMoney(net + tax)),
+          sortOrder: i,
+        };
+      });
+      subtotal = Number(
+        roundMoney(
+          lineCreates.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice), 0),
+        ),
+      );
+      taxTotal = Number(
+        roundMoney(
+          lineCreates.reduce((s, l) => {
+            const net = Number(l.quantity) * Number(l.unitPrice);
+            return s + net * (Number(l.taxRate) / 100);
+          }, 0),
+        ),
+      );
+      total = Number(roundMoney(subtotal + taxTotal));
+    }
+
+    if (total + 1e-9 < paid) {
+      throw new BadRequestException({
+        code: 'INVOICE_TOTAL_BELOW_PAID',
+        message: 'Invoice total cannot be less than amount already paid.',
+      });
+    }
+
+    const outstanding = Number(roundMoney(Math.max(0, total - paid)));
+    let status = invoice.status;
+    if (invoice.status !== InvoiceStatus.DRAFT) {
+      if (outstanding <= 0.001) status = InvoiceStatus.PAID;
+      else if (paid > 0.001) status = InvoiceStatus.PARTIALLY_PAID;
+      else if (
+        invoice.dueDate &&
+        invoice.dueDate.getTime() < Date.now() &&
+        outstanding > 0.001
+      ) {
+        status = InvoiceStatus.OVERDUE;
+      } else {
+        status = InvoiceStatus.ISSUED;
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (lineCreates) {
+        await tx.invoiceLine.deleteMany({ where: { invoiceId: id } });
+        await tx.invoiceLine.createMany({
+          data: lineCreates.map((l) => ({ ...l, invoiceId: id })),
+        });
+      }
+      await tx.invoice.update({
+        where: { id },
+        data: {
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.dueDate !== undefined
+            ? { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }
+            : {}),
+          ...(dto.invoiceDate
+            ? { invoiceDate: new Date(dto.invoiceDate) }
+            : {}),
+          ...(lineCreates
+            ? {
+                subtotal,
+                taxTotal,
+                total,
+                outstandingAmount: outstanding,
+                status,
+              }
+            : {}),
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          userId,
+          action: 'invoice.update',
+          entityType: 'Invoice',
+          entityId: id,
+          newValues: {
+            notes: dto.notes,
+            dueDate: dto.dueDate,
+            lines: Boolean(lineCreates),
+            total,
+          },
+        },
+      });
+    });
+
+    return this.get(id);
   }
 
   async createFromSalesOrder(salesOrderId: string, userId: string, idempotencyKey?: string) {

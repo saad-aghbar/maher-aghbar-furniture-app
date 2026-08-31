@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { SearchBarShell } from '@/components/forms/SearchBarShell';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { Warehouse } from '../api';
 import { AppTextInput } from '@/components/forms/AppTextInput';
@@ -56,7 +57,7 @@ export function WarehousePickList({
   onAddWarehouse,
 }: WarehousePickListProps) {
   const { t, locale, isRTL } = useLocale();
-  const { colors, theme } = useTheme();
+  const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [q, setQ] = useState('');
 
@@ -91,8 +92,9 @@ export function WarehousePickList({
     onPress: () => void;
   }) {
     return (
-      <Pressable
+      <AnimatedPressable
         key={key}
+        variant="button"
         onPress={() => {
           void haptics.selection();
           onPress();
@@ -143,7 +145,7 @@ export function WarehousePickList({
             {subtitle}
           </AppText>
         ) : null}
-      </Pressable>
+      </AnimatedPressable>
     );
   }
 
@@ -189,7 +191,7 @@ export function WarehousePickList({
           borderColor: colors.borderStrong,
           backgroundColor: colors.surface,
           overflow: 'hidden',
-          ...theme.elevation.card,
+          ...orderBoardShadow(colorScheme),
         }}
       >
         <ScrollView
@@ -206,7 +208,8 @@ export function WarehousePickList({
           }}
         >
           {onAddWarehouse ? (
-            <Pressable
+            <AnimatedPressable
+              variant="button"
               onPress={() => {
                 void haptics.selection();
                 onAddWarehouse();
@@ -225,13 +228,13 @@ export function WarehousePickList({
               }}
             >
               <AppText
-                weight="semibold"
+                weight={titleWeight}
                 color="brand"
                 style={{ textAlign: isRTL ? 'right' : 'left' }}
               >
                 + {t('mobile.inventory.newWarehouse')}
               </AppText>
-            </Pressable>
+            </AnimatedPressable>
           ) : null}
           {empty ? (
             <AppText

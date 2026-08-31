@@ -133,6 +133,7 @@ export function ConfirmReceiptSheet({
               label={t('lifecycle.confirmReceiptCancel')}
               onPress={onClose}
               disabled={loading}
+              style={{ borderRadius: theme.radius.xl }}
             />
           </View>
           <View style={{ flex: 1 }}>
@@ -142,6 +143,7 @@ export function ConfirmReceiptSheet({
               loading={loading}
               disabled={!canConfirm || Boolean(loading)}
               accessibilityLabel={`${t('lifecycle.confirmReceived')} ${orderNumber}`}
+              style={{ borderRadius: theme.radius.xl }}
             />
           </View>
         </View>

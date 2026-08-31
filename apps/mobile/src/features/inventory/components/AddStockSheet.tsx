@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -8,7 +8,7 @@ import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import type { InventoryItem, Warehouse } from '../api';
 import { resolveInventoryScan } from '../resolveInventoryScan';
@@ -27,6 +27,7 @@ import { InventorySheetFooter } from './InventorySheetFooter';
 import { KnownItemLabelConfirm } from './KnownItemLabelConfirm';
 import { ScanInventoryItemAction } from './ScanInventoryItemAction';
 import { WarehousePickList } from './WarehousePickList';
+import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
   InventoryScanSelectInline,
   type InlineScanSelectMode,
@@ -111,7 +112,7 @@ export function AddStockSheet({
   onSubmit,
 }: AddStockSheetProps) {
   const { t, locale, formatDate } = useLocale();
-  const { theme, colors } = useTheme();
+  const { theme, colors, colorScheme } = useTheme();
   const { user } = useAuth();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.82);
@@ -390,7 +391,8 @@ export function AddStockSheet({
                     void lookupCode(code);
                   }}
                 />
-                <Pressable
+                <AnimatedPressable
+                  variant="button"
                   accessibilityRole="button"
                   disabled={lookingUp || loading}
                   onPress={() => void lookup()}
@@ -404,13 +406,13 @@ export function AddStockSheet({
                     alignItems: 'center',
                     justifyContent: 'center',
                     opacity: lookingUp || loading ? 0.6 : 1,
-                    ...theme.elevation.card,
+                    ...orderBoardShadow(colorScheme),
                   }}
                 >
                   <AppText variant="label" weight="semibold" color="brand">
                     {lookingUp ? t('mobile.inventory.lookingUp') : t('mobile.inventory.lookup')}
                   </AppText>
-                </Pressable>
+                </AnimatedPressable>
                 {confirmOpen ? (
                   <InventoryScanSelectInline
                     mode={confirmMode}
@@ -444,7 +446,7 @@ export function AddStockSheet({
               backgroundColor: colors.surface,
               padding: theme.spacing.md,
               gap: theme.spacing.xs,
-              ...theme.elevation.card,
+              ...orderBoardShadow(colorScheme),
             }}
           >
             <AppText
@@ -494,10 +496,12 @@ export function AddStockSheet({
                   ? formatDate(row.expectedDeliveryDate)
                   : null;
                 return (
-                  <Pressable
+                  <AnimatedPressable
+                    variant="button"
                     key={row.purchaseOrderId}
                     accessibilityRole="button"
                     onPress={() => {
+                      void haptics.selection();
                       setReceiptKind('po');
                       setSelectedPoId(row.purchaseOrderId);
                       if (row.suggestedWarehouseId) setWarehouseId(row.suggestedWarehouseId);
@@ -529,12 +533,14 @@ export function AddStockSheet({
                         {t('mobile.inventory.expected')}: {expected}
                       </AppText>
                     ) : null}
-                  </Pressable>
+                  </AnimatedPressable>
                 );
               })}
-              <Pressable
+              <AnimatedPressable
+                variant="button"
                 accessibilityRole="button"
                 onPress={() => {
+                  void haptics.selection();
                   setReceiptKind('manual');
                   setSelectedPoId(null);
                   setError(null);
@@ -550,7 +556,7 @@ export function AddStockSheet({
                 <AppText variant="body" weight="semibold">
                   {t('mobile.inventory.manualReceipt')}
                 </AppText>
-              </Pressable>
+              </AnimatedPressable>
             </View>
           ) : null}
 

@@ -76,7 +76,12 @@ export const ADMIN_OVERFLOW_MODULES: AdminOverflowModule[] = [
     hintKey: 'mobile.adminHome.navReportsHint',
     icon: 'bar-chart-outline',
     href: '/(app)/(admin)/reports',
-    permissions: ['report.sales.read', 'report.production.read', 'report.financial.read'],
+    permissions: [
+      'report.sales.read',
+      'report.production.read',
+      'report.financial.read',
+      'report.inventory.read',
+    ],
     mode: 'any',
     span: 'half',
     tone: 'paper',
@@ -116,23 +121,6 @@ export const ADMIN_OVERFLOW_MODULES: AdminOverflowModule[] = [
     tone: 'paper',
   },
   {
-    key: 'reports',
-    labelKey: 'mobile.adminHome.navReports',
-    hintKey: 'mobile.adminHome.navReportsHint',
-    icon: 'stats-chart-outline',
-    href: '/(app)/(admin)/reports',
-    permissions: [
-      'report.sales.read',
-      'report.production.read',
-      'report.financial.read',
-      'report.inventory.read',
-    ],
-    mode: 'any',
-    span: 'full',
-    tone: 'ink',
-    surfaces: ['more', 'home'],
-  },
-  {
     key: 'users',
     labelKey: 'mobile.adminHome.navUsers',
     hintKey: 'mobile.adminHome.navUsersHint',
@@ -161,10 +149,28 @@ export function filterAdminOverflowModules(
   user: AuthUser | null | undefined,
   surface: OverflowSurface,
 ): AdminOverflowModule[] {
+  const seen = new Set<string>();
   return ADMIN_OVERFLOW_MODULES.filter((m) => {
     const surfaces = m.surfaces ?? (['home', 'more'] as OverflowSurface[]);
     if (!surfaces.includes(surface)) return false;
-    if (!m.permissions?.length) return true;
-    return m.mode === 'all' ? canAll(user, m.permissions) : canAny(user, m.permissions);
+    if (seen.has(m.key)) return false;
+    if (m.permissions?.length) {
+      const allowed = m.mode === 'all' ? canAll(user, m.permissions) : canAny(user, m.permissions);
+      if (!allowed) return false;
+    }
+    seen.add(m.key);
+    return true;
   });
+}
+
+/**
+ * Two-up rows for the More atlas. Last leftover tile sits alone so flex can
+ * fill the row — never a blank column.
+ */
+export function packOverflowPlaceRows<T>(items: readonly T[]): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += 2) {
+    rows.push(items.slice(i, i + 2) as T[]);
+  }
+  return rows;
 }

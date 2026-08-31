@@ -35,6 +35,7 @@ class SupplierDto {
   @IsOptional() @IsString() registrationNo?: string;
   @IsOptional() @IsString() taxNumber?: string;
   @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() whatsappPhone?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) paymentTermsDays?: number;
@@ -54,6 +55,7 @@ class UpdateSupplierDto {
   @IsOptional() @IsString() registrationNo?: string;
   @IsOptional() @IsString() taxNumber?: string;
   @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() whatsappPhone?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) paymentTermsDays?: number;
@@ -128,6 +130,7 @@ export class SuppliersController {
         registrationNo: dto.registrationNo,
         taxNumber: dto.taxNumber,
         phone: dto.phone,
+        whatsappPhone: dto.whatsappPhone,
         email: dto.email,
         address: dto.address,
         paymentTermsDays: dto.paymentTermsDays ?? 30,
@@ -246,6 +249,29 @@ export class SuppliersController {
         entityType: 'Supplier',
         entityId: id,
         newValues: row as unknown as Prisma.InputJsonValue,
+      },
+    });
+    return row;
+  }
+
+  @Post(':id/archive')
+  @RequirePermissions('supplier.manage')
+  async archive(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    const existing = await this.prisma.supplier.findFirst({
+      where: { id, archivedAt: null },
+    });
+    if (!existing) throw new NotFoundException('Supplier not found');
+    const row = await this.prisma.supplier.update({
+      where: { id },
+      data: { archivedAt: new Date() },
+    });
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: 'supplier.archive',
+        entityType: 'Supplier',
+        entityId: id,
+        newValues: { archivedAt: row.archivedAt } as unknown as Prisma.InputJsonValue,
       },
     });
     return row;

@@ -23,6 +23,11 @@ jest.mock('../components/MaterialPickerSheet', () => ({
   MaterialPickerSheet: () => null,
 }));
 
+jest.mock('@/components/sheets/BottomSheet', () => ({
+  BottomSheet: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
+    open ? children : null,
+}));
+
 function Wrapper({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider initialMode="light">
@@ -56,8 +61,8 @@ describe('ManufacturingCostEditor math', () => {
 });
 
 describe('ManufacturingCostEditor layout', () => {
-  it('shows every material row with amount and qty', async () => {
-    const { getByText, getAllByText } = await render(
+  it('shows every material row with totals and qty', async () => {
+    const { getByText } = await render(
       <ManufacturingCostEditor
         edit={{
           ...emptyCostBreakdownEdit(),
@@ -71,6 +76,16 @@ describe('ManufacturingCostEditor layout', () => {
         onChange={() => {}}
         editable={false}
         formatCurrency={(n) => `JOD ${n.toFixed(2)}`}
+        seedLines={[
+          {
+            sku: 'FOAM-1',
+            name: 'Seat foam',
+            category: 'foam',
+            qty: 12,
+            unitCost: 24.533,
+            lineCost: 294.4,
+          },
+        ]}
       />,
       { wrapper: Wrapper },
     );
@@ -79,8 +94,8 @@ describe('ManufacturingCostEditor layout', () => {
     expect(getByText('Wood')).toBeTruthy();
     expect(getByText('Foam')).toBeTruthy();
     expect(getByText('Accessories')).toBeTruthy();
-    expect(getAllByText('Amount')).toHaveLength(4);
-    expect(getAllByText('Qty')).toHaveLength(4);
+    expect(getByText('Qty 88')).toBeTruthy();
+    expect(getByText('1 materials')).toBeTruthy();
     expect(getByText('JOD 294.40')).toBeTruthy();
   });
 });

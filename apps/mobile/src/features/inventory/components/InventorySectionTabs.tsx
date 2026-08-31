@@ -38,14 +38,11 @@ type Props = {
 };
 
 function accentFor(
-  section: InventoryHomeSection,
-  colors: { brand: string; info: string; success: string; textSecondary: string },
+  _section: InventoryHomeSection,
+  colors: { brand: string; textSecondary: string },
   focused: boolean,
 ): string {
-  if (!focused) return colors.textSecondary;
-  if (section === 'transfers') return colors.info;
-  if (section === 'counts') return colors.success;
-  return colors.brand;
+  return focused ? colors.brand : colors.textSecondary;
 }
 
 /**

@@ -623,8 +623,9 @@ export class DeliveriesController {
       for (const po of productionOrders) {
         await this.pipeline.rollupProgress(po.id).catch(() => undefined);
       }
+      // Invoice should already exist from depart (ship). Idempotent safety net only.
       await this.invoices.ensureFromSalesOrder(existing.salesOrderId, user.id).catch(() => {
-        /* JoFotara/network failures must not block dealer confirmation */
+        /* must not block dealer confirmation */
       });
     }
 

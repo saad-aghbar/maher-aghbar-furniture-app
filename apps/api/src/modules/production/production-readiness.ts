@@ -394,9 +394,16 @@ export function productionNotReadyException(readiness: ProductionReadinessDto) {
       r.code === 'NO_EXECUTABLE_TASKS' ||
       r.code === 'STATUS_NOT_STARTABLE',
   );
+  const detail = (hard.length > 0 ? hard : readiness.reasons)
+    .map((r) => r.message)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' ');
   return {
     code: 'PRODUCTION_NOT_READY' as const,
-    message: 'Production is not ready to start.',
+    message: detail
+      ? `Production is not ready to start. ${detail}`
+      : 'Production is not ready to start.',
     reasons: hard.length > 0 ? hard : readiness.reasons,
   };
 }

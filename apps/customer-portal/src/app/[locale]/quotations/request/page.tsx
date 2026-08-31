@@ -1,7 +1,7 @@
 'use client';
 
 import { apiFetch, apiUpload, apiUploadFromUrl } from '@/lib/api-client';
-import { AvailabilityCard } from '@/components/availability-card';
+import { AvailabilityCard, localDealerMinimumRequestYmd } from '@/components/availability-card';
 import { useRouter } from '@/i18n/navigation';
 import {
   Alert,
@@ -237,9 +237,16 @@ export default function RequestQuotePage() {
               />
               <Input
                 label={tQ('preferredDeliveryDate')}
+                hint={tc('deliveryLeadTimeNotice')}
                 type="date"
+                min={localDealerMinimumRequestYmd()}
                 value={preferredDate}
-                onChange={(e) => setPreferredDate(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const min = localDealerMinimumRequestYmd();
+                  if (next && next < min) return;
+                  setPreferredDate(next);
+                }}
               />
               {productId ? (
                 <AvailabilityCard
