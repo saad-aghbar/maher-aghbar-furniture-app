@@ -209,8 +209,8 @@ describe('TasksService assign — Piece 3 dates/conflicts', () => {
     );
   });
 
-  it('rejects dependency date violation', async () => {
-    const { service, productionTaskFindMany } = makeService({
+  it('slides the planned window after a predecessor instead of blocking assign', async () => {
+    const { service, productionTaskFindMany, productionTaskUpdate } = makeService({
       stageDefinition: {
         id: 'stage-asm',
         code: 'ASSEMBLY',
@@ -227,17 +227,25 @@ describe('TasksService assign — Piece 3 dates/conflicts', () => {
       },
     ]);
 
-    await expect(
-      service.assign(
-        'task-1',
-        {
-          employeeId: WORKER_B,
-          plannedStart: '2026-09-01T08:00:00.000Z',
-          plannedCompletion: '2026-09-01T12:00:00.000Z',
-        },
-        ['production-order.assign'],
-      ),
-    ).rejects.toMatchObject({ response: { code: 'DEPENDENCY_DATE_VIOLATION' } });
+    await service.assign(
+      'task-1',
+      {
+        employeeId: WORKER_B,
+        plannedStart: '2026-09-01T08:00:00.000Z',
+        plannedCompletion: '2026-09-01T12:00:00.000Z',
+      },
+      ['production-order.assign'],
+    );
+
+    expect(productionTaskUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          assignedEmployeeId: WORKER_B,
+          plannedStart: new Date('2026-09-02T16:00:00.000Z'),
+          plannedCompletion: new Date('2026-09-02T20:00:00.000Z'),
+        }),
+      }),
+    );
   });
 
   it('rejects reassign after PO is on the floor', async () => {

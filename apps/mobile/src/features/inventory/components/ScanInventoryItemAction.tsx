@@ -121,6 +121,13 @@ export const ScanInventoryItemAction = forwardRef<
         present('error', null);
         return;
       }
+      // SELECT is for catalog materials — kit/lot identity is Identify-only.
+      if (resolved.status !== 'FOUND') {
+        void haptics.error();
+        qrLog(0, `lookup ${resolved.status} — not a selectable inventory item`);
+        present('not-found', null);
+        return;
+      }
 
       qrLog(0, `lookup FOUND itemId=${resolved.item.id} sku=${resolved.item.sku}`);
       const gate = isInventoryItemSelectable(resolved.item, allowItemRef.current);

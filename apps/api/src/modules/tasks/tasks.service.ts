@@ -712,7 +712,8 @@ export class TasksService {
       });
     }
 
-    // Dependency date check: this stage must not start before predecessors finish.
+    // Assign is planning (who + a window), not starting the stage. If the chosen
+    // window sits before a predecessor, slide it to start when that predecessor ends.
     if (plannedStart && task.stageDefinition?.dependsOnCodes?.length) {
       const depCodes = task.stageDefinition.dependsOnCodes;
       const siblings = await this.prisma.productionTask.findMany({
@@ -730,20 +731,20 @@ export class TasksService {
           stageDefinition: { select: { code: true, nameEn: true } },
         },
       });
+      let latestPredEnd: Date | null = null;
       for (const pred of siblings) {
         const predEnd = pred.plannedCompletion ?? pred.plannedStart;
         if (!predEnd) continue;
-        if (plannedStart.getTime() < predEnd.getTime()) {
-          const predName = pred.stageDefinition?.nameEn ?? pred.stageDefinition?.code ?? 'predecessor';
-          throw new BadRequestException({
-            code: 'DEPENDENCY_DATE_VIOLATION',
-            message: `Cannot start before ${predName} finishes (${predEnd.toISOString()}).`,
-            predecessorTaskId: pred.id,
-            predecessorCode: pred.stageDefinition?.code,
-            predecessorEnd: predEnd.toISOString(),
-            plannedStart: plannedStart.toISOString(),
-          });
+        if (!latestPredEnd || predEnd.getTime() > latestPredEnd.getTime()) {
+          latestPredEnd = predEnd;
         }
+      }
+      if (latestPredEnd && plannedStart.getTime() < latestPredEnd.getTime()) {
+        const durationMs = plannedCompletion
+          ? Math.max(30 * 60_000, plannedCompletion.getTime() - plannedStart.getTime())
+          : 2 * 60 * 60_000;
+        plannedStart = new Date(latestPredEnd.getTime());
+        plannedCompletion = new Date(plannedStart.getTime() + durationMs);
       }
     }
 

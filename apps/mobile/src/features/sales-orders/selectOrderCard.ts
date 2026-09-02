@@ -2,6 +2,7 @@ import { localizedName } from '@maher/i18n';
 import type {
   SalesOrderListItem,
   SalesOrderProductionReadinessSummary,
+  SalesOrderJourneyLogistics,
 } from './api';
 import type { AdminOrderLifecycle } from './adminOrderLifecycle';
 import {
@@ -46,6 +47,9 @@ export type AdminOrderCardModel = {
   kind?: 'order' | 'rfq';
   /** Commercial line kind: standard | modified | custom (worst of lines). */
   manufacturingKind?: 'standard' | 'modified' | 'custom';
+  primaryProductionOrderId?: string | null;
+  plannedStartDate?: string | null;
+  journeyLogistics?: SalesOrderJourneyLogistics | null;
 };
 
 export type DealerOrderCardModel = {
@@ -130,6 +134,16 @@ export function toAdminOrderCard(
     currentStageLabel: progressLabel,
   };
   const journey = classifyAdminOrderJourney(lifecycleInput);
+  const serverBucket = item.journeyBucket;
+  const lifecycle =
+    serverBucket === 'preparing' ||
+    serverBucket === 'ready_to_start' ||
+    serverBucket === 'in_production' ||
+    serverBucket === 'ready_to_ship' ||
+    serverBucket === 'shipped' ||
+    serverBucket === 'delivered'
+      ? serverBucket
+      : journey.journeyBucket;
   return {
     id: item.id,
     number: item.number,
@@ -154,7 +168,7 @@ export function toAdminOrderCard(
     profit: toNumber(item.profit),
     quantity: item.lineCount != null ? Number(item.lineCount) : null,
     productionReadinessSummary: item.productionReadinessSummary ?? null,
-    lifecycle: journey.journeyBucket,
+    lifecycle,
     attention: journey.attention,
     primaryCta: journey.primaryCta,
     journeyReadiness: journey.readiness,
@@ -163,6 +177,12 @@ export function toAdminOrderCard(
       (journey.attention ? journey.attention.reasonLabelKey : null),
     kind: 'order',
     manufacturingKind: resolveOrderManufacturingKind([item.manufacturingComplexity]),
+    primaryProductionOrderId:
+      item.productionReadinessSummary?.primaryProductionOrderId ??
+      item.productionOrders?.[0]?.id ??
+      null,
+    plannedStartDate: null,
+    journeyLogistics: item.journeyLogistics ?? null,
   };
 }
 

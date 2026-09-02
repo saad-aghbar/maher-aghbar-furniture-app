@@ -273,6 +273,7 @@ export function AdminLifecycleChips({ value, onChange, counts }: Props) {
   const chips = ADMIN_LIFECYCLE_CHIPS;
 
   const totalLive = useMemo(() => {
+    if (typeof counts?.all === 'number') return counts.all;
     return ADMIN_LIFECYCLE_SECTION_ORDER.reduce(
       (sum, key) => sum + (counts?.[key] ?? 0),
       0,

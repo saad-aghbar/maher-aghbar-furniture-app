@@ -32,8 +32,8 @@ export async function runInventoryLabelVerify(args: {
   qrLog(0, `VERIFY lookup start ${code}`);
   try {
     const resolved = await resolveInventoryScan(code);
-    if (resolved.status === 'NOT_FOUND') {
-      qrLog(0, 'VERIFY lookup NOT_FOUND');
+    if (resolved.status === 'NOT_FOUND' || resolved.status === 'FOUND_KIT' || resolved.status === 'FOUND_LOT') {
+      qrLog(0, `VERIFY lookup ${resolved.status}`);
       return { kind: 'UNKNOWN', scanned: null };
     }
     if (resolved.status === 'ERROR') {

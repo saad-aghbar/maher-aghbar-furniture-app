@@ -17,11 +17,13 @@ import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { BackButton } from '@/components/BackButton';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
+import { SecondaryButton } from '@/components/buttons/SecondaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { OfflineBanner } from '@/components/feedback/OfflineBanner';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
+import { useCodeScanner } from '@/components/scan/CodeScannerProvider';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { resolveOrderMediaUri } from '@/features/sales-orders/components/OrderCardMedia';
@@ -37,6 +39,7 @@ import {
   deliverySectionLabelStyle,
 } from './deliveryFloorStyle';
 import { selectDeliveryHumanPhase } from './deliveryHumanPhase';
+import { nextUnloadPieceForLotQr } from './deliveryLoadScan';
 import { useDeliveryLoadMutations, useDeliveryLoadSheetQuery } from './query';
 
 type Props = {
@@ -257,9 +260,11 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
   const { showOfflineBanner } = useNetwork();
   const { showToast } = useToast();
   const goBack = useSmartBack('/(app)/(employee)/(tabs)/tasks');
+  const { openScanner } = useCodeScanner();
   const allowed = can(user, 'delivery.read');
   const [busyPieceId, setBusyPieceId] = useState<string | null>(null);
   const [departConfirmOpen, setDepartConfirmOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const query = useDeliveryLoadSheetQuery(deliveryId, allowed);
   const mutations = useDeliveryLoadMutations(deliveryId);
@@ -273,7 +278,25 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
     canDepart: sheet?.canDepart,
   });
   const phaseLabel = t(humanPhase.labelKey);
-  const phaseWhy = humanPhase.whyKey ? t(humanPhase.whyKey) : null;
+  const phaseWhy = (() => {
+    if (
+      humanPhase.whyKey === 'mobile.deliveryLoad.attentionLoadIncomplete' &&
+      sheet?.loadProgress &&
+      sheet.loadProgress.total > sheet.loadProgress.loaded
+    ) {
+      const missingIndex =
+        sheet.products
+          ?.flatMap((p) => p.pieces)
+          .sort((a, b) => a.pieceIndex - b.pieceIndex)
+          .find((p) => !p.loadedAt)?.pieceIndex ??
+        sheet.loadProgress.loaded + 1;
+      return t('mobile.deliveryLoad.packageMissingDetail', {
+        index: missingIndex,
+        total: sheet.loadProgress.total,
+      });
+    }
+    return humanPhase.whyKey ? t(humanPhase.whyKey) : null;
+  })();
 
   const onToggle = useCallback(
     async (pieceId: string, currentlyLoaded: boolean) => {
@@ -300,6 +323,39 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
     },
     [mutations.check, mutations.uncheck, showToast, t],
   );
+
+  const onScanLotQr = useCallback(async () => {
+    if (departed || scanning) return;
+    setScanning(true);
+    try {
+      const code = await openScanner({
+        title: t('mobile.deliveryLoad.scanPackageTitle'),
+        hint: t('mobile.deliveryLoad.scanPackageHint'),
+      });
+      if (!code || !sheet) return;
+      void haptics.selection();
+      const match = nextUnloadPieceForLotQr(sheet, code);
+      if (match === 'unknown') {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: t('mobile.deliveryLoad.scanUnknownLot'),
+        });
+        return;
+      }
+      if (match === 'already_loaded') {
+        void haptics.confirmLight();
+        showToast({
+          variant: 'success',
+          message: t('mobile.deliveryLoad.scanLotAlreadyLoaded'),
+        });
+        return;
+      }
+      await onToggle(match.pieceId, false);
+    } finally {
+      setScanning(false);
+    }
+  }, [departed, onToggle, openScanner, scanning, sheet, showToast, t]);
 
   const onDepart = useCallback(async () => {
     try {
@@ -620,6 +676,18 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
           <AppText variant="caption" color="muted" align="start">
             {t('mobile.deliveryLoad.packagesHint')}
           </AppText>
+          {!departed ? (
+            <SecondaryButton
+              label={
+                scanning
+                  ? t('mobile.deliveryLoad.scanning')
+                  : t('mobile.deliveryLoad.scanPackageCta')
+              }
+              onPress={() => void onScanLotQr()}
+              disabled={scanning || Boolean(busyPieceId)}
+              style={{ marginTop: theme.spacing.sm, alignSelf: 'stretch' }}
+            />
+          ) : null}
         </View>
 
         {sheet.products.length === 0 ? (
@@ -675,14 +743,34 @@ export function DeliveryLoadSheetScreen({ deliveryId }: Props) {
         )}
 
         {!departed && sheet.canDepart ? (
-          <PrimaryButton
-            label={t('mobile.deliveryLoad.departCta')}
-            onPress={() => {
-              void haptics.selection();
-              setDepartConfirmOpen(true);
-            }}
-            loading={mutations.depart.isPending}
-          />
+          <View style={{ gap: theme.spacing.md, marginTop: theme.spacing.lg }}>
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+                backgroundColor: colors.successSoft,
+                borderWidth: 1,
+                borderColor: colors.success,
+                borderRadius: theme.radius.lg,
+                paddingHorizontal: theme.spacing.md,
+                paddingVertical: theme.spacing.sm + 2,
+              }}
+            >
+              <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+              <AppText variant="body" weight="semibold" style={{ color: colors.success, flex: 1 }}>
+                {t('mobile.deliveryLoad.allPackagesLoaded')}
+              </AppText>
+            </View>
+            <PrimaryButton
+              label={t('mobile.deliveryLoad.departCta')}
+              onPress={() => {
+                void haptics.selection();
+                setDepartConfirmOpen(true);
+              }}
+              loading={mutations.depart.isPending}
+            />
+          </View>
         ) : null}
       </ScrollView>
 

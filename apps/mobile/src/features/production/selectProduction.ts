@@ -61,6 +61,16 @@ export type ProductionCardModel = {
   /** First readiness reason (attention / blocked board). */
   readinessReason: string | null;
   boardBucket: string | null;
+  /** Sales order id for Needs Planning → canonical plan route. */
+  salesOrderId: string | null;
+  plannedStartDate: string | null;
+  actualStartDate: string | null;
+  releasedToFactoryAt: string | null;
+  /**
+   * Presentation-only when Ready for Factory and planned day is today/past.
+   * Never implies lifecycle change.
+   */
+  startDueHint: 'due_today' | 'planned_start_passed' | null;
   /** Explicitly never expose a stages list on cards */
   showStages: false;
 };
@@ -91,6 +101,9 @@ export type ProductionTaskRow = {
   timingStatus: string | null;
   plannedStart: string | null;
   plannedCompletion: string | null;
+  /** Proven timer open / actual bookends — null when unknown. */
+  actualStart: string | null;
+  actualEnd: string | null;
   stageCode: string | null;
   stageDefinitionId: string | null;
   dependsOnCodes: string[];
@@ -139,6 +152,35 @@ function toFiniteCost(value: unknown): number | null {
   return n;
 }
 
+function utcDayMs(value: Date | string): number {
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return NaN;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/** Presentation only — never used to mutate lifecycle. */
+export function productionStartDueHint(
+  item: {
+    plannedStartDate?: string | null;
+    actualStartDate?: string | null;
+    releasedToFactoryAt?: string | null;
+    status?: string | null;
+  },
+  now: Date = new Date(),
+): 'due_today' | 'planned_start_passed' | null {
+  if (item.actualStartDate) return null;
+  if (!item.releasedToFactoryAt) return null;
+  const status = String(item.status ?? '').toUpperCase();
+  if (!['DRAFT', 'PLANNED', 'READY'].includes(status)) return null;
+  if (!item.plannedStartDate) return null;
+  const planned = utcDayMs(item.plannedStartDate);
+  const today = utcDayMs(now);
+  if (!Number.isFinite(planned) || !Number.isFinite(today)) return null;
+  if (planned > today) return null;
+  if (planned === today) return 'due_today';
+  return 'planned_start_passed';
+}
+
 export function selectProductionCard(
   item: ProductionOrderListItem,
   locale: string,
@@ -166,6 +208,11 @@ export function selectProductionCard(
     boardBucket: item.readiness?.boardBucket
       ? String(item.readiness.boardBucket)
       : null,
+    salesOrderId: item.salesOrder?.id ?? null,
+    plannedStartDate: item.plannedStartDate ?? null,
+    actualStartDate: item.actualStartDate ?? null,
+    releasedToFactoryAt: item.releasedToFactoryAt ?? null,
+    startDueHint: productionStartDueHint(item),
     showStages: false,
   };
 }
@@ -284,6 +331,8 @@ export function selectProductionDetail(
       plannedStart: task.plannedStart ?? null,
       plannedCompletion:
         task.plannedCompletion ?? task.timing?.plannedCompletion ?? null,
+      actualStart: task.timing?.openStartedAt ?? null,
+      actualEnd: task.actualCompletion ?? null,
       stageCode,
       stageDefinitionId: task.stageDefinition?.id ?? null,
       dependsOnCodes: stageCode ? dependsByCode.get(stageCode) ?? [] : [],

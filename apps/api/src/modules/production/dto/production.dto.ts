@@ -55,6 +55,41 @@ export class ListProductionOrdersDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   assignedEmployeeId?: string;
+
+  /** Factory-local YYYY-MM-DD day lens (view/filter only — zero writes). */
+  @ApiPropertyOptional({ description: 'Factory-local date YYYY-MM-DD for day lens' })
+  @IsOptional()
+  @IsString()
+  onDate?: string;
+
+  /** planned = plan intervals; actual = real event timestamps */
+  @ApiPropertyOptional({ enum: ['planned', 'actual'] })
+  @IsOptional()
+  @IsIn(['planned', 'actual'])
+  dateMode?: 'planned' | 'actual';
+}
+
+export class ProductionDaySummaryQueryDto {
+  @ApiPropertyOptional({ description: 'Factory-local date YYYY-MM-DD (default: factory today)' })
+  @IsOptional()
+  @IsString()
+  onDate?: string;
+
+  /** planned | actual — scopes board lane counts to the day lens mode */
+  @ApiPropertyOptional({ enum: ['planned', 'actual'] })
+  @IsOptional()
+  @IsIn(['planned', 'actual'])
+  dateMode?: 'planned' | 'actual';
+
+  @ApiPropertyOptional({ enum: PRODUCTION_LIST_BUCKETS })
+  @IsOptional()
+  @IsIn([...PRODUCTION_LIST_BUCKETS])
+  bucket?: ProductionListBucket;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 }
 
 export class UpdateProductionOrderDto {

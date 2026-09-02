@@ -20,9 +20,15 @@ type Props = {
   lifecycleKey: AdminOrderLifecycle;
   title: string;
   items: OrdersProgressCardModel[];
+  /**
+   * Server COUNT=DATASET total for this lane. Required on All overview —
+   * never use loaded page length for the badge (that showed Preparing 0 / In production 8).
+   */
+  totalCount?: number;
   /** Overview (All) vs single focused lane. */
   mode: 'preview' | 'focused';
   onPressItem: (id: string, kind?: 'order' | 'rfq') => void;
+  onPrimaryCta?: (order: OrdersProgressCardModel) => void;
   onOpenFocused?: () => void;
   hint?: string | null;
 };
@@ -51,18 +57,24 @@ export function AdminLifecycleTray({
   lifecycleKey,
   title,
   items,
+  totalCount,
   mode,
   onPressItem,
+  onPrimaryCta,
   onOpenFocused,
   hint,
 }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
-  const count = items.length;
+  const count = Math.max(0, totalCount ?? items.length);
   const accent = trayAccent(lifecycleKey, colors);
   const isPreview = mode === 'preview';
   const list = isPreview ? items.slice(0, PREVIEW_COUNT) : items;
-  const hiddenCount = isPreview ? Math.max(0, count - list.length) : 0;
+  // Remaining beyond the preview strip — prefer server total when All overview
+  // only has a mixed page of rows in memory.
+  const hiddenCount = isPreview
+    ? Math.max(0, count - list.length)
+    : 0;
 
   return (
     <View
@@ -212,10 +224,22 @@ export function AdminLifecycleTray({
             variant="admin"
             layout="stack"
             onPress={() => onPressItem(item.id, item.kind)}
+            onPrimaryCta={onPrimaryCta ? () => onPrimaryCta(item) : undefined}
           />
         ))}
 
-        {isPreview && hiddenCount > 0 && onOpenFocused ? (
+        {isPreview && list.length === 0 && count > 0 && onOpenFocused ? (
+          <OpenSectionRow
+            isRTL={isRTL}
+            label={t('mobile.orders.traySeeAll', { count })}
+            onPress={() => {
+              void haptics.selection();
+              onOpenFocused();
+            }}
+          />
+        ) : null}
+
+        {isPreview && hiddenCount > 0 && list.length > 0 && onOpenFocused ? (
           <OpenSectionRow
             isRTL={isRTL}
             label={t('mobile.orders.traySeeAll', { count: hiddenCount })}

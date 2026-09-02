@@ -12,6 +12,7 @@ import { InlineDateCalendar } from '@/components/calendar';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
+import { DealerFormFooter } from '@/features/dealers/components/dealerSheetForm';
 import { productionInsetStyle } from '../productionFloorStyle';
 import {
   defaultAssignWindowParts,
@@ -25,8 +26,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AssignableWorker, ProductionPriority } from '../api';
 import type { ProductionTaskRow } from '../selectProduction';
 import { workersForStage } from '../selectProduction';
-import type { AssignScheduleConflict } from './AssignWorkerSheet';
+import type { AssignScheduleConflict } from '../assignTypes';
 import { AssignConflictBoard } from './AssignConflictBoard';
+import { WorkerDayBoard } from './WorkerDayBoard';
 import { PriorityTouchBar } from './PriorityTouchBar';
 import { HoursMinutesRow } from './HoursMinutesRow';
 import {
@@ -45,11 +47,20 @@ type ProductionTaskSheetProps = {
   workersLoading?: boolean;
   canAssign: boolean;
   canUpdateTask: boolean;
+  /**
+   * view = execution dossier (default for active production).
+   * manage = explicit exception assign/window edits.
+   * plan = pre-release planning assign.
+   */
+  intent?: 'view' | 'manage' | 'plan';
+  onRequestManage?: () => void;
   canOverrideConflict?: boolean;
   assignLoading?: boolean;
   notesLoading?: boolean;
   holdLoading?: boolean;
   blockLoading?: boolean;
+  /** Order-level production start date from the plan (assign defaults). */
+  orderPlannedStartDate?: string | null;
   scheduleConflict?: AssignScheduleConflict | null;
   onClearScheduleConflict?: () => void;
   onWindowChange?: (window: {
@@ -168,11 +179,14 @@ export function ProductionTaskSheet({
   workersLoading = false,
   canAssign,
   canUpdateTask,
+  intent = 'plan',
+  onRequestManage,
   canOverrideConflict = false,
   assignLoading,
   notesLoading,
   holdLoading,
   blockLoading,
+  orderPlannedStartDate = null,
   scheduleConflict = null,
   onClearScheduleConflict,
   onWindowChange,
@@ -217,6 +231,7 @@ export function ProductionTaskSheet({
       plannedStart: task.plannedStart,
       plannedCompletion: task.plannedCompletion,
       estimatedMinutes: task.estimatedMinutes,
+      orderPlannedStartDate,
     });
     setStartDate(parts.start.ymd);
     setStartHour(parts.start.hour);
@@ -228,7 +243,7 @@ export function ProductionTaskSheet({
     setEstMinutes(parts.estMinutes);
     // Only reset when the sheet opens or a different task is shown — not when the
     // same task refreshes after assign/notes (that was kicking users back to detail).
-  }, [open, task?.id]);
+  }, [open, task?.id, orderPlannedStartDate]);
 
   useEffect(() => {
     if (!open || !onWindowChange) return;
@@ -299,11 +314,13 @@ export function ProductionTaskSheet({
     draftWorker?.suggestedWindow ??
     null;
 
-  const applySuggested = () => {
-    if (!suggested) return;
+  const applyAssignWindow = (window: {
+    plannedStart: string;
+    plannedCompletion: string;
+  }) => {
     const parts = defaultAssignWindowParts({
-      plannedStart: suggested.plannedStart,
-      plannedCompletion: suggested.plannedCompletion,
+      plannedStart: window.plannedStart,
+      plannedCompletion: window.plannedCompletion,
     });
     setStartDate(parts.start.ymd);
     setStartHour(parts.start.hour);
@@ -315,8 +332,16 @@ export function ProductionTaskSheet({
     onClearScheduleConflict?.();
   };
 
-  const listMaxHeight = Math.round(Dimensions.get('window').height * 0.32);
-  const bodyMaxHeight = Math.round(Dimensions.get('window').height * 0.55);
+  const applySuggested = () => {
+    if (!suggested) return;
+    applyAssignWindow(suggested);
+  };
+
+  const windowH = Dimensions.get('window').height;
+  const pageSheetHeight = Math.max(
+    320,
+    Math.round(windowH - Math.max(insets.top, 12) - 8),
+  );
 
   if (!task) {
     return (
@@ -324,7 +349,7 @@ export function ProductionTaskSheet({
         open={open}
         onClose={onClose}
         title={t('mobile.production.taskDetail')}
-        fitContent
+        sheetHeight={pageSheetHeight}
       >
         <View />
       </BottomSheet>
@@ -333,7 +358,10 @@ export function ProductionTaskSheet({
 
   const pct = Math.max(0, Math.min(100, Math.round(task.progressPercent || 0)));
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const showAssign = canAssign && task.canAssign;
+  const showAssign =
+    (intent === 'plan' || intent === 'manage') && canAssign && Boolean(task?.canAssign);
+  const showManageEntry =
+    intent === 'view' && canUpdateTask && Boolean(onRequestManage);
   const displayedWorkerName =
     draftWorkerName ?? task.assigneeName ?? t('mobile.production.unassigned');
   const conflictBlocksAssign =
@@ -345,16 +373,18 @@ export function ProductionTaskSheet({
       : mode === 'block'
         ? t('mobile.production.block')
         : task.name;
+  const workersListStyle = { flex: 1, minHeight: 0 } as const;
+  const detailBodyStyle = { flex: 1, minHeight: 0 } as const;
 
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
       title={sheetTitle}
-      fitContent
+      sheetHeight={pageSheetHeight}
     >
       {mode === 'workers' ? (
-        <View style={{ gap: theme.spacing.md, paddingBottom: bottomPad }}>
+        <View style={{ gap: theme.spacing.md, paddingBottom: bottomPad, flex: 1, minHeight: 0 }}>
           <AppText variant="caption" color="muted">
             {task.responsibleDepartment
               ? t('mobile.production.workersForStage')
@@ -368,7 +398,8 @@ export function ProductionTaskSheet({
             returnKeyType="search"
           />
           <ScrollView
-            style={{ maxHeight: listMaxHeight }}
+            style={workersListStyle}
+            contentContainerStyle={{ gap: theme.spacing.lg }}
             keyboardShouldPersistTaps="handled"
             nestedScrollEnabled
           >
@@ -513,36 +544,64 @@ export function ProductionTaskSheet({
               ) : null}
             </View>
             </DealerBoard>
+
+            {draftWorker && startDate.trim() ? (
+              <WorkerDayBoard
+                workerName={`${draftWorker.firstName} ${draftWorker.lastName}`.trim()}
+                dayYmd={startDate.trim()}
+                busy={(draftWorker.dayWindows ?? draftWorker.overlapWindows ?? []).map(
+                  (w) => ({
+                    startMs: new Date(w.start).getTime(),
+                    endMs: new Date(w.end).getTime(),
+                    label: w.label,
+                    salesOrderNumber:
+                      'salesOrderNumber' in w
+                        ? (w as { salesOrderNumber?: string | null }).salesOrderNumber
+                        : null,
+                    stage:
+                      'stage' in w
+                        ? (w as { stage?: string | null }).stage
+                        : null,
+                  }),
+                )}
+                proposed={(() => {
+                  const startIso = buildDueIso(
+                    startDate.trim(),
+                    Number(startHour) || 0,
+                    Number(startMinute) || 0,
+                  );
+                  const endIso = buildDueIso(
+                    dueDate.trim(),
+                    Number(dueHour) || 0,
+                    Number(dueMinute) || 0,
+                  );
+                  if (!startIso || !endIso) return null;
+                  return {
+                    startMs: new Date(startIso).getTime(),
+                    endMs: new Date(endIso).getTime(),
+                  };
+                })()}
+                estimatedMinutes={hoursMinutesToTotalMinutes(
+                  Number(estHours) || 0,
+                  Number(estMinutes) || 0,
+                )}
+                onApplySuggestedWindow={applyAssignWindow}
+                onPickWindow={applyAssignWindow}
+              />
+            ) : null}
           </ScrollView>
 
-          <View
-            style={{
-              flexDirection: isRTL ? 'row-reverse' : 'row',
-              gap: theme.spacing.sm,
+          <DealerFormFooter
+            confirmLabel={t('mobile.production.confirm')}
+            disabled={!selectedWorkerId}
+            onConfirm={() => {
+              if (!selectedWorkerId) return;
+              void haptics.selection();
+              // Keep selection and return to details — Assign there submits.
+              setMode('detail');
             }}
-          >
-            <View style={{ flex: 1 }}>
-              <PillButton
-                label={t('mobile.production.cancel')}
-                variant="secondary"
-                onPress={() => setMode('detail')}
-              />
-            </View>
-            <View style={{ flex: 1.35 }}>
-              <PillButton
-                label={t('mobile.production.confirm')}
-                variant="primary"
-                disabled={!selectedWorkerId}
-                icon="checkmark"
-                onPress={() => {
-                  if (!selectedWorkerId) return;
-                  void haptics.selection();
-                  // Keep selection and return to details — Assign there submits.
-                  setMode('detail');
-                }}
-              />
-            </View>
-          </View>
+            onCancel={() => setMode('detail')}
+          />
         </View>
       ) : mode === 'block' ? (
         <View style={{ gap: theme.spacing.md, paddingBottom: bottomPad }}>
@@ -590,7 +649,7 @@ export function ProductionTaskSheet({
         </View>
       ) : (
         <ScrollView
-          style={{ maxHeight: bodyMaxHeight }}
+          style={detailBodyStyle}
           contentContainerStyle={{
             gap: theme.spacing.md,
             paddingBottom: bottomPad,
@@ -685,14 +744,60 @@ export function ProductionTaskSheet({
                   />
                 </AnimatedPressable>
               ) : (
-                <View style={{ gap: 4 }}>
+                <View style={{ gap: theme.spacing.sm }}>
                   <AppText variant="label" weight={titleWeight}>
                     {task.assigneeName ?? t('mobile.production.unassigned')}
                   </AppText>
-                  {!task.isCompleted ? (
+                  {intent === 'view' ? (
+                    <View style={productionInsetStyle(theme, colors)}>
+                      <AppText variant="caption" color="muted">
+                        {t('mobile.production.dossier.plannedWindow')}
+                      </AppText>
+                      <AppText variant="caption" weight="medium">
+                        {[task.plannedStart, task.plannedCompletion]
+                          .map((v) =>
+                            v
+                              ? new Date(v).toLocaleString(locale, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '—',
+                          )
+                          .join(' → ')}
+                      </AppText>
+                      <AppText variant="caption" color="muted" style={{ marginTop: 6 }}>
+                        {t('mobile.production.dossier.actualWindow')}
+                      </AppText>
+                      <AppText variant="caption" weight="medium">
+                        {[task.actualStart, task.actualEnd]
+                          .map((v) =>
+                            v
+                              ? new Date(v).toLocaleString(locale, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '—',
+                          )
+                          .join(' → ')}
+                      </AppText>
+                    </View>
+                  ) : !task.isCompleted ? (
                     <AppText variant="caption" color="muted">
                       {t('mobile.production.stageAssignLocked')}
                     </AppText>
+                  ) : null}
+                  {showManageEntry ? (
+                    <PillButton
+                      label={t('mobile.production.manage.cta')}
+                      icon="construct-outline"
+                      onPress={() => {
+                        onRequestManage?.();
+                      }}
+                    />
                   ) : null}
                 </View>
               )}
@@ -759,6 +864,17 @@ export function ProductionTaskSheet({
                 onToggleOverride={() => setOverrideConflict((v) => !v)}
                 hasSuggestedSlot={Boolean(suggested)}
                 onUseSuggestedSlot={applySuggested}
+                onViewWorkerDay={() => setMode('workers')}
+                onChangeTime={() => {
+                  setOverrideConflict(false);
+                  onClearScheduleConflict?.();
+                }}
+                onChooseAnotherWorker={() => {
+                  setSelectedWorkerId('');
+                  setOverrideConflict(false);
+                  onClearScheduleConflict?.();
+                  setMode('workers');
+                }}
               />
             ) : null}
 

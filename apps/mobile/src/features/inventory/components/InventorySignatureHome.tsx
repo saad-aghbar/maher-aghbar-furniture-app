@@ -31,7 +31,7 @@ import {
   type InventoryCategoryGroup,
   type InventoryItem,
 } from '../api';
-import { resolveInventoryScan } from '../resolveInventoryScan';
+import { isFinishedScanLot, resolveInventoryScan } from '../resolveInventoryScan';
 import { toGoodsReceiptArgs } from '../stockMoveSubmit';
 import {
   inventoryGroupRouteTitle,
@@ -504,6 +504,24 @@ export function InventorySignatureHome({
     if (!code) return;
     void haptics.selection();
     const resolved = await resolveInventoryScan(code);
+    if (resolved.status === 'FOUND_KIT') {
+      void haptics.confirmLight();
+      setInspectKitSeed(resolved.kit);
+      setInspectKitId(resolved.kit.id);
+      return;
+    }
+    if (resolved.status === 'FOUND_LOT') {
+      void haptics.confirmLight();
+      if (isFinishedScanLot(resolved.lot)) {
+        setInspectFgLot(resolved.lot as FinishedLot);
+      } else if (resolved.lot.wipKit?.id) {
+        setInspectKitSeed(null);
+        setInspectKitId(resolved.lot.wipKit.id);
+      } else {
+        setInspectLot(resolved.lot);
+      }
+      return;
+    }
     if (resolved.status === 'FOUND') {
       void haptics.confirmLight();
       setScanResult(resolved.item);

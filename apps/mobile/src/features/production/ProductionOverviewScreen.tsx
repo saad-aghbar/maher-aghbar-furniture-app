@@ -23,13 +23,17 @@ import {
 } from '@/motion';
 import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
-import type { ProductionListBucket } from './api';
+import type { ProductionDateMode, ProductionListBucket } from './api';
 import { ProductionDealerBar } from './components/ProductionDealerBar';
 import { ProductionDealerSheet } from './components/ProductionDealerSheet';
+import { ProductionDayLensBoard } from './components/ProductionDayLensBoard';
+import { ProductionDayOrderCard } from './components/ProductionDayOrderCard';
 import { ProductionOrderCard } from './components/ProductionOrderCard';
 import { ProductionListSkeleton } from './components/ProductionSkeleton';
+import { deviceLocalTodayYmd } from './factoryLocalDay';
 import {
   flattenProductionOrderPages,
+  useProductionDaySummaryQuery,
   useProductionDealersQuery,
   useProductionOrdersInfiniteQuery,
   useProductionSummaryQuery,
@@ -89,6 +93,11 @@ export function ProductionOverviewScreen() {
   const [dealerId, setDealerId] = useState<string | null>(null);
   const [dealerLabel, setDealerLabel] = useState<string | null>(null);
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
+  const [onDate, setOnDate] = useState(deviceLocalTodayYmd());
+  const [dateMode, setDateMode] = useState<ProductionDateMode>('planned');
+  const [dateScope, setDateScope] = useState<'day' | 'all'>('day');
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [factoryTodayYmd, setFactoryTodayYmd] = useState(deviceLocalTodayYmd());
 
   useEffect(() => {
     const raw = String(params.bucket ?? params.section ?? '');
@@ -113,18 +122,36 @@ export function ProductionOverviewScreen() {
   }, [searchInput, q]);
 
   const summaryQuery = useProductionSummaryQuery(allowed);
+  const daySummaryQuery = useProductionDaySummaryQuery(
+    {
+      onDate,
+      dateMode,
+      bucket,
+      customerId: dealerId ?? undefined,
+    },
+    allowed && dateScope === 'day',
+  );
   const dealersQuery = useProductionDealersQuery(allowed);
   const listQuery = useProductionOrdersInfiniteQuery(
     {
       bucket,
       q: q || undefined,
       customerId: dealerId ?? undefined,
+      onDate: dateScope === 'day' ? onDate : undefined,
+      dateMode: dateScope === 'day' ? dateMode : undefined,
     },
     allowed,
   );
 
+  useEffect(() => {
+    const today = daySummaryQuery.data?.factoryTodayYmd;
+    if (today) setFactoryTodayYmd(today);
+  }, [daySummaryQuery.data?.factoryTodayYmd]);
+
   const refreshing =
-    (summaryQuery.isRefetching || listQuery.isRefetching) &&
+    (summaryQuery.isRefetching ||
+      listQuery.isRefetching ||
+      daySummaryQuery.isRefetching) &&
     !listQuery.isFetchingNextPage &&
     !listQuery.isPlaceholderData;
 
@@ -134,12 +161,9 @@ export function ProductionOverviewScreen() {
     !listQuery.isFetchingNextPage &&
     Boolean(listQuery.data);
 
-  const cards = useMemo(
-    () =>
-      flattenProductionOrderPages(listQuery.data).map((item) =>
-        selectProductionCard(item, locale),
-      ),
-    [listQuery.data, locale],
+  const listItems = useMemo(
+    () => flattenProductionOrderPages(listQuery.data),
+    [listQuery.data],
   );
 
   useEffect(() => {
@@ -198,43 +222,66 @@ export function ProductionOverviewScreen() {
   }
 
   const summary = summaryQuery.data;
+  const dayBoard = daySummaryQuery.data?.board;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
 
-  const setupMetrics: MetricDef[] | null = summary
+  // All time → full production-summary lanes. By day → day-scoped board counts.
+  const boardCounts =
+    dateScope === 'all'
+      ? summary
+        ? {
+            needsSetup: summary.needsSetup ?? 0,
+            readyToStart: summary.readyToStart ?? 0,
+            onFloor: summary.onFloor ?? 0,
+            blocked: summary.blocked ?? 0,
+            inspectionPackaging: summary.inspectionPackaging ?? 0,
+          }
+        : null
+      : dayBoard
+        ? {
+            needsSetup: dayBoard.needsSetup,
+            readyToStart: dayBoard.readyToStart,
+            onFloor: dayBoard.onFloor,
+            blocked: dayBoard.blocked,
+            inspectionPackaging: dayBoard.inspectionPackaging,
+          }
+        : null;
+
+  const setupMetrics: MetricDef[] | null = boardCounts
     ? [
         {
           key: 'needs_setup',
           label: t('mobile.production.needsSetup'),
-          value: summary.needsSetup ?? 0,
+          value: boardCounts.needsSetup,
           accent: 'warning',
         },
         {
           key: 'ready_to_start',
           label: t('mobile.production.readyToStart'),
-          value: summary.readyToStart ?? 0,
+          value: boardCounts.readyToStart,
           accent: 'brand',
         },
         {
           key: 'on_floor',
           label: t('mobile.production.onFloor'),
-          value: summary.onFloor ?? 0,
+          value: boardCounts.onFloor,
           accent: 'info',
         },
       ]
     : null;
 
-  const attentionMetrics: MetricDef[] | null = summary
+  const attentionMetrics: MetricDef[] | null = boardCounts
     ? [
         {
           key: 'blocked',
           label: t('mobile.production.blocked'),
-          value: summary.blocked ?? 0,
-          accent: summary.blocked && summary.blocked > 0 ? 'late' : undefined,
+          value: boardCounts.blocked,
+          accent: boardCounts.blocked > 0 ? 'late' : undefined,
         },
         {
           key: 'inspection_packaging',
           label: t('mobile.production.inspectionPackaging'),
-          value: summary.inspectionPackaging ?? 0,
+          value: boardCounts.inspectionPackaging,
           accent: 'success',
         },
       ]
@@ -245,10 +292,10 @@ export function ProductionOverviewScreen() {
       {showOfflineBanner ? <OfflineBanner /> : null}
       <FlatList
         ref={listRef}
-        data={cards}
+        data={listItems}
         keyExtractor={(item) => item.id}
         style={{ opacity: isFilterUpdating ? 0.72 : 1 }}
-        extraData={`${bucket}:${q}:${dealerId}:${isFilterUpdating}`}
+        extraData={`${bucket}:${q}:${dealerId}:${dateScope}:${onDate}:${dateMode}:${isFilterUpdating}`}
         contentContainerStyle={{
           gap: theme.spacing.md,
           paddingBottom: listBottomPad,
@@ -260,6 +307,7 @@ export function ProductionOverviewScreen() {
             refreshing={refreshing}
             onRefresh={() => {
               void summaryQuery.refetch();
+              void daySummaryQuery.refetch();
               void listQuery.refetch();
             }}
           />
@@ -283,6 +331,32 @@ export function ProductionOverviewScreen() {
             ) : null}
             <ToastClearance />
             <ProductionHubTitle titleWeight={titleWeight} />
+
+            <ProductionDayLensBoard
+              dateScope={dateScope}
+              onDate={onDate}
+              dateMode={dateMode}
+              factoryTodayYmd={factoryTodayYmd}
+              summary={daySummaryQuery.data ?? null}
+              onChangeScope={(scope) => {
+                setStaggerListEnter(false);
+                setDateScope(scope);
+                listRef.current?.scrollToOffset({ offset: 0, animated: false });
+              }}
+              onChangeDate={(ymd) => {
+                setStaggerListEnter(false);
+                setDateScope('day');
+                setOnDate(ymd);
+                listRef.current?.scrollToOffset({ offset: 0, animated: false });
+              }}
+              onChangeMode={(mode) => {
+                setStaggerListEnter(false);
+                setDateMode(mode);
+                listRef.current?.scrollToOffset({ offset: 0, animated: false });
+              }}
+              calendarOpen={calendarOpen}
+              onCalendarOpenChange={setCalendarOpen}
+            />
 
             {canWorkflow ? (
               <AnimatedPressable
@@ -477,9 +551,9 @@ export function ProductionOverviewScreen() {
           </View>
         }
         ListEmptyComponent={
-          listQuery.isFetching && cards.length === 0 ? (
+          listQuery.isFetching && listItems.length === 0 ? (
             <ProductionListSkeleton />
-          ) : cards.length === 0 && !listQuery.isFetching ? (
+          ) : listItems.length === 0 && !listQuery.isFetching ? (
             <DealerEmptyPanel
               icon="construct-outline"
               text={
@@ -487,7 +561,13 @@ export function ProductionOverviewScreen() {
                   ? t('mobile.production.emptyDealerBody', { dealer: dealerLabel })
                   : q
                     ? t('mobile.production.emptySearchBody')
-                    : t('mobile.production.emptyBody')
+                    : dateScope === 'all'
+                      ? t('mobile.production.emptyBody')
+                      : dateMode === 'planned'
+                        ? t('mobile.production.dayLens.emptyPlanned')
+                        : daySummaryQuery.data?.isFuture
+                          ? t('mobile.production.dayLens.emptyActualFuture')
+                          : t('mobile.production.dayLens.emptyActual')
               }
             />
           ) : null
@@ -505,17 +585,28 @@ export function ProductionOverviewScreen() {
             ) : null}
           </View>
         }
-        renderItem={({ item, index }) => (
-          <ListItemEnter index={index} enabled={staggerListEnter}>
-            <ProductionOrderCard
-              order={item}
-              onPress={() => {
-                void haptics.selection();
-                router.push(`/(app)/(admin)/production/${item.id}` as Href);
-              }}
-            />
-          </ListItemEnter>
-        )}
+        renderItem={({ item, index }) => {
+          const card = selectProductionCard(item, locale);
+          const openOrder = () => {
+            void haptics.selection();
+            const soId = item.salesOrder?.id ?? card.salesOrderId;
+            const released = Boolean(item.releasedToFactoryAt);
+            if ((!released || bucket === 'needs_setup') && soId) {
+              router.push(`/(app)/(admin)/orders/${soId}/production-plan` as Href);
+              return;
+            }
+            router.push(`/(app)/(admin)/production/${item.id}` as Href);
+          };
+          return (
+            <ListItemEnter index={index} enabled={staggerListEnter}>
+              {dateScope === 'all' ? (
+                <ProductionOrderCard order={card} onPress={openOrder} />
+              ) : (
+                <ProductionDayOrderCard order={item} onPress={openOrder} />
+              )}
+            </ListItemEnter>
+          );
+        }}
       />
       <ProductionDealerSheet
         open={dealerSheetOpen}

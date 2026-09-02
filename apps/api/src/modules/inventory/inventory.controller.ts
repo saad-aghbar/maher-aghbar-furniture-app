@@ -371,6 +371,12 @@ export class InventoryController {
     return this.inventory.listFinishedLots(query);
   }
 
+  @Get('lots/by-code/:code')
+  @RequirePermissions('inventory.read')
+  async getLotByCode(@Param('code') code: string) {
+    return this.inventory.findLotByCode(decodeURIComponent(code));
+  }
+
   @Get('lots/:id')
   @RequirePermissions('inventory.read')
   async getLot(@Param('id') id: string) {

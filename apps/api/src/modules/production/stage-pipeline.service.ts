@@ -3,6 +3,7 @@ import { DeliveryStatus, InventoryTracking, Prisma, QualityResult } from '@maher
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { calculateWorkflowProgress } from './workflow/domain';
+import { resolveProductionOrderRollupStatus } from './factory-release';
 
 type Tx = Prisma.TransactionClient;
 
@@ -258,8 +259,14 @@ export class StagePipelineService {
 
     const poForClose = await db.productionOrder.findUnique({
       where: { id: productionOrderId },
-      select: { salesOrderId: true },
+      select: {
+        salesOrderId: true,
+        status: true,
+        actualStartDate: true,
+        releasedToFactoryAt: true,
+      },
     });
+    const poBefore = poForClose;
 
     let allComplete = manufacturingComplete;
     if (manufacturingComplete && poForClose?.salesOrderId) {
@@ -369,14 +376,26 @@ export class StagePipelineService {
           : {
               progressPercent,
               currentStageCode: active?.stageDefinition.code ?? null,
-              status: 'IN_PROGRESS',
+              status: resolveProductionOrderRollupStatus({
+                allComplete: false,
+                readyForDelivery: false,
+                floorStarted:
+                  Boolean(poBefore?.actualStartDate) ||
+                  manufacturingStages.some((s) =>
+                    ['IN_PROGRESS', 'COMPLETED', 'BLOCKED'].includes(s.status),
+                  ),
+                currentStatus: poBefore?.status,
+                releasedToFactoryAt: poBefore?.releasedToFactoryAt,
+              }),
             },
     });
 
-    const po = await db.productionOrder.findUnique({
-      where: { id: productionOrderId },
-      select: { salesOrderId: true },
-    });
+    const po = poBefore
+      ? { salesOrderId: poBefore.salesOrderId }
+      : await db.productionOrder.findUnique({
+          where: { id: productionOrderId },
+          select: { salesOrderId: true },
+        });
     if (po?.salesOrderId && (allComplete || readyForDelivery)) {
       const siblings = await db.productionOrder.findMany({
         where: {

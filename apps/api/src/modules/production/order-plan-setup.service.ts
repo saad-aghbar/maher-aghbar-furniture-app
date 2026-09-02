@@ -86,10 +86,13 @@ export class OrderPlanSetupService {
             imageUrl: true,
           },
         },
+        // plannedStartDate is a scalar on ProductionOrder (always selected).
         salesOrder: {
           select: {
             id: true,
             number: true,
+            requiredDeliveryDate: true,
+            committedDeliveryDate: true,
             customer: {
               select: {
                 id: true,
@@ -401,6 +404,15 @@ export class OrderPlanSetupService {
       salesOrderLineId: po.salesOrderLineId,
       planEditable,
       factoryReleased: Boolean(po.releasedToFactoryAt),
+      plannedStartDate: po.plannedStartDate?.toISOString() ?? null,
+      requiredDeliveryDate:
+        po.requiredDeliveryDate?.toISOString() ??
+        po.salesOrder?.requiredDeliveryDate?.toISOString() ??
+        null,
+      committedDeliveryDate:
+        po.committedDeliveryDate?.toISOString() ??
+        po.salesOrder?.committedDeliveryDate?.toISOString() ??
+        null,
       product: po.product
         ? {
             id: po.product.id,
@@ -452,10 +464,12 @@ export class OrderPlanSetupService {
         const missingDates = executableTasks
           .filter((t) => !taskHasPlannedTiming(t))
           .map((t) => t.id);
+        const hasProductionStart = Boolean(po.plannedStartDate);
         return {
           hasWorkflow: Boolean(workflow?.id),
           hasMaterials: bomLines.length > 0,
           hasExecutableTasks: executableTasks.length > 0,
+          hasProductionStart,
           assignment: {
             required: executableTasks.length,
             assigned: executableTasks.filter((t) => t.assignedEmployeeId).length,
@@ -471,6 +485,7 @@ export class OrderPlanSetupService {
             Boolean(workflow?.id) &&
             bomLines.length > 0 &&
             executableTasks.length > 0 &&
+            hasProductionStart &&
             missingAssignment.length === 0 &&
             missingDates.length === 0,
         };
@@ -531,22 +546,67 @@ export class OrderPlanSetupService {
 
     const bomLines = dto.bomLines;
     if (bomLines) {
-      const resolved = await this.resolveBomRows(bomLines);
-      const claimed = new Map<string, number>();
+      // Stages often still claim workflow defaults (e.g. MAT-BEECH × 4) while the
+      // admin is editing the order BOM (adding fabric). Auto-expand the BOM to
+      // cover stage claims so Save never blocks on “4 > 0”.
+      const claimed = new Map<
+        string,
+        { qty: number; inventoryItemId?: string | null; unit?: string }
+      >();
       for (const stage of stages) {
         for (const row of stage.materialInputs ?? []) {
           const sku = String(row.sku ?? '').trim();
           if (!sku) continue;
-          claimed.set(sku, (claimed.get(sku) ?? 0) + Number(row.qtyPerUnit || 0));
+          const prev = claimed.get(sku);
+          claimed.set(sku, {
+            qty: (prev?.qty ?? 0) + Number(row.qtyPerUnit || 0),
+            inventoryItemId: row.inventoryItemId ?? prev?.inventoryItemId ?? null,
+            unit: row.unit ?? prev?.unit,
+          });
         }
       }
-      for (const [sku, qty] of claimed) {
-        const bom = resolved.find((r) => r.sku === sku);
-        const pool = bom ? bom.expectedQty : 0;
-        if (qty > pool + 1e-6) {
+
+      const mergedBom: OrderPlanBomLineInput[] = bomLines.map((b) => ({ ...b }));
+      const indexBySku = new Map<string, number>();
+      for (let i = 0; i < mergedBom.length; i++) {
+        const sku = String(mergedBom[i]?.sku ?? '').trim().toUpperCase();
+        if (sku) indexBySku.set(sku, i);
+      }
+      for (const [sku, claim] of claimed) {
+        const key = sku.toUpperCase();
+        const idx = indexBySku.get(key);
+        if (idx == null) {
+          mergedBom.push({
+            inventoryItemId: claim.inventoryItemId ?? null,
+            sku,
+            displayName: sku,
+            unit: claim.unit || 'pcs',
+            expectedQty: claim.qty,
+            source: 'FACTORY_MODIFIED',
+            needsReview: !claim.inventoryItemId,
+          });
+          indexBySku.set(key, mergedBom.length - 1);
+        } else {
+          const line = mergedBom[idx]!;
+          if (Number(line.expectedQty) + 1e-6 < claim.qty) {
+            line.expectedQty = claim.qty;
+          }
+        }
+      }
+
+      const resolved = await this.resolveBomRows(mergedBom);
+      const poolBySku = new Map<string, number>();
+      for (const row of resolved) {
+        const sku = String(row.sku ?? '').trim();
+        if (!sku) continue;
+        poolBySku.set(sku, (poolBySku.get(sku) ?? 0) + Number(row.expectedQty || 0));
+      }
+      for (const [sku, claim] of claimed) {
+        const pool = poolBySku.get(sku) ?? 0;
+        if (claim.qty > pool + 1e-6) {
           throw new BadRequestException({
             code: 'BOM_CLAIM_EXCEEDED',
-            message: `Stage materials for ${sku} exceed the order BOM (${qty} > ${pool}).`,
+            message: `Stage materials for ${sku} exceed the order BOM (${claim.qty} > ${pool}).`,
           });
         }
       }

@@ -903,11 +903,15 @@ export class MaterialUsageService {
         returnWarehouse: {
           select: { id: true, code: true, nameEn: true, nameAr: true, nameHe: true },
         },
+        recordedBy: { select: { id: true, firstName: true, lastName: true } },
         task: {
           select: {
             id: true,
             number: true,
             stageDefinition: { select: { code: true, nameEn: true, nameAr: true, nameHe: true } },
+            assignedEmployee: {
+              select: { id: true, firstName: true, lastName: true },
+            },
           },
         },
       },
@@ -920,6 +924,11 @@ export class MaterialUsageService {
       nameEn: string;
       nameAr: string;
       nameHe: string | null;
+    } | null;
+    type PersonStamp = {
+      id: string;
+      firstName: string;
+      lastName: string;
     } | null;
     type Acc = {
       inventoryItemId: string;
@@ -947,6 +956,11 @@ export class MaterialUsageService {
         returnedQty: number;
         issueWarehouse: WhStamp;
         returnWarehouse: WhStamp;
+        /** Proven only when usage row has recordedBy. */
+        recordedBy: PersonStamp;
+        /** Proven only when linked task has an assignee. */
+        assignedEmployee: PersonStamp;
+        recordedAt: string | null;
       }>;
     };
     const byItem = new Map<string, Acc>();
@@ -1034,6 +1048,23 @@ export class MaterialUsageService {
               nameAr: usage.returnWarehouse.nameAr,
               nameHe: usage.returnWarehouse.nameHe,
             }
+          : null,
+        recordedBy: usage.recordedBy
+          ? {
+              id: usage.recordedBy.id,
+              firstName: usage.recordedBy.firstName,
+              lastName: usage.recordedBy.lastName,
+            }
+          : null,
+        assignedEmployee: usage.task?.assignedEmployee
+          ? {
+              id: usage.task.assignedEmployee.id,
+              firstName: usage.task.assignedEmployee.firstName,
+              lastName: usage.task.assignedEmployee.lastName,
+            }
+          : null,
+        recordedAt: usage.createdAt
+          ? new Date(usage.createdAt).toISOString()
           : null,
       });
     }

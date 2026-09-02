@@ -87,6 +87,7 @@ describe('ProductionInventoryService', () => {
       productionOrder: {
         findUniqueOrThrow: jest.fn().mockResolvedValue({
           id: 'po-1',
+          number: 'PO-1',
           quantity: 1,
           productId: 'p1',
           product: { id: 'p1', sku: 'SOFA', nameEn: 'Sofa', nameAr: 'كنبة', nameHe: null },
@@ -94,12 +95,14 @@ describe('ProductionInventoryService', () => {
           salesOrderLineId: 'sol-1',
           productDescription: 'Sofa',
         }),
+        findUnique: jest.fn().mockResolvedValue({ number: 'PO-1' }),
       },
       qualityInspection: {
         findFirst: jest.fn().mockResolvedValue({ id: 'qc-1', result: QualityResult.PASSED }),
       },
       inventoryLot: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockResolvedValue({ id: 'lot-1' }),
       },
@@ -114,6 +117,11 @@ describe('ProductionInventoryService', () => {
         create: jest.fn(),
         update: jest.fn().mockResolvedValue({ id: 'fg-item' }),
       },
+      productionStageInstance: {
+        findUnique: jest.fn().mockResolvedValue({
+          stageDefinition: { code: 'PACK' },
+        }),
+      },
     };
     const { service: svc } = service(tx, applyMovement);
     await svc.onInspectionPassed({
@@ -126,6 +134,15 @@ describe('ProductionInventoryService', () => {
         type: 'FINISHED_GOODS_RECEIPT',
         quantity: 1,
         warehouseId: 'fg-wh',
+      }),
+    );
+    expect(tx.inventoryLot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          quantity: 1,
+          inventoryItemId: 'fg-item',
+          qrCode: expect.stringMatching(/^FIN-/),
+        }),
       }),
     );
   });

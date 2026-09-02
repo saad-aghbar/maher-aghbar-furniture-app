@@ -78,6 +78,13 @@ type DraftMaterial = {
 type Props = {
   salesOrderId: string;
   lineId: string;
+  /**
+   * Sheet / in-plan editor: close without popping a route.
+   * When set, back uses this instead of router.back().
+   */
+  onClose?: () => void;
+  /** Hide full-screen chrome when hosted inside Production Plan sheet. */
+  embedded?: boolean;
 };
 
 function toDraft(m: SetupMaterialRequirement): DraftMaterial {
@@ -115,7 +122,12 @@ function materialsEqual(a: DraftMaterial[], b: DraftMaterial[]): boolean {
   });
 }
 
-export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) {
+export function OrderProductionSetupLineScreen({
+  salesOrderId,
+  lineId,
+  onClose,
+  embedded = false,
+}: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
   const { user } = useAuth();
@@ -124,6 +136,7 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
   const { showToast } = useToast();
   const scrollRef = useRef<ScrollView>(null);
   const sectionY = useRef<Partial<Record<SectionKey, number>>>({});
+  const goBack = onClose ?? (() => router.back());
 
   const canView = can(user, 'production.setup.view');
   const canEdit = can(user, 'production.setup.edit');
@@ -283,6 +296,7 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
     const finishOk = () => {
       void haptics.confirmMedium();
       showToast({ variant: 'success', message: t('mobile.productionSetup.saveSuccess') });
+      if (onClose) onClose();
     };
     const finishErr = () =>
       showToast({ variant: 'error', message: t('mobile.productionSetup.actionFailed') });
@@ -349,7 +363,7 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
   if (!canView) {
     return (
       <AppScreen>
-        <LineNav onBack={() => router.back()} title={t('mobile.productionSetup.lineTitle')} />
+        <LineNav onBack={goBack} title={t('mobile.productionSetup.lineTitle')} />
         <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
       </AppScreen>
     );
@@ -358,7 +372,7 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
   if (query.isLoading && !line) {
     return (
       <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
-        <LineNav onBack={() => router.back()} title={t('mobile.productionSetup.lineTitle')} />
+        <LineNav onBack={goBack} title={t('mobile.productionSetup.lineTitle')} />
         <View style={{ padding: theme.spacing.lg }}>
           <AppText variant="caption" color="muted">
             {t('mobile.productionSetup.loading')}
@@ -371,7 +385,7 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
   if ((query.isError && !line) || (!query.isLoading && !line)) {
     return (
       <AppScreen>
-        <LineNav onBack={() => router.back()} title={t('mobile.productionSetup.lineTitle')} />
+        <LineNav onBack={goBack} title={t('mobile.productionSetup.lineTitle')} />
         <ErrorState
           title={t('mobile.productionSetup.errorTitle')}
           description={t('mobile.productionSetup.errorBody')}
@@ -406,11 +420,15 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
     textAlign: (isRTL ? 'right' : 'left') as 'left' | 'right',
   };
 
-  return (
-    <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
+  const body = (
+    <>
       <LineNav
-        onBack={() => router.back()}
-        title={t('mobile.productionSetup.lineTitle')}
+        onBack={goBack}
+        title={
+          embedded
+            ? t('mobile.orders.journey.editLineTitle')
+            : t('mobile.productionSetup.lineTitle')
+        }
         dirty={dirty}
       />
 
@@ -1015,6 +1033,18 @@ export function OrderProductionSetupLineScreen({ salesOrderId, lineId }: Props) 
           setWorkflowConfirmed(false);
         }}
       />
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>{body}</View>
+    );
+  }
+
+  return (
+    <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
+      {body}
     </AppScreen>
   );
 }

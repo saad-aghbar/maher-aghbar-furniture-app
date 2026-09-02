@@ -49,6 +49,7 @@ type SnapshotNode = {
 
 type ProductionOrderRow = {
   id: string;
+  number?: string | null;
   quantity: Prisma.Decimal;
   productId: string | null;
   product: {
@@ -1010,10 +1011,18 @@ export class ProductionInventoryService {
       db: params.tx,
     });
 
+    const fgQrCode =
+      itemClass === InventoryItemClass.FINISHED_GOOD
+        ? await this.allocateFinishedLotQr(params.tx, po, params.stageInstanceId)
+        : null;
+
     if (activeLot) {
       await params.tx.inventoryLot.update({
         where: { id: activeLot.id },
-        data: { quantity: Number(activeLot.quantity) + outputQty },
+        data: {
+          quantity: Number(activeLot.quantity) + outputQty,
+          ...(fgQrCode && !activeLot.qrCode ? { qrCode: fgQrCode } : {}),
+        },
       });
       return;
     }
@@ -1034,8 +1043,39 @@ export class ProductionInventoryService {
           : InventoryAllocationMode.GENERAL_STOCK,
         sourceKey: baseKey,
         producedAt: new Date(),
+        ...(fgQrCode ? { qrCode: fgQrCode } : {}),
       },
     });
+  }
+
+  /** Deterministic unique FIN lot QR — mirrors WIP kit allocateKitQr style. */
+  private async allocateFinishedLotQr(
+    tx: Tx,
+    po: ProductionOrderRow,
+    stageInstanceId: string,
+  ): Promise<string> {
+    let poNumber = po.number?.trim() || null;
+    if (!poNumber) {
+      const row = await tx.productionOrder.findUnique({
+        where: { id: po.id },
+        select: { number: true },
+      });
+      poNumber = row?.number ?? 'PO';
+    }
+    const stage = await tx.productionStageInstance.findUnique({
+      where: { id: stageInstanceId },
+      include: { stageDefinition: { select: { code: true } } },
+    });
+    const base = `FIN-${poNumber}-${stage?.stageDefinition.code ?? 'PACK'}`
+      .replace(/[^A-Za-z0-9-]/g, '')
+      .toUpperCase();
+    let candidate = base;
+    let n = 0;
+    while (await tx.inventoryLot.findUnique({ where: { qrCode: candidate } })) {
+      n += 1;
+      candidate = `${base}-${n}`;
+    }
+    return candidate;
   }
 
   private async resolveOutputWarehouse(

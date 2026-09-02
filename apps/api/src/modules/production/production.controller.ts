@@ -15,7 +15,7 @@ import {
 import type { AuthUser } from '@maher/types';
 import { RequireAnyPermissions, RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { ListProductionOrdersDto, UpdateProductionOrderDto } from './dto/production.dto';
+import { ListProductionOrdersDto, ProductionDaySummaryQueryDto, UpdateProductionOrderDto } from './dto/production.dto';
 import { ProductionService } from './production.service';
 import { ProductionInventoryService } from './production-inventory.service';
 import { MaterialUsageService } from './material-usage.service';
@@ -195,6 +195,16 @@ export class ProductionController {
     return this.production.list(query, user);
   }
 
+  /** Factory day lens summary — view/filter only, zero writes. */
+  @RequirePermissions('production-order.read')
+  @Get('day-summary')
+  daySummary(
+    @Query() query: ProductionDaySummaryQueryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.production.daySummary(query, user);
+  }
+
   @RequireAnyPermissions(
     'production-order.assign',
     'production.workflow.manage',
@@ -255,14 +265,36 @@ export class ProductionController {
 
   @RequirePermissions('production-order.update')
   @Post(':id/start')
-  start(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.production.start(id, user.id);
+  start(
+    @Param('id') id: string,
+    @Body() body: { plannedStartDate?: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.production.start(id, user.id, body?.plannedStartDate);
+  }
+
+  @RequirePermissions('production-order.update')
+  @Post(':id/suggest-plan-schedule')
+  suggestPlanSchedule(
+    @Param('id') id: string,
+    @Body() body: { plannedStartDate: string },
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.production.setProductionStartAndSuggestSchedule(
+      id,
+      body.plannedStartDate,
+      user.id,
+    );
   }
 
   @RequirePermissions('production-order.update')
   @Post(':id/return-to-preparing')
-  returnToPreparing(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.production.returnToPreparing(id, user.id);
+  returnToPreparing(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body() body?: { reason?: string },
+  ) {
+    return this.production.returnToPreparing(id, user.id, body?.reason);
   }
 
   @RequirePermissions('production-order.read')

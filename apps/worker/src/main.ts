@@ -3,6 +3,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { startInboundEmailPoller } from './inbound-email';
 import { startLowStockPrPoller } from './low-stock-pr';
+import { startProductionStartPoller } from './production-start';
 
 const logger = createLogger('worker');
 
@@ -31,6 +32,7 @@ async function main() {
 
   startInboundEmailPoller();
   startLowStockPrPoller();
+  startProductionStartPoller();
 
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {

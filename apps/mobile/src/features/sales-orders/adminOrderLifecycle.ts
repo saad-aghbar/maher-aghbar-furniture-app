@@ -21,7 +21,7 @@ export const ADMIN_LIFECYCLE_LABEL_FALLBACK: Record<AdminOrderLifecycle, string>
   preparing: 'Preparing',
   ready_to_start: 'Ready to start',
   in_production: 'In production',
-  ready_to_ship: 'Ready',
+  ready_to_ship: 'Ready for delivery',
   shipped: 'Shipped',
   delivered: 'Delivered',
   /** @deprecated Attention is no longer a chip — soft badge only. */
@@ -31,9 +31,9 @@ export const ADMIN_LIFECYCLE_LABEL_FALLBACK: Record<AdminOrderLifecycle, string>
 export const ADMIN_LIFECYCLE_HINT_FALLBACK: Record<AdminOrderLifecycle, string> = {
   rfq: 'Requests waiting for factory action',
   preparing: 'Accepted orders being prepared for production',
-  ready_to_start: 'Plan confirmed — waiting for work to start',
+  ready_to_start: 'Plan released — waiting for factory work to start',
   in_production: 'At least one factory task has started',
-  ready_to_ship: 'Finished and waiting to leave',
+  ready_to_ship: 'Packaging complete — waiting to leave',
   shipped: 'Left the factory',
   delivered: 'Dealer confirmed receipt',
   needs_attention: 'Orders requiring action',

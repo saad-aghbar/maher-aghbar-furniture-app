@@ -362,6 +362,8 @@ export function DeliveryWorkerHomeScreen() {
   const hero = open[0] ?? null;
   const upcoming = open.slice(1);
   const shippedCount = (doneQuery.data?.data ?? []).length;
+  const truckLoaded = open.reduce((sum, d) => sum + (d.loadProgress?.loaded ?? 0), 0);
+  const truckTotal = open.reduce((sum, d) => sum + (d.loadProgress?.total ?? 0), 0);
 
   return (
     <ScrollableScreen
@@ -387,6 +389,38 @@ export function DeliveryWorkerHomeScreen() {
         />
 
       <View style={{ gap: theme.spacing.xl }}>
+        {open.length > 1 && truckTotal > 0 ? (
+          <View
+            style={{
+              borderRadius: theme.radius.lg,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
+              backgroundColor: colors.surfaceSecondary,
+              paddingHorizontal: theme.spacing.md,
+              paddingVertical: theme.spacing.sm + 2,
+              gap: 2,
+              alignItems: isRTL ? 'flex-end' : 'flex-start',
+            }}
+          >
+            <AppText
+              variant="caption"
+              weight="semibold"
+              style={deliverySectionLabelStyle(locale, colors.brand)}
+            >
+              {t('mobile.deliveryLoad.truckRunEyebrow')}
+            </AppText>
+            <AppText variant="body" weight="semibold" align="start">
+              {t('mobile.deliveryLoad.truckRunProgress', {
+                loaded: truckLoaded,
+                total: truckTotal,
+              })}
+            </AppText>
+            <AppText variant="caption" color="muted" align="start">
+              {t('mobile.deliveryLoad.truckRunHint')}
+            </AppText>
+          </View>
+        ) : null}
+
         {hero ? <DeliveryCurrentHero item={hero} /> : <DeliveryCurrentIdle />}
 
         {upcoming.length > 0 ? (

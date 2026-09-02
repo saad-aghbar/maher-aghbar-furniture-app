@@ -37,6 +37,8 @@ export {
   fetchWipKitBoard,
   getInventoryItem,
   getInventoryItemByCode,
+  getInventoryLot,
+  getInventoryLotByCode,
   getInventoryOverview,
   getWipKit,
   getWipKitByCode,

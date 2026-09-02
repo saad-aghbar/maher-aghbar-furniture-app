@@ -25,6 +25,7 @@ import {
 } from '../scheduling/domain/dealer-delivery';
 import { ymdInTimezone } from '../scheduling/domain/factory-replan';
 import { paymentUnallocated, money as dealerMoney } from '../payments/dealer-finance';
+import { productionBoardBucketCountWhere } from '../production/production-board-buckets';
 import {
   buildFactoryFlow,
   capAttentionCards,
@@ -1726,14 +1727,6 @@ export class ReportsService {
       status: ProductionOrderStatus.COMPLETED,
     } as const;
 
-    const inProductionStatuses = [
-      ProductionOrderStatus.IN_PROGRESS,
-      ProductionOrderStatus.READY_FOR_PACKAGING,
-      ProductionOrderStatus.READY_FOR_DELIVERY,
-      ProductionOrderStatus.WAITING_FOR_MATERIALS,
-      ProductionOrderStatus.READY,
-    ];
-
     const [
       completedToday,
       completedThisWeek,
@@ -1759,10 +1752,7 @@ export class ReportsService {
       }),
       this.prisma.productionOrder.count({ where: completedFilter }),
       this.prisma.productionOrder.count({
-        where: {
-          archivedAt: null,
-          status: { in: inProductionStatuses },
-        },
+        where: productionBoardBucketCountWhere('on_floor', now),
       }),
       this.prisma.productionOrder.count({
         where: {
@@ -1774,150 +1764,23 @@ export class ReportsService {
         },
       }),
       this.prisma.productionOrder.aggregate({
-        where: {
-          archivedAt: null,
-          status: { in: inProductionStatuses },
-        },
+        where: productionBoardBucketCountWhere('on_floor', now),
         _avg: { progressPercent: true },
       }),
       this.prisma.productionOrder.count({
-        where: {
-          archivedAt: null,
-          status: {
-            in: [
-              ProductionOrderStatus.DRAFT,
-              ProductionOrderStatus.PLANNED,
-              ProductionOrderStatus.READY,
-            ],
-          },
-          OR: [
-            {
-              tasks: {
-                none: {
-                  status: { not: 'CANCELLED' },
-                  isRework: false,
-                  stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
-                },
-              },
-            },
-            {
-              tasks: {
-                some: {
-                  assignedEmployeeId: null,
-                  status: { not: 'CANCELLED' },
-                  isRework: false,
-                  stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
-                },
-              },
-            },
-            {
-              tasks: {
-                some: {
-                  status: { not: 'CANCELLED' },
-                  isRework: false,
-                  stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
-                  OR: [
-                    { plannedStart: null, plannedCompletion: null },
-                    { plannedStart: { not: null }, plannedCompletion: null },
-                  ],
-                },
-              },
-            },
-          ],
-        },
+        where: productionBoardBucketCountWhere('needs_setup', now),
       }),
       this.prisma.productionOrder.count({
-        where: {
-          archivedAt: null,
-          status: {
-            in: [
-              ProductionOrderStatus.DRAFT,
-              ProductionOrderStatus.PLANNED,
-              ProductionOrderStatus.READY,
-            ],
-          },
-          tasks: {
-            some: {
-              status: { not: 'CANCELLED' },
-              isRework: false,
-              stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
-            },
-          },
-          NOT: {
-            OR: [
-              {
-                tasks: {
-                  some: {
-                    assignedEmployeeId: null,
-                    status: { not: 'CANCELLED' },
-                    isRework: false,
-                    stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
-                  },
-                },
-              },
-              {
-                tasks: {
-                  some: {
-                    status: { not: 'CANCELLED' },
-                    isRework: false,
-                    stageDefinition: { executionKind: { not: 'LOGISTICS' }, code: { not: 'DELIVERY' } },
-                    OR: [
-                      { plannedStart: null, plannedCompletion: null },
-                      { plannedStart: { not: null }, plannedCompletion: null },
-                    ],
-                  },
-                },
-              },
-            ],
-          },
-        },
+        where: productionBoardBucketCountWhere('ready_to_start', now),
       }),
       this.prisma.productionOrder.count({
-        where: {
-          archivedAt: null,
-          status: ProductionOrderStatus.IN_PROGRESS,
-          OR: [
-            { currentStageCode: null },
-            { currentStageCode: { notIn: ['INSPECTION', 'PACKAGING', 'DELIVERY'] } },
-          ],
-        },
+        where: productionBoardBucketCountWhere('on_floor', now),
       }),
       this.prisma.productionOrder.count({
-        where: {
-          archivedAt: null,
-          OR: [
-            {
-              status: {
-                in: [ProductionOrderStatus.ON_HOLD, ProductionOrderStatus.WAITING_FOR_MATERIALS],
-              },
-            },
-            {
-              status: {
-                notIn: [ProductionOrderStatus.COMPLETED, ProductionOrderStatus.CANCELLED],
-              },
-              tasks: { some: { blockers: { some: { resolvedAt: null } } } },
-            },
-          ],
-        },
+        where: productionBoardBucketCountWhere('blocked', now),
       }),
       this.prisma.productionOrder.count({
-        where: {
-          archivedAt: null,
-          OR: [
-            {
-              status: {
-                in: [
-                  ProductionOrderStatus.QUALITY_CHECK,
-                  ProductionOrderStatus.READY_FOR_PACKAGING,
-                ],
-              },
-            },
-            {
-              status: ProductionOrderStatus.IN_PROGRESS,
-              currentStageCode: { in: ['INSPECTION', 'PACKAGING'] },
-            },
-          ],
-        },
+        where: productionBoardBucketCountWhere('inspection_packaging', now),
       }),
     ]);
 

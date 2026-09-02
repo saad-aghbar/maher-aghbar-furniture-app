@@ -62,6 +62,15 @@ export class OrderProductionSetupController {
   }
 
   @RequirePermissions('production.setup.edit')
+  @Post('ensure-plan')
+  ensurePlan(
+    @Param('salesOrderId') salesOrderId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.setups.ensurePlanOrders(salesOrderId, user);
+  }
+
+  @RequirePermissions('production.setup.edit')
   @Post('mark-ready')
   markReady(@Param('salesOrderId') salesOrderId: string, @CurrentUser() user: AuthUser) {
     return this.setups.markReady(salesOrderId, user);

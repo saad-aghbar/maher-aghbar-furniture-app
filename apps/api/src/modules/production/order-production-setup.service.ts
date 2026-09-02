@@ -1004,22 +1004,26 @@ export class OrderProductionSetupService {
     };
   }
 
-  private validateSetup(setup: {
-    status: SalesOrderProductionSetupStatus;
-    lines: Array<{
-      salesOrderLineId: string;
-      status: SalesOrderLineSetupStatus;
-      manufacturingName: string | null;
-      workflowId: string | null;
-      workflowConfirmedAt: Date | null;
-      manufacturingComplexity: ManufacturingComplexity | null;
-      materialRequirements: Array<{
-        inventoryItemId: string | null;
-        needsReview: boolean;
-        expectedQty: unknown;
+  private validateSetup(
+    setup: {
+      status: SalesOrderProductionSetupStatus;
+      lines: Array<{
+        salesOrderLineId: string;
+        status: SalesOrderLineSetupStatus;
+        manufacturingName: string | null;
+        workflowId: string | null;
+        workflowConfirmedAt: Date | null;
+        manufacturingComplexity: ManufacturingComplexity | null;
+        materialRequirements: Array<{
+          inventoryItemId: string | null;
+          needsReview: boolean;
+          expectedQty: unknown;
+        }>;
       }>;
-    }>;
-  }): { ok: boolean; issues: SetupValidationIssue[] } {
+    },
+    opts?: { requireMaterials?: boolean },
+  ): { ok: boolean; issues: SetupValidationIssue[] } {
+    const requireMaterials = opts?.requireMaterials !== false;
     const issues: SetupValidationIssue[] = [];
     if (!setup.lines.length) {
       issues.push({
@@ -1052,41 +1056,43 @@ export class OrderProductionSetupService {
           section: 'workflow',
         });
       }
-      if (!line.materialRequirements.length) {
-        issues.push({
-          code: 'MATERIALS_REQUIRED',
-          message: 'Add at least one expected material.',
-          lineId: line.salesOrderLineId,
-          section: 'materials',
-        });
-      }
-      for (const m of line.materialRequirements) {
-        if (!m.inventoryItemId) {
+      if (requireMaterials) {
+        if (!line.materialRequirements.length) {
           issues.push({
-            code: 'MATERIAL_ITEM_REQUIRED',
-            message: 'Every material must be linked to an inventory item.',
+            code: 'MATERIALS_REQUIRED',
+            message: 'Add at least one expected material.',
             lineId: line.salesOrderLineId,
             section: 'materials',
           });
-          break;
         }
-        if (Number(m.expectedQty) <= 0) {
-          issues.push({
-            code: 'MATERIAL_QTY_REQUIRED',
-            message: 'Material expected quantity must be greater than zero.',
-            lineId: line.salesOrderLineId,
-            section: 'materials',
-          });
-          break;
-        }
-        if (m.needsReview) {
-          issues.push({
-            code: 'MATERIAL_NEEDS_REVIEW',
-            message: 'Review modified materials before marking ready.',
-            lineId: line.salesOrderLineId,
-            section: 'materials',
-          });
-          break;
+        for (const m of line.materialRequirements) {
+          if (!m.inventoryItemId) {
+            issues.push({
+              code: 'MATERIAL_ITEM_REQUIRED',
+              message: 'Every material must be linked to an inventory item.',
+              lineId: line.salesOrderLineId,
+              section: 'materials',
+            });
+            break;
+          }
+          if (Number(m.expectedQty) <= 0) {
+            issues.push({
+              code: 'MATERIAL_QTY_REQUIRED',
+              message: 'Material expected quantity must be greater than zero.',
+              lineId: line.salesOrderLineId,
+              section: 'materials',
+            });
+            break;
+          }
+          if (m.needsReview) {
+            issues.push({
+              code: 'MATERIAL_NEEDS_REVIEW',
+              message: 'Review modified materials before marking ready.',
+              lineId: line.salesOrderLineId,
+              section: 'materials',
+            });
+            break;
+          }
         }
       }
       if (line.status !== SalesOrderLineSetupStatus.READY && setup.status === SalesOrderProductionSetupStatus.READY_FOR_RELEASE) {
@@ -1549,6 +1555,116 @@ export class OrderProductionSetupService {
     return this.getSetup(salesOrderId, user);
   }
 
+  /**
+   * Open Production Plan path: soft-prepare catalog defaults on incomplete lines,
+   * create production orders if missing, return primary PO id for the plan editor.
+   * Does not factory-release (releasedToFactoryAt stays null).
+   */
+  async ensurePlanOrders(salesOrderId: string, user: AuthUser) {
+    this.assertStaff(user);
+    await this.ensureSetup(salesOrderId, user);
+
+    const existingPos = await this.prisma.productionOrder.findMany({
+      where: { salesOrderId, archivedAt: null },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existingPos.length > 0) {
+      return {
+        salesOrderId,
+        productionOrderIds: existingPos.map((p) => p.id),
+        primaryProductionOrderId: existingPos[0]!.id,
+        created: false,
+      };
+    }
+
+    await this.softPrepareLinesForPlan(salesOrderId, user);
+    const released = await this.release(salesOrderId, user, { forPlanOpen: true });
+    const ids = released.productionOrderIds ?? [];
+    return {
+      salesOrderId,
+      productionOrderIds: ids,
+      primaryProductionOrderId: ids[0] ?? null,
+      created: true,
+    };
+  }
+
+  /**
+   * Best-effort catalog fill so draft POs can be created for the plan desk.
+   * Materials stay optional here — the editor is where the team finishes them.
+   */
+  private async softPrepareLinesForPlan(salesOrderId: string, user: AuthUser) {
+    const setup = await this.prisma.salesOrderProductionSetup.findUniqueOrThrow({
+      where: { salesOrderId },
+      include: {
+        lines: {
+          include: {
+            materialRequirements: true,
+            salesOrderLine: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    nameEn: true,
+                    workflowConfiguration: { select: { workflowId: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    for (const line of setup.lines) {
+      const product = line.salesOrderLine.product;
+      if (!line.materialRequirements.length) {
+        await this.seedFromCatalog(salesOrderId, line.id, user).catch(() => undefined);
+      }
+
+      const refreshed = await this.prisma.salesOrderLineSetup.findUniqueOrThrow({
+        where: { id: line.id },
+        select: {
+          manufacturingName: true,
+          workflowId: true,
+          workflowConfirmedAt: true,
+        },
+      });
+
+      const name =
+        refreshed.manufacturingName?.trim() ||
+        line.salesOrderLine.description ||
+        product?.nameEn ||
+        'Piece';
+      const workflowId =
+        refreshed.workflowId ?? product?.workflowConfiguration?.workflowId ?? null;
+
+      if (!workflowId) {
+        throw new BadRequestException({
+          code: 'WORKFLOW_REQUIRED',
+          message:
+            'Assign a published product workflow before opening the production plan.',
+          lineId: line.salesOrderLineId,
+        });
+      }
+
+      await this.prisma.salesOrderLineSetup.update({
+        where: { id: line.id },
+        data: {
+          manufacturingName: name,
+          workflowId,
+          workflowConfirmedAt: refreshed.workflowConfirmedAt ?? new Date(),
+          status: SalesOrderLineSetupStatus.READY,
+        },
+      });
+    }
+
+    await this.prisma.salesOrderProductionSetup.update({
+      where: { id: setup.id },
+      data: { status: SalesOrderProductionSetupStatus.READY_FOR_RELEASE },
+    });
+  }
+
   async releasePreview(salesOrderId: string, user?: AuthUser) {
     const setup = (await this.getSetup(salesOrderId, user)) as {
       status: SalesOrderProductionSetupStatus;
@@ -1599,8 +1715,13 @@ export class OrderProductionSetupService {
     };
   }
 
-  async release(salesOrderId: string, user: AuthUser) {
+  async release(
+    salesOrderId: string,
+    user: AuthUser,
+    opts?: { forPlanOpen?: boolean },
+  ) {
     this.assertStaff(user);
+    const forPlanOpen = Boolean(opts?.forPlanOpen);
     const existingPos = await this.prisma.productionOrder.count({
       where: { salesOrderId },
     });
@@ -1612,8 +1733,11 @@ export class OrderProductionSetupService {
     }
 
     const setupRow = await this.requireEditableSetup(salesOrderId);
-    for (const line of setupRow.lines) {
-      await this.recomputeLineAndHeaderStatus(setupRow.id, line.id);
+    // Plan-open already soft-prepared lines; recompute would block on empty materials.
+    if (!forPlanOpen) {
+      for (const line of setupRow.lines) {
+        await this.recomputeLineAndHeaderStatus(setupRow.id, line.id);
+      }
     }
 
     const setup = await this.prisma.salesOrderProductionSetup.findUniqueOrThrow({
@@ -1633,29 +1757,23 @@ export class OrderProductionSetupService {
       },
     });
 
+    const validation = this.validateSetup(setup, {
+      requireMaterials: !forPlanOpen,
+    });
+    if (!validation.ok) {
+      throw new BadRequestException({
+        code: 'SETUP_INCOMPLETE',
+        message: forPlanOpen
+          ? 'Production plan needs a name and workflow path before it can open.'
+          : 'Production setup is incomplete and cannot be released.',
+        details: validation.issues,
+      });
+    }
     if (setup.status !== SalesOrderProductionSetupStatus.READY_FOR_RELEASE) {
-      // Allow release if validation passes even if mark-ready skipped
-      const validation = this.validateSetup(setup);
-      if (!validation.ok) {
-        throw new BadRequestException({
-          code: 'SETUP_INCOMPLETE',
-          message: 'Production setup is incomplete and cannot be released.',
-          details: validation.issues,
-        });
-      }
       await this.prisma.salesOrderProductionSetup.update({
         where: { id: setup.id },
         data: { status: SalesOrderProductionSetupStatus.READY_FOR_RELEASE },
       });
-    } else {
-      const validation = this.validateSetup(setup);
-      if (!validation.ok) {
-        throw new BadRequestException({
-          code: 'SETUP_INCOMPLETE',
-          message: 'Production setup is incomplete and cannot be released.',
-          details: validation.issues,
-        });
-      }
     }
 
     const order = setup.salesOrder;

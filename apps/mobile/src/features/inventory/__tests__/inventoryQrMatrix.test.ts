@@ -113,11 +113,14 @@ describe('inventory QR complete interaction matrix', () => {
     }
   });
 
-  it('global IDENTIFY uses resolveInventoryScan + result sheet', () => {
+  it('global IDENTIFY uses resolveInventoryScan + kit/lot/item result paths', () => {
     const home = readFileSync(join(componentsDir, 'InventorySignatureHome.tsx'), 'utf8');
     expect(home).toContain('resolveInventoryScan');
     expect(home).toContain('InventoryScanResultSheet');
     expect(home).toContain('pendingAfterScanRef');
+    expect(home).toContain('FOUND_KIT');
+    expect(home).toContain('InventorySemiOrderDetailSheet');
+    expect(home).toContain('FOUND_LOT');
     expect(home).not.toContain('getInventoryItemByCode');
   });
 

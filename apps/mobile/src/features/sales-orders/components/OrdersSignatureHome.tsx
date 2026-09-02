@@ -97,9 +97,14 @@ type Props = {
   /** Dealer status touch bar under On the line. */
   statusChip?: StatusChipKey;
   onStatusChipChange?: (next: StatusChipKey) => void;
-  /** Admin lifecycle focus (commercial desk). */
+  /** Admin lifecycle focus (commercial desk) — server-scoped list via journeyBucket. */
   adminLifecycleFocus?: AdminLifecycleChipKey;
   onAdminLifecycleFocusChange?: (next: AdminLifecycleChipKey) => void;
+  /**
+   * Server journeyCounts (COUNT=DATASET). Required for admin Orders chips —
+   * never derive from loadedRows.length.
+   */
+  journeyCounts?: Partial<Record<AdminLifecycleChipKey, number>> | null;
   /** Admin only — production-style dealer filter under On the line. */
   dealerLabel?: string | null;
   onOpenDealerFilter?: () => void;
@@ -109,6 +114,7 @@ type Props = {
   onEndReached: () => void;
   isFetchingNextPage: boolean;
   onPressItem: (id: string, kind?: 'order' | 'rfq') => void;
+  onPrimaryCta?: (order: OrdersProgressCardModel) => void;
   banner?: ReactNode;
 };
 
@@ -177,6 +183,10 @@ function toStream(
     journeyReadiness: o.journeyReadiness,
     actionHint: o.actionHint,
     productionReadinessSummary: o.productionReadinessSummary,
+    manufacturingKind: o.manufacturingKind,
+    primaryProductionOrderId: o.primaryProductionOrderId,
+    plannedStartDate: o.plannedStartDate,
+    journeyLogistics: o.journeyLogistics,
   }));
 }
 
@@ -242,6 +252,7 @@ export function OrdersSignatureHome({
   onStatusChipChange,
   adminLifecycleFocus = 'all',
   onAdminLifecycleFocusChange,
+  journeyCounts = null,
   dealerLabel = null,
   onOpenDealerFilter,
   onClearDealerFilter,
@@ -250,6 +261,7 @@ export function OrdersSignatureHome({
   onEndReached,
   isFetchingNextPage,
   onPressItem,
+  onPrimaryCta,
   banner,
 }: Props) {
   const { t } = useLocale();
@@ -315,21 +327,24 @@ export function OrdersSignatureHome({
     [adminItems, dealerItems, variant],
   );
 
+  /** COUNT=DATASET — server meta only; never tally loaded pages. */
   const adminLifecycleCounts = useMemo(() => {
     if (!isAdmin || deskMode !== 'orders') {
       return {} as Partial<Record<AdminLifecycleChipKey, number>>;
     }
-    const salesOnly = allStream.filter((o) => o.kind !== 'rfq');
-    const counts: Partial<Record<AdminLifecycleChipKey, number>> = {
-      all: salesOnly.length,
-    };
-    for (const o of salesOnly) {
-      const life = resolveLifecycle(o);
-      if (life === 'rfq') continue;
-      counts[life] = (counts[life] ?? 0) + 1;
+    if (!journeyCounts) {
+      return {} as Partial<Record<AdminLifecycleChipKey, number>>;
     }
-    return counts;
-  }, [allStream, deskMode, isAdmin]);
+    return {
+      all: journeyCounts.all ?? 0,
+      preparing: journeyCounts.preparing ?? 0,
+      ready_to_start: journeyCounts.ready_to_start ?? 0,
+      in_production: journeyCounts.in_production ?? 0,
+      ready_to_ship: journeyCounts.ready_to_ship ?? 0,
+      shipped: journeyCounts.shipped ?? 0,
+      delivered: journeyCounts.delivered ?? 0,
+    };
+  }, [deskMode, isAdmin, journeyCounts]);
 
   /** Spine counts follow admin stream; dealer focus rail counts the searchable stream. */
   const counts = useMemo(
@@ -357,13 +372,26 @@ export function OrdersSignatureHome({
   const adminSections: BoardSection[] = useMemo(() => {
     if (!isAdmin || deskMode !== 'orders') return [];
     const salesOnly = allStream.filter((o) => o.kind !== 'rfq');
-    const focused =
-      adminLifecycleFocus === 'all'
-        ? salesOnly
-        : salesOnly.filter((o) => resolveLifecycle(o) === adminLifecycleFocus);
+
+    // Focused lane is already server-scoped via journeyBucket — do not re-filter.
+    if (adminLifecycleFocus !== 'all') {
+      const life = adminLifecycleFocus as AdminOrderLifecycle;
+      const items = [...salesOnly].sort(sortForFloor);
+      const serverCount = adminLifecycleCounts[adminLifecycleFocus];
+      return [
+        {
+          key: life,
+          title: adminLifecycleHumanLabel(life, t),
+          totalCount: serverCount ?? items.length,
+          data: items,
+          kind: 'lifecycle' as const,
+          lifecycleKey: life,
+        },
+      ];
+    }
 
     const buckets = new Map<AdminOrderLifecycle, OrdersProgressCardModel[]>();
-    for (const o of focused) {
+    for (const o of salesOnly) {
       const life = resolveLifecycle(o);
       if (life === 'rfq') continue;
       const list = buckets.get(life) ?? [];
@@ -371,25 +399,26 @@ export function OrdersSignatureHome({
       buckets.set(life, list);
     }
 
-    const order =
-      adminLifecycleFocus === 'all'
-        ? ADMIN_LIFECYCLE_SECTION_ORDER
-        : ([adminLifecycleFocus] as AdminOrderLifecycle[]);
-
-    return order
-      .map((lifeKey) => {
-        const items = [...(buckets.get(lifeKey) ?? [])].sort(sortForFloor);
-        return {
-          key: lifeKey,
-          title: adminLifecycleHumanLabel(lifeKey, t),
-          totalCount: items.length,
-          data: items,
-          kind: 'lifecycle' as const,
-          lifecycleKey: lifeKey,
-        };
-      })
-      .filter((s) => s.totalCount > 0);
-  }, [adminLifecycleFocus, allStream, deskMode, isAdmin, t]);
+    return ADMIN_LIFECYCLE_SECTION_ORDER.map((lifeKey) => {
+      const items = [...(buckets.get(lifeKey) ?? [])].sort(sortForFloor);
+      const serverCount = adminLifecycleCounts[lifeKey];
+      return {
+        key: lifeKey,
+        title: adminLifecycleHumanLabel(lifeKey, t),
+        totalCount: serverCount ?? items.length,
+        data: items,
+        kind: 'lifecycle' as const,
+        lifecycleKey: lifeKey,
+      };
+    }).filter((s) => (adminLifecycleCounts[s.key as AdminLifecycleChipKey] ?? s.totalCount) > 0);
+  }, [
+    adminLifecycleCounts,
+    adminLifecycleFocus,
+    allStream,
+    deskMode,
+    isAdmin,
+    t,
+  ]);
 
   const requestInboxItems = useMemo(() => {
     if (!isAdmin || deskMode !== 'requests') return [];
@@ -577,6 +606,7 @@ export function OrdersSignatureHome({
               lifecycleKey={section.lifecycleKey!}
               title={section.title}
               items={section.data}
+              totalCount={section.totalCount}
               mode={adminLifecycleFocus === 'all' ? 'preview' : 'focused'}
               hint={
                 section.lifecycleKey
@@ -584,6 +614,7 @@ export function OrdersSignatureHome({
                   : null
               }
               onPressItem={onPressItem}
+              onPrimaryCta={onPrimaryCta}
               onOpenFocused={
                 adminLifecycleFocus === 'all' && onAdminLifecycleFocusChange
                   ? () => onAdminLifecycleFocusChange(section.lifecycleKey as AdminLifecycleChipKey)
@@ -695,6 +726,11 @@ export function OrdersSignatureHome({
               order={item}
               variant={variant}
               onPress={() => onPressItem(item.id, item.kind)}
+              onPrimaryCta={
+                variant === 'admin' && onPrimaryCta
+                  ? () => onPrimaryCta(item)
+                  : undefined
+              }
               onProgressPress={
                 item.kind === 'rfq'
                   ? undefined

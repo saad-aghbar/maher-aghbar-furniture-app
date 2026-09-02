@@ -20,6 +20,33 @@ export const STARTABLE_PO_STATUSES = [
 
 export type StartablePoStatus = (typeof STARTABLE_PO_STATUSES)[number];
 
+/**
+ * Calendar-day ms in UTC. Matches how mobile saves production start as
+ * `YYYY-MM-DDT12:00:00.000Z` (UTC date = intended factory day).
+ */
+export function utcCalendarDayMs(value: Date | string): number {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return Number.NaN;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/** True when the planned production calendar day is today or earlier (UTC). */
+export function isProductionStartDue(
+  plannedStartDate: Date | string,
+  now: Date = new Date(),
+): boolean {
+  const planned = utcCalendarDayMs(plannedStartDate);
+  const today = utcCalendarDayMs(now);
+  if (!Number.isFinite(planned) || !Number.isFinite(today)) return false;
+  return planned <= today;
+}
+
+/** Exclusive end of "today" in UTC — for Prisma due-date scans. */
+export function utcStartOfTomorrow(now: Date = new Date()): Date {
+  const day = utcCalendarDayMs(now);
+  return new Date(day + 24 * 60 * 60 * 1000);
+}
+
 export type ProductionBoardBucket =
   | 'needs_setup'
   | 'ready_to_start'
@@ -31,6 +58,7 @@ export type ProductionBoardBucket =
 export type ReadinessReasonCode =
   | 'MISSING_ASSIGNMENT'
   | 'MISSING_DATE'
+  | 'MISSING_PRODUCTION_START'
   | 'NO_EXECUTABLE_TASKS'
   | 'MATERIALS_HOLD'
   | 'STATUS_NOT_STARTABLE'
@@ -121,6 +149,8 @@ export type AssessReadinessInput = {
   openBlockers?: Array<{ kind: string; taskId?: string; message?: string }>;
   now?: Date;
   requiredDeliveryDate?: Date | string | null;
+  /** Order-level factory production start date (admin-chosen on the plan). */
+  plannedStartDate?: Date | string | null;
   isLate?: boolean;
   /**
    * Commercial Production Setup released (or N/A). Defaults true when omitted —
@@ -329,6 +359,17 @@ export function assessProductionReadiness(input: AssessReadinessInput): Producti
       message: `${m.stageName} requires planned start and/or completion dates.`,
     });
   }
+  const productionStartRaw = input.plannedStartDate
+    ? new Date(input.plannedStartDate)
+    : null;
+  const hasProductionStart =
+    productionStartRaw != null && !Number.isNaN(productionStartRaw.getTime());
+  if (!hasProductionStart) {
+    reasons.push({
+      code: 'MISSING_PRODUCTION_START',
+      message: 'Set the order production start date before Confirm.',
+    });
+  }
   if (!materialsReady) {
     reasons.push({
       code: 'MATERIALS_HOLD',
@@ -343,10 +384,11 @@ export function assessProductionReadiness(input: AssessReadinessInput): Producti
     });
   }
 
-  /** Hard gate: status + workflow + all assignments + all dates. Materials hold is soft. */
+  /** Hard gate: status + workflow + all assignments + all dates + order production start. Materials hold is soft. */
   const hardCodes: ReadinessReasonCode[] = [
     'MISSING_ASSIGNMENT',
     'MISSING_DATE',
+    'MISSING_PRODUCTION_START',
     'NO_EXECUTABLE_TASKS',
     'STATUS_NOT_STARTABLE',
   ];
@@ -356,7 +398,8 @@ export function assessProductionReadiness(input: AssessReadinessInput): Producti
     statusStartable &&
     workflowReady &&
     workersReady &&
-    datesReady;
+    datesReady &&
+    hasProductionStart;
 
   const boardBucket = resolveBoardBucket({
     status: input.status,

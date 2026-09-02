@@ -210,6 +210,7 @@ function UsageRow({ row }: { row: ProductionMaterialUsageLine }) {
           style={{
             flexDirection: isRTL ? 'row-reverse' : 'row',
             alignItems: 'stretch',
+            flexWrap: 'wrap',
             borderRadius: theme.radius.lg,
             backgroundColor: colors.surfaceSecondary,
             borderWidth: 1,
@@ -217,26 +218,45 @@ function UsageRow({ row }: { row: ProductionMaterialUsageLine }) {
             paddingVertical: theme.spacing.sm,
           }}
         >
-          <MetricCell label={t('mobile.production.usageAssigned')} value={row.assignedQty} />
+          <MetricCell label={t('mobile.production.usagePlanned')} value={row.assignedQty} />
           <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: colors.border, marginVertical: 4 }} />
           <MetricCell label={t('mobile.production.usageUsed')} value={row.usedQty} emphasize />
-          {row.returnedQty > 0 ? (
-            <>
-              <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: colors.border, marginVertical: 4 }} />
-              <MetricCell
-                label={t('mobile.production.usageReturned')}
-                value={row.returnedQty}
-              />
-            </>
-          ) : null}
           <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: colors.border, marginVertical: 4 }} />
           <MetricCell
-            label={t('mobile.production.usageVariance')}
-            value={row.varianceQty}
-            color={accent}
-            signed
+            label={t('mobile.production.usageReturned')}
+            value={row.returnedQty}
+          />
+          <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: colors.border, marginVertical: 4 }} />
+          <MetricCell
+            label={t('mobile.production.usageScrap')}
+            value={row.scrapQty}
+            color={row.scrapQty > 0 ? colors.warning : undefined}
           />
         </View>
+
+        {(() => {
+          const linked = (row.tasks ?? []).find(
+            (task) => task.recordedBy || task.assignedEmployee,
+          );
+          if (!linked) return null;
+          const person = linked.recordedBy ?? linked.assignedEmployee;
+          if (!person) return null;
+          const personName = `${person.firstName} ${person.lastName}`.trim();
+          const stage =
+            locale === 'ar'
+              ? linked.stageNameAr || linked.stageNameEn
+              : locale === 'he'
+                ? linked.stageNameHe || linked.stageNameEn
+                : linked.stageNameEn;
+          return (
+            <AppText variant="caption" color="secondary" numberOfLines={2}>
+              {t('mobile.production.usageUsedBy', {
+                worker: personName || '—',
+                stage: stage || '—',
+              })}
+            </AppText>
+          );
+        })()}
       </View>
     </View>
   );

@@ -325,6 +325,13 @@ export function InventoryFgLotInspectSheet({
             label={t('lifecycle.finishedAt')}
             value={formatDateTime(lot.finishedAt ?? lot.producedAt)}
           />
+          {lot.qrCode?.trim() ? (
+            <FactRow
+              icon="qr-code-outline"
+              label={t('mobile.inventory.qrCode')}
+              value={lot.qrCode.trim()}
+            />
+          ) : null}
           <FactRow
             icon="business-outline"
             label={t('inventory.warehouse')}

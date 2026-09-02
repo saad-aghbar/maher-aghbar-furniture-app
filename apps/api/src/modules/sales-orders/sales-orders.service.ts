@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { Prisma, SalesOrderStatus } from '@maher/database';
 import type { AuthUser } from '@maher/types';
@@ -29,6 +31,15 @@ import {
   type OrderCostResult,
 } from '../../common/helpers/order-costing.util';
 import { ListSalesOrdersDto, UpdateSalesOrderDto } from './dto/sales-order.dto';
+import {
+  classifyAdminOrderJourneyBucket,
+  emptyJourneyCounts,
+  isExecutionStartedFromPos,
+  isReleasedToFactoryFromPos,
+  tallyJourneyCounts,
+  type AdminOrderJourneyBucket,
+} from './admin-order-journey';
+import { buildJourneyLogisticsSummary } from './journey-logistics';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
 import { WorkflowSnapshotService } from '../production/workflow/workflow-snapshot.service';
@@ -36,6 +47,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { ProductionInventoryService } from '../production/production-inventory.service';
 import { OrderProductionSetupService } from '../production/order-production-setup.service';
 import { ManufacturingCostService } from '../production/manufacturing-cost.service';
+import { ProductionService } from '../production/production.service';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 import { firstImageDocument } from '../../common/helpers/document-image.util';
 import { buildSalesOrderSearchOr } from './build-sales-order-search-or';
@@ -258,6 +270,8 @@ export class SalesOrdersService {
     private readonly productionInventory: ProductionInventoryService,
     private readonly orderProductionSetup: OrderProductionSetupService,
     private readonly manufacturingCost: ManufacturingCostService,
+    @Inject(forwardRef(() => ProductionService))
+    private readonly production: ProductionService,
   ) {}
 
   /** Short-lived download URL for list thumbnails from request attachments. */
@@ -444,13 +458,14 @@ export class SalesOrdersService {
           }
         : undefined;
 
+    // journeyBucket owns admin lane scope; ignore coarse statusGroup when set.
     const statusFilter = query.status
       ? { status: query.status }
-      : query.statusGroup
+      : !query.journeyBucket && query.statusGroup
         ? { status: { in: STATUS_GROUPS[query.statusGroup] } }
         : {};
 
-    const where: Prisma.SalesOrderWhereInput = {
+    const baseWhere: Prisma.SalesOrderWhereInput = {
       archivedAt: null,
       ...(scopedCustomerId ? { customerId: scopedCustomerId } : {}),
       ...statusFilter,
@@ -468,112 +483,222 @@ export class SalesOrdersService {
       [sortBy]: sortDir,
     };
 
-    const [totalItems, data] = await this.prisma.$transaction([
-      this.prisma.salesOrder.count({ where }),
-      this.prisma.salesOrder.findMany({
-        where,
-        include: {
-          customer: {
-            select: { id: true, name: true, nameAr: true, nameEn: true, nameHe: true, code: true },
-          },
-          quotation: {
-            select: {
-              id: true,
-              number: true,
-              request: {
-                select: {
-                  id: true,
-                  number: true,
-                  endCustomerName: true,
-                  endCustomerPhone: true,
-                  endCustomerFax: true,
-                  externalOrderNumber: true,
-                  documents: {
-                    where: { archivedAt: null },
-                    select: {
-                      id: true,
-                      fileName: true,
-                      mimeType: true,
-                      storageKey: true,
-                    },
-                    orderBy: { createdAt: 'asc' },
-                    take: 8,
-                  },
-                },
+    /**
+     * COUNT=DATASET: classify the full filtered SO set (lightweight), then paginate
+     * within the selected journey bucket. Counts never depend on loaded pages.
+     */
+    const journeyLight = !isDealer
+      ? await this.prisma.salesOrder.findMany({
+          where: baseWhere,
+          select: {
+            id: true,
+            status: true,
+            productionOrders: {
+              select: {
+                status: true,
+                releasedToFactoryAt: true,
+                actualStartDate: true,
               },
             },
+            deliveries: {
+              select: { status: true, createdAt: true },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
           },
-          lines: {
-            orderBy: { sortOrder: 'asc' },
-            select: {
-              id: true,
-              description: true,
-              quantity: true,
-              unitPrice: true,
-              lineTotal: true,
-              productId: true,
-              manufacturingComplexity: true,
-              product: {
+          orderBy,
+        })
+      : null;
+
+    const journeyCounts = journeyLight
+      ? tallyJourneyCounts(
+          journeyLight.map((row) => ({
+            status: row.status,
+            productionOrders: row.productionOrders,
+            deliveries: row.deliveries,
+          })),
+        )
+      : emptyJourneyCounts();
+
+    const journeyBucket = !isDealer ? query.journeyBucket : undefined;
+    let scopedIds: string[] | null = null;
+    let totalItems: number;
+
+    if (journeyLight && journeyBucket) {
+      scopedIds = journeyLight
+        .filter(
+          (row) =>
+            classifyAdminOrderJourneyBucket({
+              status: row.status,
+              productionOrders: row.productionOrders,
+              deliveries: row.deliveries,
+            }) === journeyBucket,
+        )
+        .map((row) => row.id);
+      totalItems = scopedIds.length;
+    } else if (journeyLight) {
+      scopedIds = journeyLight.map((row) => row.id);
+      totalItems = scopedIds.length;
+    } else {
+      totalItems = await this.prisma.salesOrder.count({ where: baseWhere });
+    }
+
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query.pageSize) || 20));
+    const skip = (page - 1) * pageSize;
+
+    let pageIds: string[] | null = null;
+    if (scopedIds) {
+      pageIds = scopedIds.slice(skip, skip + pageSize);
+    }
+
+    const data =
+      pageIds && pageIds.length === 0
+        ? []
+        : await this.prisma.salesOrder.findMany({
+            where: pageIds ? { id: { in: pageIds } } : baseWhere,
+            include: {
+              customer: {
                 select: {
                   id: true,
-                  sku: true,
+                  name: true,
                   nameAr: true,
                   nameEn: true,
                   nameHe: true,
-                  imageUrl: true,
-                  manufacturingCost: true,
-                  basePrice: true,
-                  bomDefaults: true,
+                  code: true,
                 },
               },
-            },
-          },
-          productionOrders: {
-            select: {
-              id: true,
-              number: true,
-              status: true,
-              currentStageCode: true,
-              progressPercent: true,
-              releasedToFactoryAt: true,
-              actualStartDate: true,
-              tasks: {
-                where: {
-                  status: { not: 'CANCELLED' },
-                  isRework: false,
-                },
+              quotation: {
                 select: {
                   id: true,
-                  assignedEmployeeId: true,
-                  stageDefinition: {
-                    select: { code: true, executionKind: true, nameEn: true },
+                  number: true,
+                  request: {
+                    select: {
+                      id: true,
+                      number: true,
+                      endCustomerName: true,
+                      endCustomerPhone: true,
+                      endCustomerFax: true,
+                      externalOrderNumber: true,
+                      documents: {
+                        where: { archivedAt: null },
+                        select: {
+                          id: true,
+                          fileName: true,
+                          mimeType: true,
+                          storageKey: true,
+                        },
+                        orderBy: { createdAt: 'asc' },
+                        take: 8,
+                      },
+                    },
                   },
                 },
               },
+              lines: {
+                orderBy: { sortOrder: 'asc' },
+                select: {
+                  id: true,
+                  description: true,
+                  quantity: true,
+                  unitPrice: true,
+                  lineTotal: true,
+                  productId: true,
+                  manufacturingComplexity: true,
+                  product: {
+                    select: {
+                      id: true,
+                      sku: true,
+                      nameAr: true,
+                      nameEn: true,
+                      nameHe: true,
+                      imageUrl: true,
+                      manufacturingCost: true,
+                      basePrice: true,
+                      bomDefaults: true,
+                    },
+                  },
+                },
+              },
+              productionOrders: {
+                select: {
+                  id: true,
+                  number: true,
+                  status: true,
+                  currentStageCode: true,
+                  progressPercent: true,
+                  releasedToFactoryAt: true,
+                  actualStartDate: true,
+                  tasks: {
+                    where: {
+                      status: { not: 'CANCELLED' },
+                      isRework: false,
+                    },
+                    select: {
+                      id: true,
+                      assignedEmployeeId: true,
+                      stageDefinition: {
+                        select: { code: true, executionKind: true, nameEn: true },
+                      },
+                    },
+                  },
+                },
+              },
+              productionSetup: {
+                select: { status: true, releasedAt: true },
+              },
+              deliveries: {
+                select: {
+                  id: true,
+                  number: true,
+                  status: true,
+                  deliveryDate: true,
+                  customerConfirmedAt: true,
+                  actualDeliveredAt: true,
+                  loadPieces: {
+                    select: {
+                      id: true,
+                      pieceIndex: true,
+                      loadedAt: true,
+                      inventoryLot: {
+                        select: {
+                          warehouse: {
+                            select: {
+                              code: true,
+                              nameEn: true,
+                              nameAr: true,
+                              nameHe: true,
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+              },
             },
-          },
-          productionSetup: {
-            select: { status: true, releasedAt: true },
-          },
-          deliveries: {
-            select: { id: true, status: true, deliveryDate: true },
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-          },
-        },
-        orderBy,
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-    ]);
+            orderBy: pageIds ? undefined : orderBy,
+            skip: pageIds ? undefined : skip,
+            take: pageIds ? undefined : pageSize,
+          });
+
+    // Preserve journey light-scan order when filtering by id IN (...).
+    let orderedData = data;
+    if (pageIds && pageIds.length > 0) {
+      const byId = new Map(data.map((row) => [row.id, row]));
+      orderedData = pageIds
+        .map((id) => byId.get(id))
+        .filter((row): row is (typeof data)[number] => Boolean(row));
+    }
 
     const materialCosts = isDealer ? new Map<string, number>() : await this.loadMaterialCosts();
     const dealerPriceCache = new Map<string, Map<string, number>>();
 
-    // Resolve floor stage names for the page (admin only — dealers strip currentStage).
     const stageCodes = [
       ...new Set(
-        data
+        orderedData
           .flatMap((row) => row.productionOrders ?? [])
           .map((po) => po.currentStageCode)
           .filter((c): c is string => Boolean(c)),
@@ -588,8 +713,42 @@ export class SalesOrdersService {
         : [];
     const defsByCode = new Map(stageDefs.map((d) => [d.code, d]));
 
+    /** Depart timestamps from Delivery audit (canonical — never invent from updatedAt). */
+    const departDeliveryIds = !isDealer
+      ? [
+          ...new Set(
+            orderedData
+              .map((row) => row.deliveries?.[0])
+              .filter((d): d is NonNullable<typeof d> => {
+                if (!d) return false;
+                const st = String(d.status ?? '').toUpperCase();
+                return st === 'OUT_FOR_DELIVERY' || st === 'DELIVERED';
+              })
+              .map((d) => d.id),
+          ),
+        ]
+      : [];
+    const departAudits =
+      departDeliveryIds.length > 0
+        ? await this.prisma.auditEvent.findMany({
+            where: {
+              entityType: 'Delivery',
+              entityId: { in: departDeliveryIds },
+              action: { in: ['delivery.depart', 'delivery.depart.auto'] },
+            },
+            select: { entityId: true, createdAt: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        : [];
+    const truckDepartedByDeliveryId = new Map<string, Date>();
+    for (const ev of departAudits) {
+      if (ev.entityId && !truckDepartedByDeliveryId.has(ev.entityId)) {
+        truckDepartedByDeliveryId.set(ev.entityId, ev.createdAt);
+      }
+    }
+
     const enriched = await Promise.all(
-      data.map(async (row) => {
+      orderedData.map(async (row) => {
         let dealerPrices = dealerPriceCache.get(row.customerId);
         if (!dealerPrices) {
           dealerPrices = await this.loadDealerPrices(row.customerId);
@@ -602,60 +761,42 @@ export class SalesOrdersService {
           materialCosts,
           fallbackSellerTotal: row.total,
         });
-        const storedMfg =
-          row.manufacturingCost != null ? Number(row.manufacturingCost) : null;
-        const storedOk = storedMfg != null && Number.isFinite(storedMfg) && storedMfg > 0;
-        const productionPrice = storedOk ? storedMfg! : costs.productionPrice;
-        const costBreakdown =
-          (row.costBreakdown as OrderCostResult['costBreakdown'] | null | undefined) ??
-          costs.costBreakdown;
-        const profit = Number(costs.sellerPrice) - productionPrice;
-        const primaryLine = hydratedLines[0] ?? row.lines[0];
-        const title = primaryLine?.product
-          ? primaryLine.product.nameEn ||
-            primaryLine.product.nameAr ||
-            primaryLine.description
-          : primaryLine?.description ?? null;
-        let imageUrl =
-          (primaryLine?.product as { imageUrl?: string | null } | null | undefined)?.imageUrl ??
-          null;
-        if (!imageUrl && title) {
-          imageUrl = await this.resolveCatalogImage(title);
-        }
-        if (!imageUrl) {
-          imageUrl = this.documentImageUrl(
-            firstImageDocument(row.quotation?.request?.documents),
+        const productionPrice = costs.productionPrice;
+        const costBreakdown = costs.costBreakdown;
+        const profit = costs.profit;
+        const title =
+          hydratedLines[0]?.description ??
+          hydratedLines[0]?.product?.nameEn ??
+          row.projectName ??
+          row.number;
+        const imageUrl =
+          hydratedLines[0]?.product?.imageUrl ??
+          this.documentImageUrl(
+            firstImageDocument(row.quotation?.request?.documents ?? []),
           );
-        }
-        const requestWithoutStorageKeys = row.quotation?.request
-          ? {
-              ...row.quotation.request,
-              documents: (row.quotation.request.documents ?? []).map(
-                ({ storageKey: _k, ...doc }) => doc,
-              ),
-            }
-          : null;
+
         const latestDelivery = row.deliveries?.[0] ?? null;
         const poReadiness = !isDealer
-          ? row.productionOrders.map((po) => {
+          ? (row.productionOrders ?? []).map((po) => {
+              const tasks = (po.tasks ?? []) as ExecutableTaskInput[];
               const readiness = assessProductionReadiness({
                 status: po.status,
                 currentStageCode: po.currentStageCode,
-                tasks: (po.tasks ?? []) as ExecutableTaskInput[],
+                tasks,
               });
-              return { id: po.id, number: po.number, status: po.status, readiness };
+              return { id: po.id, readiness };
             })
           : [];
-        const required = poReadiness.reduce((n, po) => n + po.readiness.assignment.required, 0);
-        const assigned = poReadiness.reduce((n, po) => n + po.readiness.assignment.assigned, 0);
-        const missingCount = poReadiness.reduce(
-          (n, po) => n + po.readiness.assignment.missing.length,
+        const required = poReadiness.reduce(
+          (s, po) => s + (po.readiness.assignment.required ?? 0),
           0,
         );
-        const needsSetup = poReadiness.some(
-          (po) =>
-            po.readiness.boardBucket === 'needs_setup' || po.readiness.assignment.missing.length > 0,
+        const assigned = poReadiness.reduce(
+          (s, po) => s + (po.readiness.assignment.assigned ?? 0),
+          0,
         );
+        const missingCount = Math.max(0, required - assigned);
+        const needsSetup = (row.productionOrders?.length ?? 0) === 0;
         const canStartAll =
           poReadiness.length > 0 && poReadiness.every((po) => po.readiness.canStart);
         const actionHint = !isDealer
@@ -671,17 +812,36 @@ export class SalesOrdersService {
           : null;
 
         const productionOrders = row.productionOrders ?? [];
-        const executionStarted = productionOrders.some(
-          (po) =>
-            Boolean(po.actualStartDate) ||
-            ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(
-              String(po.status ?? '').toUpperCase(),
-            ),
-        );
+        const executionStarted = isExecutionStartedFromPos(productionOrders);
         const releasedToFactory =
-          executionStarted ||
-          productionOrders.some((po) => Boolean(po.releasedToFactoryAt));
+          executionStarted || isReleasedToFactoryFromPos(productionOrders);
         const productionSetupStatus = row.productionSetup?.status ?? null;
+        const journeyBucketResolved = classifyAdminOrderJourneyBucket({
+          status: row.status,
+          productionOrders,
+          deliveries: row.deliveries,
+        }) as AdminOrderJourneyBucket;
+
+        const requestWithoutStorageKeys = row.quotation?.request
+          ? {
+              ...row.quotation.request,
+              documents: (row.quotation.request.documents ?? []).map(
+                ({ storageKey: _sk, ...doc }) => doc,
+              ),
+            }
+          : null;
+
+        const journeyLogistics = !isDealer
+          ? buildJourneyLogisticsSummary({
+              delivery: latestDelivery,
+              soRequiredDeliveryDate: row.requiredDeliveryDate,
+              soStatus: row.status,
+              poStatuses: productionOrders.map((po) => po.status),
+              truckDepartedAt: latestDelivery
+                ? truckDepartedByDeliveryId.get(latestDelivery.id) ?? null
+                : null,
+            })
+          : null;
 
         const base = stripSalesOrderCosts(
           {
@@ -710,6 +870,8 @@ export class SalesOrdersService {
               row.status === 'DRAFT' && (row.productionOrders?.length ?? 0) === 0,
             releasedToFactory,
             executionStarted,
+            journeyBucket: journeyBucketResolved,
+            journeyLogistics,
             manufacturingComplexity: resolveOrderManufacturingComplexity(
               row.lines.map((l) => l.manufacturingComplexity),
             ),
@@ -729,6 +891,10 @@ export class SalesOrdersService {
                 }
               : null,
             productionOrders: row.productionOrders.map(({ tasks: _t, ...po }) => po),
+            // Strip nested loadPieces from raw deliveries payload — card uses journeyLogistics.
+            deliveries: (row.deliveries ?? []).map(
+              ({ loadPieces: _lp, ...d }) => d,
+            ),
           },
           user,
         );
@@ -738,7 +904,10 @@ export class SalesOrdersService {
 
     return {
       data: enriched,
-      meta: paginatedMeta(query.page, query.pageSize, totalItems),
+      meta: {
+        ...paginatedMeta(page, pageSize, totalItems),
+        ...(!isDealer ? { journeyCounts } : {}),
+      },
     };
   }
 

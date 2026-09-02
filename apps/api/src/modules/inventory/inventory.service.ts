@@ -1820,11 +1820,44 @@ export class InventoryService {
         warehouse: true,
         productionOrder: { select: { id: true, number: true, productDescription: true } },
         stageInstance: { include: { stageDefinition: true } },
+        wipPiece: { select: { kit: { select: { id: true, qrCode: true } } } },
       },
     });
     if (!lot) return null;
     const [mapped] = await this.withLotTraceability([lot]);
-    return mapped;
+    return {
+      ...mapped,
+      wipKit: lot.wipPiece?.kit
+        ? { id: lot.wipPiece.kit.id, qrCode: lot.wipPiece.kit.qrCode }
+        : null,
+    };
+  }
+
+  async findLotByCode(raw: string) {
+    const code = String(raw ?? '').trim();
+    if (!code) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Lot not found.' });
+    }
+    const lot = await this.prisma.inventoryLot.findFirst({
+      where: { qrCode: code },
+      include: {
+        inventoryItem: { include: { product: true } },
+        warehouse: true,
+        productionOrder: { select: { id: true, number: true, productDescription: true } },
+        stageInstance: { include: { stageDefinition: true } },
+        wipPiece: { select: { kit: { select: { id: true, qrCode: true } } } },
+      },
+    });
+    if (!lot) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Lot not found.' });
+    }
+    const [mapped] = await this.withLotTraceability([lot]);
+    return {
+      ...mapped,
+      wipKit: lot.wipPiece?.kit
+        ? { id: lot.wipPiece.kit.id, qrCode: lot.wipPiece.kit.qrCode }
+        : null,
+    };
   }
 
   private async withLotTraceability<

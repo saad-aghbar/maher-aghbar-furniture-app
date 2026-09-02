@@ -3,9 +3,12 @@ import {
   assessDatesReadiness,
   assessProductionReadiness,
   isExecutableProductionTask,
+  isProductionStartDue,
   listExecutableTasks,
   resolveBoardBucket,
   taskHasPlannedTiming,
+  utcCalendarDayMs,
+  utcStartOfTomorrow,
   STARTABLE_PO_STATUSES,
 } from './production-readiness';
 
@@ -121,12 +124,23 @@ describe('production-readiness', () => {
       status: 'PLANNED',
       tasks: [dated(carpentry, 'u1'), dated({ ...assembly, assignedEmployeeId: null }, 'u2')],
       schedulePresent: false,
+      plannedStartDate: '2026-09-01T08:00:00.000Z',
     });
     expect(ready.canStart).toBe(true);
     expect(ready.workersReady).toBe(true);
     expect(ready.datesReady).toBe(true);
     expect(ready.boardBucket).toBe('ready_to_start');
     expect(ready.materialsReady).toBe(true);
+  });
+
+  it('blocks canStart when order production start date is missing', () => {
+    const r = assessProductionReadiness({
+      status: 'PLANNED',
+      tasks: [dated(carpentry, 'u1'), dated({ ...assembly, assignedEmployeeId: null }, 'u2')],
+      plannedStartDate: null,
+    });
+    expect(r.canStart).toBe(false);
+    expect(r.reasons.some((x) => x.code === 'MISSING_PRODUCTION_START')).toBe(true);
   });
 
   it('needs_setup when workers missing', () => {
@@ -159,6 +173,7 @@ describe('production-readiness', () => {
     const r = assessProductionReadiness({
       status: 'WAITING_FOR_MATERIALS',
       tasks: [dated(carpentry, 'u1'), dated({ ...assembly, assignedEmployeeId: null }, 'u2')],
+      plannedStartDate: '2026-09-01T08:00:00.000Z',
     });
     expect(r.materialsReady).toBe(false);
     expect(r.reasons.some((x) => x.code === 'MATERIALS_HOLD')).toBe(true);
@@ -203,5 +218,37 @@ describe('production-readiness', () => {
   it('lists startable statuses', () => {
     expect(STARTABLE_PO_STATUSES).toContain('PLANNED');
     expect(STARTABLE_PO_STATUSES).toContain('WAITING_FOR_MATERIALS');
+  });
+});
+
+describe('isProductionStartDue (UTC calendar day)', () => {
+  it('treats YYYY-MM-DDT12:00:00.000Z as that UTC calendar day', () => {
+    expect(utcCalendarDayMs('2026-09-03T12:00:00.000Z')).toBe(
+      Date.UTC(2026, 8, 3),
+    );
+  });
+
+  it('is not due when production day is still in the future', () => {
+    expect(
+      isProductionStartDue(
+        '2026-09-03T12:00:00.000Z',
+        new Date('2026-09-01T15:00:00.000Z'),
+      ),
+    ).toBe(false);
+  });
+
+  it('is due on the production calendar day', () => {
+    expect(
+      isProductionStartDue(
+        '2026-09-03T12:00:00.000Z',
+        new Date('2026-09-03T01:00:00.000Z'),
+      ),
+    ).toBe(true);
+  });
+
+  it('utcStartOfTomorrow is exclusive upper bound for due scans', () => {
+    expect(utcStartOfTomorrow(new Date('2026-09-01T15:00:00.000Z')).toISOString()).toBe(
+      '2026-09-02T00:00:00.000Z',
+    );
   });
 });

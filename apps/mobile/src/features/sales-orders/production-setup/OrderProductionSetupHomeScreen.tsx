@@ -73,7 +73,7 @@ export function OrderProductionSetupHomeScreen({ salesOrderId }: Props) {
 
   function openLine(lineId: string) {
     router.push(
-      `/(app)/(admin)/orders/${salesOrderId}/production-setup/lines/${lineId}` as Href,
+      `/(app)/(admin)/orders/${salesOrderId}/production-plan?lineId=${encodeURIComponent(lineId)}` as Href,
     );
   }
 
@@ -117,7 +117,7 @@ export function OrderProductionSetupHomeScreen({ salesOrderId }: Props) {
       <AppScreen>
         <DetailNav
           onBack={() => router.back()}
-          title={t('mobile.productionSetup.title')}
+          title={t('mobile.orders.journey.planReadinessTitle')}
         />
         <EmptyState
           title={t('mobile.noModules')}
@@ -132,7 +132,7 @@ export function OrderProductionSetupHomeScreen({ salesOrderId }: Props) {
       <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
         <DetailNav
           onBack={() => router.back()}
-          title={t('mobile.productionSetup.title')}
+          title={t('mobile.orders.journey.planReadinessTitle')}
         />
         <View style={{ padding: theme.spacing.lg }}>
           <AppText variant="caption" color="muted">
@@ -148,7 +148,7 @@ export function OrderProductionSetupHomeScreen({ salesOrderId }: Props) {
       <AppScreen>
         <DetailNav
           onBack={() => router.back()}
-          title={t('mobile.productionSetup.title')}
+          title={t('mobile.orders.journey.planReadinessTitle')}
         />
         <ErrorState
           title={t('mobile.productionSetup.errorTitle')}
@@ -170,7 +170,7 @@ export function OrderProductionSetupHomeScreen({ salesOrderId }: Props) {
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
       <DetailNav
         onBack={() => router.back()}
-        title={t('mobile.productionSetup.title')}
+        title={t('mobile.orders.journey.planReadinessTitle')}
         trailing={
           <StatusBadge status={String(setup.status)} label={headerStatusLabel} />
         }
@@ -191,33 +191,7 @@ export function OrderProductionSetupHomeScreen({ salesOrderId }: Props) {
           gap: theme.spacing.md,
         }}
       >
-        {released && planEditable ? (
-          <ListItemEnter index={nextIndex()}>
-            <OrderBoardCard
-              accent={colors.brand}
-              style={{ backgroundColor: colors.brandSoft }}
-            >
-              <OrderSectionHeader
-                icon="construct-outline"
-                label={t('mobile.productionSetup.preparingEditBanner')}
-                accent={colors.brand}
-              />
-              <AppText variant="caption" color="secondary">
-                {t('mobile.productionSetup.preparingEditBannerHint')}
-              </AppText>
-              <SecondaryButton
-                label={t('mobile.productionSetup.openPlanCta')}
-                onPress={() => {
-                  void haptics.selection();
-                  router.push(
-                    `/(app)/(admin)/orders/${salesOrderId}/production-plan` as Href,
-                  );
-                }}
-                style={{ marginTop: theme.spacing.sm }}
-              />
-            </OrderBoardCard>
-          </ListItemEnter>
-        ) : released ? (
+        {released ? (
           <ListItemEnter index={nextIndex()}>
             <OrderBoardCard
               accent={colors.success}

@@ -36,6 +36,9 @@ export type DeliveryListItem = {
   } | null;
   items?: Array<{ id: string; description: string; quantity: number | string }>;
   loadProgress?: { loaded: number; total: number };
+  /** 1-based index of first unchecked package when load incomplete. */
+  firstMissingPackageIndex?: number | null;
+  allLoaded?: boolean;
   /** Primary product label for floor cards. */
   productTitle?: string | null;
   productNameEn?: string | null;

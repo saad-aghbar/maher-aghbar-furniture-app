@@ -22,6 +22,7 @@ import { WipKitController } from './wip-kit.controller';
 import { ManufacturingCostService } from './manufacturing-cost.service';
 import { ManufacturingCostController } from './manufacturing-cost.controller';
 import { OrderPlanSetupService } from './order-plan-setup.service';
+import { ProductionStartWebhookController } from './production-start.webhook.controller';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { OrderPlanSetupService } from './order-plan-setup.service';
     OrderProductionSetupController,
     WipKitController,
     ManufacturingCostController,
+    ProductionStartWebhookController,
   ],
   providers: [
     ProductionService,
@@ -54,6 +56,7 @@ import { OrderPlanSetupService } from './order-plan-setup.service';
     ManufacturingCostService,
   ],
   exports: [
+    ProductionService,
     StagePipelineService,
     ProductionInventoryService,
     MaterialUsageService,

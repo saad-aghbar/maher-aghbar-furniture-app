@@ -4109,16 +4109,6 @@
       "AdminScheduleStrip"
     ]
   },
-  "src/features/production/components/AssignWorkerSheet.tsx": {
-    "classification": "REPRESENTED_BY_PARENT",
-    "registryIds": [
-      "feature.production.assign-worker-sheet"
-    ],
-    "notes": "parent-domain:production",
-    "exportNames": [
-      "AssignWorkerSheet"
-    ]
-  },
   "src/features/production/components/HoursMinutesRow.tsx": {
     "classification": "REPRESENTED_BY_PARENT",
     "registryIds": [
@@ -4229,16 +4219,6 @@
     "notes": "parent-domain:production",
     "exportNames": [
       "ProductionOrderCard"
-    ]
-  },
-  "src/features/production/components/ProductionPlanAssignSheet.tsx": {
-    "classification": "REPRESENTED_BY_PARENT",
-    "registryIds": [
-      "feature.production.production-plan-assign-sheet"
-    ],
-    "notes": "parent-domain:production",
-    "exportNames": [
-      "ProductionPlanAssignSheet"
     ]
   },
   "src/features/production/components/ProductionSkeleton.tsx": {

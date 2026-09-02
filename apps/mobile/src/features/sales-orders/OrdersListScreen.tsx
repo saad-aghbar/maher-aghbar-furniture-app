@@ -44,6 +44,7 @@ import { OrdersDealerSheet } from './components/OrdersDealerSheet';
 import { OrdersLedgerHome } from './components/OrdersLedgerHome';
 import { OrdersListSkeleton } from './components/OrdersListSkeleton';
 import { OrdersPipelineHome } from './components/OrdersPipelineHome';
+import { resolveOrderPrimaryCtaHref } from './resolveOrderPrimaryCtaHref';
 import { OrdersSignatureHome } from './components/OrdersSignatureHome';
 import { OrdersWorkbenchHome } from './components/OrdersWorkbenchHome';
 import type { AdminLifecycleChipKey } from './components/AdminLifecycleChips';
@@ -114,7 +115,7 @@ export function OrdersListScreen({
   const [stageFocus, setStageFocus] = useState<OrdersStageFocus>('all');
   /** Admin commercial desk — Sales Orders vs Customer Requests. */
   const [adminDeskMode, setAdminDeskMode] = useState<AdminOrdersDeskMode>('orders');
-  /** Admin commercial desk lifecycle focus — client-side section filter (SO only). */
+  /** Admin commercial desk lifecycle focus — server-scoped journeyBucket (COUNT=DATASET). */
   const [adminLifecycleFocus, setAdminLifecycleFocus] =
     useState<AdminLifecycleChipKey>('all');
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -183,19 +184,53 @@ export function OrdersListScreen({
 
   /**
    * Admin: server search via `q` (debounced). Sort via API.
+   * Journey chip is server-scoped (COUNT=DATASET) — never client-tally loaded pages.
    * Only attach `q` on the Sales Orders desk — Customer Requests use their own query.
-   * Dealer/status/delivery/dealer still refined client-side where needed.
    */
   const filters = useMemo(
     () => ({
       sortBy: applied.sortBy,
       sortDir: applied.sortDir,
       ...(variant === 'admin' && adminDeskMode === 'orders' && q ? { q } : {}),
+      ...(variant === 'admin' &&
+      adminDeskMode === 'orders' &&
+      adminLifecycleFocus &&
+      adminLifecycleFocus !== 'all'
+        ? {
+            journeyBucket: adminLifecycleFocus as
+              | 'preparing'
+              | 'ready_to_start'
+              | 'in_production'
+              | 'ready_to_ship'
+              | 'shipped'
+              | 'delivered',
+          }
+        : {}),
     }),
-    [adminDeskMode, applied.sortBy, applied.sortDir, q, variant],
+    [
+      adminDeskMode,
+      adminLifecycleFocus,
+      applied.sortBy,
+      applied.sortDir,
+      q,
+      variant,
+    ],
   );
 
   const query = useOrdersInfiniteQuery(filters, allowed && !forceState);
+
+  /** Server journeyCounts — stable across pagination; never loadedRows.length. */
+  const journeyCounts = useMemo(() => {
+    const pages = query.data?.pages ?? [];
+    for (let i = pages.length - 1; i >= 0; i -= 1) {
+      const meta = pages[i]?.meta as
+        | { journeyCounts?: Record<string, number> }
+        | undefined;
+      if (meta?.journeyCounts) return meta.journeyCounts;
+    }
+    return null;
+  }, [query.data?.pages]);
+
   const requestSearchQ =
     variant === 'dealer' || (variant === 'admin' && adminDeskMode === 'requests')
       ? q
@@ -565,6 +600,33 @@ export function OrdersListScreen({
     router.push(detailHref(id));
   };
 
+  const onPrimaryCta = (order: {
+    id: string;
+    kind?: 'order' | 'rfq';
+    lifecycle?: import('./adminOrderLifecycle').AdminOrderLifecycle;
+    primaryCta?: import('./adminOrderJourney').JourneyPrimaryCta;
+    primaryProductionOrderId?: string | null;
+    productionReadinessSummary?: { primaryProductionOrderId?: string | null } | null;
+    journeyLogistics?: import('@/api/modules/sales-orders').SalesOrderJourneyLogistics | null;
+  }) => {
+    if (order.kind === 'rfq') {
+      onPressItem(order.id, 'rfq');
+      return;
+    }
+    router.push(
+      resolveOrderPrimaryCtaHref({
+        salesOrderId: order.id,
+        lifecycle: order.lifecycle,
+        primaryCta: order.primaryCta,
+        primaryProductionOrderId:
+          order.primaryProductionOrderId ??
+          order.productionReadinessSummary?.primaryProductionOrderId ??
+          null,
+        journeyLogistics: order.journeyLogistics ?? null,
+      }),
+    );
+  };
+
   const onRefresh = () => {
     void query.refetch();
     if (variant === 'dealer' || variant === 'admin') void requestsQuery.refetch();
@@ -689,6 +751,7 @@ export function OrdersListScreen({
     onEndReached,
     isFetchingNextPage: Boolean(query.isFetchingNextPage),
     onPressItem,
+    onPrimaryCta: variant === 'admin' ? onPrimaryCta : undefined,
     banner,
   };
 
@@ -699,7 +762,7 @@ export function OrdersListScreen({
           {...sharedCompositionProps}
           deskMode={adminDeskMode}
           onDeskModeChange={variant === 'admin' ? onAdminDeskModeChange : undefined}
-          ordersCount={adminSalesOrderCards.length}
+          ordersCount={journeyCounts?.all ?? adminSalesOrderCards.length}
           requestsCount={requestsTotalItems}
           statusChip={statusChip}
           onStatusChipChange={onChipChange}
@@ -707,6 +770,7 @@ export function OrdersListScreen({
           onAdminLifecycleFocusChange={
             variant === 'admin' ? onAdminLifecycleFocusChange : undefined
           }
+          journeyCounts={journeyCounts}
           dealerLabel={variant === 'admin' ? selectedDealerLabel : null}
           onOpenDealerFilter={
             variant === 'admin' ? () => setDealerSheetOpen(true) : undefined

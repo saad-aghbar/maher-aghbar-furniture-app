@@ -47,7 +47,8 @@ export function selectDeliveryHumanPhase(input: {
         whyKey: 'mobile.deliveryLoad.attentionLoadIncomplete',
       };
     }
-    if (input.canDepart) {
+    // Fully loaded ≠ shipped — still needs explicit Confirm truck departed.
+    if (input.canDepart || (total > 0 && loaded === total)) {
       return {
         phase: 'attention',
         labelKey: 'mobile.deliveryLoad.statusAttention',

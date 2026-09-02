@@ -31,6 +31,16 @@ describe('selectDeliveryHumanPhase', () => {
     expect(next.phase).toBe('attention');
     expect(next.whyKey).toBe('mobile.deliveryLoad.attentionAwaitingDepart');
   });
+
+  it('treats N/N loaded as awaiting depart even without canDepart flag', () => {
+    const next = selectDeliveryHumanPhase({
+      status: 'READY',
+      loaded: 8,
+      total: 8,
+    });
+    expect(next.phase).toBe('attention');
+    expect(next.whyKey).toBe('mobile.deliveryLoad.attentionAwaitingDepart');
+  });
 });
 
 describe('selectDealerDeliveryPhase', () => {

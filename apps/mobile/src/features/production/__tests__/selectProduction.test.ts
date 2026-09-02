@@ -1,5 +1,6 @@
 import {
   productionFloorStatusLabel,
+  productionStartDueHint,
   selectProductionCard,
   selectProductionDetail,
   workersForStage,
@@ -115,6 +116,41 @@ describe('selectProduction', () => {
     expect(card.progressPercent).toBe(55);
     expect(card.isLate).toBe(true);
     expect(card.showStages).toBe(false);
+    expect(card.startDueHint).toBeNull();
+    expect(card.salesOrderId).toBeNull();
+  });
+
+  it('surfaces startDueHint only for Ready released orders (presentation)', () => {
+    const dueToday = productionStartDueHint(
+      {
+        status: 'READY',
+        releasedToFactoryAt: '2026-08-01T00:00:00.000Z',
+        plannedStartDate: '2026-09-01T00:00:00.000Z',
+        actualStartDate: null,
+      },
+      new Date('2026-09-01T15:00:00.000Z'),
+    );
+    expect(dueToday).toBe('due_today');
+
+    const passed = productionStartDueHint(
+      {
+        status: 'READY',
+        releasedToFactoryAt: '2026-08-01T00:00:00.000Z',
+        plannedStartDate: '2026-08-20T00:00:00.000Z',
+        actualStartDate: null,
+      },
+      new Date('2026-09-01T15:00:00.000Z'),
+    );
+    expect(passed).toBe('planned_start_passed');
+
+    expect(
+      productionStartDueHint({
+        status: 'READY',
+        releasedToFactoryAt: '2026-08-01T00:00:00.000Z',
+        plannedStartDate: '2026-08-20T00:00:00.000Z',
+        actualStartDate: '2026-08-21T00:00:00.000Z',
+      }),
+    ).toBeNull();
   });
 
   it('keeps showStages false even when API includes stages', () => {

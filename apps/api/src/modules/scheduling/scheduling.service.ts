@@ -1758,6 +1758,7 @@ export class SchedulingService implements OnModuleInit {
       stages: plannedStages,
       bufferMinutes: Math.round((bufferPercent / 100) * totalMinutes),
       materialReadyAt: materialApplied.orderMaterialReadyAt,
+      productionReadyAt: po.plannedStartDate ?? opts?.fromDate ?? null,
     };
 
     const ctx = { calendar, workers, existingOccupancy: occupancy, now };
@@ -1930,7 +1931,8 @@ export class SchedulingService implements OnModuleInit {
       await tx.productionOrder.update({
         where: { id: po.id },
         data: {
-          ...(earliestStart ? { plannedStartDate: earliestStart } : {}),
+          // Keep admin-chosen production start as the floor; only fill when unset.
+          ...(earliestStart && !po.plannedStartDate ? { plannedStartDate: earliestStart } : {}),
           ...(result.earliestCompletion ? { plannedCompletionDate: result.earliestCompletion } : {}),
         },
       });
@@ -2135,10 +2137,16 @@ export class SchedulingService implements OnModuleInit {
         }
       }
 
+      const existingPo = await tx.productionOrder.findUnique({
+        where: { id: poId },
+        select: { plannedStartDate: true },
+      });
       await tx.productionOrder.update({
         where: { id: poId },
         data: {
-          ...(earliestStart ? { plannedStartDate: earliestStart } : {}),
+          ...(earliestStart && !existingPo?.plannedStartDate
+            ? { plannedStartDate: earliestStart }
+            : {}),
           ...(latestEnd ? { plannedCompletionDate: latestEnd } : {}),
         },
       });
@@ -2222,11 +2230,17 @@ export class SchedulingService implements OnModuleInit {
           ...(latestEnd ? { committedCompletionDate: latestEnd } : {}),
         },
       });
+      const existingPo = await tx.productionOrder.findUnique({
+        where: { id: poId },
+        select: { plannedStartDate: true },
+      });
       await tx.productionOrder.update({
         where: { id: poId },
         data: {
           ...(latestEnd ? { plannedCompletionDate: latestEnd } : {}),
-          ...(earliestStart ? { plannedStartDate: earliestStart } : {}),
+          ...(earliestStart && !existingPo?.plannedStartDate
+            ? { plannedStartDate: earliestStart }
+            : {}),
         },
       });
     });
@@ -5886,10 +5900,16 @@ export class SchedulingService implements OnModuleInit {
         });
         sort += 1;
       }
+      const existingPo = await tx.productionOrder.findUnique({
+        where: { id: poId },
+        select: { plannedStartDate: true },
+      });
       await tx.productionOrder.update({
         where: { id: poId },
         data: {
-          plannedStartDate: earliestStart,
+          ...(earliestStart && !existingPo?.plannedStartDate
+            ? { plannedStartDate: earliestStart }
+            : {}),
           plannedCompletionDate: earliestCompletion,
         },
       });

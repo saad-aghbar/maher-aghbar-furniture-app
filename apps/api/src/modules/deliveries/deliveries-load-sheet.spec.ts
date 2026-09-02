@@ -382,6 +382,36 @@ describe('DeliveryLoadService', () => {
     expect(result.status).toBe(DeliveryStatus.READY);
   });
 
+  it('double depart is idempotent and does not re-issue FIN', async () => {
+    const { service, prisma, inventory } = makeService();
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 'd1',
+      driverId: 'driver-1',
+      status: DeliveryStatus.OUT_FOR_DELIVERY,
+      salesOrderId: 'so-1',
+      customerId: 'c1',
+      number: 'DEL-1',
+    });
+    jest.spyOn(service, 'getLoadSheet').mockResolvedValue({
+      id: 'd1',
+      status: DeliveryStatus.OUT_FOR_DELIVERY,
+      canDepart: false,
+      allLoaded: true,
+      loadProgress: { loaded: 2, total: 2 },
+    } as any);
+
+    const result = await service.depart('d1', {
+      id: 'driver-1',
+      roles: ['PRODUCTION_WORKER'],
+      permissions: ['delivery.update'],
+    } as any);
+
+    expect(result.status).toBe(DeliveryStatus.OUT_FOR_DELIVERY);
+    expect(inventory.issueForDelivery).not.toHaveBeenCalled();
+    expect(prisma.delivery.update).not.toHaveBeenCalled();
+    expect(prisma.auditEvent.create).not.toHaveBeenCalled();
+  });
+
   it('departs and issues FG when all pieces loaded', async () => {
     const { service, prisma, inventory } = makeService();
     prisma.delivery.findUnique.mockResolvedValue({
@@ -424,6 +454,11 @@ describe('DeliveryLoadService', () => {
     } as any);
     expect(inventory.issueForDelivery).toHaveBeenCalledWith('d1', 'so-1', 'driver-1', prisma);
     expect(result.status).toBe(DeliveryStatus.OUT_FOR_DELIVERY);
+    expect(prisma.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'delivery.depart' }),
+      }),
+    );
   });
 
   it('materializes packages from lot qty × packaging expectedPieceCount', async () => {

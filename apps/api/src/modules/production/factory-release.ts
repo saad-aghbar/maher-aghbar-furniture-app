@@ -53,6 +53,34 @@ export function productionFactoryBucket(
   return 'ready_to_start';
 }
 
+/**
+ * Next ProductionOrder.status after stage rollup.
+ * Must NOT flip Confirm/release (READY, stages unlocked) into IN_PROGRESS —
+ * that made every Confirm land in In production before any worker started.
+ */
+export function resolveProductionOrderRollupStatus(input: {
+  allComplete: boolean;
+  readyForDelivery: boolean;
+  /** True when a stage/task has actually started (or order already has actualStartDate). */
+  floorStarted: boolean;
+  currentStatus: string | null | undefined;
+  releasedToFactoryAt: Date | string | null | undefined;
+}): ProductionOrderStatus {
+  if (input.allComplete) return ProductionOrderStatus.COMPLETED;
+  if (input.readyForDelivery) return ProductionOrderStatus.READY_FOR_DELIVERY;
+  if (input.floorStarted) return ProductionOrderStatus.IN_PROGRESS;
+
+  const current = String(input.currentStatus ?? '').toUpperCase();
+  if (current === 'WAITING_FOR_MATERIALS') return ProductionOrderStatus.WAITING_FOR_MATERIALS;
+  if (input.releasedToFactoryAt || current === 'READY') return ProductionOrderStatus.READY;
+  if (current === 'DRAFT') return ProductionOrderStatus.DRAFT;
+  if (current === 'PLANNED') return ProductionOrderStatus.PLANNED;
+  if ((Object.values(ProductionOrderStatus) as string[]).includes(current)) {
+    return current as ProductionOrderStatus;
+  }
+  return ProductionOrderStatus.PLANNED;
+}
+
 /** Prisma filter: only POs that have crossed Release to factory (or legacy already on floor). */
 export function releasedToFactoryWhere(): Prisma.ProductionOrderWhereInput {
   return {

@@ -24,13 +24,15 @@ export function partsFromIso(iso: string | null | undefined): LocalWallParts | n
 }
 
 /**
- * Default assign window: existing planned times, else a short afternoon/morning slot
- * (not a full 08:00–17:00 day — that collides with almost every busy worker).
+ * Default assign window: existing planned times, else order production start day,
+ * else a short afternoon/morning slot from now.
  */
 export function defaultAssignWindowParts(opts?: {
   plannedStart?: string | null;
   plannedCompletion?: string | null;
   estimatedMinutes?: number | null;
+  /** Order-level production start (admin-chosen on the plan). */
+  orderPlannedStartDate?: string | null;
   now?: Date;
 }): {
   start: LocalWallParts;
@@ -63,6 +65,29 @@ export function defaultAssignWindowParts(opts?: {
     return {
       start: partsFromIso(startDate.toISOString())!,
       due: fromDue,
+      estHours: String(eh || ''),
+      estMinutes: em ? String(em).padStart(2, '0') : '',
+    };
+  }
+
+  const orderYmd = (() => {
+    const raw = opts?.orderPlannedStartDate?.trim();
+    if (!raw) return null;
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(raw);
+    if (m) return m[1]!;
+    return partsFromIso(raw)?.ymd ?? null;
+  })();
+  if (orderYmd && !fromStart) {
+    const start: LocalWallParts = {
+      ymd: orderYmd,
+      hour: '8',
+      minute: '00',
+    };
+    const startDate = new Date(`${orderYmd}T08:00:00`);
+    const end = new Date(startDate.getTime() + duration * 60_000);
+    return {
+      start,
+      due: partsFromIso(end.toISOString())!,
       estHours: String(eh || ''),
       estMinutes: em ? String(em).padStart(2, '0') : '',
     };

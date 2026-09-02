@@ -19,6 +19,7 @@ import type { ProductionSetupStage } from '@/api/modules/workflow';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
+import { InlineDateCalendar } from '@/components/calendar';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
 import { EmptyState } from '@/components/feedback/EmptyState';
 import { ErrorState } from '@/components/feedback/ErrorState';
@@ -34,6 +35,7 @@ import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorS
 import { seedOrdersDeskChip } from '@/features/sales-orders/ordersDeskContext';
 import { WorkflowPickerSheet } from '@/features/sales-orders/production-setup/components/WorkflowPickerSheet';
 import { ProductionTaskSheet } from '@/features/production/components/ProductionTaskSheet';
+import { todayYmd } from '@/features/production/assignWindow';
 import {
   useAssignableWorkersQuery,
   useAssignTaskMutation,
@@ -41,6 +43,7 @@ import {
   useOrderPlanSetupQuery,
   usePutOrderPlanSetupMutation,
   useStartProductionMutation,
+  useSuggestPlanScheduleMutation,
   useUpdateTaskNotesMutation,
 } from '@/features/production/query';
 import {
@@ -105,6 +108,8 @@ function planTaskToRow(
     timingStatus: null,
     plannedStart: task.plannedStart ?? null,
     plannedCompletion: task.plannedCompletion ?? null,
+    actualStart: null,
+    actualEnd: null,
     stageCode: stage?.code ?? null,
     stageDefinitionId: task.stageDefinitionId ?? stage?.id ?? null,
     dependsOnCodes: [],
@@ -640,7 +645,7 @@ export function OrderProductionPlanEditorScreen({
   salesOrderId,
 }: Props) {
   const { user } = useAuth();
-  const { t, locale, isRTL, formatCurrency } = useLocale();
+  const { t, locale, isRTL, formatCurrency, formatDate } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { showToast } = useToast();
   const router = useRouter();
@@ -664,6 +669,7 @@ export function OrderProductionPlanEditorScreen({
   const putMutation = usePutOrderPlanSetupMutation(productionOrderId);
   const assignWorkflowMutation = useAssignOrderWorkflowMutation(productionOrderId);
   const startMutation = useStartProductionMutation(productionOrderId);
+  const suggestScheduleMutation = useSuggestPlanScheduleMutation(productionOrderId);
   const assignMutation = useAssignTaskMutation(productionOrderId);
   const notesMutation = useUpdateTaskNotesMutation(productionOrderId);
   const ensurePlanMutation = useEnsurePlanTasksMutation(productionOrderId);
@@ -676,6 +682,7 @@ export function OrderProductionPlanEditorScreen({
   const [matsExpanded, setMatsExpanded] = useState(false);
   const [editingStage, setEditingStage] = useState<ProductionSetupStage | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [productionStartYmd, setProductionStartYmd] = useState(todayYmd());
   const [assignTaskId, setAssignTaskId] = useState<string | null>(null);
   const [assignWindow, setAssignWindow] = useState<{
     plannedStart?: string;
@@ -715,6 +722,14 @@ export function OrderProductionPlanEditorScreen({
       map[s.workflowNodeId] = s;
     }
     setStageDrafts(map);
+    if (query.data.plannedStartDate) {
+      const d = new Date(query.data.plannedStartDate);
+      if (!Number.isNaN(d.getTime())) {
+        setProductionStartYmd(
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+        );
+      }
+    }
   }, [query.data, dirty]);
 
   useEffect(() => {
@@ -839,27 +854,43 @@ export function OrderProductionPlanEditorScreen({
   };
 
   const onConfirm = () => {
-    startMutation.mutate(undefined as never, {
-      onSuccess: () => {
-        void haptics.confirmMedium();
-        setConfirmOpen(false);
-        seedOrdersDeskChip('ready_to_start');
-        showToast({
-          variant: 'success',
-          message: t('mobile.orders.journey.confirmPlanSuccess'),
-        });
-        router.replace(`/(app)/(admin)/orders/${salesOrderId}` as Href);
+    const ymd = productionStartYmd.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      void haptics.error();
+      showToast({
+        variant: 'error',
+        message: t('mobile.productionSetup.productionStartRequired'),
+      });
+      return;
+    }
+    // Persist calendar day + release in one API call (server sets date before release).
+    const productionStartIso = `${ymd}T12:00:00.000Z`;
+    startMutation.mutate(
+      { plannedStartDate: productionStartIso },
+      {
+        onSuccess: () => {
+          void haptics.confirmMedium();
+          setConfirmOpen(false);
+          showToast({
+            variant: 'success',
+            message: t('mobile.orders.journey.confirmPlanSuccess'),
+          });
+          // Ready-to-start desk — avoid opening detail immediately (same-day
+          // start would lazy-promote into In production on that read).
+          seedOrdersDeskChip('ready_to_start');
+          router.replace('/(app)/(admin)/orders' as Href);
+        },
+        onError: (err) => {
+          void haptics.error();
+          showToast({
+            variant: 'error',
+            message: isApiError(err)
+              ? toastMessageForError(err)
+              : t('mobile.productionSetup.actionFailed'),
+          });
+        },
       },
-      onError: (err) => {
-        void haptics.error();
-        showToast({
-          variant: 'error',
-          message: isApiError(err)
-            ? toastMessageForError(err)
-            : t('mobile.productionSetup.actionFailed'),
-        });
-      },
-    });
+    );
   };
 
   if (query.isLoading) {
@@ -895,14 +926,30 @@ export function OrderProductionPlanEditorScreen({
     ? localizedName(locale, data.workflow, data.workflow.code ?? '—')
     : t('mobile.productionSetup.noWorkflowSelected');
 
+  const hasLocalProductionStart = /^\d{4}-\d{2}-\d{2}$/.test(
+    productionStartYmd.trim(),
+  );
+  const hasProductionStart =
+    Boolean(data.readiness.hasProductionStart) ||
+    Boolean(data.plannedStartDate) ||
+    hasLocalProductionStart;
+
   const canConfirmNow =
     canConfirm &&
     data.planEditable &&
     !dirty &&
-    Boolean(data.readiness.canConfirm);
+    hasProductionStart &&
+    Boolean(data.readiness.hasWorkflow) &&
+    Boolean(data.readiness.hasMaterials) &&
+    data.readiness.hasExecutableTasks !== false &&
+    (data.readiness.assignment.missing ?? []).length === 0 &&
+    (data.readiness.dates?.missing ?? []).length === 0;
 
   const confirmBlockedHint = (() => {
     if (dirty) return t('mobile.productionSetup.saveBeforeConfirm');
+    if (!hasProductionStart) {
+      return t('mobile.productionSetup.confirmNeedsProductionStartHint');
+    }
     if (!data.readiness.hasWorkflow || !data.readiness.hasMaterials) {
       return t('mobile.productionSetup.confirmBlockedHint');
     }
@@ -917,6 +964,38 @@ export function OrderProductionPlanEditorScreen({
     }
     return t('mobile.productionSetup.confirmBlockedHint');
   })();
+
+  const deliveryPromise =
+    data.committedDeliveryDate ?? data.requiredDeliveryDate ?? null;
+
+  const onSaveProductionStart = (ymd = productionStartYmd.trim()) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      showToast({
+        variant: 'error',
+        message: t('mobile.productionSetup.productionStartRequired'),
+      });
+      return;
+    }
+    suggestScheduleMutation.mutate(`${ymd}T12:00:00.000Z`, {
+      onSuccess: () => {
+        void haptics.confirmLight();
+        showToast({
+          variant: 'success',
+          message: t('mobile.productionSetup.productionStartSaved'),
+        });
+        void query.refetch();
+      },
+      onError: (err) => {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: isApiError(err)
+            ? toastMessageForError(err)
+            : t('mobile.productionSetup.actionFailed'),
+        });
+      },
+    });
+  };
 
   return (
     <AppScreen edges={{ top: true, bottom: false }} style={{ paddingHorizontal: 0 }}>
@@ -975,6 +1054,51 @@ export function OrderProductionPlanEditorScreen({
         </ListItemEnter>
 
         <ListItemEnter index={1}>
+          <DealerBoard
+            title={t('mobile.productionSetup.productionStartTitle')}
+            titleWeight={titleWeight}
+          >
+            <AppText variant="caption" color="muted">
+              {t('mobile.productionSetup.productionStartHint')}
+            </AppText>
+            {deliveryPromise ? (
+              <AppText variant="caption" color="secondary">
+                {`${t('mobile.productionSetup.deliveryPromiseLabel')}: ${formatDate(deliveryPromise)}`}
+              </AppText>
+            ) : null}
+            {planEditable ? (
+              <>
+                <InlineDateCalendar
+                  value={productionStartYmd}
+                  onSelect={(ymd) => {
+                    setProductionStartYmd(ymd);
+                    // Persist immediately so Confirm is not blocked on a separate Save.
+                    onSaveProductionStart(ymd);
+                  }}
+                  resetKey={data.plannedStartDate ?? 'none'}
+                />
+                <PrimaryButton
+                  label={t('mobile.productionSetup.saveProductionStart')}
+                  loading={suggestScheduleMutation.isPending}
+                  onPress={() => onSaveProductionStart()}
+                />
+                {data.plannedStartDate ? (
+                  <AppText variant="caption" color="brand">
+                    {`${t('mobile.productionSetup.productionStartSaved')}: ${formatDate(data.plannedStartDate)}`}
+                  </AppText>
+                ) : null}
+              </>
+            ) : (
+              <AppText variant="body" weight={titleWeight}>
+                {data.plannedStartDate
+                  ? formatDate(data.plannedStartDate)
+                  : '—'}
+              </AppText>
+            )}
+          </DealerBoard>
+        </ListItemEnter>
+
+        <ListItemEnter index={2}>
           <DealerBoard title={t('mobile.production.hubJumpWorkflow')} titleWeight={titleWeight}>
             <View
               style={{
@@ -1019,7 +1143,7 @@ export function OrderProductionPlanEditorScreen({
           </DealerBoard>
         </ListItemEnter>
 
-        <ListItemEnter index={2}>
+        <ListItemEnter index={3}>
           <DealerBoard
             title={t('mobile.production.hubJumpMaterials')}
             titleWeight={titleWeight}
@@ -1170,7 +1294,7 @@ export function OrderProductionPlanEditorScreen({
           </DealerBoard>
         </ListItemEnter>
 
-        <ListItemEnter index={3}>
+        <ListItemEnter index={4}>
           <DealerBoard title={t('mobile.productionSetup.stagesTitle')} titleWeight={titleWeight}>
             <AppText variant="caption" color="muted">
               {t('mobile.productionSetup.stageMaterialsHint')}
@@ -1198,7 +1322,7 @@ export function OrderProductionPlanEditorScreen({
           </DealerBoard>
         </ListItemEnter>
 
-        <ListItemEnter index={4}>
+        <ListItemEnter index={5}>
           <DealerBoard title={t('mobile.production.hubJumpTasks')} titleWeight={titleWeight}>
             <AppText variant="caption" color="muted">
               {t('mobile.productionSetup.teamHint')}
@@ -1382,6 +1506,7 @@ export function OrderProductionPlanEditorScreen({
         canAssign={canAssign && data.planEditable}
         canUpdateTask={false}
         canOverrideConflict={canOverrideConflict}
+        orderPlannedStartDate={data.plannedStartDate}
         assignLoading={assignMutation.isPending}
         notesLoading={notesMutation.isPending}
         scheduleConflict={scheduleConflict}

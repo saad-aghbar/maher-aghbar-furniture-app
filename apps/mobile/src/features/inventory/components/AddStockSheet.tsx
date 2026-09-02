@@ -246,7 +246,7 @@ export function AddStockSheet({
     setError(null);
     try {
       const resolved = await resolveInventoryScan(code);
-      if (resolved.status === 'NOT_FOUND') {
+      if (resolved.status === 'NOT_FOUND' || resolved.status === 'FOUND_KIT' || resolved.status === 'FOUND_LOT') {
         void haptics.error();
         setConfirmItem(null);
         setConfirmMode('not-found');

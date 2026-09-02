@@ -17,6 +17,33 @@ export type SalesOrderProductionReadinessSummary = {
   primaryProductionOrderId?: string | null;
 };
 
+export type SalesOrderJourneyLogistics = {
+  packageCount?: number | null;
+  packagesLoaded?: number | null;
+  packagesTotal?: number | null;
+  /** 1-based index of first unchecked DeliveryLoadPiece when load incomplete. */
+  firstMissingPackageIndex?: number | null;
+  finReady?: boolean | null;
+  finishedWarehouseName?: string | null;
+  finishedWarehouseCode?: string | null;
+  loadStatus?:
+    | 'not_started'
+    | 'loading'
+    | 'fully_loaded'
+    | 'departed'
+    | 'delivered'
+    /** @deprecated legacy aliases — prefer loading / fully_loaded */
+    | 'partial'
+    | 'complete'
+    | null;
+  deliveryId?: string | null;
+  deliveryNumber?: string | null;
+  truckDepartedAt?: string | null;
+  dealerConfirmedAt?: string | null;
+  actualDeliveredAt?: string | null;
+  committedDeliveryDate?: string | null;
+};
+
 export type SalesOrderListItem = {
   id: string;
   number: string;
@@ -69,13 +96,43 @@ export type SalesOrderListItem = {
   releasedToFactory?: boolean;
   /** True after first executable factory task has started. */
   executionStarted?: boolean;
+  /** Server Order Journey lane (COUNT=DATASET). */
+  journeyBucket?:
+    | 'preparing'
+    | 'ready_to_start'
+    | 'in_production'
+    | 'ready_to_ship'
+    | 'shipped'
+    | 'delivered'
+    | string
+    | null;
+  /** Presentation-safe logistics facts for RFD / Shipped / Delivered cards. */
+  journeyLogistics?: SalesOrderJourneyLogistics | null;
   workerAssignmentRequired?: boolean;
+};
+
+export type AdminOrderJourneyCounts = {
+  all: number;
+  preparing: number;
+  ready_to_start: number;
+  in_production: number;
+  ready_to_ship: number;
+  shipped: number;
+  delivered: number;
 };
 
 export type SalesOrderListFilters = PageParams & {
   q?: string;
   status?: string;
   statusGroup?: 'pending' | 'production' | 'delivered';
+  /** Admin Order Journey lane — server classifier; COUNT=DATASET. */
+  journeyBucket?:
+    | 'preparing'
+    | 'ready_to_start'
+    | 'in_production'
+    | 'ready_to_ship'
+    | 'shipped'
+    | 'delivered';
   sortBy?: 'createdAt' | 'requiredDeliveryDate' | 'number' | 'total';
   sortDir?: 'asc' | 'desc';
   deliveryFrom?: string;
@@ -86,20 +143,27 @@ export type SalesOrderListFilters = PageParams & {
 
 export async function listSalesOrders(
   filters: SalesOrderListFilters = {},
-): Promise<PaginatedResponse<SalesOrderListItem>> {
+): Promise<
+  PaginatedResponse<SalesOrderListItem> & {
+    meta: PaginatedResponse<SalesOrderListItem>['meta'] & {
+      journeyCounts?: AdminOrderJourneyCounts;
+    };
+  }
+> {
   const qs = toSearchParams({
     page: filters.page,
     pageSize: filters.pageSize,
     q: filters.q,
     status: filters.status,
     statusGroup: filters.statusGroup,
+    journeyBucket: filters.journeyBucket,
     sortBy: filters.sortBy,
     sortDir: filters.sortDir,
     deliveryFrom: filters.deliveryFrom,
     deliveryTo: filters.deliveryTo,
     customerId: filters.customerId,
   });
-  return apiGet<PaginatedResponse<SalesOrderListItem>>(`/sales-orders${qs}`);
+  return apiGet(`/sales-orders${qs}`);
 }
 
 export type SalesOrderDocument = {
@@ -833,10 +897,28 @@ export async function markOrderProductionSetupReady(
   return apiPost<OrderProductionSetup>(`${setupBase(salesOrderId)}/mark-ready`);
 }
 
+export type EnsureOrderProductionPlanResult = {
+  salesOrderId: string;
+  productionOrderIds: string[];
+  primaryProductionOrderId: string | null;
+  created: boolean;
+};
+
+/** Soft-prepare + create draft POs so the Production Plan editor can open. */
+export async function ensureOrderProductionPlan(
+  salesOrderId: string,
+): Promise<EnsureOrderProductionPlanResult> {
+  return apiPost<EnsureOrderProductionPlanResult>(
+    `${setupBase(salesOrderId)}/ensure-plan`,
+  );
+}
+
 export async function releaseOrderProductionSetup(
   salesOrderId: string,
-): Promise<OrderProductionSetup> {
-  return apiPost<OrderProductionSetup>(`${setupBase(salesOrderId)}/release`);
+): Promise<OrderProductionSetup & { productionOrderIds?: string[] }> {
+  return apiPost<OrderProductionSetup & { productionOrderIds?: string[] }>(
+    `${setupBase(salesOrderId)}/release`,
+  );
 }
 
 export async function getOrderProductionSetupReleasePreview(

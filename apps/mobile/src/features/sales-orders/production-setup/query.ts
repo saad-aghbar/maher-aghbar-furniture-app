@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
 import {
+  ensureOrderProductionPlan,
   getOrderProductionSetup,
   getOrderProductionSetupReleasePreview,
   markOrderProductionSetupReady,
@@ -79,6 +80,10 @@ export function useOrderProductionSetupActions(salesOrderId: string) {
     }),
     markReady: useMutation({
       mutationFn: () => markOrderProductionSetupReady(salesOrderId),
+      onSuccess: invalidate,
+    }),
+    ensurePlan: useMutation({
+      mutationFn: () => ensureOrderProductionPlan(salesOrderId),
       onSuccess: invalidate,
     }),
     release: useMutation({

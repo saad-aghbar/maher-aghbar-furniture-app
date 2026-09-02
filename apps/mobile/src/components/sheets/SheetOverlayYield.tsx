@@ -15,6 +15,11 @@ type SheetOverlayYieldValue = {
 
 const SheetOverlayYieldContext = createContext<SheetOverlayYieldValue | null>(null);
 
+const FALLBACK_YIELD: SheetOverlayYieldValue = {
+  isOpen: false,
+  setOpen: () => undefined,
+};
+
 /**
  * Lets a host BottomSheet Modal yield when another BottomSheet is stacked on top
  * (avoids iOS nested-Modal races that dismiss the host permanently).
@@ -34,5 +39,5 @@ export function SheetOverlayYieldProvider({ children }: { children: ReactNode })
 
 export function useSheetOverlayYield(): SheetOverlayYieldValue {
   const ctx = useContext(SheetOverlayYieldContext);
-  return ctx ?? { isOpen: false, setOpen: () => undefined };
+  return ctx ?? FALLBACK_YIELD;
 }

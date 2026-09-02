@@ -3,7 +3,7 @@
  * Boards switch copy / primary CTAs by journey bucket.
  */
 
-import type { AdminOrderLifecycle } from '../adminOrderLifecycle';
+import type { AdminOrderLifecycle } from './adminOrderLifecycle';
 
 export type OrderStageDeskCopy = {
   phaseHintKey: string;
@@ -17,7 +17,7 @@ export function orderStageDeskCopy(
     case 'preparing':
       return {
         phaseHintKey: 'mobile.orders.journey.preparing.hint',
-        primaryHint: 'mobile.orders.journey.confirmPlan',
+        primaryHint: 'mobile.orders.journey.continuePlan',
       };
     case 'ready_to_start':
       return {

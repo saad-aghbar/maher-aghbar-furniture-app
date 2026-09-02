@@ -79,6 +79,7 @@ describe('ProductionService dealer visibility', () => {
       {
         summaryForProductionOrder: jest.fn().mockResolvedValue(null),
       } as never,
+      { generateForProductionOrder: jest.fn() } as never,
     );
     const dealer: AuthUser = {
       id: 'u-dealer',
@@ -142,6 +143,7 @@ describe('ProductionService dealer visibility', () => {
       {
         summaryForProductionOrder: jest.fn().mockResolvedValue(null),
       } as never,
+      { generateForProductionOrder: jest.fn() } as never,
     );
     const admin: AuthUser = {
       id: 'u-admin',

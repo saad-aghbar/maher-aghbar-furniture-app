@@ -349,17 +349,45 @@ export function ProductionWipSection({
                           icon="layers-outline"
                           label={`${kit.pieces.length}/${kit.expectedPieceCount}`}
                         />
+                        {kit.custody ? (
+                          <MetaChip
+                            icon="swap-horizontal-outline"
+                            label={
+                              t(`mobile.production.wipCustody.${kit.custody}`) ===
+                              `mobile.production.wipCustody.${kit.custody}`
+                                ? kit.custody.replace(/_/g, ' ')
+                                : t(`mobile.production.wipCustody.${kit.custody}`)
+                            }
+                          />
+                        ) : null}
                         <MetaChip
                           icon="location-outline"
                           label={bin ?? t('mobile.production.wipNoBin')}
                         />
-                        {kit.claimedByUser ? (
-                          <MetaChip
-                            icon="person-outline"
-                            label={`${kit.claimedByUser.firstName} ${kit.claimedByUser.lastName}`.trim()}
-                          />
-                        ) : null}
                       </View>
+
+                      {kit.producingTask?.assignedEmployee ? (
+                        <AppText variant="caption" color="secondary" numberOfLines={1}>
+                          {t('mobile.production.wipProducedBy', {
+                            worker: `${kit.producingTask.assignedEmployee.firstName} ${kit.producingTask.assignedEmployee.lastName}`.trim(),
+                            stage: stageLabel,
+                          })}
+                        </AppText>
+                      ) : null}
+                      {kit.claimedByUser ? (
+                        <AppText variant="caption" color="secondary" numberOfLines={1}>
+                          {t('mobile.production.wipReceivedBy', {
+                            worker: `${kit.claimedByUser.firstName} ${kit.claimedByUser.lastName}`.trim(),
+                          })}
+                        </AppText>
+                      ) : null}
+                      {kit.claimedByTask ? (
+                        <AppText variant="caption" color="muted" numberOfLines={1}>
+                          {t('mobile.production.wipNextTask', {
+                            task: kit.claimedByTask.number,
+                          })}
+                        </AppText>
+                      ) : null}
                     </View>
                     <Ionicons name={chevron} size={18} color={colors.textMuted} />
                   </View>

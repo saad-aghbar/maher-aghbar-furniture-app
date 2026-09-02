@@ -87,6 +87,11 @@ const productionOrder = (over: Partial<ProductionCardModel> = {}): ProductionCar
   deliveryLabel: '15 Sep',
   readinessReason: null,
   boardBucket: 'on_floor',
+  salesOrderId: 'so-1',
+  plannedStartDate: null,
+  actualStartDate: null,
+  releasedToFactoryAt: null,
+  startDueHint: null,
   showStages: false,
   ...over,
 });

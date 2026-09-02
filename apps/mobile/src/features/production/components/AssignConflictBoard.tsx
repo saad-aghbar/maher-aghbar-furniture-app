@@ -16,6 +16,9 @@ type AssignConflictBoardProps = {
   onToggleOverride?: () => void;
   onUseSuggestedSlot?: () => void;
   hasSuggestedSlot?: boolean;
+  onChangeTime?: () => void;
+  onChooseAnotherWorker?: () => void;
+  onViewWorkerDay?: () => void;
 };
 
 export function AssignConflictBoard({
@@ -27,6 +30,9 @@ export function AssignConflictBoard({
   onToggleOverride,
   onUseSuggestedSlot,
   hasSuggestedSlot = false,
+  onChangeTime,
+  onChooseAnotherWorker,
+  onViewWorkerDay,
 }: AssignConflictBoardProps) {
   const { t, isRTL, locale, formatDateTime } = useLocale();
   const { colors, theme } = useTheme();
@@ -51,12 +57,12 @@ export function AssignConflictBoard({
 
   return (
     <DealerBoard
-      title={t('mobile.production.conflictWarningTitle')}
+      title={t('mobile.production.workerConflictTitle')}
       titleWeight={titleWeight}
       accentColor={colors.warning}
     >
       <AppText variant="body" weight={titleWeight} style={{ textAlign: isRTL ? 'right' : 'left' }}>
-        {t('mobile.production.conflictChangeTimeTitle')}
+        {t('mobile.production.workerConflictHeading')}
       </AppText>
       <AppText
         variant="caption"
@@ -81,6 +87,7 @@ export function AssignConflictBoard({
                 backgroundColor: colors.surfaceSecondary,
                 padding: theme.spacing.sm,
                 gap: 2,
+                overflow: 'hidden',
               }}
             >
               <AppText
@@ -113,8 +120,8 @@ export function AssignConflictBoard({
           }}
           style={{
             minHeight: theme.sizes.touch.min,
-            borderRadius: theme.radius.lg,
-            borderWidth: 1,
+            borderRadius: theme.radius.xl,
+            borderWidth: 1.5,
             borderColor: colors.brand,
             backgroundColor: colors.surface,
             paddingHorizontal: theme.spacing.md,
@@ -123,10 +130,31 @@ export function AssignConflictBoard({
           }}
         >
           <AppText variant="label" weight={titleWeight} style={{ color: colors.brand }}>
-            {t('mobile.production.useFreeSlot')}
+            {t('mobile.production.suggestedWindow')}
           </AppText>
         </AnimatedPressable>
       ) : null}
+
+      <View
+        style={{
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          flexWrap: 'wrap',
+          gap: theme.spacing.sm,
+        }}
+      >
+        {onViewWorkerDay ? (
+          <SheetChip label={t('mobile.production.viewWorkerDay')} onPress={onViewWorkerDay} />
+        ) : null}
+        {onChangeTime ? (
+          <SheetChip label={t('mobile.production.changeTime')} onPress={onChangeTime} />
+        ) : null}
+        {onChooseAnotherWorker ? (
+          <SheetChip
+            label={t('mobile.production.chooseAnotherWorker')}
+            onPress={onChooseAnotherWorker}
+          />
+        ) : null}
+      </View>
 
       {canOverride && onToggleOverride ? (
         <AnimatedPressable
@@ -142,6 +170,12 @@ export function AssignConflictBoard({
             alignItems: 'center',
             gap: theme.spacing.sm,
             minHeight: 44,
+            borderRadius: theme.radius.lg,
+            borderWidth: 1,
+            borderColor: overrideChecked ? colors.warning : colors.border,
+            backgroundColor: overrideChecked ? colors.warningSoft : colors.surfaceSecondary,
+            paddingHorizontal: theme.spacing.md,
+            paddingVertical: theme.spacing.sm,
           }}
         >
           <View
@@ -156,7 +190,15 @@ export function AssignConflictBoard({
               justifyContent: 'center',
             }}
           />
-          <AppText variant="caption" style={{ flex: 1, color: colors.warning }}>
+          <AppText
+            variant="caption"
+            weight={titleWeight}
+            style={{
+              flex: 1,
+              color: colors.warning,
+              textAlign: isRTL ? 'right' : 'left',
+            }}
+          >
             {t('mobile.production.overrideConflict')}
           </AppText>
         </AnimatedPressable>
@@ -166,5 +208,40 @@ export function AssignConflictBoard({
         </AppText>
       )}
     </DealerBoard>
+  );
+}
+
+function SheetChip({ label, onPress }: { label: string; onPress: () => void }) {
+  const { colors, theme } = useTheme();
+  const { locale, isRTL } = useLocale();
+  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
+  return (
+    <AnimatedPressable
+      variant="button"
+      accessibilityRole="button"
+      onPress={() => {
+        void haptics.selection();
+        onPress();
+      }}
+      style={{
+        minHeight: 40,
+        borderRadius: theme.radius.lg,
+        borderWidth: 1,
+        borderColor: colors.borderStrong,
+        backgroundColor: colors.surfaceSecondary,
+        paddingHorizontal: theme.spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      <AppText
+        variant="caption"
+        weight={titleWeight}
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
+        {label}
+      </AppText>
+    </AnimatedPressable>
   );
 }

@@ -11,6 +11,7 @@ import {
   ensureProductionPlanTasks,
   getProductionOrder,
   getProductionSummary,
+  getProductionDaySummary,
   listAssignableWorkers,
   listProductionOrders,
   pauseProductionTask,
@@ -24,8 +25,10 @@ import {
   returnProductionUnusedMaterial,
   getOrderPlanSetup,
   putOrderPlanSetup,
+  suggestPlanSchedule,
   type ProductionListBucket,
   type ProductionPriority,
+  type ProductionDateMode,
 } from './api';
 
 export function useProductionSummaryQuery(enabled: boolean) {
@@ -34,6 +37,24 @@ export function useProductionSummaryQuery(enabled: boolean) {
     queryFn: getProductionSummary,
     enabled,
     staleTime: 30_000,
+  });
+}
+
+export function useProductionDaySummaryQuery(
+  filters: {
+    onDate: string;
+    dateMode?: ProductionDateMode;
+    bucket?: ProductionListBucket;
+    customerId?: string;
+  },
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [...queryKeys.production.all, 'day-summary', filters] as const,
+    queryFn: () => getProductionDaySummary(filters),
+    enabled: enabled && Boolean(filters.onDate),
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -47,7 +68,13 @@ export function useProductionDealersQuery(enabled: boolean) {
 }
 
 export function useProductionOrdersInfiniteQuery(
-  filters: { bucket: ProductionListBucket; q?: string; customerId?: string },
+  filters: {
+    bucket: ProductionListBucket;
+    q?: string;
+    customerId?: string;
+    onDate?: string;
+    dateMode?: ProductionDateMode;
+  },
   enabled: boolean,
 ) {
   return useInfiniteQuery({
@@ -59,6 +86,8 @@ export function useProductionOrdersInfiniteQuery(
         bucket: filters.bucket,
         q: filters.q,
         customerId: filters.customerId,
+        onDate: filters.onDate,
+        dateMode: filters.dateMode,
       }),
     initialPageParam: 1,
     getNextPageParam: getNextPageParamFromMeta,
@@ -126,6 +155,8 @@ export function useAssignableWorkersQuery(
     queryFn: () => listAssignableWorkers(q, stageDefinitionId, opts),
     enabled,
     staleTime: 60_000,
+    // Keep prior workers while the assign window changes — avoids sheet/day-board flash.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -175,7 +206,8 @@ export function useAssignTaskMutation(orderId: string) {
 export function useStartProductionMutation(orderId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => startProductionOrder(orderId),
+    mutationFn: (body?: { plannedStartDate?: string }) =>
+      startProductionOrder(orderId, body),
     onSuccess: () => invalidateProduction(qc, orderId),
   });
 }
@@ -183,7 +215,8 @@ export function useStartProductionMutation(orderId: string) {
 export function useReturnProductionToPreparingMutation(orderId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => returnProductionOrderToPreparing(orderId),
+    mutationFn: (body?: { reason?: string }) =>
+      returnProductionOrderToPreparing(orderId, body),
     onSuccess: () => {
       invalidateProduction(qc, orderId);
       void qc.invalidateQueries({ queryKey: queryKeys.salesOrders.lists() });
@@ -205,8 +238,18 @@ export function useUpdateProductionMutation(orderId: string) {
     mutationFn: (body: {
       priority?: ProductionPriority | string;
       requiredDeliveryDate?: string;
+      plannedStartDate?: string;
       notes?: string;
     }) => updateProductionOrder(orderId, body),
+    onSuccess: () => invalidateProduction(qc, orderId),
+  });
+}
+
+export function useSuggestPlanScheduleMutation(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (plannedStartDate: string) =>
+      suggestPlanSchedule(orderId, { plannedStartDate }),
     onSuccess: () => invalidateProduction(qc, orderId),
   });
 }

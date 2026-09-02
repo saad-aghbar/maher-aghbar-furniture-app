@@ -118,6 +118,7 @@ export function DeliveryFloorOrderCard({
     status: item.status,
     loaded,
     total,
+    canDepart: item.allLoaded === true && !completed,
   });
   const accent =
     phase.phase === 'delivered' || phase.phase === 'shipped'
@@ -133,7 +134,19 @@ export function DeliveryFloorOrderCard({
   const fadeBottom = colorScheme === 'dark' ? 0.72 : 0.58;
   const mediaAspect = emphasize ? 1.2 : MEDIA_ASPECT;
   const phaseLabel = t(phase.labelKey);
-  const whyLabel = phase.whyKey ? t(phase.whyKey) : null;
+  const whyLabel = (() => {
+    if (
+      phase.whyKey === 'mobile.deliveryLoad.attentionLoadIncomplete' &&
+      item.firstMissingPackageIndex != null &&
+      total > 0
+    ) {
+      return t('mobile.deliveryLoad.packageMissingDetail', {
+        index: item.firstMissingPackageIndex,
+        total,
+      });
+    }
+    return phase.whyKey ? t(phase.whyKey) : null;
+  })();
 
   const open = () => {
     void haptics.selection();

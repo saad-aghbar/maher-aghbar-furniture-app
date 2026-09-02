@@ -120,6 +120,26 @@ export function ProductionOrderCard({ order, onPress }: ProductionOrderCardProps
               {priorityLabel(order.priority, t)}
             </AppText>
           ) : null}
+          {order.startDueHint === 'due_today' ? (
+            <AppText
+              variant="caption"
+              weight={titleWeight}
+              style={{ color: colors.warning, fontSize: 11 }}
+              numberOfLines={1}
+            >
+              {t('mobile.production.startDue.dueToday')}
+            </AppText>
+          ) : null}
+          {order.startDueHint === 'planned_start_passed' ? (
+            <AppText
+              variant="caption"
+              weight={titleWeight}
+              style={{ color: colors.warning, fontSize: 11 }}
+              numberOfLines={1}
+            >
+              {t('mobile.production.startDue.plannedPassed')}
+            </AppText>
+          ) : null}
           {late ? (
             <AppText
               variant="caption"

@@ -138,6 +138,71 @@ export type ProductionOrderListItem = {
   releasedToFactoryAt?: string | null;
   releasedToFactoryById?: string | null;
   actualStartDate?: string | null;
+  plannedStartDate?: string | null;
+  /** Phase C day lens enrichment (present when onDate+dateMode queried). */
+  dayLens?: ProductionDayLensPayload | null;
+};
+
+export type ProductionDateMode = 'planned' | 'actual';
+
+export type ProductionDayLensPlannedTask = {
+  taskId: string;
+  taskNumber: string;
+  stageCode?: string | null;
+  stageNameEn?: string | null;
+  stageNameAr?: string | null;
+  stageNameHe?: string | null;
+  department?: string | null;
+  workerName?: string | null;
+  plannedStart?: string | null;
+  plannedCompletion?: string | null;
+  estimatedMinutes?: number | null;
+  status?: string;
+};
+
+export type ProductionDayLensEvent = {
+  kind: string;
+  at: string;
+  stage?: string | null;
+  worker?: string | null;
+  sku?: string | null;
+  name?: string | null;
+};
+
+export type ProductionDayLensPayload = {
+  mode: ProductionDateMode;
+  onDate: string;
+  timezone: string;
+  plannedTasks?: ProductionDayLensPlannedTask[];
+  events?: ProductionDayLensEvent[];
+};
+
+export type ProductionDaySummary = {
+  onDate: string;
+  timezone: string;
+  factoryTodayYmd: string;
+  isToday: boolean;
+  isFuture: boolean;
+  dateMode?: ProductionDateMode;
+  planned: {
+    orders: number;
+    tasks: number;
+    byDepartment: Array<{ code: string; nameEn: string; taskCount: number }>;
+  };
+  actual: {
+    orders: number;
+    taskEvents: number;
+  };
+  lateMissed: number;
+  atRisk: number;
+  /** Board lane counts scoped to onDate + dateMode (view/filter only). */
+  board?: {
+    needsSetup: number;
+    readyToStart: number;
+    onFloor: number;
+    blocked: number;
+    inspectionPackaging: number;
+  };
 };
 
 export type ProductionBlocker = {
@@ -259,6 +324,14 @@ export type WorkerOverlapWindow = {
   label: string;
 };
 
+export type WorkerDayWindow = {
+  start: string;
+  end: string;
+  label: string;
+  salesOrderNumber?: string | null;
+  stage?: string | null;
+};
+
 export type AssignableWorker = {
   id: string;
   firstName: string;
@@ -270,6 +343,8 @@ export type AssignableWorker = {
   recommendReason?: string | null;
   recommendReasonCode?: string | null;
   overlapWindows?: WorkerOverlapWindow[];
+  /** All planned blocks on the assign day (time-based capacity). */
+  dayWindows?: WorkerDayWindow[];
   suggestedWindow?: {
     plannedStart: string;
     plannedCompletion: string;
@@ -295,6 +370,9 @@ export async function listProductionOrders(
     /** Dealer (customer) scope — matches API `customerId`. */
     customerId?: string;
     assignedEmployeeId?: string;
+    /** Factory-local YYYY-MM-DD — view/filter only. */
+    onDate?: string;
+    dateMode?: ProductionDateMode;
   } = {},
 ) {
   const qs = toSearchParams({
@@ -306,22 +384,49 @@ export async function listProductionOrders(
     q: params.q,
     customerId: params.customerId,
     assignedEmployeeId: params.assignedEmployeeId,
+    onDate: params.onDate,
+    dateMode: params.dateMode,
   });
   return apiGet<PaginatedResponse<ProductionOrderListItem>>(`/production-orders${qs}`);
+}
+
+export async function getProductionDaySummary(params: {
+  onDate?: string;
+  dateMode?: ProductionDateMode;
+  bucket?: ProductionListBucket;
+  customerId?: string;
+} = {}) {
+  const qs = toSearchParams({
+    onDate: params.onDate,
+    dateMode: params.dateMode,
+    bucket: params.bucket === 'all' ? undefined : params.bucket,
+    customerId: params.customerId,
+  });
+  return apiGet<ProductionDaySummary>(`/production-orders/day-summary${qs}`);
 }
 
 export async function getProductionOrder(id: string) {
   return apiGet<ProductionOrderDetail>(`/production-orders/${encodeURIComponent(id)}`);
 }
 
-export async function startProductionOrder(id: string) {
-  return apiPost<ProductionOrderDetail>(`/production-orders/${encodeURIComponent(id)}/start`);
+export async function startProductionOrder(
+  id: string,
+  body?: { plannedStartDate?: string },
+) {
+  return apiPost<ProductionOrderDetail>(
+    `/production-orders/${encodeURIComponent(id)}/start`,
+    body ?? {},
+  );
 }
 
-/** Ready to start → Preparing: clear release, unlock plan for edits. */
-export async function returnProductionOrderToPreparing(id: string) {
+/** Ready for Factory → Needs Planning: clear release, unlock plan; retain history server-side. */
+export async function returnProductionOrderToPreparing(
+  id: string,
+  body?: { reason?: string },
+) {
   return apiPost<ProductionOrderDetail>(
     `/production-orders/${encodeURIComponent(id)}/return-to-preparing`,
+    body ?? {},
   );
 }
 
@@ -376,6 +481,9 @@ export type OrderPlanSetupResponse = {
   salesOrderLineId: string | null;
   planEditable: boolean;
   factoryReleased: boolean;
+  plannedStartDate?: string | null;
+  requiredDeliveryDate?: string | null;
+  committedDeliveryDate?: string | null;
   product?: {
     id: string;
     sku?: string | null;
@@ -417,6 +525,7 @@ export type OrderPlanSetupResponse = {
     hasWorkflow: boolean;
     hasMaterials: boolean;
     hasExecutableTasks?: boolean;
+    hasProductionStart?: boolean;
     assignment: { required: number; assigned: number; missing: string[] };
     dates?: { required: number; ready: number; missing: string[] };
     canConfirm: boolean;
@@ -478,12 +587,24 @@ export async function updateProductionOrder(
   body: {
     priority?: ProductionPriority | string;
     requiredDeliveryDate?: string;
+    plannedStartDate?: string;
     plannedCompletionDate?: string;
     notes?: string;
   },
 ) {
   return apiPatch<ProductionOrderDetail>(
     `/production-orders/${encodeURIComponent(id)}`,
+    body,
+  );
+}
+
+/** Save production start date and run smart scheduling for task windows. */
+export async function suggestPlanSchedule(
+  id: string,
+  body: { plannedStartDate: string },
+) {
+  return apiPost<ProductionOrderDetail>(
+    `/production-orders/${encodeURIComponent(id)}/suggest-plan-schedule`,
     body,
   );
 }
@@ -634,6 +755,19 @@ export type ProductionMaterialUsageLine = {
       nameAr: string;
       nameHe?: string | null;
     } | null;
+    /** Proven recorder — omit attribution in UI when null. */
+    recordedBy?: {
+      id: string;
+      firstName: string;
+      lastName: string;
+    } | null;
+    /** Proven task assignee — omit when null. */
+    assignedEmployee?: {
+      id: string;
+      firstName: string;
+      lastName: string;
+    } | null;
+    recordedAt?: string | null;
   }>;
 };
 

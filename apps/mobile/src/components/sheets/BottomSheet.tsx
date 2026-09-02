@@ -11,7 +11,12 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { KeyboardDismissAccessory } from '@/components/forms/KeyboardDismissAccessory';
@@ -22,6 +27,14 @@ import { useAccessoryCameraState } from '@/features/inventory/components/Accesso
 import { BottomSheetTransition, shouldDismissSheet } from '@/motion/BottomSheetTransition';
 import { springs, useReducedMotion } from '@/motion';
 import { useTheme } from '@/theme';
+
+/** Soft settle for expand / collapse — less snappy than chrome springs. */
+const SHEET_HEIGHT_SPRING = {
+  damping: 28,
+  stiffness: 210,
+  mass: 1.05,
+  overshootClamping: true,
+} as const;
 
 type BottomSheetProps = {
   open: boolean;
@@ -41,11 +54,20 @@ type BottomSheetProps = {
    */
   fitContent?: boolean;
   maxHeight?: number;
+  /**
+   * Swipe the handle up to nearly full-screen; swipe down to return to the
+   * collapsed size. Downward dismiss still works from the collapsed size.
+   */
+  expandable?: boolean;
+  /** Full-page height when expanded (default: window − top inset − 8). */
+  expandedHeight?: number;
   style?: StyleProp<ViewStyle>;
   /**
    * Stacked on top of another sheet. Host Modals yield while this overlay is open.
    */
   overlay?: boolean;
+  /** Called when the sheet expands or collapses via the handle. */
+  onExpandedChange?: (expanded: boolean) => void;
 };
 
 /**
@@ -60,8 +82,11 @@ export function BottomSheet({
   sheetHeight = 360,
   fitContent = false,
   maxHeight,
+  expandable = false,
+  expandedHeight,
   style,
   overlay = false,
+  onExpandedChange,
 }: BottomSheetProps) {
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -75,6 +100,7 @@ export function BottomSheet({
   const [mounted, setMounted] = useState(false);
   const [progress, setProgress] = useState(1);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   /** Overlay Modal gate — false until host has yielded; stays true through exit motion. */
   const [overlayModalVisible, setOverlayModalVisible] = useState(false);
 
@@ -83,22 +109,20 @@ export function BottomSheet({
   onClosedRef.current = onClosed;
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const onExpandedChangeRef = useRef(onExpandedChange);
+  onExpandedChangeRef.current = onExpandedChange;
 
   const reduceMotion = useReducedMotion();
   const dragY = useSharedValue(0);
   const dragging = useSharedValue(0);
   const heightSV = useSharedValue(360);
   const reduceSV = useSharedValue(0);
+  const expandableSV = useSharedValue(expandable ? 1 : 0);
+  const expandedSV = useSharedValue(0);
+  const collapsedHSV = useSharedValue(360);
+  const expandedHSV = useSharedValue(640);
+  const dragStartH = useSharedValue(360);
 
-  /**
-   * Host Modal must yield while the camera (or other full-screen) Modal is up.
-   * iOS will not reliably present a second Modal on top of an overFullScreen sheet —
-   * symptom: dim backdrop + freeze, camera never usable.
-   *
-   * VERIFY/SELECT state lives on the sheet *component* (outside Modal children),
-   * e.g. useLabelVerifyScan on AddStockSheet — so await openScanner() still commits
-   * after the host Modal goes visible=false.
-   */
   const hostBlocked =
     isScanning ||
     isAccessoryCamera ||
@@ -109,12 +133,19 @@ export function BottomSheet({
     ? overlayModalVisible && !isAccessoryCamera && !isLocationMap && !isScanning
     : !hostBlocked;
 
+  const windowH = Dimensions.get('window').height;
+  const fullExpandedHeight = useMemo(
+    () =>
+      expandedHeight ??
+      Math.max(320, Math.round(windowH - Math.max(insets.top, 12) - 8)),
+    [expandedHeight, insets.top, windowH],
+  );
+
   const heightCap = useMemo(() => {
-    const windowH = Dimensions.get('window').height;
     const cap = maxHeight ?? Math.round(windowH * 0.7);
     if (keyboardHeight <= 0) return cap;
     return Math.min(cap, Math.max(240, windowH - keyboardHeight));
-  }, [maxHeight, keyboardHeight]);
+  }, [maxHeight, keyboardHeight, windowH]);
 
   const [animHeight, setAnimHeight] = useState(() => Math.min(320, heightCap));
 
@@ -142,9 +173,18 @@ export function BottomSheet({
 
   useEffect(() => {
     if (open) {
+      const justOpened = !wasOpenRef.current;
       wasOpenRef.current = true;
       setMounted(true);
+
+      // Only play the enter animation on false → true. Re-running this effect
+      // while already open (dependency churn) used to flash the sheet away.
+      if (!justOpened) return;
+
       setProgress(1);
+      setExpanded(false);
+      expandedSV.value = 0;
+      dragY.value = 0;
 
       if (overlay) {
         setOverlayYield(true);
@@ -160,18 +200,17 @@ export function BottomSheet({
       return () => cancelAnimationFrame(id);
     }
 
-    // Closing — keep overlay Modal visible so the slide-down can play.
     setProgress(1);
     const t = setTimeout(() => {
       setMounted(false);
+      setExpanded(false);
+      expandedSV.value = 0;
       if (overlay) {
         setOverlayModalVisible(false);
         setOverlayYield(false);
       }
       if (wasOpenRef.current) {
         wasOpenRef.current = false;
-        // Defer past React commit + native Modal teardown so ImagePicker /
-        // CameraView can present (iOS flash-dismiss / no-op otherwise).
         requestAnimationFrame(() => {
           setTimeout(() => {
             onClosedRef.current?.();
@@ -180,9 +219,8 @@ export function BottomSheet({
       }
     }, closeMs);
     return () => clearTimeout(t);
-  }, [open, overlay, closeMs, setOverlayYield]);
+  }, [open, overlay, closeMs, setOverlayYield, expandedSV, dragY]);
 
-  /** Soft slide-in when a host sheet returns after an overlay dismisses. */
   const wasYieldingRef = useRef(false);
   useEffect(() => {
     if (overlay || !open || !mounted) return;
@@ -198,30 +236,55 @@ export function BottomSheet({
   }, [overlay, open, mounted, hostBlocked]);
 
   const keyboardOpen = keyboardHeight > 0;
-  const windowH = Dimensions.get('window').height;
-  const visibleSheetHeight = fitContent
+  const collapsedHeight = fitContent
     ? animHeight
     : keyboardOpen
       ? Math.min(sheetHeight, Math.max(240, windowH - keyboardHeight))
       : sheetHeight;
-  const resolvedAnimHeight = visibleSheetHeight;
+  const targetExpandedHeight = Math.min(
+    fullExpandedHeight,
+    keyboardOpen ? Math.max(240, windowH - keyboardHeight) : fullExpandedHeight,
+  );
   const bottomPad = keyboardOpen
     ? theme.spacing.md
     : Math.max(insets.bottom, theme.spacing.md) + theme.spacing.sm;
 
   const onSheetLayout = (e: LayoutChangeEvent) => {
-    if (!fitContent) return;
+    if (!fitContent || expanded) return;
     const next = Math.min(Math.ceil(e.nativeEvent.layout.height), heightCap);
     setAnimHeight((prev) => (Math.abs(prev - next) > 2 ? next : prev));
   };
 
   useEffect(() => {
-    heightSV.value = resolvedAnimHeight;
-  }, [heightSV, resolvedAnimHeight]);
+    collapsedHSV.value = collapsedHeight;
+    if (!expandable) {
+      heightSV.value = collapsedHeight;
+      return;
+    }
+    // Keep live height in sync when collapsed content size changes (not while expanded).
+    if (expandedSV.value === 0 && dragging.value === 0) {
+      heightSV.value = collapsedHeight;
+    }
+  }, [
+    collapsedHeight,
+    collapsedHSV,
+    dragging,
+    expandable,
+    expandedSV,
+    heightSV,
+  ]);
+
+  useEffect(() => {
+    expandedHSV.value = targetExpandedHeight;
+  }, [expandedHSV, targetExpandedHeight]);
 
   useEffect(() => {
     reduceSV.value = reduceMotion ? 1 : 0;
   }, [reduceMotion, reduceSV]);
+
+  useEffect(() => {
+    expandableSV.value = expandable ? 1 : 0;
+  }, [expandable, expandableSV]);
 
   useEffect(() => {
     if (!open) return;
@@ -233,47 +296,159 @@ export function BottomSheet({
     closeRef.current();
   }, []);
 
+  const setExpandedFromHandle = useCallback((next: boolean) => {
+    setExpanded(next);
+    onExpandedChangeRef.current?.(next);
+  }, []);
+
+  const settleHeight = useCallback(
+    (nextExpanded: boolean) => {
+      'worklet';
+      const target = nextExpanded ? expandedHSV.value : collapsedHSV.value;
+      expandedSV.value = nextExpanded ? 1 : 0;
+      if (reduceSV.value) {
+        heightSV.value = target;
+        dragY.value = 0;
+        runOnJS(setExpandedFromHandle)(nextExpanded);
+        return;
+      }
+      dragY.value = withSpring(0, springs.gentle);
+      heightSV.value = withSpring(target, SHEET_HEIGHT_SPRING, (finished) => {
+        if (finished) {
+          runOnJS(setExpandedFromHandle)(nextExpanded);
+        }
+      });
+    },
+    [
+      collapsedHSV,
+      dragY,
+      expandedHSV,
+      expandedSV,
+      heightSV,
+      reduceSV,
+      setExpandedFromHandle,
+    ],
+  );
+
   const dismissPan = useMemo(
     () =>
       Gesture.Pan()
         .maxPointers(1)
-        .activeOffsetY(10)
-        .failOffsetX([-24, 24])
+        .activeOffsetY([-12, 12])
+        .failOffsetX([-28, 28])
         .onStart(() => {
           dragging.value = 1;
+          dragStartH.value = heightSV.value;
         })
         .onUpdate((e) => {
           if (reduceSV.value) return;
-          dragY.value = Math.max(0, e.translationY);
-        })
-        .onEnd((e) => {
-          const y = Math.max(0, e.translationY);
-          const v = e.velocityY;
-          const h = heightSV.value;
-          dragging.value = 0;
-          if (shouldDismissSheet(y, v, h)) {
-            runOnJS(closeFromHandle)();
+
+          if (!expandableSV.value) {
+            dragY.value = Math.max(0, e.translationY);
             return;
           }
-          if (reduceSV.value) {
+
+          // Finger up → taller sheet; finger down → shorter.
+          const next = dragStartH.value - e.translationY;
+          const minH = collapsedHSV.value;
+          const maxH = expandedHSV.value;
+
+          if (next >= minH && next <= maxH) {
+            heightSV.value = next;
             dragY.value = 0;
             return;
           }
-          dragY.value = withSpring(0, springs.snappy);
+
+          if (next > maxH) {
+            // Soft rubber past full height
+            const over = next - maxH;
+            heightSV.value = maxH + over * 0.12;
+            dragY.value = 0;
+            return;
+          }
+
+          // Past collapsed: keep height at min and add dismiss drag
+          heightSV.value = minH;
+          dragY.value = minH - next;
+        })
+        .onEnd((e) => {
+          const v = e.velocityY;
+          const h = heightSV.value;
+          const dismissPull = Math.max(0, dragY.value);
+          dragging.value = 0;
+
+          if (!expandableSV.value) {
+            const y = Math.max(0, e.translationY);
+            if (shouldDismissSheet(y, v, h)) {
+              runOnJS(closeFromHandle)();
+              return;
+            }
+            dragY.value = reduceSV.value ? 0 : withSpring(0, springs.gentle);
+            return;
+          }
+
+          // Dismiss only from the collapsed detent with a clear downward pull
+          if (
+            expandedSV.value === 0 &&
+            dismissPull > 0 &&
+            shouldDismissSheet(dismissPull, v, collapsedHSV.value)
+          ) {
+            runOnJS(closeFromHandle)();
+            return;
+          }
+
+          // Project resting height from velocity, then snap to nearest detent
+          const projected = h - v * 0.18;
+          const mid = (collapsedHSV.value + expandedHSV.value) * 0.5;
+          const shouldExpand =
+            v < -420 ? true : v > 420 ? false : projected >= mid;
+          settleHeight(shouldExpand);
         })
         .onFinalize((_e, success) => {
           dragging.value = 0;
           if (success) return;
+          if (expandableSV.value) {
+            settleHeight(expandedSV.value === 1);
+            return;
+          }
           if (reduceSV.value) {
             dragY.value = 0;
             return;
           }
-          dragY.value = withSpring(0, springs.snappy);
+          dragY.value = withSpring(0, springs.gentle);
         }),
-    [closeFromHandle, dragY, dragging, heightSV, reduceSV],
+    [
+      closeFromHandle,
+      collapsedHSV,
+      dragStartH,
+      dragY,
+      dragging,
+      expandableSV,
+      expandedHSV,
+      expandedSV,
+      heightSV,
+      reduceSV,
+      settleHeight,
+    ],
   );
 
+  const expandablePanelStyle = useAnimatedStyle(() => {
+    if (!expandableSV.value) {
+      return {};
+    }
+    return {
+      height: heightSV.value,
+      maxHeight: '100%' as unknown as number,
+    };
+  });
+
   if (!mounted) return null;
+
+  const staticPanelStyle: ViewStyle = expandable
+    ? {}
+    : fitContent
+      ? { maxHeight: heightCap, alignSelf: 'stretch' }
+      : { height: collapsedHeight, maxHeight: '100%' };
 
   return (
     <Modal
@@ -288,14 +463,15 @@ export function BottomSheet({
         <View style={styles.root}>
           <BottomSheetTransition
             progress={progress}
-            sheetHeight={resolvedAnimHeight}
+            sheetHeight={expandable ? targetExpandedHeight : collapsedHeight}
+            sheetHeightSV={expandable ? heightSV : undefined}
             onBackdropPress={onClose}
             dragY={dragY}
             dragging={dragging}
           >
-            <View
+            <Animated.View
               accessibilityViewIsModal
-              onLayout={fitContent ? onSheetLayout : undefined}
+              onLayout={fitContent && !expanded ? onSheetLayout : undefined}
               style={[
                 {
                   backgroundColor: colors.surface,
@@ -308,16 +484,22 @@ export function BottomSheet({
                   marginBottom: keyboardHeight,
                   overflow: 'hidden',
                   ...theme.elevation.raised,
-                  ...(fitContent
-                    ? { maxHeight: heightCap, alignSelf: 'stretch' as const }
-                    : { height: visibleSheetHeight, maxHeight: '100%' as const }),
                 },
+                staticPanelStyle,
+                expandable ? expandablePanelStyle : null,
                 style,
               ]}
             >
               <GestureDetector gesture={dismissPan}>
-                <View
+                <Animated.View
                   collapsable={false}
+                  accessibilityHint={
+                    expandable
+                      ? expanded
+                        ? 'Swipe down to shrink'
+                        : 'Swipe up to expand, or down to dismiss'
+                      : undefined
+                  }
                   style={{
                     marginHorizontal: -theme.spacing.lg,
                     paddingHorizontal: theme.spacing.lg,
@@ -344,10 +526,12 @@ export function BottomSheet({
                       {title}
                     </AppText>
                   ) : null}
-                </View>
+                </Animated.View>
               </GestureDetector>
-              <View style={fitContent ? styles.fitBody : styles.fillBody}>{children}</View>
-            </View>
+              <View style={expandable || !fitContent ? styles.fillBody : styles.fitBody}>
+                {children}
+              </View>
+            </Animated.View>
           </BottomSheetTransition>
         </View>
         <KeyboardDismissAccessory inModal />

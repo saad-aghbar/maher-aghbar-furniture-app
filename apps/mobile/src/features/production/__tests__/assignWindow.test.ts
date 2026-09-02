@@ -20,10 +20,22 @@ describe('assignWindow helpers', () => {
     expect(parts.due.minute).toBe('00');
   });
 
-  it('preserves existing planned window', () => {
+  it('uses order production start when task has no window', () => {
+    const parts = defaultAssignWindowParts({
+      orderPlannedStartDate: '2026-09-10T00:00:00.000Z',
+      estimatedMinutes: 120,
+      now: new Date('2026-09-01T09:10:00'),
+    });
+    expect(parts.start.ymd).toBe('2026-09-10');
+    expect(parts.start.hour).toBe('8');
+    expect(parts.start.minute).toBe('00');
+  });
+
+  it('preserves existing planned window over order production start', () => {
     const parts = defaultAssignWindowParts({
       plannedStart: '2026-09-02T08:00:00.000Z',
       plannedCompletion: '2026-09-02T12:00:00.000Z',
+      orderPlannedStartDate: '2026-09-10T00:00:00.000Z',
     });
     expect(parts.start.ymd).toBeTruthy();
     expect(parts.due.ymd).toBeTruthy();

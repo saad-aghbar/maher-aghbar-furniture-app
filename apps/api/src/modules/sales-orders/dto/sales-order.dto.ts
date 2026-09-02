@@ -18,11 +18,42 @@ export class ListSalesOrdersDto extends PaginationDto {
   @IsEnum(SalesOrderStatus)
   status?: SalesOrderStatus;
 
-  /** Chip groups for mobile Orders list. Ignored when `status` is set. */
+  /** Chip groups for mobile Orders list. Ignored when `status` or `journeyBucket` is set. */
   @ApiPropertyOptional({ enum: ['pending', 'production', 'delivered'] })
   @IsOptional()
   @IsIn(['pending', 'production', 'delivered'])
   statusGroup?: 'pending' | 'production' | 'delivered';
+
+  /**
+   * Admin Order Journey lane (COUNT=DATASET).
+   * Server classifier — must match meta.journeyCounts keys.
+   */
+  @ApiPropertyOptional({
+    enum: [
+      'preparing',
+      'ready_to_start',
+      'in_production',
+      'ready_to_ship',
+      'shipped',
+      'delivered',
+    ],
+  })
+  @IsOptional()
+  @IsIn([
+    'preparing',
+    'ready_to_start',
+    'in_production',
+    'ready_to_ship',
+    'shipped',
+    'delivered',
+  ])
+  journeyBucket?:
+    | 'preparing'
+    | 'ready_to_start'
+    | 'in_production'
+    | 'ready_to_ship'
+    | 'shipped'
+    | 'delivered';
 
   @ApiPropertyOptional()
   @IsOptional()

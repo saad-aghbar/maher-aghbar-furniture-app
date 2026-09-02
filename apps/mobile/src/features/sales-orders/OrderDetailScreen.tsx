@@ -606,7 +606,8 @@ export function OrderDetailScreen({
             marginTop: theme.spacing.md,
           }}
         >
-          {variant === 'admin' && vm.productionSetupRequired ? (
+          {variant === 'admin' &&
+          (vm.lifecycle === 'preparing' || vm.productionSetupRequired) ? (
             <ListItemEnter index={nextIndex()}>
               <OrderBoardCard
                 accent={colors.warning}
@@ -614,7 +615,7 @@ export function OrderDetailScreen({
               >
                 <OrderSectionHeader
                   icon="construct-outline"
-                  label={t('mobile.orders.productionSetupRequired')}
+                  label={t('mobile.productionSetup.planTitle')}
                   accent={colors.warning}
                 />
                 <AppText variant="label" weight="semibold">
@@ -625,10 +626,10 @@ export function OrderDetailScreen({
                 </AppText>
                 {canUpdate ? (
                   <PrimaryButton
-                    label={t('mobile.orders.prepareProduction')}
+                    label={t('mobile.productionSetup.planTitle')}
                     onPress={() =>
                       router.push(
-                        `/(app)/(admin)/orders/${orderId}/production-setup` as Href,
+                        `/(app)/(admin)/orders/${orderId}/production-plan` as Href,
                       )
                     }
                     style={{
@@ -643,6 +644,7 @@ export function OrderDetailScreen({
           ) : null}
 
           {variant === 'admin' &&
+          vm.lifecycle !== 'preparing' &&
           !vm.productionSetupRequired &&
           vm.workerAssignmentRequired ? (
             <ListItemEnter index={nextIndex()}>
@@ -666,7 +668,7 @@ export function OrderDetailScreen({
                   if (!poId) return null;
                   return (
                     <PrimaryButton
-                      label={t('mobile.productionSetup.openPlanCta')}
+                      label={t('mobile.productionSetup.planTitle')}
                       onPress={() => {
                         void haptics.selection();
                         router.push(
@@ -775,12 +777,27 @@ export function OrderDetailScreen({
                     vm.productionReadinessSummary?.primaryProductionOrderId ??
                     vm.productionOrders[0]?.id ??
                     null;
-                  if (!poId && !vm.productionSetupRequired) return null;
                   const ctaStyle = {
                     alignSelf: 'stretch' as const,
                     width: '100%' as const,
                     borderRadius: theme.radius.xl,
                   };
+                  // Preparing always gets Production plan — do not gate on DRAFT-only setup flag.
+                  if (vm.lifecycle === 'preparing') {
+                    return (
+                      <PrimaryButton
+                        label={t('mobile.productionSetup.planTitle')}
+                        onPress={() => {
+                          void haptics.selection();
+                          router.push(
+                            `/(app)/(admin)/orders/${orderId}/production-plan` as Href,
+                          );
+                        }}
+                        style={ctaStyle}
+                      />
+                    );
+                  }
+                  if (!poId && !vm.productionSetupRequired) return null;
                   const shipReady =
                     vm.lifecycle === 'ready_to_ship' ||
                     vm.lifecycle === 'shipped';
@@ -840,27 +857,9 @@ export function OrderDetailScreen({
                       />
                     );
                   }
-                  if (vm.productionSetupRequired) {
-                    return (
-                      <PrimaryButton
-                        label={t('mobile.orders.prepareProduction')}
-                        onPress={() => {
-                          void haptics.selection();
-                          router.push(
-                            `/(app)/(admin)/orders/${orderId}/production-setup` as Href,
-                          );
-                        }}
-                        style={ctaStyle}
-                      />
-                    );
-                  }
                   return (
                     <PrimaryButton
-                      label={
-                        vm.workerAssignmentRequired
-                          ? t('mobile.productionSetup.openPlanCta')
-                          : t('mobile.orders.cta.finishSetup')
-                      }
+                      label={t('mobile.productionSetup.planTitle')}
                       onPress={() => {
                         void haptics.selection();
                         router.push(

@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/buttons/PrimaryButton';
@@ -21,6 +21,9 @@ const CODE_TYPES = [
   'itf14',
   'codabar',
 ] as const;
+
+const DEV_SIMULATE =
+  typeof __DEV__ !== 'undefined' && __DEV__;
 
 type CodeScannerScreenProps = {
   title?: string;
@@ -44,6 +47,7 @@ export function CodeScannerScreen({
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [scannedCode, setScannedCode] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState('');
   const lockRef = useRef(false);
   const { overlayRotation, cameraOrientationProps } = useResponsiveCameraOrientation();
 
@@ -200,6 +204,52 @@ export function CodeScannerScreen({
                     {t('mobile.scan.scanning')}
                   </AppText>
                 </View>
+                {DEV_SIMULATE ? (
+                  <View style={{ marginTop: theme.spacing.lg, width: '100%', gap: theme.spacing.sm }}>
+                    <AppText
+                      variant="caption"
+                      style={{ color: creamMuted, textAlign: 'center', alignSelf: 'stretch' }}
+                    >
+                      {t('mobile.scan.devSimulateHint')}
+                    </AppText>
+                    <TextInput
+                      value={devCode}
+                      onChangeText={setDevCode}
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      placeholder={t('mobile.scan.devSimulatePlaceholder')}
+                      placeholderTextColor="rgba(245,241,234,0.35)"
+                      style={{
+                        borderWidth: 1,
+                        borderColor: 'rgba(245,240,232,0.28)',
+                        borderRadius: 12,
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                        color: cream,
+                        backgroundColor: 'rgba(28,25,23,0.55)',
+                        fontVariant: ['tabular-nums'],
+                      }}
+                      onSubmitEditing={() => {
+                        const raw = devCode.trim();
+                        if (!raw) return;
+                        lockRef.current = true;
+                        setTorch(false);
+                        setScannedCode(raw);
+                      }}
+                    />
+                    <SecondaryButton
+                      label={t('mobile.scan.devSimulate')}
+                      onPress={() => {
+                        const raw = devCode.trim();
+                        if (!raw) return;
+                        lockRef.current = true;
+                        setTorch(false);
+                        setScannedCode(raw);
+                      }}
+                      style={{ alignSelf: 'stretch' }}
+                    />
+                  </View>
+                ) : null}
               </>
             ) : (
               <View

@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { Prisma } from '@maher/database';
 import type { AuthUser } from '@maher/types';
@@ -10,7 +12,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
-import { ListProductionOrdersDto, UpdateProductionOrderDto } from './dto/production.dto';
+import { ListProductionOrdersDto, UpdateProductionOrderDto, type ProductionListBucket } from './dto/production.dto';
 import { StagePipelineService } from './stage-pipeline.service';
 import {
   mapWorkflowStageAdmin,
@@ -22,7 +24,24 @@ import {
   productionNotReadyException,
   type ExecutableTaskInput,
 } from './production-readiness';
+import {
+  HAS_EXECUTABLE,
+  UNASSIGNED_EXECUTABLE,
+  UNDATED_EXECUTABLE,
+  productionBoardBucketWhere,
+  type ProductionBoardBucketKey,
+} from './production-board-buckets';
 import { releasedToFactoryWhere } from './factory-release';
+import {
+  DEFAULT_FACTORY_TIMEZONE,
+  assertValidOnDate,
+  intervalOverlapsFactoryDay,
+  plannedTasksOverlapDayWhere,
+  productionDayLensWhere,
+  resolveFactoryDayBounds,
+  type FactoryDayBounds,
+  type ProductionDateMode,
+} from './production-day-lens';
 import {
   intervalsOverlap,
   recommendWorkerBand,
@@ -30,44 +49,7 @@ import {
 } from './worker-recommend';
 import { listMissingExecutableTaskSpecs } from './ensure-executable-tasks';
 import { ManufacturingCostService } from './manufacturing-cost.service';
-
-/** Executable floor task missing an assignee (excludes logistics/delivery/rework). */
-const UNASSIGNED_EXECUTABLE: Prisma.ProductionTaskWhereInput = {
-  assignedEmployeeId: null,
-  status: { not: 'CANCELLED' },
-  isRework: false,
-  stageDefinition: {
-    executionKind: { not: 'LOGISTICS' },
-    code: { not: 'DELIVERY' },
-  },
-};
-
-const HAS_EXECUTABLE: Prisma.ProductionTaskWhereInput = {
-  status: { not: 'CANCELLED' },
-  isRework: false,
-  stageDefinition: {
-    executionKind: { not: 'LOGISTICS' },
-    code: { not: 'DELIVERY' },
-  },
-};
-
-/** Executable floor task missing planned timing (no end, or start without end). */
-const UNDATED_EXECUTABLE: Prisma.ProductionTaskWhereInput = {
-  status: { not: 'CANCELLED' },
-  isRework: false,
-  stageDefinition: {
-    executionKind: { not: 'LOGISTICS' },
-    code: { not: 'DELIVERY' },
-  },
-  OR: [
-    { plannedStart: null, plannedCompletion: null },
-    { plannedStart: { not: null }, plannedCompletion: null },
-  ],
-};
-
-const OPEN_BLOCKER_ON_TASK: Prisma.ProductionTaskWhereInput = {
-  blockers: { some: { resolvedAt: null } },
-};
+import { SchedulingService } from '../scheduling/scheduling.service';
 
 @Injectable()
 export class ProductionService {
@@ -76,6 +58,8 @@ export class ProductionService {
     private readonly pipeline: StagePipelineService,
     private readonly sequences: SequenceService,
     private readonly manufacturingCost: ManufacturingCostService,
+    @Inject(forwardRef(() => SchedulingService))
+    private readonly scheduling: SchedulingService,
   ) {}
 
   /**
@@ -143,160 +127,42 @@ export class ProductionService {
   }
 
   async list(query: ListProductionOrdersDto, user?: AuthUser) {
-    const q = query.q?.trim();
-    const and: Prisma.ProductionOrderWhereInput[] = [];
-    if (query.customerId) {
-      and.push({
-        OR: [
-          { customerId: query.customerId },
-          { salesOrder: { customerId: query.customerId } },
-        ],
-      });
-    }
-    if (q) {
-      and.push({
-        OR: [
-          { number: { contains: q, mode: 'insensitive' } },
-          { productDescription: { contains: q, mode: 'insensitive' } },
-          { currentStageCode: { contains: q, mode: 'insensitive' } },
-          { salesOrder: { number: { contains: q, mode: 'insensitive' } } },
-          { product: { nameEn: { contains: q, mode: 'insensitive' } } },
-          { product: { nameAr: { contains: q, mode: 'insensitive' } } },
-          { product: { nameHe: { contains: q, mode: 'insensitive' } } },
-          { product: { sku: { contains: q, mode: 'insensitive' } } },
-          { salesOrder: { externalOrderNumber: { contains: q, mode: 'insensitive' } } },
-        ],
-      });
-    }
-
     const now = new Date();
-    const inProductionStatuses = [
-      'IN_PROGRESS',
-      'READY_FOR_PACKAGING',
-      'READY_FOR_DELIVERY',
-      'WAITING_FOR_MATERIALS',
-      'READY',
-    ] as const;
+    const dayLens = await this.resolveDayLensFromQuery(query.onDate, query.dateMode, now);
+    const where = await this.buildProductionListWhere(query, user, now, dayLens?.bounds ?? null, dayLens?.mode ?? null);
 
-    const startOfDay = new Date(now);
-    startOfDay.setHours(0, 0, 0, 0);
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    /** Factory board buckets only include Released-to-factory POs (not Orders Preparing). */
-    const factoryOnly = releasedToFactoryWhere();
-
-    let bucketWhere: Prisma.ProductionOrderWhereInput = {};
-    if (query.bucket === 'in_production') {
-      bucketWhere = { ...factoryOnly, status: { in: [...inProductionStatuses] } };
-    } else if (query.bucket === 'late') {
-      bucketWhere = {
-        ...factoryOnly,
-        requiredDeliveryDate: { lt: now },
-        status: { notIn: ['COMPLETED', 'CANCELLED'] },
-      };
-    } else if (query.bucket === 'completed') {
-      bucketWhere = {
-        ...factoryOnly,
-        status: { in: ['COMPLETED', 'READY_FOR_DELIVERY'] },
-      };
-    } else if (query.bucket === 'daily') {
-      bucketWhere = {
-        ...factoryOnly,
-        status: 'COMPLETED',
-        actualCompletionDate: { gte: startOfDay },
-      };
-    } else if (query.bucket === 'weekly') {
-      bucketWhere = {
-        ...factoryOnly,
-        status: 'COMPLETED',
-        actualCompletionDate: { gte: startOfWeek },
-      };
-    } else if (query.bucket === 'monthly') {
-      bucketWhere = {
-        ...factoryOnly,
-        status: 'COMPLETED',
-        actualCompletionDate: { gte: startOfMonth },
-      };
-    } else if (query.bucket === 'needs_setup') {
-      // Post-release only — unreleased prep lives under Orders → Preparing.
-      bucketWhere = {
-        ...factoryOnly,
-        status: { in: ['DRAFT', 'PLANNED', 'READY'] },
-        OR: [
-          { tasks: { none: HAS_EXECUTABLE } },
-          { tasks: { some: UNASSIGNED_EXECUTABLE } },
-          { tasks: { some: UNDATED_EXECUTABLE } },
-        ],
-      };
-    } else if (query.bucket === 'ready_to_start') {
-      // Ready for factory = released + locked plan, no executable task started yet.
-      bucketWhere = {
-        ...factoryOnly,
-        status: { in: ['DRAFT', 'PLANNED', 'READY'] },
-        actualStartDate: null,
-        tasks: { some: HAS_EXECUTABLE },
-        NOT: {
-          OR: [
-            { tasks: { some: UNASSIGNED_EXECUTABLE } },
-            { tasks: { some: UNDATED_EXECUTABLE } },
-          ],
+    const taskSelect = {
+      id: true,
+      status: true,
+      isRework: true,
+      assignedEmployeeId: true,
+      stageInstanceId: true,
+      plannedStart: true,
+      plannedCompletion: true,
+      actualStart: true,
+      actualCompletion: true,
+      estimatedMinutes: true,
+      name: true,
+      number: true,
+      assignedEmployee: {
+        select: { id: true, firstName: true, lastName: true },
+      },
+      stageDefinition: {
+        select: {
+          id: true,
+          code: true,
+          nameEn: true,
+          nameAr: true,
+          nameHe: true,
+          executionKind: true,
+          responsibleDepartment: true,
         },
-      };
-    } else if (query.bucket === 'on_floor') {
-      bucketWhere = {
-        ...factoryOnly,
-        status: 'IN_PROGRESS',
-        OR: [
-          { currentStageCode: null },
-          {
-            currentStageCode: {
-              notIn: ['INSPECTION', 'PACKAGING', 'DELIVERY'],
-            },
-          },
-        ],
-      };
-    } else if (query.bucket === 'blocked') {
-      bucketWhere = {
-        ...factoryOnly,
-        OR: [
-          { status: { in: ['ON_HOLD', 'WAITING_FOR_MATERIALS'] } },
-          {
-            status: { notIn: ['COMPLETED', 'CANCELLED'] },
-            tasks: { some: OPEN_BLOCKER_ON_TASK },
-          },
-          {
-            requiredDeliveryDate: { lt: now },
-            status: { notIn: ['COMPLETED', 'CANCELLED', 'READY_FOR_DELIVERY'] },
-          },
-        ],
-      };
-    } else if (query.bucket === 'inspection_packaging') {
-      bucketWhere = {
-        ...factoryOnly,
-        OR: [
-          { status: { in: ['QUALITY_CHECK', 'READY_FOR_PACKAGING'] } },
-          {
-            status: 'IN_PROGRESS',
-            currentStageCode: { in: ['INSPECTION', 'PACKAGING'] },
-          },
-        ],
-      };
-    }
-
-    const where: Prisma.ProductionOrderWhereInput = {
-      archivedAt: null,
-      ...customerScopeFilter(user),
-      ...(query.status ? { status: query.status } : {}),
-      ...bucketWhere,
-      ...(query.priority ? { priority: query.priority } : {}),
-      ...(query.assignedEmployeeId
-        ? { tasks: { some: { assignedEmployeeId: query.assignedEmployeeId } } }
-        : {}),
-      ...(and.length ? { AND: and } : {}),
-    };
+      },
+      blockers: {
+        where: { resolvedAt: null },
+        select: { id: true, category: true, reason: true, resolvedAt: true },
+      },
+    } as const;
 
     const [totalItems, data] = await this.prisma.$transaction([
       this.prisma.productionOrder.count({ where }),
@@ -353,27 +219,7 @@ export class ProductionService {
           },
           tasks: {
             where: { status: { not: 'CANCELLED' } },
-            select: {
-              id: true,
-              status: true,
-              isRework: true,
-              assignedEmployeeId: true,
-              stageInstanceId: true,
-              stageDefinition: {
-                select: {
-                  id: true,
-                  code: true,
-                  nameEn: true,
-                  nameAr: true,
-                  nameHe: true,
-                  executionKind: true,
-                },
-              },
-              blockers: {
-                where: { resolvedAt: null },
-                select: { id: true, category: true, reason: true, resolvedAt: true },
-              },
-            },
+            select: taskSelect,
           },
           _count: {
             select: {
@@ -412,6 +258,15 @@ export class ProductionService {
 
     const catalogImages = await this.loadCatalogImageIndex();
 
+    // Actual-mode activity enrichment (read-only queries — no writes).
+    const actualEventsByOrder =
+      dayLens?.mode === 'actual' && dayLens.bounds
+        ? await this.loadActualDayEvents(
+            data.map((r) => r.id),
+            dayLens.bounds,
+          )
+        : new Map<string, Array<Record<string, unknown>>>();
+
     const enriched = data.map((row) => {
       const byCode = row.currentStageCode
         ? row.stages.find((s) => s.stageDefinition.code === row.currentStageCode)
@@ -447,13 +302,58 @@ export class ProductionService {
         tasks: tasks as ExecutableTaskInput[],
         schedulePresent: (_count?.schedules ?? 0) > 0,
         isLate,
+        plannedStartDate: row.plannedStartDate,
       });
+
+      let dayLensPayload: Record<string, unknown> | null = null;
+      if (dayLens?.bounds && dayLens.mode === 'planned') {
+        const plannedTasks = tasks
+          .filter((t) =>
+            intervalOverlapsFactoryDay(
+              t.plannedStart,
+              t.plannedCompletion,
+              dayLens.bounds.start,
+              dayLens.bounds.endExclusive,
+            ),
+          )
+          .map((t) => ({
+            taskId: t.id,
+            taskNumber: t.number,
+            stageCode: t.stageDefinition?.code ?? null,
+            stageNameEn: t.stageDefinition?.nameEn ?? t.name,
+            stageNameAr: t.stageDefinition?.nameAr ?? null,
+            stageNameHe: t.stageDefinition?.nameHe ?? null,
+            department: t.stageDefinition?.responsibleDepartment ?? null,
+            workerName: t.assignedEmployee
+              ? `${t.assignedEmployee.firstName} ${t.assignedEmployee.lastName}`.trim()
+              : null,
+            plannedStart: t.plannedStart,
+            plannedCompletion: t.plannedCompletion,
+            estimatedMinutes: t.estimatedMinutes,
+            status: t.status,
+          }));
+        dayLensPayload = {
+          mode: 'planned',
+          onDate: dayLens.bounds.onDate,
+          timezone: dayLens.bounds.timezone,
+          plannedTasks,
+        };
+      } else if (dayLens?.bounds && dayLens.mode === 'actual') {
+        dayLensPayload = {
+          mode: 'actual',
+          onDate: dayLens.bounds.onDate,
+          timezone: dayLens.bounds.timezone,
+          events: actualEventsByOrder.get(row.id) ?? [],
+        };
+      }
+
       return {
         ...rest,
         customer,
         imageUrl,
         isLate,
         readiness,
+        dayLens: dayLensPayload,
         currentStage: def
           ? {
               code: def.code,
@@ -472,10 +372,580 @@ export class ProductionService {
       };
     });
 
-    return { data: enriched, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    return {
+      data: enriched,
+      meta: {
+        ...paginatedMeta(query.page, query.pageSize, totalItems),
+        ...(dayLens
+          ? {
+              onDate: dayLens.bounds.onDate,
+              dateMode: dayLens.mode,
+              timezone: dayLens.bounds.timezone,
+              factoryTodayYmd: dayLens.bounds.factoryTodayYmd,
+            }
+          : {}),
+      },
+    };
   }
 
-  async getById(id: string, user?: AuthUser) {
+  /**
+   * Day lens summary — COUNT === list dataset for same onDate/bucket/customer.
+   * Also returns board lane counts for the selected day + dateMode (view/filter only).
+   * Read-only.
+   */
+  async daySummary(
+    query: {
+      onDate?: string;
+      dateMode?: ProductionDateMode;
+      bucket?: ProductionListBucket;
+      customerId?: string;
+    },
+    user?: AuthUser,
+  ) {
+    const now = new Date();
+    const timezone = await this.resolveFactoryTimezone();
+    let onDate: string;
+    try {
+      onDate =
+        assertValidOnDate(query.onDate) ??
+        resolveFactoryDayBounds('2000-01-01', timezone, now).factoryTodayYmd;
+    } catch {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'onDate must be YYYY-MM-DD.',
+      });
+    }
+    const bounds = resolveFactoryDayBounds(onDate, timezone, now);
+    const dateMode: ProductionDateMode = query.dateMode === 'actual' ? 'actual' : 'planned';
+
+    const listBase = await this.buildProductionListWhere(
+      {
+        page: 1,
+        pageSize: 1,
+        bucket: query.bucket,
+        customerId: query.customerId,
+      } as ListProductionOrdersDto,
+      user,
+      now,
+      null,
+      null,
+    );
+
+    // Board tiles: day lens + each lane — never scoped by the selected list bucket.
+    const boardBase = await this.buildProductionListWhere(
+      {
+        page: 1,
+        pageSize: 1,
+        customerId: query.customerId,
+      } as ListProductionOrdersDto,
+      user,
+      now,
+      bounds,
+      dateMode,
+    );
+
+    const plannedWhere: Prisma.ProductionOrderWhereInput = {
+      AND: [listBase, productionDayLensWhere(bounds, 'planned')],
+    };
+    const actualWhere: Prisma.ProductionOrderWhereInput = {
+      AND: [listBase, productionDayLensWhere(bounds, 'actual')],
+    };
+
+    const plannedTaskWhere = plannedTasksOverlapDayWhere(bounds.start, bounds.endExclusive);
+
+    const boardKeys = [
+      'needs_setup',
+      'ready_to_start',
+      'on_floor',
+      'blocked',
+      'inspection_packaging',
+    ] as const satisfies readonly ProductionBoardBucketKey[];
+
+    const [
+      plannedOrders,
+      plannedTasks,
+      actualOrders,
+      plannedTaskRows,
+      lateMissed,
+      atRisk,
+      needsSetup,
+      readyToStart,
+      onFloor,
+      blocked,
+      inspectionPackaging,
+    ] = await this.prisma.$transaction([
+      this.prisma.productionOrder.count({ where: plannedWhere }),
+      this.prisma.productionTask.count({
+        where: {
+          ...plannedTaskWhere,
+          productionOrder: plannedWhere,
+        },
+      }),
+      this.prisma.productionOrder.count({ where: actualWhere }),
+      this.prisma.productionTask.findMany({
+        where: {
+          ...plannedTaskWhere,
+          productionOrder: plannedWhere,
+        },
+        select: {
+          id: true,
+          stageDefinition: {
+            select: { code: true, nameEn: true, nameAr: true, responsibleDepartment: true },
+          },
+        },
+      }),
+      this.prisma.productionTask.count({
+        where: {
+          ...plannedTaskWhere,
+          productionOrder: plannedWhere,
+          actualStart: null,
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          plannedCompletion: { lt: now, not: null },
+        },
+      }),
+      this.prisma.productionOrder.count({
+        where: {
+          AND: [
+            plannedWhere,
+            {
+              OR: [
+                {
+                  requiredDeliveryDate: { lt: now },
+                  status: { notIn: ['COMPLETED', 'CANCELLED'] },
+                },
+                {
+                  tasks: {
+                    some: { blockers: { some: { resolvedAt: null } } },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      ...boardKeys.map((key) =>
+        this.prisma.productionOrder.count({
+          where: {
+            AND: [boardBase, productionBoardBucketWhere(key, now)],
+          },
+        }),
+      ),
+    ]);
+
+    const [actualStarts, actualCompletions] = await this.prisma.$transaction([
+      this.prisma.productionTask.count({
+        where: {
+          productionOrder: actualWhere,
+          actualStart: { gte: bounds.start, lt: bounds.endExclusive },
+        },
+      }),
+      this.prisma.productionTask.count({
+        where: {
+          productionOrder: actualWhere,
+          actualCompletion: { gte: bounds.start, lt: bounds.endExclusive },
+        },
+      }),
+    ]);
+
+    const byDepartment = new Map<string, { code: string; nameEn: string; taskCount: number }>();
+    for (const row of plannedTaskRows) {
+      const code =
+        row.stageDefinition?.responsibleDepartment ||
+        row.stageDefinition?.code ||
+        'OTHER';
+      const nameEn = row.stageDefinition?.nameEn || code;
+      const prev = byDepartment.get(code);
+      if (prev) prev.taskCount += 1;
+      else byDepartment.set(code, { code, nameEn, taskCount: 1 });
+    }
+
+    return {
+      onDate: bounds.onDate,
+      timezone: bounds.timezone,
+      factoryTodayYmd: bounds.factoryTodayYmd,
+      isToday: bounds.isToday,
+      isFuture: bounds.isFuture,
+      dateMode,
+      planned: {
+        orders: plannedOrders,
+        tasks: plannedTasks,
+        byDepartment: [...byDepartment.values()].sort((a, b) => b.taskCount - a.taskCount),
+      },
+      actual: {
+        orders: actualOrders,
+        taskEvents: actualStarts + actualCompletions,
+      },
+      lateMissed,
+      atRisk,
+      board: {
+        needsSetup,
+        readyToStart,
+        onFloor,
+        blocked,
+        inspectionPackaging,
+      },
+    };
+  }
+
+  /** Read-only factory timezone from calendar (or default Asia/Amman). */
+  private async resolveFactoryTimezone(): Promise<string> {
+    const row = await this.prisma.factoryCalendar.findFirst({
+      where: { isDefault: true },
+      select: { timezone: true },
+    });
+    return row?.timezone?.trim() || DEFAULT_FACTORY_TIMEZONE;
+  }
+
+  private async resolveDayLensFromQuery(
+    onDate: string | undefined,
+    dateMode: ProductionDateMode | undefined,
+    now: Date,
+  ): Promise<{ bounds: FactoryDayBounds; mode: ProductionDateMode } | null> {
+    if (!onDate?.trim() || !dateMode) return null;
+    let ymd: string;
+    try {
+      ymd = assertValidOnDate(onDate)!;
+    } catch {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'onDate must be YYYY-MM-DD.',
+      });
+    }
+    const timezone = await this.resolveFactoryTimezone();
+    return {
+      bounds: resolveFactoryDayBounds(ymd, timezone, now),
+      mode: dateMode,
+    };
+  }
+
+  private async buildProductionListWhere(
+    query: ListProductionOrdersDto,
+    user: AuthUser | undefined,
+    now: Date,
+    dayBounds: FactoryDayBounds | null,
+    dateMode: ProductionDateMode | null,
+  ): Promise<Prisma.ProductionOrderWhereInput> {
+    const q = query.q?.trim();
+    const and: Prisma.ProductionOrderWhereInput[] = [];
+    if (query.customerId) {
+      and.push({
+        OR: [
+          { customerId: query.customerId },
+          { salesOrder: { customerId: query.customerId } },
+        ],
+      });
+    }
+    if (q) {
+      and.push({
+        OR: [
+          { number: { contains: q, mode: 'insensitive' } },
+          { productDescription: { contains: q, mode: 'insensitive' } },
+          { currentStageCode: { contains: q, mode: 'insensitive' } },
+          { salesOrder: { number: { contains: q, mode: 'insensitive' } } },
+          { product: { nameEn: { contains: q, mode: 'insensitive' } } },
+          { product: { nameAr: { contains: q, mode: 'insensitive' } } },
+          { product: { nameHe: { contains: q, mode: 'insensitive' } } },
+          { product: { sku: { contains: q, mode: 'insensitive' } } },
+          { salesOrder: { externalOrderNumber: { contains: q, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const BOARD_BUCKETS = new Set<string>([
+      'needs_setup',
+      'ready_to_start',
+      'on_floor',
+      'blocked',
+      'inspection_packaging',
+    ]);
+
+    let bucketWhere: Prisma.ProductionOrderWhereInput = {};
+    if (query.bucket && BOARD_BUCKETS.has(query.bucket)) {
+      bucketWhere = productionBoardBucketWhere(
+        query.bucket as ProductionBoardBucketKey,
+        now,
+      );
+    } else if (query.bucket === 'in_production') {
+      bucketWhere = productionBoardBucketWhere('on_floor', now);
+    } else if (query.bucket === 'late') {
+      bucketWhere = {
+        ...releasedToFactoryWhere(),
+        requiredDeliveryDate: { lt: now },
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      };
+    } else if (query.bucket === 'completed') {
+      bucketWhere = {
+        ...releasedToFactoryWhere(),
+        status: { in: ['COMPLETED', 'READY_FOR_DELIVERY'] },
+      };
+    } else if (query.bucket === 'daily') {
+      bucketWhere = {
+        ...releasedToFactoryWhere(),
+        status: 'COMPLETED',
+        actualCompletionDate: { gte: startOfDay },
+      };
+    } else if (query.bucket === 'weekly') {
+      bucketWhere = {
+        ...releasedToFactoryWhere(),
+        status: 'COMPLETED',
+        actualCompletionDate: { gte: startOfWeek },
+      };
+    } else if (query.bucket === 'monthly') {
+      bucketWhere = {
+        ...releasedToFactoryWhere(),
+        status: 'COMPLETED',
+        actualCompletionDate: { gte: startOfMonth },
+      };
+    }
+
+    if (dayBounds && dateMode) {
+      and.push(productionDayLensWhere(dayBounds, dateMode));
+    }
+
+    return {
+      archivedAt: null,
+      ...customerScopeFilter(user),
+      ...(query.status ? { status: query.status } : {}),
+      ...bucketWhere,
+      ...(query.priority ? { priority: query.priority } : {}),
+      ...(query.assignedEmployeeId
+        ? { tasks: { some: { assignedEmployeeId: query.assignedEmployeeId } } }
+        : {}),
+      ...(and.length ? { AND: and } : {}),
+    };
+  }
+
+  /** Read-only event feed for Actual day lens cards. */
+  private async loadActualDayEvents(
+    productionOrderIds: string[],
+    bounds: FactoryDayBounds,
+  ): Promise<Map<string, Array<Record<string, unknown>>>> {
+    const map = new Map<string, Array<Record<string, unknown>>>();
+    if (productionOrderIds.length === 0) return map;
+    const { start, endExclusive } = bounds;
+
+    const [tasks, materials, kits, handoffs, lots, inspections] = await Promise.all([
+      this.prisma.productionTask.findMany({
+        where: {
+          productionOrderId: { in: productionOrderIds },
+          OR: [
+            { actualStart: { gte: start, lt: endExclusive } },
+            { actualCompletion: { gte: start, lt: endExclusive } },
+          ],
+        },
+        select: {
+          id: true,
+          productionOrderId: true,
+          actualStart: true,
+          actualCompletion: true,
+          name: true,
+          assignedEmployee: { select: { firstName: true, lastName: true } },
+          stageDefinition: {
+            select: { code: true, nameEn: true, nameAr: true, nameHe: true },
+          },
+        },
+      }),
+      this.prisma.productionTaskMaterialUsage.findMany({
+        where: {
+          productionOrderId: { in: productionOrderIds },
+          OR: [
+            { finalizedAt: { gte: start, lt: endExclusive } },
+            {
+              AND: [
+                { finalizedAt: null },
+                { createdAt: { gte: start, lt: endExclusive } },
+              ],
+            },
+          ],
+        },
+        select: {
+          productionOrderId: true,
+          sku: true,
+          actualQty: true,
+          returnedQty: true,
+          scrapQty: true,
+          finalizedAt: true,
+          createdAt: true,
+          task: {
+            select: {
+              stageDefinition: { select: { nameEn: true, code: true } },
+              assignedEmployee: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.wipKit.findMany({
+        where: {
+          productionOrderId: { in: productionOrderIds },
+          createdAt: { gte: start, lt: endExclusive },
+        },
+        select: {
+          productionOrderId: true,
+          createdAt: true,
+          stageInstance: {
+            select: { stageDefinition: { select: { nameEn: true, code: true } } },
+          },
+          producingTask: {
+            select: {
+              assignedEmployee: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.wipHandoff.findMany({
+        where: {
+          productionOrderId: { in: productionOrderIds },
+          receivedAt: { gte: start, lt: endExclusive },
+        },
+        select: {
+          productionOrderId: true,
+          receivedAt: true,
+          receivedBy: { select: { firstName: true, lastName: true } },
+          kit: {
+            select: {
+              stageInstance: {
+                select: { stageDefinition: { select: { nameEn: true, code: true } } },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.inventoryLot.findMany({
+        where: {
+          productionOrderId: { in: productionOrderIds },
+          producedAt: { gte: start, lt: endExclusive },
+        },
+        select: {
+          productionOrderId: true,
+          producedAt: true,
+          inventoryItem: { select: { sku: true, nameEn: true, itemClass: true } },
+        },
+      }),
+      this.prisma.qualityInspection.findMany({
+        where: {
+          productionOrderId: { in: productionOrderIds },
+          inspectedAt: { gte: start, lt: endExclusive },
+        },
+        select: {
+          productionOrderId: true,
+          inspectedAt: true,
+          result: true,
+          stageCode: true,
+        },
+      }),
+    ]);
+
+    const push = (orderId: string, event: Record<string, unknown>) => {
+      const list = map.get(orderId) ?? [];
+      list.push(event);
+      map.set(orderId, list);
+    };
+
+    for (const t of tasks) {
+      const stage = t.stageDefinition?.nameEn ?? t.name;
+      const worker = t.assignedEmployee
+        ? `${t.assignedEmployee.firstName} ${t.assignedEmployee.lastName}`.trim()
+        : null;
+      if (
+        t.actualStart &&
+        t.actualStart >= start &&
+        t.actualStart < endExclusive
+      ) {
+        push(t.productionOrderId, {
+          kind: 'task_started',
+          at: t.actualStart.toISOString(),
+          stage,
+          worker,
+        });
+      }
+      if (
+        t.actualCompletion &&
+        t.actualCompletion >= start &&
+        t.actualCompletion < endExclusive
+      ) {
+        push(t.productionOrderId, {
+          kind: 'task_completed',
+          at: t.actualCompletion.toISOString(),
+          stage,
+          worker,
+        });
+      }
+    }
+
+    for (const m of materials) {
+      const at = (m.finalizedAt ?? m.createdAt).toISOString();
+      const stage = m.task?.stageDefinition?.nameEn ?? null;
+      const worker = m.task?.assignedEmployee
+        ? `${m.task.assignedEmployee.firstName} ${m.task.assignedEmployee.lastName}`.trim()
+        : null;
+      if (Number(m.scrapQty) > 0) {
+        push(m.productionOrderId, { kind: 'material_scrap', at, sku: m.sku, stage, worker });
+      } else if (Number(m.returnedQty) > 0) {
+        push(m.productionOrderId, { kind: 'material_returned', at, sku: m.sku, stage, worker });
+      } else if (m.actualQty != null) {
+        push(m.productionOrderId, { kind: 'material_used', at, sku: m.sku, stage, worker });
+      }
+    }
+
+    for (const k of kits) {
+      const worker = k.producingTask?.assignedEmployee
+        ? `${k.producingTask.assignedEmployee.firstName} ${k.producingTask.assignedEmployee.lastName}`.trim()
+        : null;
+      push(k.productionOrderId, {
+        kind: 'semi_produced',
+        at: k.createdAt.toISOString(),
+        stage: k.stageInstance.stageDefinition.nameEn,
+        worker,
+      });
+    }
+
+    for (const h of handoffs) {
+      push(h.productionOrderId, {
+        kind: 'semi_received',
+        at: h.receivedAt.toISOString(),
+        stage: h.kit.stageInstance.stageDefinition.nameEn,
+        worker: `${h.receivedBy.firstName} ${h.receivedBy.lastName}`.trim(),
+      });
+    }
+
+    for (const lot of lots) {
+      const cls = String(lot.inventoryItem?.itemClass ?? '').toUpperCase();
+      push(lot.productionOrderId!, {
+        kind: cls.includes('FINISH') || cls === 'FG' ? 'fg_created' : 'lot_produced',
+        at: lot.producedAt.toISOString(),
+        sku: lot.inventoryItem?.sku ?? null,
+        name: lot.inventoryItem?.nameEn ?? null,
+      });
+    }
+
+    for (const insp of inspections) {
+      const result = String(insp.result ?? '').toUpperCase();
+      push(insp.productionOrderId, {
+        kind: result === 'FAIL' || result === 'FAILED' ? 'inspection_failed' : 'inspection_passed',
+        at: insp.inspectedAt.toISOString(),
+        stage: insp.stageCode,
+      });
+    }
+
+    for (const [orderId, events] of map) {
+      events.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+      map.set(orderId, events);
+    }
+    return map;
+  }
+
+  async getById(
+    id: string,
+    user?: AuthUser,
+    _opts?: { skipPromote?: boolean },
+  ) {
     const loadOrder = () =>
       this.prisma.productionOrder.findFirst({
       where: { id, archivedAt: null },
@@ -654,6 +1124,7 @@ export class ProductionService {
       tasks: order.tasks as ExecutableTaskInput[],
       schedulePresent: scheduleCount > 0,
       isLate,
+      plannedStartDate: order.plannedStartDate,
       openBlockers: openBlockers.map((b) => ({
         kind: String(b.category ?? 'OTHER'),
         taskId: b.taskId,
@@ -852,34 +1323,83 @@ export class ProductionService {
       string,
       Array<{ start: string; end: string; label: string }>
     >();
+    /** All busy blocks on the local calendar day of plannedStart (time-based capacity). */
+    const dayWindowsByWorker = new Map<
+      string,
+      Array<{
+        start: string;
+        end: string;
+        label: string;
+        salesOrderNumber: string | null;
+        stage: string | null;
+      }>
+    >();
     if (windowOk && ids.length > 0) {
       const excludeTaskId = opts?.taskId?.trim() || undefined;
-      const overlapping = await this.prisma.productionTask.findMany({
+      const dayStart = new Date(windowStart!);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      const dayTasks = await this.prisma.productionTask.findMany({
         where: {
           assignedEmployeeId: { in: ids },
           ...(excludeTaskId ? { id: { not: excludeTaskId } } : {}),
           status: { in: [...openStatuses] },
           productionOrder: { archivedAt: null, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
           plannedCompletion: { not: null },
+          OR: [
+            {
+              plannedStart: { gte: dayStart, lt: dayEnd },
+            },
+            {
+              AND: [
+                { plannedStart: null },
+                { plannedCompletion: { gte: dayStart, lt: dayEnd } },
+              ],
+            },
+            {
+              AND: [
+                { plannedStart: { lt: dayEnd } },
+                { plannedCompletion: { gt: dayStart } },
+              ],
+            },
+          ],
         },
         select: {
           assignedEmployeeId: true,
           name: true,
           plannedStart: true,
           plannedCompletion: true,
-          productionOrder: { select: { number: true } },
+          productionOrder: {
+            select: {
+              number: true,
+              salesOrder: { select: { number: true } },
+            },
+          },
         },
       });
-      for (const t of overlapping) {
+      for (const t of dayTasks) {
         if (!t.assignedEmployeeId || !t.plannedCompletion) continue;
         const oStart = t.plannedStart ?? new Date(t.plannedCompletion.getTime() - 3600_000);
+        const soNumber = t.productionOrder?.salesOrder?.number ?? t.productionOrder?.number ?? null;
+        const label = `${soNumber ?? ''} · ${t.name}`.trim();
+        const dayList = dayWindowsByWorker.get(t.assignedEmployeeId) ?? [];
+        dayList.push({
+          start: oStart.toISOString(),
+          end: t.plannedCompletion.toISOString(),
+          label,
+          salesOrderNumber: soNumber,
+          stage: t.name,
+        });
+        dayWindowsByWorker.set(t.assignedEmployeeId, dayList);
+
         if (intervalsOverlap(windowStart!, windowEnd!, oStart, t.plannedCompletion)) {
           overlapByWorker.add(t.assignedEmployeeId);
           const list = overlapWindowsByWorker.get(t.assignedEmployeeId) ?? [];
           list.push({
             start: oStart.toISOString(),
             end: t.plannedCompletion.toISOString(),
-            label: `${t.productionOrder?.number ?? ''} ${t.name}`.trim(),
+            label,
           });
           overlapWindowsByWorker.set(t.assignedEmployeeId, list);
         }
@@ -920,6 +1440,7 @@ export class ProductionService {
           plannedCompletion: new Date(latestEndMs + durationMs).toISOString(),
         };
       }
+      const dayWindows = dayWindowsByWorker.get(w.id) ?? [];
       return {
         ...w,
         activeTaskCount,
@@ -927,6 +1448,7 @@ export class ProductionService {
         recommendReason: rec.reason,
         recommendReasonCode: rec.reasonCode,
         overlapWindows: overlapWindows.length > 0 ? overlapWindows : undefined,
+        dayWindows: dayWindows.length > 0 ? dayWindows : undefined,
         suggestedWindow: suggestedWindow ?? undefined,
       };
     });
@@ -975,14 +1497,27 @@ export class ProductionService {
   /**
    * Release to factory — hard Preparing → Production boundary.
    * Locks the approved plan, opens Production visibility (Ready for factory),
-   * unlocks eligible stages for workers. Does **not** mark the PO IN_PROGRESS;
-   * first real task start does that via StagePipelineService.onTaskStart.
+   * unlocks eligible stages for workers. Does **not** mark the PO IN_PROGRESS
+   * or set actualStartDate — that waits for first executable task actual start
+   * via StagePipelineService.onTaskStart. Planned start date arriving never
+   * flips Ready for Factory → In Production.
+   *
+   * `plannedStartDateIso` (optional) is persisted before release so Confirm can
+   * send the calendar day in one shot without a prior Save.
    */
-  async start(id: string, actorUserId?: string) {
+  async start(id: string, actorUserId?: string, plannedStartDateIso?: string) {
+    if (plannedStartDateIso?.trim()) {
+      await this.setProductionStartAndSuggestSchedule(
+        id,
+        plannedStartDateIso.trim(),
+        actorUserId ?? 'system',
+      );
+    }
+
     const order = await this.getById(id);
 
     if (order.releasedToFactoryAt) {
-      return order;
+      return this.getById(id);
     }
 
     const allowed = ['DRAFT', 'PLANNED', 'READY', 'WAITING_FOR_MATERIALS'];
@@ -999,12 +1534,14 @@ export class ProductionService {
         status: order.status,
         currentStageCode: order.currentStageCode,
         tasks: (order.tasks ?? []) as ExecutableTaskInput[],
+        plannedStartDate: order.plannedStartDate,
       });
 
     const hardBlock = readiness.reasons.filter(
       (r: { code: string }) =>
         r.code === 'MISSING_ASSIGNMENT' ||
         r.code === 'MISSING_DATE' ||
+        r.code === 'MISSING_PRODUCTION_START' ||
         r.code === 'NO_EXECUTABLE_TASKS' ||
         r.code === 'STATUS_NOT_STARTABLE',
     );
@@ -1017,14 +1554,14 @@ export class ProductionService {
       await tx.productionOrder.update({
         where: { id },
         data: {
-          // Stay pre-floor until a real task starts; READY marks released plan.
+          // Stay Ready for factory until a real executable task starts.
           status: order.status === 'WAITING_FOR_MATERIALS' ? 'WAITING_FOR_MATERIALS' : 'READY',
           releasedToFactoryAt: now,
           releasedToFactoryById: actorUserId ?? order.createdById ?? null,
         },
       });
-      // Do NOT set SalesOrder IN_PRODUCTION here — that waits for first executable task start.
-      // Keep commercial SO on READY_FOR_PRODUCTION (or WAITING_FOR_MATERIALS) until then.
+      // Do NOT set SalesOrder IN_PRODUCTION here — that waits for first
+      // executable task start via StagePipelineService.onTaskStart.
       if (order.salesOrderId) {
         await tx.salesOrder.updateMany({
           where: {
@@ -1048,20 +1585,24 @@ export class ProductionService {
             releasedToFactoryAt: now.toISOString(),
             salesOrderId: order.salesOrderId,
             salesOrderStatus: 'READY_FOR_PRODUCTION',
+            plannedStartDate: order.plannedStartDate?.toISOString() ?? null,
           },
         },
       });
     });
 
+    // Confirm / release always returns Ready for factory (Ready to start on Orders).
     return this.getById(id);
   }
 
   /**
-   * Edit plan — Ready to start → Preparing.
-   * Clears factory release, unlocks the plan for admin edits, keeps SO in a Preparing-compatible status.
+   * Explicit Admin Replan — Ready for Factory → Needs Planning.
+   * Clears factory release, unlocks the plan for admin edits.
+   * Retains previous approved plan snapshot in audit (does not wipe task assignments/dates).
+   * Committed dealer delivery date is never modified.
    * Rejected once any executable task has started.
    */
-  async returnToPreparing(id: string, actorUserId?: string) {
+  async returnToPreparing(id: string, actorUserId?: string, reason?: string) {
     const order = await this.getById(id);
 
     if (!order.releasedToFactoryAt) {
@@ -1081,6 +1622,50 @@ export class ProductionService {
       });
     }
 
+    const planSnapshot = {
+      status: order.status,
+      releasedToFactoryAt: order.releasedToFactoryAt
+        ? new Date(order.releasedToFactoryAt).toISOString()
+        : null,
+      plannedStartDate: order.plannedStartDate
+        ? new Date(order.plannedStartDate).toISOString()
+        : null,
+      plannedCompletionDate: order.plannedCompletionDate
+        ? new Date(order.plannedCompletionDate).toISOString()
+        : null,
+      requiredDeliveryDate: order.requiredDeliveryDate
+        ? new Date(order.requiredDeliveryDate).toISOString()
+        : null,
+      committedDeliveryDate: order.committedDeliveryDate
+        ? new Date(order.committedDeliveryDate).toISOString()
+        : null,
+      tasks: (order.tasks ?? []).map((t: {
+        id: string;
+        number?: string;
+        name?: string;
+        status: string;
+        assignedEmployeeId?: string | null;
+        assignedEmployee?: { firstName?: string | null; lastName?: string | null } | null;
+        plannedStart?: Date | string | null;
+        plannedCompletion?: Date | string | null;
+        stageDefinition?: { code?: string | null } | null;
+      }) => ({
+        id: t.id,
+        number: t.number ?? null,
+        name: t.name ?? null,
+        status: t.status,
+        assignedEmployeeId: t.assignedEmployeeId ?? null,
+        assignedEmployeeName: t.assignedEmployee
+          ? `${t.assignedEmployee.firstName ?? ''} ${t.assignedEmployee.lastName ?? ''}`.trim()
+          : null,
+        plannedStart: t.plannedStart ? new Date(t.plannedStart).toISOString() : null,
+        plannedCompletion: t.plannedCompletion
+          ? new Date(t.plannedCompletion).toISOString()
+          : null,
+        stageCode: t.stageDefinition?.code ?? null,
+      })),
+    };
+
     await this.prisma.$transaction(async (tx) => {
       await tx.productionOrder.update({
         where: { id },
@@ -1088,6 +1673,7 @@ export class ProductionService {
           status: 'PLANNED',
           releasedToFactoryAt: null,
           releasedToFactoryById: null,
+          // requiredDeliveryDate / committedDeliveryDate intentionally untouched
         },
       });
       if (order.salesOrderId) {
@@ -1105,15 +1691,50 @@ export class ProductionService {
           action: 'production-order.return-to-preparing',
           entityType: 'ProductionOrder',
           entityId: id,
+          oldValues: planSnapshot as unknown as Prisma.InputJsonValue,
           newValues: {
             releasedToFactoryAt: null,
             salesOrderId: order.salesOrderId,
             salesOrderStatus: 'READY_FOR_PRODUCTION',
+            requiredDeliveryDate: order.requiredDeliveryDate ?? null,
+            committedDeliveryDate: order.committedDeliveryDate ?? null,
+            reason: reason?.trim() || null,
+            note: 'Replan: factory plan reopened; previous approved plan retained in oldValues; dealer delivery unchanged.',
           },
         },
       });
     });
 
+    return this.getById(id);
+  }
+
+  /**
+   * Persist admin production start date, then run smart scheduling so task windows
+   * land on/after that date. Soft-fails schedule generate so the date still saves.
+   */
+  async setProductionStartAndSuggestSchedule(
+    id: string,
+    plannedStartDateIso: string,
+    actorUserId: string,
+  ) {
+    const plannedStartDate = new Date(plannedStartDateIso);
+    if (Number.isNaN(plannedStartDate.getTime())) {
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Invalid production start date.',
+      });
+    }
+    await this.update(id, { plannedStartDate: plannedStartDateIso });
+    try {
+      await this.scheduling.generateForProductionOrder(id, actorUserId, {
+        persist: true,
+        fromDate: plannedStartDate,
+        reason: 'plan-production-start',
+        failHard: false,
+      });
+    } catch {
+      // Date is saved; admin can still assign windows manually.
+    }
     return this.getById(id);
   }
 

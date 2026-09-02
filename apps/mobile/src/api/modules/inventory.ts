@@ -505,6 +505,8 @@ export type SemiFinishedLot = {
     nameEn: string;
     nameAr: string;
     nameHe?: string | null;
+    itemClass?: string | null;
+    category?: string | null;
     product?: {
       id: string;
       nameEn: string;
@@ -612,6 +614,12 @@ export async function listFinishedLots(
 
 export async function getInventoryLot(id: string) {
   return apiGet<SemiFinishedLot>(`/inventory/lots/${encodeURIComponent(id)}`);
+}
+
+export async function getInventoryLotByCode(code: string) {
+  return apiGet<SemiFinishedLot>(
+    `/inventory/lots/by-code/${encodeURIComponent(code)}`,
+  );
 }
 
 export async function listFinishedGoodsItems(

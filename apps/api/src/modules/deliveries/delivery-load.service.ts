@@ -341,7 +341,7 @@ export class DeliveryLoadService {
               },
             },
           },
-          loadPieces: { select: { id: true, loadedAt: true } },
+          loadPieces: { select: { id: true, pieceIndex: true, loadedAt: true } },
         },
         orderBy: [{ deliveryDate: 'asc' }, { createdAt: 'desc' }],
         skip: query.skip,
@@ -351,8 +351,18 @@ export class DeliveryLoadService {
 
     return {
       data: rows.map((d) => {
-        const total = d.loadPieces.length;
-        const loaded = d.loadPieces.filter((p) => p.loadedAt).length;
+        const sortedPieces = [...d.loadPieces].sort(
+          (a, b) => (a.pieceIndex ?? 0) - (b.pieceIndex ?? 0),
+        );
+        const total = sortedPieces.length;
+        const loaded = sortedPieces.filter((p) => p.loadedAt).length;
+        const firstMissing = sortedPieces.find((p) => !p.loadedAt);
+        const firstMissingPackageIndex =
+          firstMissing != null
+            ? firstMissing.pieceIndex != null && firstMissing.pieceIndex > 0
+              ? firstMissing.pieceIndex
+              : sortedPieces.indexOf(firstMissing) + 1
+            : null;
         const { loadPieces: _lp, salesOrder, ...rest } = d;
         const lineProduct = salesOrder?.lines?.[0]?.product;
         const lotItem = salesOrder?.inventoryLots?.[0]?.inventoryItem;
@@ -390,6 +400,8 @@ export class DeliveryLoadService {
           productNameHe: lotProduct?.nameHe ?? lineProduct?.nameHe ?? lotItem?.nameHe ?? null,
           imageUrl,
           loadProgress: { loaded, total },
+          firstMissingPackageIndex,
+          allLoaded: total > 0 && loaded === total,
         };
       }),
       meta: paginatedMeta(query.page, query.pageSize, totalItems),
@@ -643,7 +655,6 @@ export class DeliveryLoadService {
   async depart(
     deliveryId: string,
     user: AuthUser,
-    opts: { auto?: boolean } = {},
   ) {
     const existing = await this.assertDriverAccess(deliveryId, user);
 
@@ -702,16 +713,17 @@ export class DeliveryLoadService {
         await this.inventory.issueForDelivery(deliveryId, existing.salesOrderId, user.id, tx);
       }
 
+      // Explicit human confirm only. Legacy audits may still say delivery.depart.auto —
+      // that path is removed; do not recreate automatic departure.
       await tx.auditEvent.create({
         data: {
           userId: user.id,
-          action: opts.auto ? 'delivery.depart.auto' : 'delivery.depart',
+          action: 'delivery.depart',
           entityType: 'Delivery',
           entityId: deliveryId,
           newValues: {
             status: DeliveryStatus.OUT_FOR_DELIVERY,
             driverId: updated.driverId,
-            auto: Boolean(opts.auto),
           },
         },
       });

@@ -25,6 +25,7 @@ import { ImageViewer } from '@/components/media/ImageViewer';
 import { useNetwork } from '@/components/network/NetworkProvider';
 import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { JourneyStickyDock } from '@/features/sales-orders/components/journey/JourneyStickyDock';
+import { seedOrdersDeskChip } from '@/features/sales-orders/ordersDeskContext';
 import { useLocale } from '@/i18n';
 import {
   AnimatedPressable,
@@ -36,11 +37,14 @@ import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { WorkflowProgressHit } from '@/features/production-flow/components/WorkflowProgressHit';
 import { adminProductionFlowHref } from '@/features/production-flow/flowRoutes';
+import { ProductionTaskSheet } from './components/ProductionTaskSheet';
+import { ProductionAttentionBoard } from './components/ProductionAttentionBoard';
+import { ProductionWhereNowBoard } from './components/ProductionWhereNowBoard';
+import { ProductionJourneyBoard } from './components/ProductionJourneyBoard';
 import {
-  AssignWorkerSheet,
-  type AssignWorkerPayload,
-} from './components/AssignWorkerSheet';
-import { ProductionPlanAssignSheet } from './components/ProductionPlanAssignSheet';
+  ProductionManageSheet,
+  type ManageExceptionAction,
+} from './components/ProductionManageSheet';
 import {
   DeliveryDateSheet,
   PrioritySheet,
@@ -50,7 +54,6 @@ import { ProductionMaterialUsageBoard } from './components/ProductionMaterialUsa
 import { ProductionLifecycleStrip } from './components/ProductionLifecycleStrip';
 import { AdminScheduleStrip } from './components/AdminScheduleStrip';
 import { ProductionTaskCard } from './components/ProductionTaskCard';
-import { ProductionTaskSheet } from './components/ProductionTaskSheet';
 import {
   ProductionHubJump,
   type ProductionHubSection,
@@ -60,6 +63,11 @@ import { ProductionWipKitSheet } from './components/ProductionWipKitSheet';
 import { ProductionIdentityBoard } from './components/ProductionIdentityBoard';
 import { productionBoardShadow, productionInsetStyle } from './productionFloorStyle';
 import { shouldOpenPlanSheet } from './planCta';
+import { collectProductionAttention } from './productionAttention';
+import {
+  selectProductionJourney,
+  selectProductionWhereNow,
+} from './selectProductionJourney';
 import { WorkflowPickerSheet } from '@/features/sales-orders/production-setup/components/WorkflowPickerSheet';
 import {
   useAssignOrderWorkflowMutation,
@@ -76,13 +84,13 @@ import {
   useProductionOrderQuery,
   useProductionMaterialUsageQuery,
   useStartProductionMutation,
+  useReturnProductionToPreparingMutation,
   useUnblockTaskMutation,
   useUpdateProductionMutation,
   useUpdateTaskNotesMutation,
 } from './query';
 import {
   selectProductionDetail,
-  workersForStage,
   type ProductionTaskRow,
 } from './selectProduction';
 
@@ -141,7 +149,6 @@ export function ProductionDetailScreen({
   const canReadMfgCost = can(user, 'inventory.cost.read');
 
   const [activeTask, setActiveTask] = useState<ProductionTaskRow | null>(null);
-  const [assignTaskId, setAssignTaskId] = useState<string | null>(null);
   const [assignWindow, setAssignWindow] = useState<{
     plannedStart?: string;
     plannedCompletion?: string;
@@ -150,9 +157,12 @@ export function ProductionDetailScreen({
     conflicts: Array<{ kind?: string; id?: string; label?: string; start?: string; end?: string }>;
     suggestedWindow?: { plannedStart: string; plannedCompletion: string } | null;
   } | null>(null);
-  const [planSheetOpen, setPlanSheetOpen] = useState(false);
-  const [prepareFailed, setPrepareFailed] = useState(false);
   const [releaseConfirmOpen, setReleaseConfirmOpen] = useState(false);
+  const [replanConfirmOpen, setReplanConfirmOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [taskSheetIntent, setTaskSheetIntent] = useState<'view' | 'manage' | 'plan'>(
+    'plan',
+  );
   const [startReasons, setStartReasons] = useState<string[]>([]);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [deliveryOpen, setDeliveryOpen] = useState(false);
@@ -181,7 +191,8 @@ export function ProductionDetailScreen({
   });
   const materialsQuery = useProductionMaterialUsageQuery(orderId, canRead);
 
-  const workersTaskId = assignTaskId ?? (activeTask && canAssign ? activeTask.id : null);
+  const workersTaskId =
+    activeTask && canAssign && taskSheetIntent !== 'view' ? activeTask.id : null;
   const workersTaskMeta = useMemo(() => {
     if (!workersTaskId || !query.data) return null;
     const task = (query.data.tasks ?? []).find((t) => t.id === workersTaskId);
@@ -208,6 +219,7 @@ export function ProductionDetailScreen({
   );
   const assignMutation = useAssignTaskMutation(orderId);
   const startMutation = useStartProductionMutation(orderId);
+  const replanMutation = useReturnProductionToPreparingMutation(orderId);
   const ensurePlanMutation = useEnsurePlanTasksMutation(orderId);
   const updateMutation = useUpdateProductionMutation(orderId);
   const unblockMutation = useUnblockTaskMutation(orderId);
@@ -221,9 +233,9 @@ export function ProductionDetailScreen({
   );
 
   const readiness = query.data?.readiness ?? null;
-  const releasedToFactory = Boolean(
-    query.data?.releasedToFactoryAt ||
-      query.data?.actualStartDate ||
+  const releasedToFactory = Boolean(query.data?.releasedToFactoryAt);
+  const floorStarted = Boolean(
+    query.data?.actualStartDate ||
       ['IN_PROGRESS', 'ON_HOLD', 'QUALITY_CHECK', 'READY_FOR_PACKAGING', 'READY_FOR_DELIVERY', 'COMPLETED'].includes(
         String(query.data?.status ?? '').toUpperCase(),
       ),
@@ -244,8 +256,49 @@ export function ProductionDetailScreen({
   const showPlan = isStartable && canSetup && !releasedToFactory;
   const canChangeWorkflow =
     host === 'orders' && !releasedToFactory && (canAssign || canUpdate);
+  /** Ready for Factory — Replan unlocks back to Needs Planning (not after floor start). */
+  const showReplan =
+    host === 'production' && releasedToFactory && !floorStarted && canUpdate;
   const redirectUnreleasedToOrdersPlan =
     host === 'production' && Boolean(query.data) && !releasedToFactory && Boolean(salesOrderId);
+  /** Active factory work — dossier is read-only by default. */
+  const isExecutionDossier = host === 'production' && floorStarted;
+  const isReadyDossier = host === 'production' && releasedToFactory && !floorStarted;
+
+  const attentionBlocks = useMemo(
+    () =>
+      collectProductionAttention({
+        reasons: readiness?.reasons ?? null,
+        blockers: detail?.openBlockers ?? null,
+        isLate: detail?.isLate,
+      }),
+    [readiness?.reasons, detail?.openBlockers, detail?.isLate],
+  );
+
+  const journeyStages = useMemo(
+    () => (query.data ? selectProductionJourney(query.data, locale) : []),
+    [query.data, locale],
+  );
+
+  const whereNow = useMemo(() => {
+    if (!query.data || !detail) return null;
+    return selectProductionWhereNow(query.data, locale, {
+      dealerName: detail.dealerName,
+      productTitle: detail.title,
+      imageUrl: detail.imageUrl,
+      deliveryLabel: detail.deliveryLabel,
+      progressLabel: detail.progressLabel,
+      attentionCount: attentionBlocks.length,
+    });
+  }, [query.data, detail, locale, attentionBlocks.length]);
+
+  const openTaskExecution = (row: ProductionTaskRow, intent: 'view' | 'manage' | 'plan') => {
+    void haptics.selection();
+    setTaskSheetIntent(intent);
+    setAssignWindow({});
+    setScheduleConflict(null);
+    setActiveTask(row);
+  };
 
   const datesReady = useMemo(() => {
     if (!readiness) return false;
@@ -279,16 +332,6 @@ export function ProductionDetailScreen({
       };
     });
   }, [query.data, detail]);
-
-  const assignTarget = useMemo(
-    () => executableTasks.find((t) => t.task.id === assignTaskId) ?? null,
-    [assignTaskId, executableTasks],
-  );
-
-  const stageWorkers = useMemo(
-    () => workersForStage(workersQuery.data ?? [], assignTarget?.department),
-    [workersQuery.data, assignTarget?.department],
-  );
 
   const taskRows = useMemo(() => {
     if (!detail) return [];
@@ -372,35 +415,37 @@ export function ProductionDetailScreen({
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dockVisible =
     showPlan && (hubSection === 'overview' || hubSection === 'tasks');
+  const replanDockVisible = showReplan && !dockVisible;
   const listBottomPad =
     theme.spacing['3xl'] +
     SURFACE_TAB_BAR_CLEARANCE +
-    (dockVisible ? 72 : 0);
+    (dockVisible || replanDockVisible ? 72 : 0);
 
   const openAssign = (taskId: string) => {
-    void haptics.selection();
-    setAssignWindow({});
-    setAssignTaskId(taskId);
+    const row = detail?.tasks.find((t) => t.id === taskId) ?? null;
+    if (!row) return;
+    openTaskExecution(row, showPlan ? 'plan' : 'manage');
   };
 
+  /** Post-release plan desk: open first unassigned executable in plan intent. */
   const openPlanSheet = () => {
-    void haptics.selection();
-    setPrepareFailed(false);
-    setPlanSheetOpen(true);
-  };
-
-  const retryPrepareStages = () => {
-    setPrepareFailed(false);
+    const next =
+      executableTasks.find((t) => t.canAssign && !t.assigneeName) ??
+      executableTasks[0] ??
+      null;
+    if (next?.row) {
+      openTaskExecution(next.row, 'plan');
+      return;
+    }
+    if (next?.task.id) {
+      openAssign(next.task.id);
+      return;
+    }
     ensurePlanMutation.mutate(undefined, {
-      onSuccess: (res) => {
-        void query.refetch().then(() => {
-          if ((res?.created ?? 0) === 0 && executableTasks.length === 0) {
-            setPrepareFailed(true);
-          }
-        });
+      onSuccess: () => {
+        void query.refetch();
       },
       onError: () => {
-        setPrepareFailed(true);
         showToast({
           variant: 'error',
           message: t('mobile.production.setup.stagesPrepareFailed'),
@@ -409,62 +454,18 @@ export function ProductionDetailScreen({
     });
   };
 
-  const onPlanAssignSubmit = (payload: AssignWorkerPayload) => {
-    if (!assignTaskId) return;
-    assignMutation.mutate(
-      {
-        taskId: assignTaskId,
-        employeeId: payload.employeeId,
-        plannedStart: payload.plannedStart,
-        plannedCompletion: payload.plannedCompletion,
-        estimatedMinutes: payload.estimatedMinutes,
-        overrideConflict: payload.overrideConflict,
+  const retryPrepareStages = () => {
+    ensurePlanMutation.mutate(undefined, {
+      onSuccess: () => {
+        void query.refetch();
       },
-      {
-        onSuccess: () => {
-          void haptics.confirmMedium();
-          setAssignTaskId(null);
-          setAssignWindow({});
-          setScheduleConflict(null);
-          setStartReasons([]);
-          showToast({
-            variant: 'success',
-            message: t('mobile.production.assignSuccess'),
-          });
-        },
-        onError: (err) => {
-          void haptics.error();
-          if (isApiError(err) && err.code === 'WORKER_SCHEDULE_CONFLICT') {
-            setScheduleConflict({
-              conflicts: Array.isArray(err.details.conflicts)
-                ? (err.details.conflicts as Array<{
-                    kind?: string;
-                    id?: string;
-                    label?: string;
-                    start?: string;
-                    end?: string;
-                  }>)
-                : [],
-              suggestedWindow:
-                err.details.suggestedWindow &&
-                typeof err.details.suggestedWindow === 'object'
-                  ? (err.details.suggestedWindow as {
-                      plannedStart: string;
-                      plannedCompletion: string;
-                    })
-                  : null,
-            });
-            return;
-          }
-          showToast({
-            variant: 'error',
-            message: isApiError(err)
-              ? toastMessageForError(err)
-              : t('mobile.production.assignFailed'),
-          });
-        },
+      onError: () => {
+        showToast({
+          variant: 'error',
+          message: t('mobile.production.setup.stagesPrepareFailed'),
+        });
       },
-    );
+    });
   };
 
   const onRelease = () => {
@@ -649,6 +650,92 @@ export function ProductionDetailScreen({
 
             {hubSection === 'overview' || hubSection === 'tasks' ? (
               <>
+            {isExecutionDossier && whereNow ? (
+              <HeaderEnter reduce={reduce} delay={30}>
+                <ProductionWhereNowBoard
+                  where={whereNow}
+                  onPressImage={
+                    detail.imageUrl ? () => setImageOpen(true) : undefined
+                  }
+                />
+              </HeaderEnter>
+            ) : null}
+
+            {(isExecutionDossier || isReadyDossier) && attentionBlocks.length > 0 ? (
+              <HeaderEnter reduce={reduce} delay={35}>
+                <ProductionAttentionBoard
+                  blocks={attentionBlocks}
+                  productionOrderId={orderId}
+                  salesOrderId={salesOrderId}
+                  onManageTask={(taskId) => {
+                    const row = detail.tasks.find((t) => t.id === taskId) ?? null;
+                    if (row) openTaskExecution(row, 'manage');
+                  }}
+                />
+              </HeaderEnter>
+            ) : null}
+
+            {isExecutionDossier ? (
+              <HeaderEnter reduce={reduce} delay={40}>
+                <ProductionJourneyBoard
+                  stages={journeyStages}
+                  onOpenStage={(stage) => {
+                    const row =
+                      (stage.primaryTaskId
+                        ? detail.tasks.find((t) => t.id === stage.primaryTaskId)
+                        : null) ??
+                      detail.tasks.find((t) => t.stageCode === stage.code) ??
+                      null;
+                    if (row) openTaskExecution(row, 'view');
+                  }}
+                />
+              </HeaderEnter>
+            ) : null}
+
+            {isReadyDossier ? (
+              <HeaderEnter reduce={reduce} delay={40}>
+                <DealerBoard
+                  title={t('mobile.production.dossier.approvedPlan')}
+                  titleWeight={titleWeight}
+                >
+                  <View style={productionInsetStyle(theme, colors)}>
+                    <AppText variant="caption" color="muted">
+                      {t('mobile.production.dossier.approvedPlanHint')}
+                    </AppText>
+                    {detail.deliveryLabel ? (
+                      <MetaRow
+                        isRTL={isRTL}
+                        label={t('mobile.production.deliveryDate')}
+                        value={detail.deliveryLabel}
+                      />
+                    ) : null}
+                    <MetaRow
+                      isRTL={isRTL}
+                      label={t('mobile.production.dossier.workersPlanned')}
+                      value={`${detail.assignedWorkerCount}/${detail.taskCount}`}
+                    />
+                    {readiness ? (
+                      <>
+                        <ReadinessRow
+                          done={readiness.materialsReady}
+                          label={t('mobile.production.setup.readinessMaterials')}
+                          isRTL={isRTL}
+                        />
+                        <ReadinessRow
+                          done={readiness.assignment.missing.length === 0}
+                          label={t('mobile.production.setup.readinessTeam', {
+                            assigned: readiness.assignment.assigned,
+                            required: readiness.assignment.required,
+                          })}
+                          isRTL={isRTL}
+                        />
+                      </>
+                    ) : null}
+                  </View>
+                </DealerBoard>
+              </HeaderEnter>
+            ) : null}
+
             {(canAssign || canUpdate) && showPlan ? (
               <HeaderEnter reduce={reduce} delay={40}>
                 <DealerBoard
@@ -715,7 +802,7 @@ export function ProductionDetailScreen({
                   </View>
                 </DealerBoard>
               </HeaderEnter>
-            ) : readiness ? (
+            ) : readiness && isReadyDossier ? (
               <HeaderEnter reduce={reduce} delay={50}>
                 <DealerBoard
                   title={t('mobile.production.setup.readinessTitle')}
@@ -802,7 +889,7 @@ export function ProductionDetailScreen({
                           <ListItemEnter key={item.task.id} index={index}>
                             <ProductionTaskCard
                               task={row}
-                              onPress={() => setActiveTask(row)}
+                              onPress={() => openTaskExecution(row, 'plan')}
                             />
                           </ListItemEnter>
                         );
@@ -1178,7 +1265,12 @@ export function ProductionDetailScreen({
           <ListItemEnter index={index}>
             <ProductionTaskCard
               task={item}
-              onPress={() => setActiveTask(item)}
+              onPress={() =>
+                openTaskExecution(
+                  item,
+                  isExecutionDossier || isReadyDossier ? 'view' : 'plan',
+                )
+              }
               onOpenFloor={() => {
                 void haptics.selection();
                 router.push(
@@ -1196,6 +1288,29 @@ export function ProductionDetailScreen({
         onClose={() => setWipKit(null)}
       />
 
+      <ProductionManageSheet
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        allowRescheduleFuture={Boolean(
+          sheetTask &&
+            !sheetTask.actualStart &&
+            sheetTask.status !== 'IN_PROGRESS' &&
+            sheetTask.status !== 'COMPLETED',
+        )}
+        onSelect={(action: ManageExceptionAction) => {
+          setManageOpen(false);
+          if (!sheetTask) return;
+          // Explicit exception only — opens assign/window editing, no auto-replan.
+          if (
+            action === 'change_worker' ||
+            action === 'change_datetime' ||
+            action === 'reschedule_future'
+          ) {
+            openTaskExecution(sheetTask, 'manage');
+          }
+        }}
+      />
+
       <ImageViewer
         open={imageOpen}
         uris={detail.imageUrl ? [detail.imageUrl] : []}
@@ -1209,12 +1324,23 @@ export function ProductionDetailScreen({
           setActiveTask(null);
           setAssignWindow({});
           setScheduleConflict(null);
+          setTaskSheetIntent(showPlan ? 'plan' : 'view');
         }}
         task={sheetTask}
         workers={workersQuery.data ?? []}
-        workersLoading={workersQuery.isFetching || workersQuery.isLoading}
+        workersLoading={workersQuery.isLoading && !workersQuery.data}
         canAssign={canAssign}
         canUpdateTask={canUpdateTask}
+        intent={
+          isExecutionDossier || isReadyDossier
+            ? taskSheetIntent === 'manage'
+              ? 'manage'
+              : 'view'
+            : 'plan'
+        }
+        onRequestManage={() => {
+          setManageOpen(true);
+        }}
         canOverrideConflict={canOverrideConflict}
         assignLoading={assignMutation.isPending}
         notesLoading={notesMutation.isPending}
@@ -1435,63 +1561,6 @@ export function ProductionDetailScreen({
         }}
       />
 
-      <ProductionPlanAssignSheet
-        open={planSheetOpen}
-        onClose={() => setPlanSheetOpen(false)}
-        title={t('mobile.production.setup.title')}
-        subtitle={`${detail.number} · ${detail.title}`}
-        canAssign={canAssign}
-        loading={ensurePlanMutation.isPending || query.isFetching}
-        prepareFailed={prepareFailed}
-        onRetryPrepare={canUpdate ? retryPrepareStages : undefined}
-        stages={executableTasks.map((item) => ({
-          taskId: item.task.id,
-          name: item.name,
-          assigneeName: item.assigneeName,
-          plannedLabel: item.plannedStart
-            ? formatDateTime(item.plannedStart)
-            : item.plannedCompletion
-              ? formatDateTime(item.plannedCompletion)
-              : null,
-          canAssign: item.canAssign,
-          dependsOnCodes: item.dependsOnCodes,
-        }))}
-        onAssignStage={(taskId) => {
-          setPlanSheetOpen(false);
-          const row = detail.tasks.find((t) => t.id === taskId) ?? null;
-          if (row) {
-            setActiveTask(row);
-            return;
-          }
-          openAssign(taskId);
-        }}
-      />
-
-      <AssignWorkerSheet
-        open={Boolean(assignTaskId)}
-        onClose={() => {
-          setAssignTaskId(null);
-          setAssignWindow({});
-          setScheduleConflict(null);
-        }}
-        workers={stageWorkers}
-        loading={assignMutation.isPending || workersQuery.isFetching}
-        canOverrideConflict={canOverrideConflict}
-        scheduleConflict={scheduleConflict}
-        onClearScheduleConflict={() => setScheduleConflict(null)}
-        title={
-          assignTarget?.assigneeName
-            ? t('mobile.production.reassignWorker')
-            : t('mobile.production.assignWorker')
-        }
-        currentEmployeeId={assignTarget?.task.assignedEmployeeId}
-        initialPlannedStart={assignTarget?.task.plannedStart}
-        initialPlannedCompletion={assignTarget?.task.plannedCompletion}
-        initialEstimatedMinutes={assignTarget?.task.estimatedMinutes ?? null}
-        onWindowChange={setAssignWindow}
-        onSubmit={onPlanAssignSubmit}
-      />
-
       <WorkflowPickerSheet
         open={workflowPickerOpen}
         onClose={() => setWorkflowPickerOpen(false)}
@@ -1544,6 +1613,67 @@ export function ProductionDetailScreen({
         cancelLabel={t('mobile.production.cancel')}
         onConfirm={onRelease}
       />
+
+      <ConfirmationSheet
+        open={replanConfirmOpen}
+        onClose={() => setReplanConfirmOpen(false)}
+        title={t('mobile.production.replan.title')}
+        message={[
+          t('mobile.production.replan.body'),
+          t('mobile.production.replan.deliveryUnchanged'),
+          ...releaseSummaryLines,
+        ].join('\n')}
+        confirmLabel={t('mobile.production.replan.confirm')}
+        cancelLabel={t('mobile.production.cancel')}
+        onConfirm={() => {
+          replanMutation.mutate(
+            { reason: 'admin-replan' },
+            {
+              onSuccess: () => {
+                void haptics.confirmMedium();
+                setReplanConfirmOpen(false);
+                seedOrdersDeskChip('preparing');
+                showToast({
+                  variant: 'success',
+                  message: t('mobile.production.replan.success'),
+                });
+                if (salesOrderId) {
+                  router.replace(
+                    `/(app)/(admin)/orders/${salesOrderId}/production-plan` as Href,
+                  );
+                }
+              },
+              onError: (err) => {
+                void haptics.error();
+                showToast({
+                  variant: 'error',
+                  message: isApiError(err)
+                    ? toastMessageForError(err)
+                    : t('mobile.production.replan.failed'),
+                });
+              },
+            },
+          );
+        }}
+      />
+
+      {replanDockVisible ? (
+        <JourneyStickyDock floating>
+          <PrimaryButton
+            label={t('mobile.production.replan.cta')}
+            loading={replanMutation.isPending}
+            disabled={replanMutation.isPending}
+            onPress={() => {
+              void haptics.selection();
+              setReplanConfirmOpen(true);
+            }}
+            style={{
+              ...productionBoardShadow(colorScheme),
+              borderRadius: theme.radius.xl,
+            }}
+          />
+        </JourneyStickyDock>
+      ) : null}
 
       {dockVisible ? (
         <JourneyStickyDock floating>
