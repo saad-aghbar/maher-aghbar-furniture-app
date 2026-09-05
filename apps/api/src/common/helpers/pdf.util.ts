@@ -657,9 +657,17 @@ type ColKind = 'text' | 'nowrap' | 'money';
 function columnKinds(count: number): ColKind[] {
   if (count <= 2) return Array.from({ length: count }, () => 'text');
   if (count === 4) return ['text', 'nowrap', 'money', 'money'];
+  if (count === 5) return ['nowrap', 'text', 'nowrap', 'money', 'money'];
   if (count === 6) return ['nowrap', 'nowrap', 'text', 'money', 'money', 'money'];
+  if (count === 7) return ['nowrap', 'nowrap', 'text', 'nowrap', 'money', 'money', 'money'];
+  if (count === 8) {
+    return ['nowrap', 'nowrap', 'text', 'nowrap', 'nowrap', 'money', 'money', 'money'];
+  }
+  if (count === 9) {
+    return ['nowrap', 'nowrap', 'text', 'nowrap', 'nowrap', 'nowrap', 'money', 'money', 'money'];
+  }
   return Array.from({ length: count }, (_, i) =>
-    i === 0 ? 'text' : 'nowrap',
+    i === 0 ? 'text' : i >= count - 2 ? 'money' : 'nowrap',
   );
 }
 
@@ -668,10 +676,18 @@ function columnWidths(count: number, usable: number): number[] {
     count === 2
       ? [0.38, 0.62]
       : count === 4
-        ? [0.44, 0.10, 0.23, 0.23]
-        : count === 6
-          ? [0.13, 0.22, 0.26, 0.13, 0.13, 0.13]
-          : Array.from({ length: count }, () => 1 / count);
+        ? [0.44, 0.1, 0.23, 0.23]
+        : count === 5
+          ? [0.16, 0.32, 0.16, 0.18, 0.18]
+          : count === 6
+            ? [0.13, 0.22, 0.26, 0.13, 0.13, 0.13]
+            : count === 7
+              ? [0.12, 0.14, 0.22, 0.12, 0.13, 0.13, 0.14]
+              : count === 8
+                ? [0.1, 0.12, 0.2, 0.1, 0.1, 0.12, 0.13, 0.13]
+                : count === 9
+                  ? [0.09, 0.1, 0.18, 0.09, 0.09, 0.09, 0.12, 0.12, 0.12]
+                  : Array.from({ length: count }, () => 1 / count);
   return weights.map((w) => w * usable);
 }
 
@@ -819,6 +835,258 @@ function drawTableHeader(
     .lineTo(startX + widths.reduce((a, b) => a + b, 0), doc.y)
     .stroke();
   doc.y += 8;
+}
+
+export type ReportPageLayout = 'portrait' | 'landscape';
+
+export type ReportDoc = {
+  doc: PDFKit.PDFDocument;
+  rtl: boolean;
+  palette: Palette;
+  fonts: Fonts;
+  align: 'left' | 'right';
+  locale: PdfLocale;
+  theme: PdfTheme;
+  usable: () => number;
+  addPage: (layout?: ReportPageLayout) => void;
+  ensureSpace: (need: number) => void;
+  drawHeading: (text: string, size?: number) => void;
+  drawLine: (
+    text: string,
+    opts?: { muted?: boolean; bold?: boolean; size?: number },
+  ) => void;
+  drawPairs: (pairs: Array<[string, string]>) => void;
+  drawTable: (columns: string[], rows: PdfTableRow[]) => void;
+  paintPageNumbers: (label?: (page: number, total: number) => string) => void;
+  finish: () => Promise<Buffer>;
+};
+
+/**
+ * Shared management-report canvas — letterhead chrome, RTL tables, mixed
+ * portrait/landscape pages. Used by the item report and raw-materials report.
+ */
+export function createReportDoc(opts: {
+  locale?: PdfLocale | string | null;
+  theme?: PdfTheme | string | null;
+  initialLayout?: ReportPageLayout;
+}): ReportDoc {
+  const locale = resolveLocale(opts.locale);
+  const theme = resolveTheme(opts.theme);
+  const rtl = locale === 'ar' || locale === 'he';
+  const palette = THEME[theme];
+  const contact = companyContact(locale);
+  const fonts = loadFonts();
+  const align: 'left' | 'right' = rtl ? 'right' : 'left';
+  let currentLayout: ReportPageLayout = opts.initialLayout ?? 'portrait';
+
+  const doc = new PDFDocument({
+    size: 'A4',
+    layout: currentLayout,
+    margin: 0,
+    autoFirstPage: false,
+    bufferPages: true,
+  });
+
+  let resolveBuf: (b: Buffer) => void = () => undefined;
+  let rejectBuf: (err: Error) => void = () => undefined;
+  const bufferPromise = new Promise<Buffer>((resolve, reject) => {
+    resolveBuf = resolve;
+    rejectBuf = reject;
+  });
+  const chunks: Buffer[] = [];
+  doc.on('data', (c: Buffer) => chunks.push(c));
+  doc.on('end', () => resolveBuf(Buffer.concat(chunks)));
+  doc.on('error', rejectBuf);
+
+  doc.on('pageAdded', () => {
+    drawPageChrome(doc, { theme, contact, fonts });
+  });
+
+  const addPage = (layout?: ReportPageLayout) => {
+    if (layout) currentLayout = layout;
+    doc.addPage({ size: 'A4', layout: currentLayout });
+  };
+  addPage(currentLayout);
+
+  const usable = () => doc.page.width - PAGE_MARGIN * 2;
+
+  const ensureSpace = (need: number) => {
+    if (doc.y + need > contentBottom(doc)) addPage();
+  };
+
+  const drawHeading = (text: string, size = 11) => {
+    ensureSpace(28);
+    doc.y += 6;
+    drawMixedText(doc, text, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align,
+      height: size + 4,
+      size,
+      bold: true,
+      color: palette.accent,
+      fonts,
+      rtl,
+      lineBreak: false,
+    });
+    doc.y += 4;
+    doc
+      .strokeColor(palette.rule)
+      .lineWidth(0.6)
+      .moveTo(PAGE_MARGIN, doc.y)
+      .lineTo(PAGE_MARGIN + usable(), doc.y)
+      .stroke();
+    doc.y += 8;
+  };
+
+  const drawLine = (
+    text: string,
+    lineOpts?: { muted?: boolean; bold?: boolean; size?: number },
+  ) => {
+    const size = lineOpts?.size ?? 9;
+    ensureSpace(size + 8);
+    drawMixedText(doc, text, {
+      x: PAGE_MARGIN,
+      y: doc.y,
+      width: usable(),
+      align,
+      height: size + 4,
+      size,
+      bold: lineOpts?.bold,
+      color: lineOpts?.muted ? palette.muted : palette.text,
+      fonts,
+      rtl,
+      ellipsis: true,
+    });
+    doc.y += 2;
+  };
+
+  const drawPairs = (pairs: Array<[string, string]>) => {
+    for (const [label, value] of pairs) {
+      ensureSpace(16);
+      const labelW = Math.min(150, usable() * 0.38);
+      const valueW = usable() - labelW - 8;
+      const labelX = rtl ? PAGE_MARGIN + valueW + 8 : PAGE_MARGIN;
+      const valueX = rtl ? PAGE_MARGIN : PAGE_MARGIN + labelW + 8;
+      const y = doc.y;
+      drawMixedText(doc, label, {
+        x: labelX,
+        y,
+        width: labelW,
+        align,
+        height: 12,
+        size: 9,
+        bold: true,
+        color: palette.muted,
+        fonts,
+        rtl,
+        ellipsis: true,
+        lineBreak: false,
+      });
+      drawMixedText(doc, value, {
+        x: valueX,
+        y,
+        width: valueW,
+        align,
+        height: 12,
+        size: 9,
+        color: palette.text,
+        fonts,
+        rtl,
+        ellipsis: true,
+      });
+      doc.y = y + 14;
+    }
+  };
+
+  const drawTable = (columns: string[], rows: PdfTableRow[]) => {
+    if (!columns.length || !rows.length) return;
+    const widths = columnWidths(columns.length, usable());
+    const kinds = columnKinds(columns.length);
+    const paintHeader = () =>
+      drawTableHeader(doc, columns, widths, kinds, PAGE_MARGIN, palette, fonts, rtl);
+    paintHeader();
+    for (const row of rows) {
+      let rowHeight = 12;
+      row.forEach((cell, i) => {
+        const kind = kinds[i] ?? 'text';
+        const colW = columnBox(i, widths, rtl, PAGE_MARGIN).width - 4;
+        const h =
+          kind === 'text'
+            ? Math.min(24, Math.max(12, measureMixedHeight(doc, String(cell ?? ''), colW, fonts, 8)))
+            : 12;
+        rowHeight = Math.max(rowHeight, h);
+      });
+      if (doc.y + rowHeight > contentBottom(doc)) {
+        addPage();
+        paintHeader();
+      }
+      const y = doc.y;
+      row.forEach((cell, i) => {
+        const kind = kinds[i] ?? 'text';
+        const box = columnBox(i, widths, rtl, PAGE_MARGIN);
+        const cellAlign: 'left' | 'right' =
+          kind === 'money' ? 'right' : rtl ? 'right' : 'left';
+        drawMixedText(doc, String(cell ?? ''), {
+          x: box.x + 2,
+          y,
+          width: box.width - 4,
+          align: cellAlign,
+          height: rowHeight,
+          size: 8,
+          color: palette.text,
+          fonts,
+          rtl,
+          ellipsis: kind === 'text',
+          lineBreak: kind === 'text',
+        });
+      });
+      doc.y = y + rowHeight + 4;
+    }
+  };
+
+  const paintPageNumbers = (label?: (page: number, total: number) => string) => {
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i += 1) {
+      doc.switchToPage(range.start + i);
+      const text = label
+        ? label(i + 1, range.count)
+        : `Page ${i + 1} of ${range.count}`;
+      drawLatin(
+        doc,
+        text,
+        PAGE_MARGIN,
+        doc.page.height - FOOTER_TOP_OFFSET - 12,
+        8,
+        false,
+        palette.muted,
+        fonts,
+      );
+    }
+  };
+
+  return {
+    doc,
+    rtl,
+    palette,
+    fonts,
+    align,
+    locale,
+    theme,
+    usable,
+    addPage,
+    ensureSpace,
+    drawHeading,
+    drawLine,
+    drawPairs,
+    drawTable,
+    paintPageNumbers,
+    finish: () => {
+      doc.end();
+      return bufferPromise;
+    },
+  };
 }
 
 async function qrPngBuffer(
@@ -1346,350 +1614,179 @@ export type InventoryItemReportPdfInput = {
 export async function buildInventoryItemReportPdf(
   docSpec: InventoryItemReportPdfInput,
 ): Promise<Buffer> {
-  const locale = resolveLocale(docSpec.locale);
-  const theme = resolveTheme(docSpec.theme);
-  const rtl = locale === 'ar' || locale === 'he';
-  const palette = THEME[theme];
-  const contact = companyContact(locale);
   const scanCode = printableScanCode(docSpec.scanCode, docSpec.scanSku);
   const qrPng = scanCode
     ? await qrPngBuffer(scanCode, Math.round(REPORT_QR_SIZE * 2.5))
     : null;
 
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({
-      size: 'A4',
-      margin: 0,
-      autoFirstPage: false,
-      bufferPages: true,
-    });
-    const chunks: Buffer[] = [];
-    doc.on('data', (c: Buffer) => chunks.push(c));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
+  const report = createReportDoc({ locale: docSpec.locale, theme: docSpec.theme });
+  const { doc, rtl, palette, fonts, align, usable, ensureSpace, drawHeading, drawLine, drawPairs, drawTable } =
+    report;
 
-    const fonts = loadFonts();
-    const align: 'left' | 'right' = rtl ? 'right' : 'left';
-    const usable = () => doc.page.width - PAGE_MARGIN * 2;
-
-    doc.on('pageAdded', () => {
-      drawPageChrome(doc, { theme, contact, fonts });
-    });
-    doc.addPage();
-
-    const ensureSpace = (need: number) => {
-      if (doc.y + need > contentBottom(doc)) doc.addPage();
-    };
-
-    const drawHeading = (text: string, size = 11) => {
-      ensureSpace(28);
-      doc.y += 6;
-      drawMixedText(doc, text, {
-        x: PAGE_MARGIN,
-        y: doc.y,
-        width: usable(),
-        align,
-        height: size + 4,
-        size,
-        bold: true,
-        color: palette.accent,
-        fonts,
-        rtl,
-        lineBreak: false,
-      });
-      doc.y += 4;
-      doc
-        .strokeColor(palette.rule)
-        .lineWidth(0.6)
-        .moveTo(PAGE_MARGIN, doc.y)
-        .lineTo(PAGE_MARGIN + usable(), doc.y)
-        .stroke();
-      doc.y += 8;
-    };
-
-    const drawLine = (text: string, opts?: { muted?: boolean; bold?: boolean; size?: number }) => {
-      const size = opts?.size ?? 9;
-      ensureSpace(size + 8);
-      drawMixedText(doc, text, {
-        x: PAGE_MARGIN,
-        y: doc.y,
-        width: usable(),
-        align,
-        height: size + 4,
-        size,
-        bold: opts?.bold,
-        color: opts?.muted ? palette.muted : palette.text,
-        fonts,
-        rtl,
-        ellipsis: true,
-      });
-      doc.y += 2;
-    };
-
-    const drawPairs = (pairs: Array<[string, string]>) => {
-      for (const [label, value] of pairs) {
-        ensureSpace(16);
-        const labelW = Math.min(150, usable() * 0.38);
-        const valueW = usable() - labelW - 8;
-        const labelX = rtl ? PAGE_MARGIN + valueW + 8 : PAGE_MARGIN;
-        const valueX = rtl ? PAGE_MARGIN : PAGE_MARGIN + labelW + 8;
-        const y = doc.y;
-        drawMixedText(doc, label, {
-          x: labelX,
-          y,
-          width: labelW,
-          align,
-          height: 12,
-          size: 9,
-          bold: true,
-          color: palette.muted,
-          fonts,
-          rtl,
-          ellipsis: true,
-          lineBreak: false,
-        });
-        drawMixedText(doc, value, {
-          x: valueX,
-          y,
-          width: valueW,
-          align,
-          height: 12,
-          size: 9,
-          color: palette.text,
-          fonts,
-          rtl,
-          ellipsis: true,
-        });
-        doc.y = y + 14;
-      }
-    };
-
-    const drawTable = (columns: string[], rows: PdfTableRow[]) => {
-      if (!columns.length || !rows.length) return;
-      const widths = columnWidths(columns.length, usable());
-      const kinds = columnKinds(columns.length);
-      const paintHeader = () =>
-        drawTableHeader(doc, columns, widths, kinds, PAGE_MARGIN, palette, fonts, rtl);
-      paintHeader();
-      for (const row of rows) {
-        let rowHeight = 12;
-        row.forEach((cell, i) => {
-          const kind = kinds[i] ?? 'text';
-          const colW = columnBox(i, widths, rtl, PAGE_MARGIN).width - 4;
-          const h =
-            kind === 'text'
-              ? Math.min(24, Math.max(12, measureMixedHeight(doc, String(cell ?? ''), colW, fonts, 8)))
-              : 12;
-          rowHeight = Math.max(rowHeight, h);
-        });
-        if (doc.y + rowHeight > contentBottom(doc)) {
-          doc.addPage();
-          paintHeader();
-        }
-        const y = doc.y;
-        row.forEach((cell, i) => {
-          const kind = kinds[i] ?? 'text';
-          const box = columnBox(i, widths, rtl, PAGE_MARGIN);
-          const cellAlign: 'left' | 'right' =
-            kind === 'money' ? 'right' : rtl ? 'right' : 'left';
-          drawMixedText(doc, String(cell ?? ''), {
-            x: box.x + 2,
-            y,
-            width: box.width - 4,
-            align: cellAlign,
-            height: rowHeight,
-            size: 8,
-            color: palette.text,
-            fonts,
-            rtl,
-            ellipsis: kind === 'text',
-            lineBreak: kind === 'text',
-          });
-        });
-        doc.y = y + rowHeight + 4;
-      }
-    };
-
-    drawMixedText(doc, docSpec.companyLine, {
-      x: PAGE_MARGIN,
-      y: doc.y,
-      width: usable(),
-      align,
-      height: 14,
-      size: 10,
-      bold: true,
-      color: palette.muted,
-      fonts,
-      rtl,
-      lineBreak: false,
-    });
-    doc.y += 2;
-    drawMixedText(doc, docSpec.reportTitle, {
-      x: PAGE_MARGIN,
-      y: doc.y,
-      width: usable(),
-      align,
-      height: 20,
-      size: 15,
-      bold: true,
-      color: palette.accent,
-      fonts,
-      rtl,
-      lineBreak: false,
-    });
-    doc.y += 4;
-    drawLine(`${docSpec.generatedLabel}: ${docSpec.generatedAt}`, { muted: true, size: 8 });
-    doc.y += 8;
-
-    if (docSpec.image?.length) {
-      ensureSpace(REPORT_PHOTO_SIZE + 16);
-      const imgX = PAGE_MARGIN + (usable() - REPORT_PHOTO_SIZE) / 2;
-      try {
-        doc
-          .save()
-          .rect(imgX - 2, doc.y - 2, REPORT_PHOTO_SIZE + 4, REPORT_PHOTO_SIZE + 4)
-          .strokeColor(palette.rule)
-          .lineWidth(0.8)
-          .stroke();
-        doc.image(docSpec.image, imgX, doc.y, {
-          fit: [REPORT_PHOTO_SIZE, REPORT_PHOTO_SIZE],
-          align: 'center',
-          valign: 'center',
-        });
-        doc.restore();
-      } catch {
-        /* soft-fail missing/corrupt image */
-      }
-      doc.y += REPORT_PHOTO_SIZE + 12;
-    }
-
-    drawMixedText(doc, docSpec.itemName, {
-      x: PAGE_MARGIN,
-      y: doc.y,
-      width: usable(),
-      align: 'center',
-      height: 18,
-      size: 14,
-      bold: true,
-      color: palette.accent,
-      fonts,
-      rtl,
-      ellipsis: true,
-    });
-    doc.y += 2;
-    drawMixedText(doc, docSpec.itemSku, {
-      x: PAGE_MARGIN,
-      y: doc.y,
-      width: usable(),
-      align: 'center',
-      height: 14,
-      size: 11,
-      color: palette.text,
-      fonts,
-      rtl,
-      lineBreak: false,
-    });
-    doc.y += 10;
-
-    if (docSpec.identityRows.length) {
-      drawPairs(docSpec.identityRows);
-      doc.y += 4;
-    }
-    if (docSpec.description?.trim()) {
-      drawLine(docSpec.description.trim(), { size: 9 });
-      doc.y += 4;
-    }
-
-    for (const section of docSpec.sections) {
-      if (!section.title) continue;
-      const hasContent =
-        (section.lines?.length ?? 0) > 0 ||
-        (section.pairs?.length ?? 0) > 0 ||
-        (section.rows?.length ?? 0) > 0;
-      if (!hasContent) continue;
-      drawHeading(section.title);
-      for (const line of section.lines ?? []) drawLine(line);
-      if (section.pairs?.length) drawPairs(section.pairs);
-      if (section.columns?.length && section.rows?.length) {
-        drawTable(section.columns, section.rows);
-      }
-      doc.y += 4;
-    }
-
-    ensureSpace(REPORT_QR_SIZE + 80);
-    drawHeading(docSpec.scanTitle);
-    if (qrPng) {
-      const qrX = PAGE_MARGIN + (usable() - REPORT_QR_SIZE) / 2;
-      try {
-        doc
-          .save()
-          .roundedRect(qrX - 8, doc.y - 8, REPORT_QR_SIZE + 16, REPORT_QR_SIZE + 16, 6)
-          .fillAndStroke('#FFFFFF', palette.rule);
-        doc.image(qrPng, qrX, doc.y, { width: REPORT_QR_SIZE });
-        doc.restore();
-      } catch {
-        /* ignore */
-      }
-      doc.y += REPORT_QR_SIZE + 14;
-    }
-    drawMixedText(doc, docSpec.scanName, {
-      x: PAGE_MARGIN,
-      y: doc.y,
-      width: usable(),
-      align: 'center',
-      height: 14,
-      size: 11,
-      bold: true,
-      color: palette.text,
-      fonts,
-      rtl,
-      ellipsis: true,
-    });
-    doc.y += 2;
-    drawMixedText(doc, docSpec.scanSku, {
-      x: PAGE_MARGIN,
-      y: doc.y,
-      width: usable(),
-      align: 'center',
-      height: 12,
-      size: 10,
-      color: palette.muted,
-      fonts,
-      rtl,
-      lineBreak: false,
-    });
-    doc.y += 4;
-    drawMixedText(doc, docSpec.scanHint, {
-      x: PAGE_MARGIN,
-      y: doc.y,
-      width: usable(),
-      align: 'center',
-      height: 12,
-      size: 9,
-      color: palette.muted,
-      fonts,
-      rtl,
-      ellipsis: true,
-    });
-
-    const range = doc.bufferedPageRange();
-    for (let i = 0; i < range.count; i += 1) {
-      doc.switchToPage(range.start + i);
-      const label = `Page ${i + 1} of ${range.count}`;
-      drawLatin(
-        doc,
-        label,
-        PAGE_MARGIN,
-        doc.page.height - FOOTER_TOP_OFFSET - 12,
-        8,
-        false,
-        palette.muted,
-        fonts,
-      );
-    }
-
-    doc.end();
+  drawMixedText(doc, docSpec.companyLine, {
+    x: PAGE_MARGIN,
+    y: doc.y,
+    width: usable(),
+    align,
+    height: 14,
+    size: 10,
+    bold: true,
+    color: palette.muted,
+    fonts,
+    rtl,
+    lineBreak: false,
   });
+  doc.y += 2;
+  drawMixedText(doc, docSpec.reportTitle, {
+    x: PAGE_MARGIN,
+    y: doc.y,
+    width: usable(),
+    align,
+    height: 20,
+    size: 15,
+    bold: true,
+    color: palette.accent,
+    fonts,
+    rtl,
+    lineBreak: false,
+  });
+  doc.y += 4;
+  drawLine(`${docSpec.generatedLabel}: ${docSpec.generatedAt}`, { muted: true, size: 8 });
+  doc.y += 8;
+
+  if (docSpec.image?.length) {
+    ensureSpace(REPORT_PHOTO_SIZE + 16);
+    const imgX = PAGE_MARGIN + (usable() - REPORT_PHOTO_SIZE) / 2;
+    try {
+      doc
+        .save()
+        .rect(imgX - 2, doc.y - 2, REPORT_PHOTO_SIZE + 4, REPORT_PHOTO_SIZE + 4)
+        .strokeColor(palette.rule)
+        .lineWidth(0.8)
+        .stroke();
+      doc.image(docSpec.image, imgX, doc.y, {
+        fit: [REPORT_PHOTO_SIZE, REPORT_PHOTO_SIZE],
+        align: 'center',
+        valign: 'center',
+      });
+      doc.restore();
+    } catch {
+      /* soft-fail missing/corrupt image */
+    }
+    doc.y += REPORT_PHOTO_SIZE + 12;
+  }
+
+  drawMixedText(doc, docSpec.itemName, {
+    x: PAGE_MARGIN,
+    y: doc.y,
+    width: usable(),
+    align: 'center',
+    height: 18,
+    size: 14,
+    bold: true,
+    color: palette.accent,
+    fonts,
+    rtl,
+    ellipsis: true,
+  });
+  doc.y += 2;
+  drawMixedText(doc, docSpec.itemSku, {
+    x: PAGE_MARGIN,
+    y: doc.y,
+    width: usable(),
+    align: 'center',
+    height: 14,
+    size: 11,
+    color: palette.text,
+    fonts,
+    rtl,
+    lineBreak: false,
+  });
+  doc.y += 10;
+
+  if (docSpec.identityRows.length) {
+    drawPairs(docSpec.identityRows);
+    doc.y += 4;
+  }
+  if (docSpec.description?.trim()) {
+    drawLine(docSpec.description.trim(), { size: 9 });
+    doc.y += 4;
+  }
+
+  for (const section of docSpec.sections) {
+    if (!section.title) continue;
+    const hasContent =
+      (section.lines?.length ?? 0) > 0 ||
+      (section.pairs?.length ?? 0) > 0 ||
+      (section.rows?.length ?? 0) > 0;
+    if (!hasContent) continue;
+    drawHeading(section.title);
+    for (const line of section.lines ?? []) drawLine(line);
+    if (section.pairs?.length) drawPairs(section.pairs);
+    if (section.columns?.length && section.rows?.length) {
+      drawTable(section.columns, section.rows);
+    }
+    doc.y += 4;
+  }
+
+  ensureSpace(REPORT_QR_SIZE + 80);
+  drawHeading(docSpec.scanTitle);
+  if (qrPng) {
+    const qrX = PAGE_MARGIN + (usable() - REPORT_QR_SIZE) / 2;
+    try {
+      doc
+        .save()
+        .roundedRect(qrX - 8, doc.y - 8, REPORT_QR_SIZE + 16, REPORT_QR_SIZE + 16, 6)
+        .fillAndStroke('#FFFFFF', palette.rule);
+      doc.image(qrPng, qrX, doc.y, { width: REPORT_QR_SIZE });
+      doc.restore();
+    } catch {
+      /* ignore */
+    }
+    doc.y += REPORT_QR_SIZE + 14;
+  }
+  drawMixedText(doc, docSpec.scanName, {
+    x: PAGE_MARGIN,
+    y: doc.y,
+    width: usable(),
+    align: 'center',
+    height: 14,
+    size: 11,
+    bold: true,
+    color: palette.text,
+    fonts,
+    rtl,
+    ellipsis: true,
+  });
+  doc.y += 2;
+  drawMixedText(doc, docSpec.scanSku, {
+    x: PAGE_MARGIN,
+    y: doc.y,
+    width: usable(),
+    align: 'center',
+    height: 12,
+    size: 10,
+    color: palette.muted,
+    fonts,
+    rtl,
+    lineBreak: false,
+  });
+  doc.y += 4;
+  drawMixedText(doc, docSpec.scanHint, {
+    x: PAGE_MARGIN,
+    y: doc.y,
+    width: usable(),
+    align: 'center',
+    height: 12,
+    size: 9,
+    color: palette.muted,
+    fonts,
+    rtl,
+    ellipsis: true,
+  });
+
+  report.paintPageNumbers();
+  return report.finish();
 }
 
 export function sendPdf(

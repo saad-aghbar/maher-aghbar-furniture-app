@@ -1,6 +1,8 @@
 import { Prisma, type ManufacturingComplexity } from '@maher/database';
 import {
   classifyManufacturingComplexity,
+  normalizeOrderFabrics,
+  primaryFabric,
   type OrderLineClassifyInput,
 } from '@maher/types';
 import type { RequestItemDto } from './dto/request.dto';
@@ -12,6 +14,7 @@ export type CatalogProductDims = {
   depth?: unknown;
   seatHeight?: unknown;
   material?: string | null;
+  customMeasurements?: unknown;
   imageUrl?: string | null;
   nameEn?: string | null;
   nameAr?: string | null;
@@ -45,6 +48,7 @@ export function classifyRequestItemDto(
           depth: num(catalog.depth),
           seatHeight: num(catalog.seatHeight),
           material: catalog.material,
+          customMeasurements: catalog.customMeasurements,
         }
       : null,
   };
@@ -57,6 +61,11 @@ export function mapRequestItemCreate(
   catalog?: CatalogProductDims | null,
 ): Prisma.RequestItemUncheckedCreateWithoutRequestInput {
   const manufacturingComplexity = classifyRequestItemDto(item, catalog);
+  const fabrics = normalizeOrderFabrics(item.fabrics, {
+    type: item.fabric,
+    color: item.color,
+  });
+  const primary = primaryFabric(fabrics);
   return {
     category: item.category,
     productId: item.productId,
@@ -68,8 +77,12 @@ export function mapRequestItemCreate(
     height: item.height,
     depth: item.depth,
     material: item.material,
-    fabricType: item.fabric,
-    fabricColor: item.color,
+    fabricType: primary?.type ?? item.fabric,
+    fabricColor: primary?.color ?? item.color,
+    fabricCode: primary?.code ?? undefined,
+    fabrics: fabrics.length
+      ? (fabrics as unknown as Prisma.InputJsonValue)
+      : undefined,
     notes: item.notes,
     customMeasurements: item.customMeasurements?.length
       ? (item.customMeasurements as unknown as Prisma.InputJsonValue)
@@ -95,6 +108,7 @@ export async function loadCatalogMap(
       height: true,
       depth: true,
       seatHeight: true,
+      customMeasurements: true,
       imageUrl: true,
       nameEn: true,
       nameAr: true,

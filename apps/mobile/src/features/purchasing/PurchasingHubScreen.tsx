@@ -33,6 +33,12 @@ import { CreatePurchaseRequestSheet } from './components/CreatePurchaseRequestSh
 import { NeedsToBuyBoard } from './components/NeedsToBuyBoard';
 import { PurchaseOrderBoardCard } from './components/PurchaseOrderBoardCard';
 import { PurchaseRequestBoardCard } from './components/PurchaseRequestBoardCard';
+import { OrderFabricGroupCard } from '@/features/fabric/OrderFabricGroupCard';
+import {
+  filterFabricRowsByPurchasingStatus,
+  groupFabricRowsBySalesOrder,
+  selectFabricTrackerRows,
+} from '@/features/fabric/selectFabricTracker';
 import { PurchasingFilterTriggers, PURCHASING_CHROME_CONTROL_H, PURCHASING_CHROME_GAP } from './components/PurchasingFilterTriggers';
 import { PurchasingFloorBoard } from './components/PurchasingFloorBoard';
 import { PurchasingHeroActions } from './components/PurchasingHeroActions';
@@ -55,6 +61,7 @@ import {
   usePurchaseRequestsInfiniteQuery,
   useSupplierInvoicesInfiniteQuery,
   useSuppliersQuery,
+  useFabricProcurementsQuery,
 } from './query';
 import {
   incomingQtyFromOrders,
@@ -132,6 +139,8 @@ export function PurchasingHubScreen() {
   const canCreatePr = can(user, 'purchase-request.create');
   const canReadSupplier = can(user, 'supplier.read');
   const canInventory = can(user, 'inventory.read');
+  const canFabric = can(user, 'fabric.procurement.read');
+  const canReadOrder = can(user, 'sales-order.read');
 
   const routeParams = useLocalSearchParams<{
     tab?: string;
@@ -143,13 +152,28 @@ export function PurchasingHubScreen() {
 
   const initialTab: PurchasingHubTab = (() => {
     const raw = String(routeParams.tab ?? '').trim();
-    if (raw === 'orders' || raw === 'requests' || raw === 'invoices') return raw;
-    if (routeParams.needs || routeParams.arriving || routeParams.late === 'true' || routeParams.focus === 'needs') {
-      return canPo ? 'orders' : canPr ? 'requests' : 'invoices';
+    if (raw === 'orders' || raw === 'requests' || raw === 'invoices' || raw === 'fabric') {
+      return raw;
     }
-    return canPo ? 'orders' : canPr ? 'requests' : 'invoices';
+    if (routeParams.needs || routeParams.arriving || routeParams.late === 'true' || routeParams.focus === 'needs') {
+      return canPo ? 'orders' : canPr ? 'requests' : canFabric ? 'fabric' : 'invoices';
+    }
+    return canPo ? 'orders' : canPr ? 'requests' : canFabric ? 'fabric' : 'invoices';
   })();
   const [tab, setTab] = useState<PurchasingHubTab>(initialTab);
+  // Deep links land on an already-mounted hub, so re-sync when ?tab= changes.
+  const requestedTab = String(routeParams.tab ?? '').trim();
+  useEffect(() => {
+    if (
+      requestedTab === 'orders' ||
+      requestedTab === 'requests' ||
+      requestedTab === 'invoices' ||
+      requestedTab === 'fabric'
+    ) {
+      setTab(requestedTab);
+      setStatus('ALL');
+    }
+  }, [requestedTab]);
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('ALL');
@@ -232,6 +256,10 @@ export function PurchasingHubScreen() {
   const poQuery = usePurchaseOrdersInfiniteQuery(filters, canPo);
   const prQuery = usePurchaseRequestsInfiniteQuery(filters, canPr);
   const siQuery = useSupplierInvoicesInfiniteQuery(filters, canSi);
+  const fabricQuery = useFabricProcurementsQuery(
+    { q: q || undefined, state: status === 'ALL' || status === 'ARRIVED' || status === 'PARTIAL' ? undefined : status },
+    canFabric && tab === 'fabric',
+  );
   const suppliersQuery = useSuppliersQuery(canPo || canPr || canSi);
   const warehousesQuery = useQuery({
     queryKey: ['warehouses-purchasing-hub'],
@@ -328,11 +356,16 @@ export function PurchasingHubScreen() {
       ),
     [siQuery.data, locale],
   );
+  const fabricRows = useMemo(() => {
+    const rows = selectFabricTrackerRows(fabricQuery.data ?? []);
+    return filterFabricRowsByPurchasingStatus(rows, status);
+  }, [fabricQuery.data, status]);
+  const fabricGroups = useMemo(() => groupFabricRowsBySalesOrder(fabricRows), [fabricRows]);
 
   const activeQuery =
-    tab === 'orders' ? poQuery : tab === 'requests' ? prQuery : siQuery;
+    tab === 'orders' ? poQuery : tab === 'requests' ? prQuery : tab === 'fabric' ? fabricQuery : siQuery;
   const listData =
-    tab === 'orders' ? poCards : tab === 'requests' ? prCards : siCards;
+    tab === 'orders' ? poCards : tab === 'requests' ? prCards : tab === 'fabric' ? fabricGroups : siCards;
 
   const poCount = poQuery.data?.pages[0]?.meta?.totalItems;
   const prCount = prQuery.data?.pages[0]?.meta?.totalItems;
@@ -352,11 +385,13 @@ export function PurchasingHubScreen() {
       ? t('mobile.purchasing.searchOrders')
       : tab === 'requests'
         ? t('mobile.purchasing.searchRequests')
-        : t('mobile.purchasing.searchInvoices');
+        : tab === 'fabric'
+          ? t('mobile.purchasing.searchFabric')
+          : t('mobile.purchasing.searchInvoices');
 
   const supplierChipLabel = t('mobile.purchasing.suppliers');
 
-  if (!canPo && !canPr && !canSi) {
+  if (!canPo && !canPr && !canSi && !canFabric) {
     return (
       <AppScreen>
         <PurchasingTitle backFallback={backFallback} titleWeight={titleWeight} />
@@ -399,6 +434,12 @@ export function PurchasingHubScreen() {
       show: canSi,
       count: typeof siCount === 'number' ? siCount : undefined,
     },
+    {
+      key: 'fabric',
+      label: t('mobile.purchasing.tabFabric'),
+      show: canFabric,
+      count: fabricRows.length || undefined,
+    },
   ];
 
   return (
@@ -423,13 +464,18 @@ export function PurchasingHubScreen() {
         }
         refreshControl={
           <RefreshControl
-            refreshing={activeQuery.isRefetching && !activeQuery.isFetchingNextPage}
+            refreshing={
+              tab === 'fabric'
+                ? fabricQuery.isRefetching
+                : Boolean(activeQuery.isRefetching && !('isFetchingNextPage' in activeQuery && activeQuery.isFetchingNextPage))
+            }
             onRefresh={() => void activeQuery.refetch()}
             tintColor={colors.brand}
           />
         }
         onEndReached={() => {
-          if (activeQuery.hasNextPage && !activeQuery.isFetchingNextPage) {
+          if (tab === 'fabric') return;
+          if ('hasNextPage' in activeQuery && activeQuery.hasNextPage && !activeQuery.isFetchingNextPage) {
             void activeQuery.fetchNextPage();
           }
         }}
@@ -486,7 +532,9 @@ export function PurchasingHubScreen() {
                 ? t('mobile.purchasing.tabOrdersHint')
                 : tab === 'requests'
                   ? t('mobile.purchasing.tabRequestsHint')
-                  : t('mobile.purchasing.tabInvoicesHint')}
+                  : tab === 'fabric'
+                    ? t('mobile.purchasing.tabFabricHint')
+                    : t('mobile.purchasing.tabInvoicesHint')}
             </AppText>
 
             <View
@@ -579,7 +627,7 @@ export function PurchasingHubScreen() {
               />
             </View>
 
-            {canPo && shortageNeeds.length > 0 ? (
+            {canPo && tab !== 'fabric' && shortageNeeds.length > 0 ? (
               <PurchasingFloorBoard title={t('mobile.purchasing.needsToBuy')}>
                 {shortageNeeds.map((row) => {
                   const name =
@@ -674,12 +722,16 @@ export function PurchasingHubScreen() {
                   ? t('catalog.noPurchaseOrders')
                   : tab === 'requests'
                     ? t('catalog.noPurchaseRequests')
-                    : t('catalog.noSupplierInvoices')
+                    : tab === 'fabric'
+                      ? t('mobile.purchasing.emptyFabricTitle')
+                      : t('catalog.noSupplierInvoices')
             }
             description={
               q
                 ? t('mobile.purchasing.emptySearchBody')
-                : t('mobile.purchasing.emptyBody')
+                : tab === 'fabric'
+                  ? t('mobile.purchasing.emptyFabricBody')
+                  : t('mobile.purchasing.emptyBody')
             }
           />
         }
@@ -697,6 +749,23 @@ export function PurchasingHubScreen() {
                 request={item as ReturnType<typeof selectPurchaseRequestCard>}
                 onPress={() =>
                   router.push(`/(app)/(admin)/purchasing/requests/${item.id}` as Href)
+                }
+              />
+            ) : tab === 'fabric' ? (
+              <OrderFabricGroupCard
+                group={item as ReturnType<typeof groupFabricRowsBySalesOrder>[number]}
+                surface="desk"
+                showSupplier
+                onPressOrder={
+                  canReadOrder && (item as ReturnType<typeof groupFabricRowsBySalesOrder>[number]).salesOrderId
+                    ? () =>
+                        router.push(
+                          `/(app)/(admin)/orders/${(item as ReturnType<typeof groupFabricRowsBySalesOrder>[number]).salesOrderId}` as Href,
+                        )
+                    : undefined
+                }
+                onPressFabric={(row) =>
+                  router.push(`/(app)/(admin)/purchasing/fabric/${row.id}` as Href)
                 }
               />
             ) : (

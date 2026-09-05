@@ -64,6 +64,15 @@ import { ProductionIdentityBoard } from './components/ProductionIdentityBoard';
 import { productionBoardShadow, productionInsetStyle } from './productionFloorStyle';
 import { shouldOpenPlanSheet } from './planCta';
 import { collectProductionAttention } from './productionAttention';
+import { FabricTrackerBoard } from '@/features/fabric/FabricTrackerBoard';
+import { resolveFabricStageLabel } from '@/features/fabric/fabricCopy';
+import {
+  fabricRowHref,
+  fabricStatusKind,
+  pickFabricBlockingRow,
+  selectFabricTrackerRows,
+} from '@/features/fabric/selectFabricTracker';
+import { useFabricTrackerQuery } from '@/features/purchasing/query';
 import {
   selectProductionJourney,
   selectProductionWhereNow,
@@ -90,6 +99,7 @@ import {
   useUpdateTaskNotesMutation,
 } from './query';
 import {
+  productionStartDueHint,
   selectProductionDetail,
   type ProductionTaskRow,
 } from './selectProduction';
@@ -241,6 +251,26 @@ export function ProductionDetailScreen({
       ),
   );
   const salesOrderId = query.data?.salesOrder?.id ?? null;
+  const canFabricRead = can(user, 'fabric.procurement.read');
+  const fabricTrackerQuery = useFabricTrackerQuery(salesOrderId ?? undefined, canFabricRead);
+  const fabricRows = useMemo(
+    () => (fabricTrackerQuery.data ? selectFabricTrackerRows(fabricTrackerQuery.data) : []),
+    [fabricTrackerQuery.data],
+  );
+  const fabricBlockingNote = useMemo(() => {
+    const blocking = pickFabricBlockingRow(fabricRows);
+    if (!blocking) return null;
+    const stage = resolveFabricStageLabel(t, blocking.stageCode);
+    const kind = fabricStatusKind(blocking);
+    const key =
+      kind === 'PARTIAL'
+        ? 'mobile.production.fabricStagePartial'
+        : 'mobile.production.fabricStageWaiting';
+    return t(key, {
+      stage: stage ?? '',
+      fabric: blocking.label,
+    });
+  }, [fabricRows, t]);
   const currentWorkflowId =
     query.data?.salesOrderLine?.productionSetup?.workflowId ?? null;
   const currentWorkflowName = useMemo(() => {
@@ -667,15 +697,37 @@ export function ProductionDetailScreen({
                   blocks={attentionBlocks}
                   productionOrderId={orderId}
                   salesOrderId={salesOrderId}
-                  onManageTask={(taskId) => {
-                    const row = detail.tasks.find((t) => t.id === taskId) ?? null;
-                    if (row) openTaskExecution(row, 'manage');
-                  }}
+                  onManageTask={
+                    // Ready for Factory: Replan only — no free assign/manage from Attention.
+                    isReadyDossier
+                      ? undefined
+                      : (taskId) => {
+                          const row = detail.tasks.find((t) => t.id === taskId) ?? null;
+                          if (row) openTaskExecution(row, 'manage');
+                        }
+                  }
                 />
               </HeaderEnter>
             ) : null}
 
-            {isExecutionDossier ? (
+            {canFabricRead ? (
+              <HeaderEnter reduce={reduce} delay={36}>
+                <FabricTrackerBoard
+                  variant="production"
+                  compact
+                  rows={fabricRows}
+                  ready={fabricTrackerQuery.data?.ready}
+                  required={fabricTrackerQuery.data?.required}
+                  loading={fabricTrackerQuery.isLoading}
+                  error={fabricTrackerQuery.isError}
+                  onRetry={() => void fabricTrackerQuery.refetch()}
+                  blockingNote={fabricBlockingNote}
+                  onPressItem={(row) => router.push(fabricRowHref(row) as Href)}
+                />
+              </HeaderEnter>
+            ) : null}
+
+            {isExecutionDossier || isReadyDossier ? (
               <HeaderEnter reduce={reduce} delay={40}>
                 <ProductionJourneyBoard
                   stages={journeyStages}
@@ -693,7 +745,7 @@ export function ProductionDetailScreen({
             ) : null}
 
             {isReadyDossier ? (
-              <HeaderEnter reduce={reduce} delay={40}>
+              <HeaderEnter reduce={reduce} delay={38}>
                 <DealerBoard
                   title={t('mobile.production.dossier.approvedPlan')}
                   titleWeight={titleWeight}
@@ -702,6 +754,37 @@ export function ProductionDetailScreen({
                     <AppText variant="caption" color="muted">
                       {t('mobile.production.dossier.approvedPlanHint')}
                     </AppText>
+                    {(() => {
+                      const hint = productionStartDueHint({
+                        plannedStartDate: query.data?.plannedStartDate,
+                        actualStartDate: query.data?.actualStartDate,
+                        releasedToFactoryAt: query.data?.releasedToFactoryAt,
+                        status: query.data?.status,
+                      });
+                      if (hint === 'due_today') {
+                        return (
+                          <AppText
+                            variant="caption"
+                            weight={titleWeight}
+                            style={{ color: colors.warning }}
+                          >
+                            {t('mobile.production.startDue.dueToday')}
+                          </AppText>
+                        );
+                      }
+                      if (hint === 'planned_start_passed') {
+                        return (
+                          <AppText
+                            variant="caption"
+                            weight={titleWeight}
+                            style={{ color: colors.warning }}
+                          >
+                            {t('mobile.production.startDue.plannedPassed')}
+                          </AppText>
+                        );
+                      }
+                      return null;
+                    })()}
                     {detail.deliveryLabel ? (
                       <MetaRow
                         isRTL={isRTL}
@@ -726,6 +809,14 @@ export function ProductionDetailScreen({
                           label={t('mobile.production.setup.readinessTeam', {
                             assigned: readiness.assignment.assigned,
                             required: readiness.assignment.required,
+                          })}
+                          isRTL={isRTL}
+                        />
+                        <ReadinessRow
+                          done={datesReady}
+                          label={t('mobile.production.setup.readinessDates', {
+                            ready: datesAssigned,
+                            required: datesRequired || readiness.assignment.required,
                           })}
                           isRTL={isRTL}
                         />
@@ -796,34 +887,6 @@ export function ProductionDetailScreen({
                       label={t('mobile.production.setup.readinessDates', {
                         ready: datesAssigned,
                         required: datesRequired || readiness.assignment.required,
-                      })}
-                      isRTL={isRTL}
-                    />
-                  </View>
-                </DealerBoard>
-              </HeaderEnter>
-            ) : readiness && isReadyDossier ? (
-              <HeaderEnter reduce={reduce} delay={50}>
-                <DealerBoard
-                  title={t('mobile.production.setup.readinessTitle')}
-                  titleWeight={titleWeight}
-                >
-                  <View style={productionInsetStyle(theme, colors)}>
-                    <ReadinessRow
-                      done={readiness.workflowReady}
-                      label={t('mobile.production.setup.readinessWorkflow')}
-                      isRTL={isRTL}
-                    />
-                    <ReadinessRow
-                      done={readiness.materialsReady}
-                      label={t('mobile.production.setup.readinessMaterials')}
-                      isRTL={isRTL}
-                    />
-                    <ReadinessRow
-                      done={readiness.assignment.missing.length === 0}
-                      label={t('mobile.production.setup.readinessTeam', {
-                        assigned: readiness.assignment.assigned,
-                        required: readiness.assignment.required,
                       })}
                       isRTL={isRTL}
                     />
@@ -1019,7 +1082,11 @@ export function ProductionDetailScreen({
               </HeaderEnter>
             ) : null}
 
-            {!showPlan && detail.openBlockers.length > 0 ? (
+            {/* Legacy blockers list — skipped on Ready/Execution (Attention board owns human copy). */}
+            {!showPlan &&
+            !isReadyDossier &&
+            !isExecutionDossier &&
+            detail.openBlockers.length > 0 ? (
               <HeaderEnter reduce={reduce} delay={70}>
                 <DealerBoard
                   title={t('mobile.production.blockers')}
@@ -1169,7 +1236,8 @@ export function ProductionDetailScreen({
                 currentStageCode={query.data?.currentStage?.code ?? null}
                 deliveryStatus={deliveryQuery.data?.status ?? null}
               />
-              {canUpdate ? (
+              {/* Ready for Factory: Replan only — no priority/delivery free edits. */}
+              {canUpdate && !isReadyDossier ? (
                 <DealerBoard titleWeight={titleWeight}>
                   {(
                     [
@@ -1332,15 +1400,21 @@ export function ProductionDetailScreen({
         canAssign={canAssign}
         canUpdateTask={canUpdateTask}
         intent={
-          isExecutionDossier || isReadyDossier
-            ? taskSheetIntent === 'manage'
-              ? 'manage'
-              : 'view'
-            : 'plan'
+          isReadyDossier
+            ? 'view'
+            : isExecutionDossier
+              ? taskSheetIntent === 'manage'
+                ? 'manage'
+                : 'view'
+              : 'plan'
         }
-        onRequestManage={() => {
-          setManageOpen(true);
-        }}
+        onRequestManage={
+          isReadyDossier
+            ? undefined
+            : () => {
+                setManageOpen(true);
+              }
+        }
         canOverrideConflict={canOverrideConflict}
         assignLoading={assignMutation.isPending}
         notesLoading={notesMutation.isPending}

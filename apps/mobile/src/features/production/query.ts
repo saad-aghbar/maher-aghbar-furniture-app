@@ -30,6 +30,12 @@ import {
   type ProductionPriority,
   type ProductionDateMode,
 } from './api';
+import {
+  patchOrderSetupLine,
+  previewOrderSetupLineSeedFromCatalog,
+  seedOrderSetupLineFromCatalog,
+} from '@/api/modules/sales-orders';
+import { invalidateAfterCatalogSeed } from '@/features/sales-orders/catalogTemplateSheet';
 
 export function useProductionSummaryQuery(enabled: boolean) {
   return useQuery({
@@ -136,6 +142,56 @@ export function usePutOrderPlanSetupMutation(productionOrderId: string) {
         qc.invalidateQueries({ queryKey: queryKeys.production.all }),
         qc.invalidateQueries({ queryKey: queryKeys.salesOrders.all }),
       ]);
+    },
+  });
+}
+
+export function useCatalogSeedPreviewQuery(
+  salesOrderId: string | undefined,
+  lineId: string | undefined,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.salesOrders.catalogSeedPreview(salesOrderId ?? '', lineId ?? ''),
+    queryFn: () => previewOrderSetupLineSeedFromCatalog(salesOrderId!, lineId!),
+    enabled: Boolean(salesOrderId && lineId) && enabled,
+    staleTime: 0,
+  });
+}
+
+export function useSeedFromCatalogMutation(
+  salesOrderId: string,
+  productionOrderId: string,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (opts: { lineId: string; confirmWorkflowChange?: boolean }) =>
+      seedOrderSetupLineFromCatalog(salesOrderId, opts.lineId, {
+        confirmWorkflowChange: opts.confirmWorkflowChange,
+      }),
+    onSuccess: (_data, vars) => {
+      invalidateAfterCatalogSeed(qc, {
+        salesOrderId,
+        productionOrderId,
+        lineId: vars.lineId,
+      });
+    },
+  });
+}
+
+export function useMarkPlanMaterialsReviewedMutation(
+  salesOrderId: string,
+  productionOrderId: string,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lineId: string) =>
+      patchOrderSetupLine(salesOrderId, lineId, { materialsReviewed: true }),
+    onSuccess: () => {
+      invalidateAfterCatalogSeed(qc, {
+        salesOrderId,
+        productionOrderId,
+      });
     },
   });
 }

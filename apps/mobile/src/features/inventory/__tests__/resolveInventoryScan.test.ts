@@ -113,6 +113,33 @@ describe('resolveInventoryScan', () => {
     expect(getInventoryItemByCode).not.toHaveBeenCalled();
   });
 
+  it('ORDER_FABRIC when lot QR is an order-linked fabric bundle', async () => {
+    const lot = {
+      id: 'lot-fb',
+      quantity: 12,
+      producedAt: '2026-01-01',
+      status: 'AVAILABLE',
+      qrCode: 'FB-SO1042-001',
+      scanKind: 'ORDER_FABRIC',
+      fabricProcurement: { id: 'fp-1' },
+      inventoryItem: {
+        id: 'fab-1',
+        sku: 'FAB-VEL',
+        nameEn: 'Velvet',
+        nameAr: 'مخمل',
+        itemClass: 'RAW_MATERIAL',
+        category: 'FABRIC',
+      },
+      warehouse: { id: 'w', code: 'RAW', nameEn: 'Raw', nameAr: 'Raw' },
+    } as SemiFinishedLot & { scanKind: string; fabricProcurement: { id: string } };
+    getWipKitByCode.mockRejectedValue({ status: 404, code: 'WIP_SCAN_NOT_FOUND' });
+    getInventoryLotByCode.mockResolvedValue(lot);
+    await expect(resolveInventoryScan('FB-SO1042-001')).resolves.toEqual({
+      status: 'ORDER_FABRIC',
+      lot,
+    });
+  });
+
   it('NOT_FOUND on empty code', async () => {
     await expect(resolveInventoryScan('  ')).resolves.toEqual({ status: 'NOT_FOUND' });
     expect(getWipKitByCode).not.toHaveBeenCalled();

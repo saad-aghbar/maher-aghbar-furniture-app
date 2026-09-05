@@ -9,8 +9,8 @@ import {
   type ReactNode,
 } from 'react';
 import { LocaleDirContext } from '@react-navigation/native';
-import { I18nManager } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { lockNativeLayoutLtr } from './lockNativeLayoutLtr';
 import {
   defaultLocale,
   getDirection,
@@ -51,13 +51,9 @@ export function getActiveLocale(): Locale {
   return activeLocale;
 }
 
-async function applyNativeRtl(isRTL: boolean) {
-  I18nManager.allowRTL(isRTL);
-  if (I18nManager.isRTL !== isRTL) {
-    I18nManager.forceRTL(isRTL);
-    // Native root layout flip may require an app reload after the first RTL↔LTR switch.
-    // In-app textAlign / writingDirection / row direction update immediately without reload.
-  }
+async function applyNativeRtl(_isRTL: boolean) {
+  // Always LTR at the Yoga / translateX layer. Locale RTL is JS-only.
+  lockNativeLayoutLtr();
 }
 
 export function LocaleProvider({

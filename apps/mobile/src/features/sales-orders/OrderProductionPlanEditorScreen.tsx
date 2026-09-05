@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -32,7 +32,14 @@ import { BomMaterialPickerSheet } from '@/features/catalog/components/BomMateria
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { adminProductionFlowHref } from '@/features/production-flow/flowRoutes';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import { CatalogModificationsBoard } from '@/features/sales-orders/components/CatalogModificationsBoard';
+import { CatalogTemplatePreviewSheet } from '@/features/sales-orders/components/CatalogTemplatePreviewSheet';
+import { FloorActionRow } from '@/features/sales-orders/components/FloorActionRow';
+import { StandardProductPlanBoard } from '@/features/sales-orders/components/StandardProductPlanBoard';
 import { seedOrdersDeskChip } from '@/features/sales-orders/ordersDeskContext';
+import { FabricTrackerBoard } from '@/features/fabric/FabricTrackerBoard';
+import { fabricRowHref, selectFabricTrackerRows } from '@/features/fabric/selectFabricTracker';
+import { useFabricTrackerQuery } from '@/features/purchasing/query';
 import { WorkflowPickerSheet } from '@/features/sales-orders/production-setup/components/WorkflowPickerSheet';
 import { ProductionTaskSheet } from '@/features/production/components/ProductionTaskSheet';
 import { todayYmd } from '@/features/production/assignWindow';
@@ -45,6 +52,9 @@ import {
   useStartProductionMutation,
   useSuggestPlanScheduleMutation,
   useUpdateTaskNotesMutation,
+  useCatalogSeedPreviewQuery,
+  useMarkPlanMaterialsReviewedMutation,
+  useSeedFromCatalogMutation,
 } from '@/features/production/query';
 import {
   type ProductionTaskRow,
@@ -182,57 +192,6 @@ function Chip({
         {label}
       </AppText>
     </View>
-  );
-}
-
-function FloorActionRow({
-  label,
-  onPress,
-  disabled,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  const { isRTL, locale } = useLocale();
-  const { colors, theme, colorScheme } = useTheme();
-  const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  return (
-    <AnimatedPressable
-      variant="button"
-      disabled={disabled}
-      onPress={() => {
-        void haptics.selection();
-        onPress();
-      }}
-      style={{
-        minHeight: theme.sizes.touch.min,
-        borderRadius: theme.radius.xl,
-        borderWidth: 1,
-        borderColor: colors.borderStrong,
-        backgroundColor: colors.surfaceSecondary,
-        paddingHorizontal: theme.spacing.md,
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        alignItems: 'center',
-        gap: theme.spacing.sm,
-        opacity: disabled ? 0.5 : 1,
-        ...orderBoardShadow(colorScheme),
-      }}
-    >
-      <AppText
-        variant="label"
-        weight={titleWeight}
-        color="brand"
-        style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}
-      >
-        {label}
-      </AppText>
-      <Ionicons
-        name={isRTL ? 'chevron-back' : 'chevron-forward'}
-        size={18}
-        color={colors.brand}
-      />
-    </AnimatedPressable>
   );
 }
 
@@ -667,6 +626,22 @@ export function OrderProductionPlanEditorScreen({
 
   const query = useOrderPlanSetupQuery(productionOrderId, Boolean(productionOrderId));
   const putMutation = usePutOrderPlanSetupMutation(productionOrderId);
+  const [catalogPreviewOpen, setCatalogPreviewOpen] = useState(false);
+  const [workflowChangeOpen, setWorkflowChangeOpen] = useState(false);
+  const catalogLineId = query.data?.salesOrderLineId ?? undefined;
+  const catalogPreviewQuery = useCatalogSeedPreviewQuery(
+    salesOrderId,
+    catalogLineId,
+    catalogPreviewOpen && Boolean(catalogLineId),
+  );
+  const seedFromCatalogMutation = useSeedFromCatalogMutation(
+    salesOrderId,
+    productionOrderId,
+  );
+  const markMaterialsReviewedMutation = useMarkPlanMaterialsReviewedMutation(
+    salesOrderId,
+    productionOrderId,
+  );
   const assignWorkflowMutation = useAssignOrderWorkflowMutation(productionOrderId);
   const startMutation = useStartProductionMutation(productionOrderId);
   const suggestScheduleMutation = useSuggestPlanScheduleMutation(productionOrderId);
@@ -694,6 +669,8 @@ export function OrderProductionPlanEditorScreen({
   } | null>(null);
 
   const canOverrideConflict = can(user, 'schedule.override');
+  const canFabricRead = can(user, 'fabric.procurement.read');
+  const fabricTrackerQuery = useFabricTrackerQuery(salesOrderId, canFabricRead);
 
   useFocusEffect(
     useCallback(() => {
@@ -732,15 +709,19 @@ export function OrderProductionPlanEditorScreen({
     }
   }, [query.data, dirty]);
 
+  const ensureTasksAttempted = useRef(false);
   useEffect(() => {
     if (!query.data?.planEditable) return;
     if ((query.data.tasks ?? []).length > 0) return;
-    if (ensurePlanMutation.isPending) return;
+    if (!query.data.readiness?.hasWorkflow) return;
+    if ((query.data.stages ?? []).length === 0) return;
+    if (ensurePlanMutation.isPending || ensureTasksAttempted.current) return;
+    ensureTasksAttempted.current = true;
     ensurePlanMutation.mutate(undefined as never, {
       onSuccess: () => void query.refetch(),
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once when plan loads empty
-  }, [query.data?.planEditable, query.data?.tasks?.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once when a workflow exists without tasks
+  }, [query.data?.planEditable, query.data?.tasks?.length, query.data?.readiness?.hasWorkflow]);
 
   const planEditable = Boolean(query.data?.planEditable && canEdit);
   const stages = useMemo(() => {
@@ -934,6 +915,9 @@ export function OrderProductionPlanEditorScreen({
     Boolean(data.plannedStartDate) ||
     hasLocalProductionStart;
 
+  const materialsReviewRequired = Boolean(
+    data.materialsReviewRequired ?? data.readiness.materialsReviewRequired,
+  );
   const canConfirmNow =
     canConfirm &&
     data.planEditable &&
@@ -943,10 +927,14 @@ export function OrderProductionPlanEditorScreen({
     Boolean(data.readiness.hasMaterials) &&
     data.readiness.hasExecutableTasks !== false &&
     (data.readiness.assignment.missing ?? []).length === 0 &&
-    (data.readiness.dates?.missing ?? []).length === 0;
+    (data.readiness.dates?.missing ?? []).length === 0 &&
+    !materialsReviewRequired;
 
   const confirmBlockedHint = (() => {
     if (dirty) return t('mobile.productionSetup.saveBeforeConfirm');
+    if (materialsReviewRequired) {
+      return t('mobile.productionSetup.catalogTemplate.reviewRequired');
+    }
     if (!hasProductionStart) {
       return t('mobile.productionSetup.confirmNeedsProductionStartHint');
     }
@@ -1017,7 +1005,56 @@ export function OrderProductionPlanEditorScreen({
           />
         }
       >
-        <ListItemEnter index={0}>
+        {data.catalogTemplate?.showBoard ? (
+          <ListItemEnter index={0}>
+            <StandardProductPlanBoard
+              catalogTemplate={data.catalogTemplate}
+              usePlanDisabled={!planEditable}
+              onUsePlan={() => {
+                if (!catalogLineId) return;
+                setCatalogPreviewOpen(true);
+              }}
+            />
+          </ListItemEnter>
+        ) : null}
+
+        {String(data.manufacturingComplexity ?? '').toUpperCase() === 'MODIFIED' ? (
+          <ListItemEnter index={1}>
+            <CatalogModificationsBoard
+              catalogDimensions={data.catalogDimensions}
+              orderDimensions={data.orderDimensions}
+              measurements={data.measurements}
+              changesFromCatalog={data.changesFromCatalog}
+              reviewRequired={materialsReviewRequired}
+              reviewDisabled={!planEditable}
+              reviewing={markMaterialsReviewedMutation.isPending}
+              onMarkReviewed={() => {
+                if (!catalogLineId) return;
+                markMaterialsReviewedMutation.mutate(catalogLineId, {
+                  onSuccess: () => {
+                    void haptics.confirmLight();
+                    showToast({
+                      variant: 'success',
+                      message: t('mobile.productionSetup.catalogTemplate.reviewed'),
+                    });
+                    void query.refetch();
+                  },
+                  onError: (err) => {
+                    void haptics.error();
+                    showToast({
+                      variant: 'error',
+                      message: isApiError(err)
+                        ? toastMessageForError(err)
+                        : t('mobile.productionSetup.actionFailed'),
+                    });
+                  },
+                });
+              }}
+            />
+          </ListItemEnter>
+        ) : null}
+
+        <ListItemEnter index={data.catalogTemplate?.showBoard ? 1 : 0}>
           <DealerBoard
             title={t('mobile.productionSetup.planTitle')}
             titleWeight={titleWeight}
@@ -1052,6 +1089,23 @@ export function OrderProductionPlanEditorScreen({
             </View>
           </DealerBoard>
         </ListItemEnter>
+
+        {canFabricRead ? (
+          <ListItemEnter index={2}>
+            <FabricTrackerBoard
+              variant="plan"
+              rows={
+                fabricTrackerQuery.data ? selectFabricTrackerRows(fabricTrackerQuery.data) : []
+              }
+              ready={fabricTrackerQuery.data?.ready}
+              required={fabricTrackerQuery.data?.required}
+              loading={fabricTrackerQuery.isLoading}
+              error={fabricTrackerQuery.isError}
+              onRetry={() => void fabricTrackerQuery.refetch()}
+              onPressItem={(row) => router.push(fabricRowHref(row) as Href)}
+            />
+          </ListItemEnter>
+        ) : null}
 
         <ListItemEnter index={1}>
           <DealerBoard
@@ -1606,6 +1660,104 @@ export function OrderProductionPlanEditorScreen({
         message={t('mobile.production.setup.releaseConfirmBody')}
         confirmLabel={t('mobile.orders.journey.confirmPlan')}
         onConfirm={onConfirm}
+      />
+
+      <CatalogTemplatePreviewSheet
+        open={catalogPreviewOpen}
+        onClose={() => {
+          seedFromCatalogMutation.reset();
+          setCatalogPreviewOpen(false);
+          setWorkflowChangeOpen(false);
+        }}
+        preview={catalogPreviewQuery.data}
+        loading={catalogPreviewQuery.isFetching && !catalogPreviewQuery.data}
+        applying={seedFromCatalogMutation.isPending}
+        error={catalogPreviewQuery.isError ? catalogPreviewQuery.error : undefined}
+        onRetry={() => {
+          void catalogPreviewQuery.refetch();
+        }}
+        onApply={() => {
+          if (!catalogLineId) return;
+          if (catalogPreviewQuery.data?.requiresWorkflowChangeConfirmation) {
+            void haptics.selection();
+            setWorkflowChangeOpen(true);
+            return;
+          }
+          seedFromCatalogMutation.mutate(
+            { lineId: catalogLineId },
+            {
+              onSuccess: () => {
+                setCatalogPreviewOpen(false);
+                setWorkflowChangeOpen(false);
+                setDirty(false);
+                void haptics.confirmMedium();
+                showToast({
+                  variant: 'success',
+                  message: t('mobile.productionSetup.catalogTemplate.applied'),
+                });
+                void query.refetch();
+              },
+              onError: (err) => {
+                void haptics.error();
+                if (isApiError(err) && err.code === 'WORKFLOW_CHANGE_REQUIRED') {
+                  setWorkflowChangeOpen(true);
+                  return;
+                }
+                showToast({
+                  variant: 'error',
+                  message: isApiError(err)
+                    ? toastMessageForError(err)
+                    : t('mobile.productionSetup.actionFailed'),
+                });
+              },
+            },
+          );
+        }}
+      />
+
+      <ConfirmationSheet
+        open={workflowChangeOpen}
+        overlay
+        onClose={() => setWorkflowChangeOpen(false)}
+        title={t('mobile.productionSetup.catalogTemplate.changeWorkflowTitle')}
+        message={t('mobile.productionSetup.catalogTemplate.changeWorkflowBody', {
+          productWorkflow: catalogPreviewQuery.data?.productPlan.workflow
+            ? `${catalogPreviewQuery.data.productPlan.workflow.code ?? catalogPreviewQuery.data.productPlan.workflow.nameEn ?? ''} v${catalogPreviewQuery.data.productPlan.workflow.versionNumber ?? ''}`.trim()
+            : '—',
+          currentWorkflow: catalogPreviewQuery.data?.current.workflow
+            ? `${catalogPreviewQuery.data.current.workflow.code ?? catalogPreviewQuery.data.current.workflow.nameEn ?? t('mobile.productionSetup.catalogTemplate.customWorkflow')} v${catalogPreviewQuery.data.current.workflow.versionNumber ?? ''}`.trim()
+            : t('mobile.productionSetup.catalogTemplate.customWorkflow'),
+        })}
+        confirmLabel={t('mobile.productionSetup.catalogTemplate.changeWorkflow')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => {
+          if (!catalogLineId) return;
+          seedFromCatalogMutation.mutate(
+            { lineId: catalogLineId, confirmWorkflowChange: true },
+            {
+              onSuccess: () => {
+                setWorkflowChangeOpen(false);
+                setCatalogPreviewOpen(false);
+                setDirty(false);
+                void haptics.confirmMedium();
+                showToast({
+                  variant: 'success',
+                  message: t('mobile.productionSetup.catalogTemplate.applied'),
+                });
+                void query.refetch();
+              },
+              onError: (err) => {
+                void haptics.error();
+                showToast({
+                  variant: 'error',
+                  message: isApiError(err)
+                    ? toastMessageForError(err)
+                    : t('mobile.productionSetup.actionFailed'),
+                });
+              },
+            },
+          );
+        }}
       />
     </AppScreen>
   );

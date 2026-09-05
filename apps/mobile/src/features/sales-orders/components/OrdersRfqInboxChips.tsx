@@ -2,6 +2,8 @@ import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
+import type { RequestInboxCounts } from '@/api/modules/requests';
+import { honestJourneyCount } from '../honestJourneyCount';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -29,6 +31,15 @@ export const RFQ_SUBCHIP_STATUSES: Record<RfqInboxSubchip, string[] | null> = {
   drafts: ['DRAFT'],
 };
 
+/** Server statusGroup for each Factory Review chip (COUNT=DATASET). */
+export const RFQ_SUBCHIP_STATUS_GROUP: Record<RfqInboxSubchip, string> = {
+  all: 'open_inbox',
+  waiting: 'waiting_review',
+  needs_info: 'needs_information',
+  quoted: 'quoted',
+  drafts: 'drafts',
+};
+
 const CHIP_ICON: Record<RfqInboxSubchip, keyof typeof Ionicons.glyphMap> = {
   all: 'layers-outline',
   waiting: 'hourglass-outline',
@@ -40,13 +51,14 @@ const CHIP_ICON: Record<RfqInboxSubchip, keyof typeof Ionicons.glyphMap> = {
 type Props = {
   value: RfqInboxSubchip;
   onChange: (next: RfqInboxSubchip) => void;
+  counts?: RequestInboxCounts | null;
 };
 
 /**
  * Customer-request inbox — two-row period cells on a parchment board.
  * All five statuses stay on screen. Active = brandSoft + 3px bottom bar.
  */
-export function OrdersRfqInboxChips({ value, onChange }: Props) {
+export function OrdersRfqInboxChips({ value, onChange, counts }: Props) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
@@ -139,11 +151,13 @@ export function OrdersRfqInboxChips({ value, onChange }: Props) {
             {row.map((key) => {
               const selected = value === key;
               const label = t(`mobile.orders.rfqInbox.${key}`);
+              const count = counts?.[key] ?? 0;
               return (
                 <InboxCell
                   key={key}
                   icon={CHIP_ICON[key]}
                   label={label}
+                  count={count}
                   selected={selected}
                   titleWeight={titleWeight}
                   onPress={() => {
@@ -164,12 +178,14 @@ export function OrdersRfqInboxChips({ value, onChange }: Props) {
 function InboxCell({
   icon,
   label,
+  count,
   selected,
   titleWeight,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  count: number;
   selected: boolean;
   titleWeight: 'medium' | 'semibold';
   onPress: () => void;
@@ -182,7 +198,7 @@ function InboxCell({
       variant="button"
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      accessibilityLabel={label}
+      accessibilityLabel={`${label} ${count}`}
       onPress={onPress}
       style={{
         flex: 1,
@@ -197,7 +213,7 @@ function InboxCell({
         overflow: 'hidden',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 4,
+        gap: 2,
       }}
     >
       {selected ? (
@@ -231,6 +247,21 @@ function InboxCell({
           color={selected ? colors.brand : colors.textSecondary}
         />
       </View>
+      <AppText
+        variant="title"
+        weight={titleWeight}
+        align="center"
+        dir="ltr"
+        style={{
+          color: selected ? colors.brand : colors.textPrimary,
+          fontSize: 16,
+          lineHeight: 20,
+          letterSpacing: -0.3,
+          fontVariant: ['tabular-nums'],
+        }}
+      >
+        {honestJourneyCount(count)}
+      </AppText>
       <AppText
         variant="caption"
         weight={selected ? titleWeight : 'medium'}

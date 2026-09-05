@@ -1,4 +1,5 @@
 export { LocaleProvider, LOCALE_STORAGE_KEY, getActiveLocale } from './LocaleProvider';
+export { lockNativeLayoutLtr } from './lockNativeLayoutLtr';
 export { useLocale } from './useLocale';
 export { useTranslation } from './useTranslation';
 export { translate, translatePlural } from './translate';

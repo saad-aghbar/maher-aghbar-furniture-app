@@ -139,6 +139,14 @@ export type SalesOrderListFilters = PageParams & {
   deliveryTo?: string;
   /** Admin only — never send from dealer client. */
   customerId?: string;
+  /** Admin Standard / Modified / Custom lens — server rollup; COUNT=DATASET. */
+  orderType?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+};
+
+export type AdminOrderTypeCounts = {
+  standard: number;
+  modified: number;
+  custom: number;
 };
 
 export async function listSalesOrders(
@@ -147,6 +155,7 @@ export async function listSalesOrders(
   PaginatedResponse<SalesOrderListItem> & {
     meta: PaginatedResponse<SalesOrderListItem>['meta'] & {
       journeyCounts?: AdminOrderJourneyCounts;
+      orderTypeCounts?: AdminOrderTypeCounts;
     };
   }
 > {
@@ -162,6 +171,7 @@ export async function listSalesOrders(
     deliveryFrom: filters.deliveryFrom,
     deliveryTo: filters.deliveryTo,
     customerId: filters.customerId,
+    orderType: filters.orderType,
   });
   return apiGet(`/sales-orders${qs}`);
 }
@@ -885,9 +895,74 @@ export async function putOrderSetupLineMaterials(
 export async function seedOrderSetupLineFromCatalog(
   salesOrderId: string,
   lineId: string,
+  opts?: { confirmWorkflowChange?: boolean },
 ): Promise<OrderProductionSetup> {
   return apiPost<OrderProductionSetup>(
     `${setupBase(salesOrderId)}/lines/${encodeURIComponent(lineId)}/seed-from-catalog`,
+    opts?.confirmWorkflowChange ? { confirmWorkflowChange: true } : undefined,
+  );
+}
+
+export type CatalogSeedWorkflowIdentity = {
+  id: string;
+  code: string | null;
+  nameEn: string | null;
+  nameAr: string | null;
+  nameHe: string | null;
+  versionNumber: number | null;
+};
+
+export type CatalogSeedPlanSummary = {
+  materials: number;
+  workflow: CatalogSeedWorkflowIdentity | null;
+  stages: number;
+  tasks: number;
+  semiWip: number;
+  hasDurationEstimates: boolean;
+  hasExistingPlan?: boolean;
+};
+
+export type CatalogSeedPreview = {
+  salesOrderId: string;
+  lineId: string;
+  setupLineId: string;
+  manufacturingComplexity: string | null;
+  productId: string | null;
+  product: {
+    id: string;
+    sku: string | null;
+    nameEn: string | null;
+    nameAr: string | null;
+    nameHe: string | null;
+  } | null;
+  quantity: number;
+  requestedFabricLabel: string | null;
+  actionAvailable: boolean;
+  unavailableReason: 'not_standard' | 'no_product' | 'no_definition' | 'locked' | null;
+  hasUsableDefinition: boolean;
+  workflowWouldChange: boolean;
+  requiresWorkflowChangeConfirmation: boolean;
+  factoryLocked: boolean;
+  current: CatalogSeedPlanSummary;
+  productPlan: CatalogSeedPlanSummary;
+  materials: Array<{ sku: string | null; expectedQty: number; quantityMode: string }>;
+  willNotChange: string[];
+  assignmentImpact: {
+    workersPreserved: boolean;
+    datesPreserved: boolean;
+    timesPreserved: boolean;
+    sequencePreserved: boolean;
+    assignmentsWouldBeRemoved: boolean;
+  };
+  unreleasedProductionOrderIds: string[];
+};
+
+export async function previewOrderSetupLineSeedFromCatalog(
+  salesOrderId: string,
+  lineId: string,
+): Promise<CatalogSeedPreview> {
+  return apiGet<CatalogSeedPreview>(
+    `${setupBase(salesOrderId)}/lines/${encodeURIComponent(lineId)}/seed-from-catalog/preview`,
   );
 }
 

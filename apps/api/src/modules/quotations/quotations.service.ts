@@ -12,6 +12,8 @@ import type { AuthUser } from '@maher/types';
 import {
   buildOrderLineSpecSnapshot,
   classifyManufacturingComplexity,
+  parseManufacturingComplexity,
+  type ManufacturingComplexityCode,
 } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
@@ -211,6 +213,9 @@ export class QuotationsService {
       material: line.material,
       fabric: line.fabric,
       color: line.color,
+      fabrics: line.fabrics
+        ? (line.fabrics as unknown as Prisma.InputJsonValue)
+        : undefined,
       width: line.width,
       height: line.height,
       depth: line.depth,
@@ -221,7 +226,8 @@ export class QuotationsService {
       subtotal: totals.subtotal,
       taxAmount: totals.taxAmount,
       lineTotal: totals.lineTotal,
-      manufacturingComplexity: this.normalizeComplexity(line.manufacturingComplexity),
+      manufacturingComplexity: parseManufacturingComplexity(line.manufacturingComplexity),
+      customMeasurements: this.lineCustomMeasurementsJson(line.customMeasurements),
       sortOrder: index,
     };
   }
@@ -382,11 +388,25 @@ export class QuotationsService {
     return this.presentForClient({ ...quotation, status, viewedAt }, user);
   }
 
-  private normalizeComplexity(
-    value: string | null | undefined,
-  ): 'STANDARD' | 'MODIFIED' | 'CUSTOM' {
-    if (value === 'MODIFIED' || value === 'CUSTOM') return value;
-    return 'STANDARD';
+  private lineCustomMeasurementsJson(
+    value: unknown,
+  ): Prisma.InputJsonValue | undefined {
+    if (value == null) return undefined;
+    if (!Array.isArray(value) || value.length === 0) return undefined;
+    return value as Prisma.InputJsonValue;
+  }
+
+  /**
+   * Carry the upstream complexity forward. Never default unknown → STANDARD.
+   * Description-inferred catalog matches must not raise CUSTOM to STANDARD.
+   */
+  private sellerLineComplexity(input: {
+    manufacturingComplexity?: string | null;
+    explicitProductId: boolean;
+  }): ManufacturingComplexityCode {
+    const stored = parseManufacturingComplexity(input.manufacturingComplexity);
+    if (stored) return stored;
+    return input.explicitProductId ? 'STANDARD' : 'CUSTOM';
   }
 
   private sellingPriceMissing(unitPrice: unknown): boolean {
@@ -443,11 +463,11 @@ export class QuotationsService {
         ];
       }
       if (this.sellingPriceMissing(line.unitPrice)) {
-        const complexity = this.normalizeComplexity(line.manufacturingComplexity);
+        const complexity = parseManufacturingComplexity(line.manufacturingComplexity);
         const kind =
-          complexity === 'STANDARD'
-            ? ''
-            : `${complexity.charAt(0)}${complexity.slice(1).toLowerCase()} `;
+          complexity === 'MODIFIED' || complexity === 'CUSTOM'
+            ? `${complexity.charAt(0)}${complexity.slice(1).toLowerCase()} `
+            : '';
         const name = line.description?.trim() || 'this line';
         fieldErrors[`lines.${index}.unitPrice`] = [
           `Set a selling price for ${kind}${name} before sending this quotation.`,
@@ -506,7 +526,7 @@ export class QuotationsService {
     );
 
     const lines = (quotation.lines ?? []).map((line) => {
-      const complexity = this.normalizeComplexity(
+      const complexity = parseManufacturingComplexity(
         (line as { manufacturingComplexity?: string | null }).manufacturingComplexity,
       );
       const ref =
@@ -610,16 +630,24 @@ export class QuotationsService {
     };
 
     return lines.map((line) => {
+      const explicitProductId = Boolean(line.productId);
       const product = matchProduct(line);
       const productId = line.productId ?? product?.id;
-      const complexity = this.normalizeComplexity(line.manufacturingComplexity);
+      const complexity = this.sellerLineComplexity({
+        manufacturingComplexity: line.manufacturingComplexity,
+        explicitProductId,
+      });
       const incoming = Number(line.unitPrice);
       const catalogRef =
         (productId && dealerMap.get(productId)) ||
         (product?.basePrice != null ? Number(product.basePrice) : null) ||
         null;
       let unitPrice = Number.isFinite(incoming) && incoming > 0 ? incoming : 0;
-      if (this.sellingPriceMissing(unitPrice) && complexity === 'STANDARD') {
+      if (
+        this.sellingPriceMissing(unitPrice) &&
+        complexity === 'STANDARD' &&
+        explicitProductId
+      ) {
         if (catalogRef != null && catalogRef > 0) unitPrice = catalogRef;
       }
       return {
@@ -1032,6 +1060,7 @@ export class QuotationsService {
                   height: true,
                   depth: true,
                   seatHeight: true,
+                  customMeasurements: true,
                   imageUrl: true,
                   nameEn: true,
                 },
@@ -1070,44 +1099,48 @@ export class QuotationsService {
                   const catalog = line.productId
                     ? productMap.get(line.productId)
                     : null;
-                  const complexity = classifyManufacturingComplexity({
-                    productId: line.productId,
-                    width: line.width != null ? Number(line.width) : null,
-                    height: line.height != null ? Number(line.height) : null,
-                    depth: line.depth != null ? Number(line.depth) : null,
-                    material: line.material,
-                    fabric: line.fabric,
-                    color: line.color,
-                    catalog: catalog
-                      ? {
-                          width: catalog.width != null ? Number(catalog.width) : null,
-                          height: catalog.height != null ? Number(catalog.height) : null,
-                          depth: catalog.depth != null ? Number(catalog.depth) : null,
-                          seatHeight:
-                            catalog.seatHeight != null ? Number(catalog.seatHeight) : null,
-                        }
-                      : null,
-                  });
+                  const catalogRef = catalog
+                    ? {
+                        width: catalog.width != null ? Number(catalog.width) : null,
+                        height: catalog.height != null ? Number(catalog.height) : null,
+                        depth: catalog.depth != null ? Number(catalog.depth) : null,
+                        seatHeight:
+                          catalog.seatHeight != null ? Number(catalog.seatHeight) : null,
+                        customMeasurements: (
+                          catalog as { customMeasurements?: unknown }
+                        ).customMeasurements,
+                      }
+                    : null;
+                  const stored = parseManufacturingComplexity(line.manufacturingComplexity);
+                  const complexity =
+                    stored ??
+                    classifyManufacturingComplexity({
+                      productId: line.productId,
+                      width: line.width != null ? Number(line.width) : null,
+                      height: line.height != null ? Number(line.height) : null,
+                      depth: line.depth != null ? Number(line.depth) : null,
+                      material: line.material,
+                      customMeasurements: (
+                        line as { customMeasurements?: unknown }
+                      ).customMeasurements,
+                      catalog: catalogRef,
+                    });
                   const orderSpec = buildOrderLineSpecSnapshot({
                     productId: line.productId,
                     productName: line.description,
                     productImageRef: catalog?.imageUrl ?? null,
                     quantity: Number(line.quantity),
-                    catalog: catalog
-                      ? {
-                          width: catalog.width != null ? Number(catalog.width) : null,
-                          height: catalog.height != null ? Number(catalog.height) : null,
-                          depth: catalog.depth != null ? Number(catalog.depth) : null,
-                          seatHeight:
-                            catalog.seatHeight != null ? Number(catalog.seatHeight) : null,
-                        }
-                      : null,
+                    catalog: catalogRef,
                     width: line.width != null ? Number(line.width) : null,
                     height: line.height != null ? Number(line.height) : null,
                     depth: line.depth != null ? Number(line.depth) : null,
                     fabric: line.fabric,
                     color: line.color,
+                    fabrics: (line as { fabrics?: unknown }).fabrics,
                     material: line.material,
+                    customMeasurements: (
+                      line as { customMeasurements?: unknown }
+                    ).customMeasurements,
                     manufacturingComplexity: complexity,
                     attachmentIds,
                     dealerReference: requestRow?.externalOrderNumber ?? null,
@@ -1260,6 +1293,10 @@ export class QuotationsService {
       material: line.material ?? undefined,
       fabric: line.fabric ?? undefined,
       color: line.color ?? undefined,
+      fabrics:
+        (line as { fabrics?: unknown }).fabrics == null
+          ? undefined
+          : ((line as { fabrics?: unknown }).fabrics as Prisma.InputJsonValue),
       width: line.width ?? undefined,
       height: line.height ?? undefined,
       depth: line.depth ?? undefined,
@@ -1271,6 +1308,11 @@ export class QuotationsService {
       taxAmount: line.taxAmount,
       lineTotal: line.lineTotal,
       manufacturingComplexity: line.manufacturingComplexity ?? undefined,
+      customMeasurements:
+        (line as { customMeasurements?: unknown }).customMeasurements == null
+          ? undefined
+          : ((line as { customMeasurements?: unknown })
+              .customMeasurements as Prisma.InputJsonValue),
       sortOrder: index,
     }));
 

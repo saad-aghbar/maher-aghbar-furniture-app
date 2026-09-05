@@ -9,14 +9,16 @@ import { Prisma } from '@maher/database';
 import {
   appendReviewHistory,
   mapOrderPresentation,
-  requestStatusesForGroup,
+  parseManufacturingComplexity,
+  rollupOrderType,
   type AuthUser,
 } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
-import { paginatedMeta } from '../../common/dto/pagination.dto';
+import { pageSkipTake, paginatedMeta } from '../../common/dto/pagination.dto';
 import { assertCustomerOwns, customerScopeFilter } from '../../common/helpers/customer-scope';
 import { CreateRequestDto, ListRequestsDto, UpdateRequestDto } from './dto/request.dto';
+import { crossFilterRequestFacets } from './request-type-facets';
 import {
   computeDealerEditPolicy,
   detectsFabricMutation,
@@ -121,17 +123,11 @@ export class RequestsService {
   }
 
   async list(query: ListRequestsDto, user?: AuthUser) {
-    const groupStatuses = query.statusGroup
-      ? requestStatusesForGroup(query.statusGroup)
-      : null;
-    const where: Prisma.RequestForQuotationWhereInput = {
+    const { page, pageSize, skip, take } = pageSkipTake(query);
+    const baseWhere: Prisma.RequestForQuotationWhereInput = {
       archivedAt: null,
       ...customerScopeFilter(user),
-      ...(groupStatuses?.length
-        ? { status: { in: groupStatuses as Prisma.EnumRequestStatusFilter['in'] } }
-        : query.status
-          ? { status: query.status }
-          : {}),
+      ...(!query.statusGroup && query.status ? { status: query.status } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.source ? { source: query.source } : {}),
       ...(query.q
@@ -151,51 +147,80 @@ export class RequestsService {
         : {}),
     };
 
-    const [totalItems, data] = await this.prisma.$transaction([
-      this.prisma.requestForQuotation.count({ where }),
-      this.prisma.requestForQuotation.findMany({
-        where,
-        include: {
-          customer: {
-            select: {
-              id: true,
-              name: true,
-              nameAr: true,
-              nameEn: true,
-              nameHe: true,
-              code: true,
-            },
-          },
-          items: true,
-          documents: {
-            where: { archivedAt: null },
-            select: {
-              id: true,
-              fileName: true,
-              mimeType: true,
-              category: true,
-              storageKey: true,
-            },
-            orderBy: { createdAt: 'asc' },
-            take: 8,
+    /**
+     * COUNT=DATASET: classify the full filtered RFQ set (lightweight), then paginate
+     * within the selected inbox group × request type. Counts never depend on loaded pages.
+     */
+    const typeLight = await this.prisma.requestForQuotation.findMany({
+      where: baseWhere,
+      select: {
+        id: true,
+        status: true,
+        items: {
+          select: {
+            manufacturingComplexity: true,
+            productId: true,
           },
         },
-        orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-    ]);
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const facets = crossFilterRequestFacets(typeLight, {
+      statusGroup: query.statusGroup ?? null,
+      requestType: parseManufacturingComplexity(query.requestType),
+    });
+    const scopedIds = facets.scopedIds;
+    const totalItems = scopedIds.length;
+    const pageIds = scopedIds.slice(skip, skip + take);
+
+    const data =
+      pageIds.length === 0
+        ? []
+        : await this.prisma.requestForQuotation.findMany({
+            where: { id: { in: pageIds } },
+            include: {
+              customer: {
+                select: {
+                  id: true,
+                  name: true,
+                  nameAr: true,
+                  nameEn: true,
+                  nameHe: true,
+                  code: true,
+                },
+              },
+              items: true,
+              documents: {
+                where: { archivedAt: null },
+                select: {
+                  id: true,
+                  fileName: true,
+                  mimeType: true,
+                  category: true,
+                  storageKey: true,
+                },
+                orderBy: { createdAt: 'asc' },
+                take: 8,
+              },
+            },
+          });
+
+    const byPageId = new Map(data.map((row) => [row.id, row]));
+    const orderedData = pageIds
+      .map((id) => byPageId.get(id))
+      .filter((row): row is (typeof data)[number] => Boolean(row));
 
     const productIds = [
       ...new Set(
-        data
+        orderedData
           .map((row) => row.items[0]?.productId)
           .filter((id): id is string => Boolean(id)),
       ),
     ];
     const productNames = [
       ...new Set(
-        data
+        orderedData
           .map((row) => row.items[0]?.productName?.trim())
           .filter((name): name is string => Boolean(name)),
       ),
@@ -232,7 +257,7 @@ export class RequestsService {
 
     const byId = new Map(products.map((p) => [p.id, p]));
 
-    const enriched = data.map((row) => {
+    const enriched = orderedData.map((row) => {
       const primary = row.items[0];
       const primaryName = primary?.productName?.trim() ?? '';
       const needle = primaryName.toLowerCase();
@@ -276,6 +301,12 @@ export class RequestsService {
         : this.documentImageUrl(firstImageDocument(row.documents));
       const { documents, ...rest } = row;
       const safeDocuments = documents.map(({ storageKey: _k, ...doc }) => doc);
+      const manufacturingComplexity = rollupOrderType(
+        row.items.map((i) => ({
+          manufacturingComplexity: i.manufacturingComplexity,
+          productId: i.productId,
+        })),
+      );
       return {
         ...rest,
         documents: safeDocuments,
@@ -283,18 +314,21 @@ export class RequestsService {
         imageUrl: catalogImage ?? attachmentImage,
         presentationKey: mapOrderPresentation({ requestStatus: row.status }),
         productCount: row.items.length,
-        hasCustomLines: row.items.some(
-          (i) =>
-            i.manufacturingComplexity === 'CUSTOM' ||
-            i.manufacturingComplexity === 'MODIFIED' ||
-            !i.productId,
-        ),
+        manufacturingComplexity,
+        hasCustomLines: manufacturingComplexity !== 'STANDARD',
         attachmentCount: documents.length,
         informationRequestReason: row.informationRequestReason,
       };
     });
 
-    return { data: enriched, meta: paginatedMeta(query.page, query.pageSize, totalItems) };
+    return {
+      data: enriched,
+      meta: {
+        ...paginatedMeta(page, pageSize, totalItems),
+        typeCounts: facets.typeCounts,
+        inboxCounts: facets.inboxCounts,
+      },
+    };
   }
 
   async getById(id: string, user?: AuthUser) {
@@ -590,6 +624,7 @@ export class RequestsService {
         fabricCode: i.fabricCode,
         fabric: i.fabricType,
         color: i.fabricColor,
+        fabrics: (i as { fabrics?: unknown }).fabrics,
       }));
       if (detectsFabricMutation(existingItems, items)) {
         throw new ConflictException({

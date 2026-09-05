@@ -1,6 +1,9 @@
 /**
- * Order-level manufacturing kind: CUSTOM > MODIFIED > STANDARD.
+ * Order-level manufacturing kind display slugs.
+ * Canonical rollup lives in @maher/types (rollupOrderType).
  */
+
+import { rollupOrderType } from '@maher/types';
 
 export type OrderManufacturingKind = 'standard' | 'modified' | 'custom';
 
@@ -17,11 +20,5 @@ export function complexityBadgeKey(
 export function resolveOrderManufacturingKind(
   complexities: Array<string | null | undefined>,
 ): OrderManufacturingKind {
-  let worst: OrderManufacturingKind = 'standard';
-  for (const raw of complexities) {
-    const k = complexityBadgeKey(raw);
-    if (k === 'custom') return 'custom';
-    if (k === 'modified') worst = 'modified';
-  }
-  return worst;
+  return complexityBadgeKey(rollupOrderType(complexities));
 }

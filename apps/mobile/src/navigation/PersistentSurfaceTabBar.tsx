@@ -12,12 +12,7 @@ import { GestureDetector, Pressable } from 'react-native-gesture-handler';
 import { usePathname, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import type { AppSurface } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -284,28 +279,6 @@ export function PersistentSurfaceTabBar({ surface }: Props) {
     if (next === activeName) return;
     navigateToTab(router, surface, next, pathname);
   }, [activeName, pathname, router, staffAdaptive, surface, tabs]);
-
-  // Spring the bubble to the active slot (instant assign killed Apple-like motion).
-  useEffect(() => {
-    if (!activeLayout || activeLayout.width <= 0) return;
-    if (dragging.value) return;
-    if (reduce) {
-      pillX.value = activeLayout.x;
-      pillW.value = activeLayout.width;
-      return;
-    }
-    if (staffAdaptive) {
-      const cfg = {
-        duration: STAFF_PILL_DURATION_MS,
-        easing: Easing.bezier(0.4, 0, 0.2, 1),
-      };
-      pillX.value = withTiming(activeLayout.x, cfg);
-      pillW.value = withTiming(activeLayout.width, cfg);
-      return;
-    }
-    pillX.value = withSpring(activeLayout.x, bubbleSpring);
-    pillW.value = withSpring(activeLayout.width, bubbleSpring);
-  }, [activeLayout, bubbleSpring, dragging, pillW, pillX, reduce, staffAdaptive]);
 
   const pillStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: pillX.value }],

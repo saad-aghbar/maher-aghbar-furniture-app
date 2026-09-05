@@ -1,6 +1,8 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { PurchasingController } from './purchasing.controller';
 import { PurchasingService } from './purchasing.service';
+import { FabricProcurementController } from './fabric-procurement.controller';
+import { FabricProcurementService } from './fabric-procurement.service';
 import { LowStockPrWebhookController } from './low-stock-pr.webhook.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { InventoryModule } from '../inventory/inventory.module';
@@ -14,8 +16,8 @@ import { SupplierInvoicesModule } from '../supplier-invoices/supplier-invoices.m
     forwardRef(() => SchedulingModule),
     SupplierInvoicesModule,
   ],
-  controllers: [PurchasingController, LowStockPrWebhookController],
-  providers: [PurchasingService],
-  exports: [PurchasingService],
+  controllers: [PurchasingController, LowStockPrWebhookController, FabricProcurementController],
+  providers: [PurchasingService, FabricProcurementService],
+  exports: [PurchasingService, FabricProcurementService],
 })
 export class PurchasingModule {}

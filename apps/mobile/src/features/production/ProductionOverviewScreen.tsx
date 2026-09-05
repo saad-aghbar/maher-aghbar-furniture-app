@@ -39,6 +39,7 @@ import {
   useProductionSummaryQuery,
 } from './query';
 import { selectProductionCard } from './selectProduction';
+import { boardCountForBucket, productionListItemsForBoard } from './boardLaneList';
 
 type MetricAccent = 'brand' | 'info' | 'success' | 'late' | 'warning';
 
@@ -155,23 +156,56 @@ export function ProductionOverviewScreen() {
     !listQuery.isFetchingNextPage &&
     !listQuery.isPlaceholderData;
 
-  /** Soft indicator while keepPreviousData shows the prior list. */
+  /** Soft indicator while a new filter request is in flight (no stale rows). */
   const isFilterUpdating =
     listQuery.isFetching &&
     !listQuery.isFetchingNextPage &&
-    Boolean(listQuery.data);
+    (listQuery.isPlaceholderData || Boolean(listQuery.data));
+
+  const summary = summaryQuery.data;
+  const dayBoard = daySummaryQuery.data?.board;
+
+  // All time → full production-summary lanes. By day → day-scoped board counts.
+  const boardCounts =
+    dateScope === 'all'
+      ? summary
+        ? {
+            needsSetup: summary.needsSetup ?? 0,
+            readyToStart: summary.readyToStart ?? 0,
+            onFloor: summary.onFloor ?? 0,
+            blocked: summary.blocked ?? 0,
+            inspectionPackaging: summary.inspectionPackaging ?? 0,
+          }
+        : null
+      : dayBoard
+        ? {
+            needsSetup: dayBoard.needsSetup,
+            readyToStart: dayBoard.readyToStart,
+            onFloor: dayBoard.onFloor,
+            blocked: dayBoard.blocked,
+            inspectionPackaging: dayBoard.inspectionPackaging,
+          }
+        : null;
+
+  /** Chip count for the selected lane — Count N must match list size. */
+  const selectedLaneCount = boardCountForBucket(bucket, boardCounts);
 
   const listItems = useMemo(
-    () => flattenProductionOrderPages(listQuery.data),
-    [listQuery.data],
+    () =>
+      productionListItemsForBoard({
+        isPlaceholderData: Boolean(listQuery.isPlaceholderData),
+        selectedLaneCount,
+        flattened: flattenProductionOrderPages(listQuery.data),
+      }),
+    [listQuery.data, listQuery.isPlaceholderData, selectedLaneCount],
   );
 
   useEffect(() => {
     if (!staggerListEnter) return;
-    if (listQuery.isPending || !listQuery.data) return;
+    if (listQuery.isPending || !listQuery.data || listQuery.isPlaceholderData) return;
     const t = setTimeout(() => setStaggerListEnter(false), 520);
     return () => clearTimeout(t);
-  }, [listQuery.data, listQuery.isPending, staggerListEnter]);
+  }, [listQuery.data, listQuery.isPending, listQuery.isPlaceholderData, staggerListEnter]);
 
   const selectBucket = (next: ProductionListBucket) => {
     // Tap active lane again → clear filter and show all orders.
@@ -194,7 +228,7 @@ export function ProductionOverviewScreen() {
   }
 
   // Only the true first load — never tear down the page when filters change
-  const initialLoad = listQuery.isPending && !listQuery.data;
+  const initialLoad = listQuery.isPending && !listQuery.data && !listQuery.isPlaceholderData;
 
   if (initialLoad) {
     return (
@@ -221,31 +255,7 @@ export function ProductionOverviewScreen() {
     );
   }
 
-  const summary = summaryQuery.data;
-  const dayBoard = daySummaryQuery.data?.board;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-
-  // All time → full production-summary lanes. By day → day-scoped board counts.
-  const boardCounts =
-    dateScope === 'all'
-      ? summary
-        ? {
-            needsSetup: summary.needsSetup ?? 0,
-            readyToStart: summary.readyToStart ?? 0,
-            onFloor: summary.onFloor ?? 0,
-            blocked: summary.blocked ?? 0,
-            inspectionPackaging: summary.inspectionPackaging ?? 0,
-          }
-        : null
-      : dayBoard
-        ? {
-            needsSetup: dayBoard.needsSetup,
-            readyToStart: dayBoard.readyToStart,
-            onFloor: dayBoard.onFloor,
-            blocked: dayBoard.blocked,
-            inspectionPackaging: dayBoard.inspectionPackaging,
-          }
-        : null;
 
   const setupMetrics: MetricDef[] | null = boardCounts
     ? [
@@ -294,8 +304,8 @@ export function ProductionOverviewScreen() {
         ref={listRef}
         data={listItems}
         keyExtractor={(item) => item.id}
-        style={{ opacity: isFilterUpdating ? 0.72 : 1 }}
-        extraData={`${bucket}:${q}:${dealerId}:${dateScope}:${onDate}:${dateMode}:${isFilterUpdating}`}
+        style={{ opacity: isFilterUpdating && !listQuery.isPlaceholderData ? 0.72 : 1 }}
+        extraData={`${bucket}:${q}:${dealerId}:${dateScope}:${onDate}:${dateMode}:${selectedLaneCount}:${isFilterUpdating}`}
         contentContainerStyle={{
           gap: theme.spacing.md,
           paddingBottom: listBottomPad,
@@ -551,7 +561,7 @@ export function ProductionOverviewScreen() {
           </View>
         }
         ListEmptyComponent={
-          listQuery.isFetching && listItems.length === 0 ? (
+          (listQuery.isFetching || listQuery.isPlaceholderData) && listItems.length === 0 ? (
             <ProductionListSkeleton />
           ) : listItems.length === 0 && !listQuery.isFetching ? (
             <DealerEmptyPanel
@@ -561,13 +571,15 @@ export function ProductionOverviewScreen() {
                   ? t('mobile.production.emptyDealerBody', { dealer: dealerLabel })
                   : q
                     ? t('mobile.production.emptySearchBody')
-                    : dateScope === 'all'
+                    : selectedLaneCount === 0
                       ? t('mobile.production.emptyBody')
-                      : dateMode === 'planned'
-                        ? t('mobile.production.dayLens.emptyPlanned')
-                        : daySummaryQuery.data?.isFuture
-                          ? t('mobile.production.dayLens.emptyActualFuture')
-                          : t('mobile.production.dayLens.emptyActual')
+                      : dateScope === 'all'
+                        ? t('mobile.production.emptyBody')
+                        : dateMode === 'planned'
+                          ? t('mobile.production.dayLens.emptyPlanned')
+                          : daySummaryQuery.data?.isFuture
+                            ? t('mobile.production.dayLens.emptyActualFuture')
+                            : t('mobile.production.dayLens.emptyActual')
               }
             />
           ) : null

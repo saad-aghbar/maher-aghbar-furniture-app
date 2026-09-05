@@ -107,6 +107,32 @@ enum PurchaseOrderStatus {
   CLOSED
 }
 
+enum FabricProcurementState {
+  NEEDS_ORDERING
+  AWAITING_SUPPLIER
+  SUPPLIER_CONFIRMED
+  PARTIALLY_AVAILABLE
+  UNAVAILABLE
+  WAITING
+  DELAYED
+  READY_FOR_PICKUP
+  CANCELLED
+}
+
+enum FabricProcurementEventKind {
+  REQUESTED
+  SUPPLIER_CONFIRMED
+  SUPPLIER_UNAVAILABLE
+  WAIT
+  REDIRECTED
+  READY_FOR_PICKUP
+  RECEIVED
+  PARTIAL
+  FABRIC_CHANGED
+  OVERRIDE
+  DISPOSITION
+}
+
 enum ProductionOrderStatus {
   DRAFT
   PLANNED
@@ -921,6 +947,9 @@ model Supplier {
   supplierInvoices SupplierInvoice[]
   supplierPayments SupplierPayment[]
   preferredForItems InventoryItem[]
+  fabricProcurements FabricProcurement[]
+  fabricProcurementEvents FabricProcurementEvent[]
+  fabricLots         InventoryLot[]
 
   @@map("suppliers")
 }
@@ -960,6 +989,7 @@ model PurchaseRequest {
 
   lines  PurchaseRequestLine[]
   offers SupplierQuoteOffer[]
+  fabricProcurements FabricProcurement[]
 
   @@index([preferredSupplierId])
   @@map("purchase_requests")
@@ -992,8 +1022,14 @@ model PurchaseRequestLine {
   description       String
   quantity          Decimal         @db.Decimal(18, 3)
   unit              String          @default("pcs")
+  salesOrderId      String?
+  salesOrderLineId  String?
+  fabricProcurementId String?
+  fabricProcurement FabricProcurement? @relation(fields: [fabricProcurementId], references: [id], onDelete: SetNull)
 
   @@index([purchaseRequestId])
+  @@index([salesOrderId])
+  @@index([fabricProcurementId])
   @@map("purchase_request_lines")
 }
 
@@ -1026,6 +1062,8 @@ model PurchaseOrder {
   goodsReceipts    GoodsReceipt[]
   purchaseRequest  PurchaseRequest?
   supplierInvoices SupplierInvoice[]
+  fabricLots       InventoryLot[]
+  fabricProcurements FabricProcurement[]
 
   @@index([supplierId])
   @@index([status])
@@ -1044,8 +1082,14 @@ model PurchaseOrderLine {
   unitPrice       Decimal       @db.Decimal(18, 3)
   taxRate         Decimal       @default(0) @db.Decimal(5, 4)
   lineTotal       Decimal       @db.Decimal(18, 3)
+  salesOrderId    String?
+  salesOrderLineId String?
+  fabricProcurementId String?
+  fabricProcurement   FabricProcurement? @relation(fields: [fabricProcurementId], references: [id], onDelete: SetNull)
 
   @@index([purchaseOrderId])
+  @@index([salesOrderId])
+  @@index([fabricProcurementId])
   @@map("purchase_order_lines")
 }
 
@@ -1331,18 +1375,30 @@ model InventoryLot {
   status            InventoryLotStatus      @default(AVAILABLE)
   allocationMode    InventoryAllocationMode @default(GENERAL_STOCK)
   sourceKey         String?                 @unique
+  fabricProcurementId String?
+  fabricProcurement FabricProcurement?      @relation(fields: [fabricProcurementId], references: [id], onDelete: SetNull)
+  supplierId        String?
+  supplier          Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  purchaseOrderId   String?
+  purchaseOrder     PurchaseOrder?          @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  goodsReceiptId    String?
+  unitCost          Decimal?                @db.Decimal(18, 3)
+  remainingQty      Decimal?                @db.Decimal(18, 3)
+  photoDocumentId   String?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
   wipPiece WipPiece?
   wipHandoffs WipHandoff[]
   deliveryLoadPieces DeliveryLoadPiece[]
+  materialUsages ProductionTaskMaterialUsage[]
 
   @@index([inventoryItemId])
   @@index([warehouseId])
   @@index([productionOrderId])
   @@index([salesOrderId])
   @@index([status])
+  @@index([fabricProcurementId])
   @@map("inventory_lots")
 }
 
@@ -1583,6 +1639,8 @@ model RequestItem {
   fabricType  String?
   fabricCode  String?
   fabricColor String?
+  /// Multi-fabric dealer selection: [{ key, type, code, color, role, photoDocumentId, quantity, unit, notes, alternate }]
+  fabrics     Json?
   foamDensity String?
   finish      String?
   accessories String?
@@ -1665,6 +1723,8 @@ model QuotationLine {
   material      String?
   fabric        String?
   color         String?
+  /// Multi-fabric snapshot copied from RFQ. Singular fabric/color remain for back-compat.
+  fabrics       Json?
   unitPrice     Decimal    @db.Decimal(18, 3)
   discountType  DiscountType @default(NONE)
   discountValue Decimal    @default(0) @db.Decimal(18, 3)
@@ -1673,6 +1733,8 @@ model QuotationLine {
   taxAmount     Decimal    @db.Decimal(18, 3)
   lineTotal     Decimal    @db.Decimal(18, 3)
   manufacturingComplexity ManufacturingComplexity?
+  /// Named measurements copied from the RFQ so MODIFIED spec survives accept.
+  customMeasurements Json?
   sortOrder     Int        @default(0)
 
   @@index([quotationId])
@@ -1740,6 +1802,7 @@ model SalesOrder {
   documents        Document[]
   inventoryLots    InventoryLot[]
   productionSetup  SalesOrderProductionSetup?
+  fabricProcurements FabricProcurement[]
 
   @@index([customerId])
   @@index([status])
@@ -1774,6 +1837,7 @@ model SalesOrderLine {
   productionOrders ProductionOrder[]
   inventoryLots    InventoryLot[]
   productionSetup  SalesOrderLineSetup?
+  fabricProcurements FabricProcurement[]
 
   @@index([salesOrderId])
   @@map("sales_order_lines")
@@ -1841,19 +1905,84 @@ model SalesOrderLineMaterialRequirement {
   displayName     String?
   category        InventoryCategory?
   unit            String                            @default("pcs")
-  expectedQty     Decimal                           @db.Decimal(18, 3)
+  expectedQty     Decimal?                          @db.Decimal(18, 3)
+  qtyIsEstimate   Boolean                           @default(false)
   source          SalesOrderMaterialRequirementSource @default(CATALOG)
   needsReview     Boolean                           @default(false)
   notes           String?
   /// Dealer fabric intent (preserved separately from selected InventoryItem)
   requestedFabricLabel String?
+  stageCode       String?
+  workflowNodeId  String?
+  fabricRole      String?
+  fabricSelectionKey String?
   sortOrder       Int                               @default(0)
   createdAt       DateTime                          @default(now())
   updatedAt       DateTime                          @updatedAt
 
+  fabricProcurement FabricProcurement?
+
   @@index([lineSetupId])
   @@index([inventoryItemId])
   @@map("sales_order_line_material_requirements")
+}
+
+/// Supplier conversation for one order-linked fabric requirement. Status of
+/// physical arrival/issue is derived from lots and inventory transactions.
+model FabricProcurement {
+  id                      String                  @id @default(uuid())
+  requirementId           String                  @unique
+  requirement             SalesOrderLineMaterialRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  salesOrderId            String
+  salesOrder              SalesOrder              @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrderLineId        String
+  salesOrderLine          SalesOrderLine          @relation(fields: [salesOrderLineId], references: [id], onDelete: Cascade)
+  supplierId              String?
+  supplier                Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  state                   FabricProcurementState  @default(NEEDS_ORDERING)
+  orderedQty              Decimal?                @db.Decimal(18, 3)
+  unit                    String                  @default("m")
+  expectedAvailableAt     DateTime?
+  waitingSince            DateTime?
+  purchaseRequestId       String?
+  purchaseRequest         PurchaseRequest?        @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull)
+  purchaseOrderId         String?
+  purchaseOrder           PurchaseOrder?          @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  whatsappSentAt          DateTime?
+  whatsappLastBody        String?
+  whatsappLastTo          String?
+  fabricHoldOverriddenAt  DateTime?
+  notes                   String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  events FabricProcurementEvent[]
+  lots   InventoryLot[]
+  purchaseRequestLines PurchaseRequestLine[]
+  purchaseOrderLines   PurchaseOrderLine[]
+
+  @@index([salesOrderId])
+  @@index([salesOrderLineId])
+  @@index([supplierId])
+  @@index([state])
+  @@map("fabric_procurements")
+}
+
+model FabricProcurementEvent {
+  id             String                     @id @default(uuid())
+  procurementId  String
+  procurement    FabricProcurement          @relation(fields: [procurementId], references: [id], onDelete: Cascade)
+  kind           FabricProcurementEventKind
+  supplierId     String?
+  supplier       Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  userId         String?
+  note           String?
+  payload        Json?
+  createdAt      DateTime                   @default(now())
+
+  @@index([procurementId])
+  @@index([createdAt])
+  @@map("fabric_procurement_events")
 }
 
 model Contract {
@@ -2097,6 +2226,8 @@ model ProductionTaskMaterialUsage {
   /// costedQty × unitCost at finalize; null when valuation unavailable.
   extendedCost           Decimal?             @db.Decimal(18, 3)
   valuedAt               DateTime?
+  inventoryLotId         String?
+  inventoryLot           InventoryLot?        @relation(fields: [inventoryLotId], references: [id], onDelete: SetNull)
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
 

@@ -24,7 +24,7 @@ The first system preset is **Warehouse Management** (`WAREHOUSE_MANAGEMENT`): in
 | Admin Web | http://localhost:3000 | Admin / staff |
 | Customer Portal | http://localhost:3001 | Customers (dealers) |
 | Employee Portal | http://localhost:3002 | Workers |
-| Mobile (Expo SDK 54) | `pnpm mobile:start` → Metro `:8081` | Admin, staff, workers, dealers |
+| Mobile (Expo SDK 54) | Physical iPhone: `pnpm mobile:dev-client` → **Maher Al-Aghbar Furniture** | Admin, staff, workers, dealers |
 | API + Swagger | http://localhost:4000/api/docs | Integrations |
 | Worker | background | PDF, AI/OCR, notifications |
 
@@ -46,7 +46,7 @@ The phone talks **directly to the Nest API** (`:4000`), not to Next.js.
 - pnpm 9+ (`corepack enable && corepack prepare pnpm@9.15.9 --activate`)
 - PostgreSQL 16+ (Homebrew `postgresql@18` or Docker)
 - Redis (Homebrew or Docker)
-- Mobile: [Expo Go](https://expo.dev/go) **SDK 54** on a phone or simulator (or an EAS dev client)
+- Mobile: the **Maher Al-Aghbar Furniture** development app on a physical iPhone (already installed). Do **not** use App Store Expo Go 57. Details: [docs/mobile-iphone-dev-build.md](docs/mobile-iphone-dev-build.md).
 
 ## First-time setup
 
@@ -131,74 +131,71 @@ After a big `git pull`, re-run `pnpm install` then `pnpm prepare:launch` before 
 
 ---
 
-## Start the mobile app
+## Start the mobile app (physical iPhone)
 
-The API **must** be running on `:4000` (watch `pnpm --filter @maher/api dev` or the launch stack).
+This is the normal way to run mobile. The Maher development app is already on the iPhone (`Maher Al-Aghbar Furniture`). Do **not** open Expo Go. Do **not** boot the iOS Simulator.
 
-```bash
-pnpm mobile:start          # Expo Metro on :8081 (clears cache: expo start -c)
-```
+App Store Expo Go is SDK 57 and cannot load this SDK 54 project.
 
-Then:
+### Every time you want the app later
 
-1. Install **Expo Go SDK 54** on the phone or simulator (store listing: “Expo Go”).
-2. Scan the QR from the Metro terminal, or press `i` (iOS simulator) / `a` (Android emulator) in that terminal.
-3. Sign in with a launch username (`admin`, `nile`, …) and password `123`.
+Phone and Mac on the **same Wi‑Fi** (not guest / client-isolation). Unlock the phone.
 
-Shortcuts:
+Two terminals from the **repo root**:
 
 ```bash
-pnpm mobile:ios            # open iOS simulator
-pnpm mobile:android        # open Android emulator
-pnpm dev:mobile            # alias of mobile:start
+pnpm dev:api                 # Nest API on :4000 (must listen; Postgres + Redis already up)
+pnpm mobile:dev-client       # Metro for the Maher iPhone app on :8081
 ```
 
-### Simulator vs physical phone
+Then on the iPhone tap **Maher Al-Aghbar Furniture**. If it asks for a server, pick `exp://<your-mac-lan-ip>:8081`.
 
-- **iOS Simulator:** `EXPO_PUBLIC_API_BASE_URL=http://localhost:4000` in `apps/mobile/.env` is enough.
-- **Physical device (Expo Go):** phone and Mac on the **same Wi‑Fi**. Leave the env as localhost — the app rewrites it to the Expo LAN host (the IP Metro prints, e.g. `exp://192.168.1.16:8081` → API `http://192.168.1.16:4000`). Dev login shows that URL under the form.
-- If auto-detect fails, pin the Mac LAN IP in `apps/mobile/.env`:
-  `EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:4000`
-  then restart Metro (`pnpm mobile:start`).
-- Isolated guest Wi‑Fi / client isolation: phone cannot see the Mac. Use the same LAN, or `npx expo start --tunnel` from `apps/mobile` (slower).
+Login: `admin` / `123` (other demo users also use password `123`).
 
-Reload JS without restarting Metro: press `r` in the Metro terminal.
+JS/TS/TSX saves Fast Refresh. Press `r` in the Metro terminal to reload. Leave `apps/mobile/.env` as `EXPO_PUBLIC_API_BASE_URL=http://localhost:4000` — the app rewrites that to the Mac LAN IP automatically.
+
+You do **not** need USB after the first install, and you do **not** run `pnpm mobile:ios:device` for ordinary UI work.
+
+### First install / native rebuild only
+
+Already done on this Mac + iPhone. Run again only if you delete the app, change Expo plugins / native modules / `app.config.ts`, or a new phone:
+
+```bash
+pnpm mobile:ios:device       # Xcode install onto the plugged-in iPhone
+```
+
+First launch on a new phone: **Settings → General → VPN & Device Management** → Apple Development / Saad Aghbar → **Trust**. If iOS blocks launch: **Settings → Privacy & Security → Developer Mode** → On.
+
+Full signing notes: [docs/mobile-iphone-dev-build.md](docs/mobile-iphone-dev-build.md).
 
 ### “Network error. Check API URL and connection.”
 
-You need **two** processes: Metro (mobile) **and** the API. Expo alone is not enough.
+You need **both** `pnpm dev:api` and `pnpm mobile:dev-client`. Metro alone is not enough.
 
-1. **Check the API is up**
-   ```bash
-   curl -sS http://localhost:4000/api/v1/health
-   ```
-   Expect `{"status":"ok",...}`. If it fails, start the API (Postgres + Redis must already be running):
-   ```bash
-   pnpm dev:api
-   ```
+1. API health: `curl -sS http://localhost:4000/api/v1/health` — expect `{"status":"ok",...}`.
+2. Same Wi‑Fi, not guest/isolated. Confirm Mac IP: `ipconfig getifaddr en0`.
+3. You opened **Maher Al-Aghbar Furniture**, not Expo Go.
+4. If auto-detect fails, pin the Mac IP in `apps/mobile/.env` (`EXPO_PUBLIC_API_BASE_URL=http://YOUR_MAC_IP:4000`) and restart `pnpm mobile:dev-client`.
+5. After a Wi‑Fi / IP change, restart `pnpm mobile:dev-client`.
 
-2. **Keep Expo running** (separate terminal)
-   ```bash
-   pnpm mobile:start
-   ```
+### iOS Simulator (optional, Expo Go 54 only)
 
-3. **Phone / Expo Go** — phone and Mac on the same Wi‑Fi. `localhost` in `apps/mobile/.env` is fine for the simulator; on a real phone the app overrides it to the Expo LAN host (e.g. `http://192.168.1.24:4000`).
+Do not use this for the physical iPhone. Simulator Expo Go 54:
 
-4. **If auto-detect fails** — pin your Mac IP in `apps/mobile/.env`, then restart Expo:
-   ```bash
-   EXPO_PUBLIC_API_BASE_URL=http://YOUR_MAC_IP:4000
-   ```
-   Find the IP: `ipconfig getifaddr en0`
+```bash
+pnpm mobile:start            # Metro without --dev-client
+# press i in that terminal
+```
 
-5. **Wi‑Fi changed / new IP** — restart Expo (`pnpm mobile:start`) so it picks up the new host.
-
-Also check: macOS firewall blocking port 4000, guest/isolated Wi‑Fi, or a stale Metro session after the Mac IP changed.
+`pnpm mobile:ios` opens a simulator. `pnpm mobile:android` opens an Android emulator. `pnpm dev:mobile` is an alias of `mobile:start`.
 
 ---
 
 ## When Expo / ABI breaks
 
-This project is **Expo SDK 54** + **React Native 0.81** + **New Architecture**. Expo Go on the device must be the **SDK 54** build. A mismatch shows up as a red screen, a blank app, “incompatible”, or an **ABI** error (Hermes / native binary does not match the JS bundle).
+This project is **Expo SDK 54** + **React Native 0.81** + **New Architecture**. On the **physical iPhone** use **Maher Al-Aghbar Furniture** + `pnpm mobile:dev-client` — App Store Expo Go 57 will not work. Simulator-only Expo Go must be SDK 54.
+
+A mismatch shows up as a red screen, a blank app, “incompatible”, or an **ABI** error (Hermes / native binary does not match the JS bundle).
 
 ### 1. Expo Go version (most common)
 
@@ -331,7 +328,9 @@ Legacy email addresses (e.g. `admin@maher-aghbar.jo`) still exist on user record
 
 | Command | Purpose |
 |---------|---------|
-| `pnpm mobile:start` | Expo Metro (`expo start -c`) on `:8081` |
+| `pnpm mobile:dev-client` | Daily Metro for the **Maher iPhone app** (`:8081`) |
+| `pnpm mobile:ios:device` | Reinstall that app onto a plugged-in iPhone (native changes only) |
+| `pnpm mobile:start` | Metro for **simulator Expo Go 54** only |
 | `pnpm mobile:ios` / `pnpm mobile:android` | Open simulator / emulator |
 | `pnpm mobile:doctor` | Expo Doctor (SDK / native ABI alignment) |
 | `npx expo install --fix` | Run **inside `apps/mobile`** — pin native modules to SDK 54 |

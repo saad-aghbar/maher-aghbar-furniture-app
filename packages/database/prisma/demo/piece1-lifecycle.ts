@@ -102,7 +102,7 @@ export async function seedPiece1LifecycleExamples(
             quantity: 2,
             fabricType: 'Velvet',
             fabricColor: 'Navy',
-            manufacturingComplexity: ManufacturingComplexity.MODIFIED,
+            manufacturingComplexity: ManufacturingComplexity.STANDARD,
             sortOrder: 0,
           },
         ],

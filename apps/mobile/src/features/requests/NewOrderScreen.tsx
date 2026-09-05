@@ -61,6 +61,12 @@ import { NewOrderPriorityBar } from './components/NewOrderPriorityBar';
 import { NewOrderStageRail } from './components/NewOrderStageRail';
 import { ProductQuickPickSheet } from './components/ProductQuickPickSheet';
 import { ReviewStep } from './components/ReviewStep';
+import {
+  dealerFabricsPayload,
+  emptyDealerFabricRow,
+  FabricSelectionsEditor,
+  type DealerFabricRow,
+} from './FabricSelectionsEditor';
 import { SavedAddressPickerSheet } from './components/SavedAddressPickerSheet';
 import { SaveAddressSheet } from './components/SaveAddressSheet';
 import { UploadsStep } from './components/UploadsStep';
@@ -135,6 +141,7 @@ export function NewOrderScreen() {
 
   const [fabric, setFabric] = useState('');
   const [fabricDescription, setFabricDescription] = useState('');
+  const [fabrics, setFabrics] = useState<DealerFabricRow[]>([emptyDealerFabricRow()]);
   const [dimensions, setDimensions] = useState<NewOrderDimensionFields>(emptyDimensionFields);
   const [orderNotes, setOrderNotes] = useState('');
 
@@ -229,6 +236,11 @@ export function NewOrderScreen() {
         setPriority(local.priority);
         setFabric(local.fabric);
         setFabricDescription(local.fabricDescription);
+        setFabrics(
+          local.fabric?.trim()
+            ? [{ ...emptyDealerFabricRow(), type: local.fabric, notes: local.fabricDescription }]
+            : [emptyDealerFabricRow()],
+        );
         setDimensions({
           width: local.dimWidth || '',
           height: local.dimHeight || '',
@@ -253,6 +265,11 @@ export function NewOrderScreen() {
         setPriority(local.priority);
         setFabric(local.fabric);
         setFabricDescription(local.fabricDescription);
+        setFabrics(
+          local.fabric?.trim()
+            ? [{ ...emptyDealerFabricRow(), type: local.fabric, notes: local.fabricDescription }]
+            : [emptyDealerFabricRow()],
+        );
         setDimensions({
           width: local.dimWidth || '',
           height: local.dimHeight || '',
@@ -330,8 +347,8 @@ export function NewOrderScreen() {
       quantity,
       externalOrderNumber,
       priority,
-      fabric,
-      fabricDescription,
+      fabric: fabrics[0]?.type ?? fabric,
+      fabricDescription: fabrics[0]?.notes ?? fabricDescription,
       dimensionsNotes,
       dimWidth: dimensions.width,
       dimHeight: dimensions.height,
@@ -364,6 +381,7 @@ export function NewOrderScreen() {
     priority,
     fabric,
     fabricDescription,
+    fabrics,
     dimensionsNotes,
     dimensions,
     orderNotes,
@@ -599,7 +617,14 @@ export function NewOrderScreen() {
       if (preview.notes?.trim()) {
         setOrderNotes((v) => v.trim() || clampNotes(preview.notes!.trim(), NOTES_MAX));
       }
-      if (preview.fabric?.trim()) setFabric((v) => v.trim() || preview.fabric!.trim());
+      if (preview.fabric?.trim()) {
+        setFabric((v) => v.trim() || preview.fabric!.trim());
+        setFabrics((rows) => {
+          const next = rows.length ? [...rows] : [emptyDealerFabricRow()];
+          if (!next[0]?.type.trim()) next[0] = { ...emptyDealerFabricRow(), ...next[0], type: preview.fabric!.trim() };
+          return next;
+        });
+      }
       if (preview.fabricDescription?.trim()) {
         setFabricDescription((v) =>
           v.trim() || clampNotes(preview.fabricDescription!.trim(), FABRIC_DESC_MAX),
@@ -764,7 +789,11 @@ export function NewOrderScreen() {
           productName: resolvedName || t('mobile.newOrder.untitledModel'),
           quantity: qty,
           notes,
-          fabric: fabric.trim() || undefined,
+          fabric: (dealerFabricsPayload(fabrics)[0]?.type ?? fabric.trim()) || undefined,
+          color: dealerFabricsPayload(fabrics)[0]?.color || undefined,
+          fabrics: dealerFabricsPayload(fabrics).length
+            ? dealerFabricsPayload(fabrics)
+            : undefined,
           description: fabricDescription.trim() || undefined,
           width: parseDimNumber(dimensions.width),
           height: parseDimNumber(dimensions.height),
@@ -885,6 +914,8 @@ export function NewOrderScreen() {
     setExternalOrderNumber('');
     setPriority('NORMAL');
     setFabric('');
+    setFabricDescription('');
+    setFabrics([emptyDealerFabricRow()]);
     setFabricDescription('');
     setDimensions(emptyDimensionFields());
     appliedDimsProduct.current = '';
@@ -1218,31 +1249,14 @@ export function NewOrderScreen() {
                       <AppText variant="label" weight="semibold">
                         {t('mobile.newOrder.fabricSection')}
                       </AppText>
-                      <TextField
-                        label={t('mobile.newOrder.fabricName')}
-                        value={fabric}
-                        onChangeText={setFabric}
-                        placeholder={t('mobile.newOrder.fabricNamePlaceholder')}
+                      <FabricSelectionsEditor
+                        value={fabrics}
+                        onChange={(next) => {
+                          setFabrics(next);
+                          setFabric(next[0]?.type ?? '');
+                          setFabricDescription(next[0]?.notes ?? fabricDescription);
+                        }}
                       />
-                      <View style={{ gap: theme.spacing.xs }}>
-                        <TextField
-                          label={t('mobile.newOrder.fabricDescription')}
-                          value={fabricDescription}
-                          onChangeText={(v) =>
-                            setFabricDescription(clampNotes(v, FABRIC_DESC_MAX))
-                          }
-                          placeholder={t('mobile.newOrder.fabricDescriptionPlaceholder')}
-                          multiline
-                          style={{ minHeight: 140, textAlignVertical: 'top' }}
-                        />
-                        <AppText
-                          variant="caption"
-                          color="muted"
-                          style={{ textAlign: isRTL ? 'left' : 'right' }}
-                        >
-                          {fabricDescription.length}/{FABRIC_DESC_MAX}
-                        </AppText>
-                      </View>
                     </View>
 
                     <View
@@ -1414,7 +1428,10 @@ export function NewOrderScreen() {
                         customerPhone: endCustomerPhone.trim() || user?.phone || '—',
                         address: deliveryAddress,
                         deliveryNotes,
-                        fabric,
+                        fabric:
+                          dealerFabricsPayload(fabrics)
+                            .map((f) => [f.type, f.color, f.role].filter(Boolean).join(' · '))
+                            .join('; ') || fabric,
                         fabricDescription,
                         dimensionsNotes,
                         orderNotes,
@@ -1464,7 +1481,10 @@ export function NewOrderScreen() {
                       customerPhone: endCustomerPhone.trim() || user?.phone || '—',
                       address: deliveryAddress,
                       deliveryNotes,
-                      fabric,
+                      fabric:
+                        dealerFabricsPayload(fabrics)
+                          .map((f) => [f.type, f.color, f.role].filter(Boolean).join(' · '))
+                          .join('; ') || fabric,
                       fabricDescription,
                       dimensionsNotes,
                       orderNotes,

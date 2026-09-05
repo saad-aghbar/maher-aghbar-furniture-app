@@ -154,6 +154,49 @@ export function requestStatusesForGroup(
   }
 }
 
+export type RequestInboxChip = 'waiting' | 'needs_info' | 'quoted' | 'drafts';
+
+export type RequestInboxCounts = {
+  all: number;
+  waiting: number;
+  needs_info: number;
+  quoted: number;
+  drafts: number;
+};
+
+export function emptyRequestInboxCounts(): RequestInboxCounts {
+  return {
+    all: 0,
+    waiting: 0,
+    needs_info: 0,
+    quoted: 0,
+    drafts: 0,
+  };
+}
+
+/** Maps RFQ status onto the Factory Review inbox chips. Closed/cancelled → null. */
+export function classifyRequestInboxChip(
+  status: string | null | undefined,
+): RequestInboxChip | null {
+  const s = String(status ?? '').toUpperCase();
+  if (s === 'SUBMITTED' || s === 'UNDER_REVIEW') return 'waiting';
+  if (s === 'NEEDS_INFORMATION') return 'needs_info';
+  if (s === 'READY_FOR_QUOTATION' || s === 'QUOTED') return 'quoted';
+  if (s === 'DRAFT') return 'drafts';
+  return null;
+}
+
+export function tallyRequestInboxCounts(statuses: string[]): RequestInboxCounts {
+  const counts = emptyRequestInboxCounts();
+  for (const status of statuses) {
+    const chip = classifyRequestInboxChip(status);
+    if (!chip) continue;
+    counts[chip] += 1;
+    counts.all += 1;
+  }
+  return counts;
+}
+
 export type ReviewHistoryEntry = {
   at: string;
   by?: string | null;

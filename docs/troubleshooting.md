@@ -30,6 +30,10 @@ Browsers treat `localhost:3000` and `localhost:4000` as same-site for lax cookie
 
 Five failed logins lock the account for 15 minutes. Unlock by waiting or clearing `lockedUntil` in the database.
 
+## Physical iPhone: Expo Go incompatible / cannot find Metro
+
+App Store Expo Go is SDK 57; this app is SDK 54. Use the Maher development build, not Expo Go. See [mobile-iphone-dev-build.md](mobile-iphone-dev-build.md).
+
 ## AI intake never creates confirmed orders
 
 By design. Approve only creates a **draft RFQ** after human review.

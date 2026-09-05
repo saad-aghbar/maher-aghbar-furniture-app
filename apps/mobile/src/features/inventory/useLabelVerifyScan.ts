@@ -4,7 +4,10 @@ import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import type { InventoryItem } from './api';
 import { runInventoryLabelVerify } from './runInventoryLabelVerify';
-import type { InventoryScanMatchKind } from './components/InventoryScanMatchResult';
+import type {
+  InventoryScanMatchKind,
+  ScannedFabricBundle,
+} from './components/InventoryScanMatchResult';
 import { qrLog } from './qrSessionLog';
 
 /**
@@ -17,6 +20,7 @@ export function useLabelVerifyScan(currentId: string | undefined) {
   const { openScanner } = useCodeScanner();
   const [kind, setKind] = useState<InventoryScanMatchKind | null>(null);
   const [scanned, setScanned] = useState<InventoryItem | null>(null);
+  const [fabric, setFabric] = useState<ScannedFabricBundle | null>(null);
   const [busy, setBusy] = useState(false);
   const currentIdRef = useRef(currentId);
   const busyRef = useRef(false);
@@ -25,6 +29,7 @@ export function useLabelVerifyScan(currentId: string | undefined) {
   const clear = useCallback(() => {
     setKind(null);
     setScanned(null);
+    setFabric(null);
   }, []);
 
   const resetAll = useCallback(() => {
@@ -51,6 +56,7 @@ export function useLabelVerifyScan(currentId: string | undefined) {
       if (!outcome) return;
       setKind(outcome.kind);
       setScanned(outcome.scanned);
+      setFabric(outcome.fabric ?? null);
       qrLog(0, `VERIFY inline result state committed kind=${outcome.kind}`);
       if (outcome.kind === 'MATCH') void haptics.confirmLight();
       else void haptics.error();
@@ -63,6 +69,7 @@ export function useLabelVerifyScan(currentId: string | undefined) {
   return {
     verifyKind: kind,
     verifyScanned: scanned,
+    verifyFabric: fabric,
     verifyBusy: busy,
     clearLabelVerify: clear,
     resetLabelVerify: resetAll,

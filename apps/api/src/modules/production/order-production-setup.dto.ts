@@ -119,3 +119,10 @@ export class PutLineMaterialsDto {
   @Type(() => MaterialRequirementInputDto)
   materials!: MaterialRequirementInputDto[];
 }
+
+export class SeedFromCatalogDto {
+  /** Required when the catalog workflow differs from the current order workflow. */
+  @IsOptional()
+  @IsBoolean()
+  confirmWorkflowChange?: boolean;
+}

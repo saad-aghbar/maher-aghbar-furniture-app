@@ -12,6 +12,8 @@ type Props = {
   onSecondary?: () => void;
   loading?: boolean;
   disabled?: boolean;
+  /** Keep the secondary (cancel) action tappable while the primary is busy. */
+  cancelWhileLoading?: boolean;
 };
 
 /**
@@ -24,11 +26,13 @@ export function InventorySheetFooter({
   onSecondary,
   loading,
   disabled,
+  cancelWhileLoading,
 }: Props) {
   const { t, locale } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const busy = Boolean(loading);
   const blocked = Boolean(disabled || loading);
+  const cancelBlocked = Boolean(busy && !cancelWhileLoading);
   const cancelLabel = secondaryLabel ?? t('mobile.inventory.cancel');
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dark = colorScheme === 'dark';
@@ -101,7 +105,7 @@ export function InventorySheetFooter({
           variant="button"
           accessibilityRole="button"
           accessibilityLabel={cancelLabel}
-          disabled={busy}
+          disabled={cancelBlocked}
           onPress={() => {
             void haptics.selection();
             onSecondary?.();
@@ -115,7 +119,7 @@ export function InventorySheetFooter({
             backgroundColor: colors.surface,
             borderWidth: 1,
             borderColor: colors.borderStrong,
-            opacity: busy ? 0.6 : 1,
+            opacity: cancelBlocked ? 0.6 : 1,
             ...orderBoardShadow(colorScheme),
           }}
         >

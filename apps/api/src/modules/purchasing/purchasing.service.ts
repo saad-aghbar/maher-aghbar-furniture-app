@@ -396,6 +396,9 @@ export class PurchasingService {
         taxRate: roundMoney(0.16),
         lineTotal: roundMoney(lineTotal * 1.16),
         inventoryItemId: l.inventoryItemId ?? undefined,
+        salesOrderId: l.salesOrderId ?? undefined,
+        salesOrderLineId: l.salesOrderLineId ?? undefined,
+        fabricProcurementId: l.fabricProcurementId ?? undefined,
       };
     });
     const subtotal = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice), 0);

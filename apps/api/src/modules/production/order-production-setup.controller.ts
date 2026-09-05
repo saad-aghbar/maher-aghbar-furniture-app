@@ -6,6 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import {
   PatchLineSetupDto,
   PutLineMaterialsDto,
+  SeedFromCatalogDto,
 } from './order-production-setup.dto';
 import { OrderProductionSetupService } from './order-production-setup.service';
 
@@ -51,14 +52,27 @@ export class OrderProductionSetupController {
     return this.setups.putMaterials(salesOrderId, lineId, dto, user);
   }
 
+  @RequirePermissions('production.setup.view')
+  @Get('lines/:lineId/seed-from-catalog/preview')
+  previewSeedFromCatalog(
+    @Param('salesOrderId') salesOrderId: string,
+    @Param('lineId') lineId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.setups.previewSeedFromCatalog(salesOrderId, lineId, user);
+  }
+
   @RequirePermissions('production.setup.edit')
   @Post('lines/:lineId/seed-from-catalog')
   seedFromCatalog(
     @Param('salesOrderId') salesOrderId: string,
     @Param('lineId') lineId: string,
     @CurrentUser() user: AuthUser,
+    @Body() dto?: SeedFromCatalogDto,
   ) {
-    return this.setups.seedFromCatalog(salesOrderId, lineId, user);
+    return this.setups.seedFromCatalog(salesOrderId, lineId, user, {
+      confirmWorkflowChange: dto?.confirmWorkflowChange === true,
+    });
   }
 
   @RequirePermissions('production.setup.edit')

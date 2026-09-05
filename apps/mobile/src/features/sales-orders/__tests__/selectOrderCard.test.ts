@@ -61,6 +61,24 @@ describe('selectOrderCard', () => {
     expect(JSON.stringify(card)).not.toContain('profit');
   });
 
+  it('maps canonical manufacturingComplexity onto the card kind label', () => {
+    const standard = toAdminOrderCard({
+      ...adminOrdersFixture[0]!,
+      manufacturingComplexity: 'STANDARD',
+    });
+    const mixed = toAdminOrderCard({
+      ...adminOrdersFixture[0]!,
+      manufacturingComplexity: 'MODIFIED',
+    });
+    const custom = toAdminOrderCard({
+      ...adminOrdersFixture[0]!,
+      manufacturingComplexity: 'CUSTOM',
+    });
+    expect(standard.manufacturingKind).toBe('standard');
+    expect(mixed.manufacturingKind).toBe('modified');
+    expect(custom.manufacturingKind).toBe('custom');
+  });
+
   it('covers stage variety for composition QA', () => {
     const statuses = new Set(adminOrdersFixture.map((o) => o.status));
     expect(statuses.has('IN_PRODUCTION')).toBe(true);

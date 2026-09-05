@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { Prisma, SalesOrderStatus } from '@maher/database';
-import type { AuthUser } from '@maher/types';
+import { parseManufacturingComplexity, rollupOrderType, type AuthUser } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { paginatedMeta } from '../../common/dto/pagination.dto';
@@ -36,9 +36,9 @@ import {
   emptyJourneyCounts,
   isExecutionStartedFromPos,
   isReleasedToFactoryFromPos,
-  tallyJourneyCounts,
   type AdminOrderJourneyBucket,
 } from './admin-order-journey';
+import { crossFilterOrderFacets } from './order-type-facets';
 import { buildJourneyLogisticsSummary } from './journey-logistics';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
@@ -165,19 +165,6 @@ function maxProgress(
 ): number | null {
   if (!productionOrders?.length) return null;
   return Math.max(...productionOrders.map((po) => Number(po.progressPercent ?? 0)));
-}
-
-/** Worst line complexity wins: CUSTOM > MODIFIED > STANDARD. */
-function resolveOrderManufacturingComplexity(
-  complexities: Array<string | null | undefined>,
-): 'STANDARD' | 'MODIFIED' | 'CUSTOM' {
-  let worst: 'STANDARD' | 'MODIFIED' | 'CUSTOM' = 'STANDARD';
-  for (const raw of complexities) {
-    const c = String(raw ?? 'STANDARD').toUpperCase();
-    if (c === 'CUSTOM') return 'CUSTOM';
-    if (c === 'MODIFIED') worst = 'MODIFIED';
-  }
-  return worst;
 }
 
 type PoWithStage = {
@@ -485,7 +472,7 @@ export class SalesOrdersService {
 
     /**
      * COUNT=DATASET: classify the full filtered SO set (lightweight), then paginate
-     * within the selected journey bucket. Counts never depend on loaded pages.
+     * within the selected journey bucket × order type. Counts never depend on loaded pages.
      */
     const journeyLight = !isDealer
       ? await this.prisma.salesOrder.findMany({
@@ -505,39 +492,37 @@ export class SalesOrdersService {
               orderBy: { createdAt: 'desc' },
               take: 1,
             },
+            lines: {
+              select: {
+                manufacturingComplexity: true,
+                productId: true,
+              },
+            },
           },
           orderBy,
         })
       : null;
 
-    const journeyCounts = journeyLight
-      ? tallyJourneyCounts(
-          journeyLight.map((row) => ({
-            status: row.status,
-            productionOrders: row.productionOrders,
-            deliveries: row.deliveries,
-          })),
-        )
-      : emptyJourneyCounts();
-
+    const orderType = !isDealer
+      ? parseManufacturingComplexity(query.orderType)
+      : null;
     const journeyBucket = !isDealer ? query.journeyBucket : undefined;
+
+    const facets = journeyLight
+      ? crossFilterOrderFacets(journeyLight, {
+          journeyBucket: journeyBucket ?? null,
+          orderType,
+        })
+      : null;
+
+    const journeyCounts = facets?.journeyCounts ?? emptyJourneyCounts();
+    const orderTypeCounts = facets?.orderTypeCounts;
+
     let scopedIds: string[] | null = null;
     let totalItems: number;
 
-    if (journeyLight && journeyBucket) {
-      scopedIds = journeyLight
-        .filter(
-          (row) =>
-            classifyAdminOrderJourneyBucket({
-              status: row.status,
-              productionOrders: row.productionOrders,
-              deliveries: row.deliveries,
-            }) === journeyBucket,
-        )
-        .map((row) => row.id);
-      totalItems = scopedIds.length;
-    } else if (journeyLight) {
-      scopedIds = journeyLight.map((row) => row.id);
+    if (facets) {
+      scopedIds = facets.scopedIds;
       totalItems = scopedIds.length;
     } else {
       totalItems = await this.prisma.salesOrder.count({ where: baseWhere });
@@ -872,8 +857,11 @@ export class SalesOrdersService {
             executionStarted,
             journeyBucket: journeyBucketResolved,
             journeyLogistics,
-            manufacturingComplexity: resolveOrderManufacturingComplexity(
-              row.lines.map((l) => l.manufacturingComplexity),
+            manufacturingComplexity: rollupOrderType(
+              row.lines.map((l) => ({
+                manufacturingComplexity: l.manufacturingComplexity,
+                productId: l.productId,
+              })),
             ),
             workerAssignmentRequired:
               productionSetupStatus === 'RELEASED' &&
@@ -906,7 +894,12 @@ export class SalesOrdersService {
       data: enriched,
       meta: {
         ...paginatedMeta(page, pageSize, totalItems),
-        ...(!isDealer ? { journeyCounts } : {}),
+        ...(!isDealer
+          ? {
+              journeyCounts,
+              ...(orderTypeCounts ? { orderTypeCounts } : {}),
+            }
+          : {}),
       },
     };
   }
@@ -1410,8 +1403,11 @@ export class SalesOrdersService {
         order.status === 'DRAFT' &&
         (!productionOrders || productionOrders.length === 0),
       productionSetupStatus: order.productionSetup?.status ?? null,
-      manufacturingComplexity: resolveOrderManufacturingComplexity(
-        (order.lines ?? []).map((l) => l.manufacturingComplexity),
+      manufacturingComplexity: rollupOrderType(
+        (order.lines ?? []).map((l) => ({
+          manufacturingComplexity: l.manufacturingComplexity,
+          productId: l.productId,
+        })),
       ),
       /** True when setup created POs but Release to factory has not locked the plan yet. */
       workerAssignmentRequired:

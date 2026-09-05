@@ -108,5 +108,14 @@
   "WAITING_RETURN": "Waiting for return",
   "RETURNED": "Returned",
   "INSPECTING": "Inspecting",
-  "RESOLVED": "Resolved"
+  "RESOLVED": "Resolved",
+  "NEEDS_ORDERING": "Needs ordering",
+  "AWAITING_SUPPLIER": "Awaiting supplier",
+  "SUPPLIER_CONFIRMED": "Supplier confirmed",
+  "PARTIALLY_AVAILABLE": "Partially available",
+  "UNAVAILABLE": "Unavailable",
+  "WAITING": "Waiting",
+  "READY_FOR_PICKUP": "Ready for pickup",
+  "ARRIVED": "Arrived",
+  "PARTIAL": "Partial"
 }

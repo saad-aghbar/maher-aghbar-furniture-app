@@ -498,4 +498,92 @@ describe('ProductionInventoryService', () => {
     expect(applyMovement).not.toHaveBeenCalled();
     expect(tx.inventoryLot.update).not.toHaveBeenCalled();
   });
+
+  it('task start checks only this stage frozen materials, not the whole BOM', async () => {
+    const tx = {
+      productionOrderWorkflowSnapshotNode: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'snap-carp',
+            isSkipped: false,
+            consumesRawMaterials: true,
+            consumesSemiFinished: false,
+          })
+          .mockResolvedValueOnce({
+            id: 'snap-carp',
+            materialInputs: [
+              {
+                inventoryItemId: 'inv-wood',
+                qtyPerUnit: 4,
+                required: true,
+                inventoryItem: { id: 'inv-wood', sku: 'WOOD-1', itemClass: 'RAW_MATERIAL' },
+              },
+            ],
+          }),
+      },
+      productionOrder: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'po-1',
+          quantity: 1,
+          product: { bomDefaults: { materials: [{ sku: 'FAB-VEL', qty: 24, category: 'FABRIC' }] } },
+        }),
+      },
+      inventoryBalance: {
+        findMany: jest.fn().mockResolvedValue([{ availableQty: 10 }]),
+      },
+    };
+    const { service: svc } = service(tx);
+    await expect(
+      svc.assertStageInventoryReady({
+        productionOrderId: 'po-1',
+        stageInstanceId: 'carp-1',
+        tx: tx as never,
+      }),
+    ).resolves.toBeUndefined();
+    expect(tx.inventoryBalance.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ inventoryItemId: 'inv-wood' }),
+      }),
+    );
+  });
+
+  it('task start on a raw-consuming stage with no frozen inputs does not require whole-order BOM stock', async () => {
+    const tx = {
+      productionOrderWorkflowSnapshotNode: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'snap-carp',
+            isSkipped: false,
+            consumesRawMaterials: true,
+            consumesSemiFinished: false,
+          })
+          .mockResolvedValueOnce({
+            id: 'snap-carp',
+            materialInputs: [],
+          }),
+      },
+      productionOrder: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'po-1',
+          quantity: 1,
+          product: { bomDefaults: { materials: [{ sku: 'FAB-VEL', qty: 24 }] } },
+        }),
+      },
+      productionOrderWorkflowSnapshotMaterialInput: {
+        count: jest.fn().mockResolvedValue(1),
+      },
+      inventoryBalance: { findMany: jest.fn() },
+    };
+    const { service: svc } = service(tx);
+    await expect(
+      svc.assertStageInventoryReady({
+        productionOrderId: 'po-1',
+        stageInstanceId: 'carp-1',
+        tx: tx as never,
+      }),
+    ).resolves.toBeUndefined();
+    expect(tx.inventoryBalance.findMany).not.toHaveBeenCalled();
+  });
 });

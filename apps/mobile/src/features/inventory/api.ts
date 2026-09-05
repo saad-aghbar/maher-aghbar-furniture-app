@@ -16,6 +16,7 @@ export type {
   UpdateInventoryItemInput,
   Warehouse,
   WarehouseType,
+  WarehouseLocation,
   WarehouseTransfer,
   WarehouseTransferLine,
   InventoryOverview,
@@ -23,6 +24,7 @@ export type {
   FinishedLot,
   WipKitCard,
   WipKitBoardSection,
+  FabricHoldingRow,
 } from '@/api/modules/inventory';
 export {
   INVENTORY_CATEGORY_FOR_CREATE,
@@ -53,8 +55,11 @@ export {
   listSemiFinishedLots,
   listWarehouseTransfers,
   listWarehouses,
+  listFabricHolding,
   openInventoryLabelPdf,
   openInventoryQrLabelPdf,
+  openFabricLotQrLabelPdf,
+  openRawMaterialsReportPdf,
   openWipKitQrLabelPdf,
   openWipPieceQrLabelPdf,
   postInventoryStockCount,

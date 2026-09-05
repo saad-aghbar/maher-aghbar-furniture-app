@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   FlatList,
   LayoutAnimation,
@@ -35,7 +35,6 @@ import { OrdersSearchBar } from './components/OrdersSearchBar';
 import {
   countActiveOrderFilters,
   defaultOrdersFilterDraft,
-  matchesKindFilter,
   OrdersFilterSheet,
   type OrdersFilterDealerOption,
   type OrdersFilterDraft,
@@ -49,10 +48,15 @@ import { OrdersSignatureHome } from './components/OrdersSignatureHome';
 import { OrdersWorkbenchHome } from './components/OrdersWorkbenchHome';
 import type { AdminLifecycleChipKey } from './components/AdminLifecycleChips';
 import type { AdminOrdersDeskMode } from './components/AdminOrdersDeskSwitch';
+import {
+  RFQ_SUBCHIP_STATUS_GROUP,
+  type RfqInboxSubchip,
+} from './components/OrdersRfqInboxChips';
+import type { OrderTypeFocus } from './components/OrderTypeLensBar';
 import { matchOrdersSearch } from './matchOrdersSearch';
 import { ORDERS_COMPOSITION } from './ordersComposition';
 import { consumeOrdersDeskChip } from './ordersDeskContext';
-import { flattenOrdersPages, useOrdersInfiniteQuery } from './query';
+import { flattenOrdersPages, flattenRequestsPages, useAdminRequestsInfiniteQuery, useOrdersInfiniteQuery } from './query';
 import {
   toAdminOrderCard,
   toDealerOrderCard,
@@ -60,6 +64,7 @@ import {
   type DealerOrderCardModel,
   type OrdersListVariant,
 } from './selectOrderCard';
+import { complexityBadgeKey } from './orderManufacturingKind';
 import { getOwnDeliveries } from '@/api/modules/scheduling';
 import {
   deliveryStatusFromCustomerStatus,
@@ -118,6 +123,9 @@ export function OrdersListScreen({
   /** Admin commercial desk lifecycle focus — server-scoped journeyBucket (COUNT=DATASET). */
   const [adminLifecycleFocus, setAdminLifecycleFocus] =
     useState<AdminLifecycleChipKey>('all');
+  const [adminOrderType, setAdminOrderType] = useState<OrderTypeFocus>('all');
+  const [adminRequestType, setAdminRequestType] = useState<OrderTypeFocus>('all');
+  const [rfqSubchip, setRfqSubchip] = useState<RfqInboxSubchip>('all');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [dealerSheetOpen, setDealerSheetOpen] = useState(false);
   const [draft, setDraft] = useState<OrdersFilterDraft>(defaultDraft);
@@ -184,7 +192,7 @@ export function OrdersListScreen({
 
   /**
    * Admin: server search via `q` (debounced). Sort via API.
-   * Journey chip is server-scoped (COUNT=DATASET) — never client-tally loaded pages.
+   * Journey chip and type lens are server-scoped (COUNT=DATASET).
    * Only attach `q` on the Sales Orders desk — Customer Requests use their own query.
    */
   const filters = useMemo(
@@ -206,10 +214,21 @@ export function OrdersListScreen({
               | 'delivered',
           }
         : {}),
+      ...(variant === 'admin' &&
+      adminDeskMode === 'orders' &&
+      adminOrderType !== 'all'
+        ? {
+            orderType: adminOrderType.toUpperCase() as
+              | 'STANDARD'
+              | 'MODIFIED'
+              | 'CUSTOM',
+          }
+        : {}),
     }),
     [
       adminDeskMode,
       adminLifecycleFocus,
+      adminOrderType,
       applied.sortBy,
       applied.sortDir,
       q,
@@ -218,6 +237,8 @@ export function OrdersListScreen({
   );
 
   const query = useOrdersInfiniteQuery(filters, allowed && !forceState);
+  const seenOrdersBoard = useRef(false);
+  if (query.data) seenOrdersBoard.current = true;
 
   /** Server journeyCounts — stable across pagination; never loadedRows.length. */
   const journeyCounts = useMemo(() => {
@@ -231,37 +252,90 @@ export function OrdersListScreen({
     return null;
   }, [query.data?.pages]);
 
+  const orderTypeCounts = useMemo(() => {
+    const pages = query.data?.pages ?? [];
+    for (let i = pages.length - 1; i >= 0; i -= 1) {
+      const meta = pages[i]?.meta as
+        | { orderTypeCounts?: { standard: number; modified: number; custom: number } }
+        | undefined;
+      if (meta?.orderTypeCounts) return meta.orderTypeCounts;
+    }
+    return null;
+  }, [query.data?.pages]);
+
   const requestSearchQ =
     variant === 'dealer' || (variant === 'admin' && adminDeskMode === 'requests')
       ? q
       : '';
-  /** Always same filter as Customer Requests inbox — never unfiltered page length. */
-  const requestStatusGroup = variant === 'admin' ? 'open_inbox' : undefined;
+  const adminRequestStatusGroup =
+    adminDeskMode === 'requests'
+      ? RFQ_SUBCHIP_STATUS_GROUP[rfqSubchip]
+      : 'open_inbox';
+  const adminRequestFilters = useMemo(
+    () => ({
+      statusGroup: adminRequestStatusGroup,
+      ...(requestSearchQ ? { q: requestSearchQ } : {}),
+      ...(adminDeskMode === 'requests' && adminRequestType !== 'all'
+        ? {
+            requestType: adminRequestType.toUpperCase() as
+              | 'STANDARD'
+              | 'MODIFIED'
+              | 'CUSTOM',
+          }
+        : {}),
+    }),
+    [
+      adminDeskMode,
+      adminRequestStatusGroup,
+      adminRequestType,
+      requestSearchQ,
+    ],
+  );
+  const adminRequestsQuery = useAdminRequestsInfiniteQuery(
+    adminRequestFilters,
+    variant === 'admin' && canReadRequests && !forceState,
+  );
   const requestsQuery = useQuery({
     queryKey: queryKeys.requests.list({
       ordersHub: true,
       variant,
       q: requestSearchQ,
-      statusGroup: requestStatusGroup ?? 'all',
+      statusGroup: 'all',
     }),
     queryFn: () =>
       listRequests({
         page: 1,
         pageSize: 50,
         q: requestSearchQ || undefined,
-        statusGroup: requestStatusGroup,
       }),
-    enabled:
-      (variant === 'dealer' || variant === 'admin') &&
-      canReadRequests &&
-      !forceState,
+    enabled: variant === 'dealer' && canReadRequests && !forceState,
     staleTime: 15_000,
     placeholderData: keepPreviousData,
   });
+  const requestTypeCounts = useMemo(() => {
+    const pages = adminRequestsQuery.data?.pages ?? [];
+    for (let i = pages.length - 1; i >= 0; i -= 1) {
+      const meta = pages[i]?.meta;
+      if (meta?.typeCounts) return meta.typeCounts;
+    }
+    return null;
+  }, [adminRequestsQuery.data?.pages]);
+  const requestInboxCounts = useMemo(() => {
+    const pages = adminRequestsQuery.data?.pages ?? [];
+    for (let i = pages.length - 1; i >= 0; i -= 1) {
+      const meta = pages[i]?.meta;
+      if (meta?.inboxCounts) return meta.inboxCounts;
+    }
+    return null;
+  }, [adminRequestsQuery.data?.pages]);
   const requestsTotalItems =
-    requestsQuery.data?.meta?.totalItems ??
-    requestsQuery.data?.data?.length ??
-    0;
+    variant === 'admin'
+      ? (requestInboxCounts?.all ??
+        adminRequestsQuery.data?.pages?.[0]?.meta?.totalItems ??
+        0)
+      : (requestsQuery.data?.meta?.totalItems ??
+        requestsQuery.data?.data?.length ??
+        0);
   const ownDeliveriesQuery = useQuery({
     queryKey: queryKeys.scheduling.ownDeliveries(),
     queryFn: () => getOwnDeliveries(),
@@ -294,7 +368,13 @@ export function OrdersListScreen({
     (query.isRefetching &&
       !query.isFetchingNextPage &&
       !query.isPlaceholderData) ||
-    (requestsQuery.isRefetching && !requestsQuery.isPlaceholderData) ||
+    (variant === 'admin' &&
+      adminRequestsQuery.isRefetching &&
+      !adminRequestsQuery.isFetchingNextPage &&
+      !adminRequestsQuery.isPlaceholderData) ||
+    (variant === 'dealer' &&
+      requestsQuery.isRefetching &&
+      !requestsQuery.isPlaceholderData) ||
     (variant === 'dealer' && ownDeliveriesQuery.isRefetching);
   const liveItems = flattenOrdersPages(query.data);
 
@@ -419,24 +499,17 @@ export function OrdersListScreen({
   const adminRfqCards: AdminOrderCardModel[] = useMemo(() => {
     if (variant !== 'admin' || !canReadRequests) return [];
     if (forceState === 'empty') return [];
-    let rows = requestsQuery.data?.data ?? [];
+    if (
+      adminDeskMode === 'requests' &&
+      adminRequestType !== 'all' &&
+      requestTypeCounts &&
+      requestTypeCounts[adminRequestType] === 0
+    ) {
+      return [];
+    }
+    let rows = flattenRequestsPages(adminRequestsQuery.data);
     if (applied.dealerId !== 'all') {
       rows = rows.filter((r) => (r.customer?.id ?? '') === applied.dealerId);
-    }
-    if (q && !(variant === 'admin' && adminDeskMode !== 'requests')) {
-      rows = rows.filter((r) =>
-        matchOrdersSearch(
-          {
-            number: r.number,
-            title: r.title || r.externalOrderNumber || r.number,
-            externalOrderNumber: r.externalOrderNumber,
-            dealerName: r.customer
-              ? localizedName(locale, r.customer, r.customer.code || '—')
-              : undefined,
-          },
-          q,
-        ),
-      );
     }
     return rows.map((r) => {
       const dealerName = r.customer
@@ -464,16 +537,18 @@ export function OrdersListScreen({
         lifecycle: 'rfq' as const,
         actionHint: null,
         kind: 'rfq' as const,
+        manufacturingKind: complexityBadgeKey(r.manufacturingComplexity),
       };
     });
   }, [
     adminDeskMode,
+    adminRequestType,
+    adminRequestsQuery.data,
     applied.dealerId,
     canReadRequests,
     forceState,
     locale,
-    q,
-    requestsQuery.data,
+    requestTypeCounts,
     t,
     variant,
   ]);
@@ -511,16 +586,24 @@ export function OrdersListScreen({
     for (const item of items) {
       addCustomer(item.customer?.id ?? '', item.customer);
     }
+    for (const r of flattenRequestsPages(adminRequestsQuery.data)) {
+      addCustomer(r.customer?.id ?? '', r.customer);
+    }
     for (const r of requestsQuery.data?.data ?? []) {
       addCustomer(r.customer?.id ?? '', r.customer);
     }
     return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [items, locale, requestsQuery.data, variant]);
+  }, [adminRequestsQuery.data, items, locale, requestsQuery.data, variant]);
 
   const adminSalesOrderCards: AdminOrderCardModel[] = useMemo(() => {
-    const orders = refinedSalesOrders
-      .map((item) => toAdminOrderCard(item, locale))
-      .filter((row) => matchesKindFilter(row.manufacturingKind, applied.kinds));
+    if (
+      adminOrderType !== 'all' &&
+      orderTypeCounts &&
+      orderTypeCounts[adminOrderType] === 0
+    ) {
+      return [];
+    }
+    const orders = refinedSalesOrders.map((item) => toAdminOrderCard(item, locale));
     const seen = new Set<string>();
     return orders.filter((row) => {
       const key = `order:${row.id}`;
@@ -528,7 +611,7 @@ export function OrdersListScreen({
       seen.add(key);
       return true;
     });
-  }, [applied.kinds, locale, refinedSalesOrders]);
+  }, [adminOrderType, locale, orderTypeCounts, refinedSalesOrders]);
 
   /** Desk stream — Sales Orders and Customer Requests never share one list. */
   const adminCards: AdminOrderCardModel[] = useMemo(() => {
@@ -629,12 +712,22 @@ export function OrdersListScreen({
 
   const onRefresh = () => {
     void query.refetch();
-    if (variant === 'dealer' || variant === 'admin') void requestsQuery.refetch();
-    if (variant === 'dealer') void ownDeliveriesQuery.refetch();
+    if (variant === 'admin') void adminRequestsQuery.refetch();
+    if (variant === 'dealer') {
+      void requestsQuery.refetch();
+      void ownDeliveriesQuery.refetch();
+    }
   };
 
   const onEndReached = () => {
-    if (!forceState && query.hasNextPage && !query.isFetchingNextPage) {
+    if (forceState) return;
+    if (variant === 'admin' && adminDeskMode === 'requests') {
+      if (adminRequestsQuery.hasNextPage && !adminRequestsQuery.isFetchingNextPage) {
+        void adminRequestsQuery.fetchNextPage();
+      }
+      return;
+    }
+    if (query.hasNextPage && !query.isFetchingNextPage) {
       void query.fetchNextPage();
     }
   };
@@ -676,6 +769,9 @@ export function OrdersListScreen({
         setStatusChip('all');
         setStageFocus('all');
         setAdminLifecycleFocus('all');
+        setAdminOrderType('all');
+        setAdminRequestType('all');
+        setRfqSubchip('all');
         setAdminDeskMode('orders');
         setSheetOpen(false);
       }}
@@ -700,6 +796,8 @@ export function OrdersListScreen({
   if (
     forceState === 'loading' ||
     (allowed &&
+      adminDeskMode !== 'requests' &&
+      !seenOrdersBoard.current &&
       query.isLoading &&
       !query.data &&
       !query.isPlaceholderData &&
@@ -749,7 +847,11 @@ export function OrdersListScreen({
     refreshing: forceState ? false : refreshing,
     onRefresh,
     onEndReached,
-    isFetchingNextPage: Boolean(query.isFetchingNextPage),
+    isFetchingNextPage: Boolean(
+      adminDeskMode === 'requests'
+        ? adminRequestsQuery.isFetchingNextPage
+        : query.isFetchingNextPage,
+    ),
     onPressItem,
     onPrimaryCta: variant === 'admin' ? onPrimaryCta : undefined,
     banner,
@@ -762,7 +864,7 @@ export function OrdersListScreen({
           {...sharedCompositionProps}
           deskMode={adminDeskMode}
           onDeskModeChange={variant === 'admin' ? onAdminDeskModeChange : undefined}
-          ordersCount={journeyCounts?.all ?? adminSalesOrderCards.length}
+          ordersCount={journeyCounts?.all ?? 0}
           requestsCount={requestsTotalItems}
           statusChip={statusChip}
           onStatusChipChange={onChipChange}
@@ -771,6 +873,26 @@ export function OrdersListScreen({
             variant === 'admin' ? onAdminLifecycleFocusChange : undefined
           }
           journeyCounts={journeyCounts}
+          orderTypeFocus={
+            adminDeskMode === 'requests' ? adminRequestType : adminOrderType
+          }
+          onOrderTypeFocusChange={
+            variant === 'admin'
+              ? (next) => {
+                  LayoutAnimation.configureNext(
+                    LayoutAnimation.Presets.easeInEaseOut,
+                  );
+                  if (adminDeskMode === 'requests') setAdminRequestType(next);
+                  else setAdminOrderType(next);
+                }
+              : undefined
+          }
+          orderTypeCounts={
+            adminDeskMode === 'requests' ? requestTypeCounts : orderTypeCounts
+          }
+          rfqSubchip={rfqSubchip}
+          onRfqSubchipChange={variant === 'admin' ? setRfqSubchip : undefined}
+          requestInboxCounts={requestInboxCounts}
           dealerLabel={variant === 'admin' ? selectedDealerLabel : null}
           onOpenDealerFilter={
             variant === 'admin' ? () => setDealerSheetOpen(true) : undefined

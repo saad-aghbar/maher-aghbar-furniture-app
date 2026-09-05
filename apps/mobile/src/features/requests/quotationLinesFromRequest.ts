@@ -41,12 +41,18 @@ export function quotationLinesFromRequestItems(
     if (fabric) line.fabric = fabric;
     const color = (item.fabricColor ?? item.color)?.trim();
     if (color) line.color = color;
+    if (item.fabrics && Array.isArray(item.fabrics) && item.fabrics.length) {
+      line.fabrics = item.fabrics;
+    }
     const width = positiveNumber(item.width);
     const height = positiveNumber(item.height);
     const depth = positiveNumber(item.depth);
     if (width != null) line.width = width;
     if (height != null) line.height = height;
     if (depth != null) line.depth = depth;
+    if (item.customMeasurements?.length) {
+      line.customMeasurements = item.customMeasurements;
+    }
     return line;
   });
 }

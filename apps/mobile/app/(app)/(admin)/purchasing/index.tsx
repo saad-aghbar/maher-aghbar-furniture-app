@@ -7,7 +7,7 @@ export default function AdminPurchasingRoute() {
   return (
     <PermissionGate
       user={user}
-      require={['purchase-order.read', 'supplier.read']}
+      require={['purchase-order.read', 'supplier.read', 'fabric.procurement.read']}
       mode="any"
     >
       <PurchasingHubScreen />

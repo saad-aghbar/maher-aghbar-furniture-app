@@ -23,6 +23,15 @@ import {
   sendPurchaseRequestToSupplier,
   updateSupplier,
   updateSupplierInvoice,
+  listFabricProcurements,
+  getFabricProcurement,
+  getFabricTracker,
+  draftFabricWhatsApp,
+  sendFabricWhatsApp,
+  waitFabricProcurement,
+  redirectFabricProcurement,
+  setFabricSupplierState,
+  overrideFabricHold,
   type CreatePurchaseOrderInput,
   type CreatePurchaseRequestInput,
   type CreateSupplierInput,
@@ -224,6 +233,7 @@ export function usePurchaseActionMutation(id: string) {
         await qc.invalidateQueries({ queryKey: queryKeys.production.lists() });
         await qc.invalidateQueries({ queryKey: queryKeys.production.summary() });
         await qc.invalidateQueries({ queryKey: queryKeys.production.all });
+        await invalidateFabric(qc);
       },
     }),
   };
@@ -253,6 +263,79 @@ export function usePurchaseRequestActionMutation(id: string) {
           queryKey: queryKeys.purchasing.detail(result.purchaseOrder.id),
         });
       },
+    }),
+  };
+}
+
+export function useFabricProcurementsQuery(
+  filters: { q?: string; state?: string },
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.fabricList(filters),
+    queryFn: () => listFabricProcurements(filters),
+    enabled,
+  });
+}
+
+export function useFabricProcurementQuery(id: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.fabricDetail(id ?? ''),
+    queryFn: () => getFabricProcurement(id!),
+    enabled: Boolean(id) && enabled,
+  });
+}
+
+export function useFabricTrackerQuery(salesOrderId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.purchasing.fabricTracker(salesOrderId ?? ''),
+    queryFn: () => getFabricTracker(salesOrderId!),
+    enabled: Boolean(salesOrderId) && enabled,
+  });
+}
+
+function invalidateFabric(qc: ReturnType<typeof useQueryClient>, id?: string) {
+  const jobs = [
+    qc.invalidateQueries({ queryKey: queryKeys.purchasing.fabricLists() }),
+    qc.invalidateQueries({ queryKey: [...queryKeys.purchasing.all, 'fabric-tracker'] }),
+    qc.invalidateQueries({ queryKey: [...queryKeys.inventory.all, 'fabric-holding'] }),
+    qc.invalidateQueries({ queryKey: [...queryKeys.inventory.all, 'fabric-bundle'] }),
+    qc.invalidateQueries({ queryKey: queryKeys.production.all }),
+  ];
+  if (id) jobs.push(qc.invalidateQueries({ queryKey: queryKeys.purchasing.fabricDetail(id) }));
+  return Promise.all(jobs);
+}
+
+export function useFabricProcurementActions(id: string) {
+  const qc = useQueryClient();
+  return {
+    draftWhatsApp: useMutation({
+      mutationFn: (input: { ids: string[]; supplierId: string }) =>
+        draftFabricWhatsApp(input.ids, input.supplierId),
+    }),
+    sendWhatsApp: useMutation({
+      mutationFn: (input: { ids: string[]; supplierId: string; body?: string }) =>
+        sendFabricWhatsApp(input.ids, input.supplierId, input.body),
+      onSuccess: () => invalidateFabric(qc, id),
+    }),
+    wait: useMutation({
+      mutationFn: (input: { note?: string; expectedAvailableAt?: string }) =>
+        waitFabricProcurement(id, input.note, input.expectedAvailableAt),
+      onSuccess: () => invalidateFabric(qc, id),
+    }),
+    redirect: useMutation({
+      mutationFn: (input: { supplierId: string; note?: string }) =>
+        redirectFabricProcurement(id, input.supplierId, input.note),
+      onSuccess: () => invalidateFabric(qc, id),
+    }),
+    setState: useMutation({
+      mutationFn: (input: { state: string; note?: string; expectedAvailableAt?: string }) =>
+        setFabricSupplierState(id, input.state, input.note, input.expectedAvailableAt),
+      onSuccess: () => invalidateFabric(qc, id),
+    }),
+    override: useMutation({
+      mutationFn: (reason: string) => overrideFabricHold(id, reason),
+      onSuccess: () => invalidateFabric(qc, id),
     }),
   };
 }

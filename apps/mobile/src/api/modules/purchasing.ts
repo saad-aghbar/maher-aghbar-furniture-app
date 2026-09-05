@@ -262,6 +262,8 @@ export type GoodsReceiptInput = {
   warehouseId: string;
   notes?: string;
   idempotencyKey?: string;
+  locationId?: string;
+  photoDocumentId?: string;
   lines: Array<{
     inventoryItemId: string;
     orderedQty: number;
@@ -457,4 +459,183 @@ export type MaterialDemandRow = {
 
 export async function getMaterialDemand() {
   return apiGet<MaterialDemandRow[]>('/material-demand');
+}
+
+export type FabricReadiness = {
+  requirementId: string;
+  label: string;
+  sku: string | null;
+  role: string | null;
+  stageCode: string | null;
+  unit: string;
+  expectedQty: number | null;
+  arrivedQty: number;
+  issuedQty: number;
+  storedState: string;
+  derivedStatus: string;
+  readyForProduction: boolean;
+  overridden: boolean;
+  missing: string[];
+  attentionCode: string | null;
+  expectedAvailableAt: string | null;
+};
+
+export type FabricTrackerItem = {
+  id: string;
+  salesOrderId: string;
+  salesOrderNumber: string;
+  dealerName?: string | null;
+  productName?: string | null;
+  productImageUrl?: string | null;
+  imageUrl?: string | null;
+  supplier?: { id: string; name: string; phone?: string | null } | null;
+  purchaseOrderId?: string | null;
+  purchaseRequestId?: string | null;
+  whatsappSentAt?: string | null;
+  whatsappLastBody?: string | null;
+  whatsappLastTo?: string | null;
+  state?: string;
+  expectedAvailableAt?: string | null;
+  events?: Array<{
+    id: string;
+    kind: string;
+    note?: string | null;
+    createdAt: string;
+    supplierId?: string | null;
+  }>;
+  lots: Array<{
+    id: string;
+    qrCode?: string | null;
+    quantity: number;
+    remainingQty: number | null;
+    locationId?: string | null;
+    locationLabel?: string | null;
+    status: string;
+    unitCost?: number | null;
+  }>;
+  readiness: FabricReadiness;
+};
+
+export type FabricTrackerPayload = {
+  salesOrderId: string;
+  required: number;
+  ready: number;
+  missing: Array<{
+    label: string;
+    qty: number | null;
+    unit: string;
+    derivedStatus: string;
+    attentionCode: string | null;
+    stageCode: string | null;
+  }>;
+  overridden: boolean;
+  items: FabricTrackerItem[];
+};
+
+export type FabricTaskBoard = {
+  taskId: string;
+  salesOrderId?: string | null;
+  salesOrderNumber?: string | null;
+  taken: number;
+  total: number;
+  items: Array<{
+    id: string;
+    label: string;
+    role: string | null;
+    stageCode: string | null;
+    derivedStatus: string;
+    readyForProduction: boolean;
+    expectedQty: number | null;
+    arrivedQty: number;
+    issuedQty: number;
+    unit: string;
+    imageUrl?: string | null;
+    lots: Array<{
+      id: string;
+      qrCode?: string | null;
+      remainingQty: number | null;
+      status: string;
+      locationLabel?: string | null;
+    }>;
+  }>;
+};
+
+export async function listFabricProcurements(params: { q?: string; state?: string; salesOrderId?: string } = {}) {
+  const qs = toSearchParams({
+    q: params.q,
+    state: params.state,
+    salesOrderId: params.salesOrderId,
+  });
+  return apiGet<FabricTrackerItem[]>(`/fabric-procurements${qs}`);
+}
+
+export async function getFabricProcurement(id: string) {
+  return apiGet<FabricTrackerItem>(`/fabric-procurements/${encodeURIComponent(id)}`);
+}
+
+export async function getFabricTracker(salesOrderId: string) {
+  return apiGet<FabricTrackerPayload>(
+    `/fabric-procurements/orders/${encodeURIComponent(salesOrderId)}`,
+  );
+}
+
+export async function getFabricTaskBoard(taskId: string) {
+  return apiGet<FabricTaskBoard>(
+    `/fabric-procurements/tasks/${encodeURIComponent(taskId)}/board`,
+  );
+}
+
+export async function draftFabricWhatsApp(ids: string[], supplierId: string) {
+  return apiPost<{ body: string; to: string | null; supplier: { id: string; name: string } }>(
+    '/fabric-procurements/draft-whatsapp',
+    { ids, supplierId },
+  );
+}
+
+export async function sendFabricWhatsApp(ids: string[], supplierId: string, body?: string) {
+  return apiPost('/fabric-procurements/send-whatsapp', { ids, supplierId, body });
+}
+
+export async function waitFabricProcurement(id: string, note?: string, expectedAvailableAt?: string) {
+  return apiPost<FabricTrackerItem>(`/fabric-procurements/${encodeURIComponent(id)}/wait`, {
+    note,
+    expectedAvailableAt,
+  });
+}
+
+export async function redirectFabricProcurement(id: string, supplierId: string, note?: string) {
+  return apiPost<FabricTrackerItem>(`/fabric-procurements/${encodeURIComponent(id)}/redirect`, {
+    supplierId,
+    note,
+  });
+}
+
+export async function setFabricSupplierState(
+  id: string,
+  state: string,
+  note?: string,
+  expectedAvailableAt?: string,
+) {
+  return apiPost<FabricTrackerItem>(`/fabric-procurements/${encodeURIComponent(id)}/supplier-state`, {
+    state,
+    note,
+    expectedAvailableAt,
+  });
+}
+
+export async function overrideFabricHold(id: string, reason: string) {
+  return apiPost<FabricTrackerItem>(`/fabric-procurements/${encodeURIComponent(id)}/override`, {
+    reason,
+  });
+}
+
+export async function takeInFabricLot(taskId: string, qrCode: string) {
+  return apiPost(`/fabric-procurements/tasks/${encodeURIComponent(taskId)}/take-in`, { qrCode });
+}
+
+export async function dispositionFabricLot(
+  taskId: string,
+  body: { qrCode: string; returnedQty?: number; scrapQty?: number; scrapReason?: string },
+) {
+  return apiPost(`/fabric-procurements/tasks/${encodeURIComponent(taskId)}/disposition`, body);
 }

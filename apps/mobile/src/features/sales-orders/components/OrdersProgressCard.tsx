@@ -567,11 +567,36 @@ function LaneCardBody({
   t: (key: string, params?: Record<string, string | number>) => string;
   compact: boolean;
 }) {
+  const { locale } = useLocale();
+  const kindLabel = order.manufacturingKind
+    ? t(`mobile.orders.journey.kind.${order.manufacturingKind}`)
+    : null;
+  const kindKey = kindLabel && kindLabel !== `mobile.orders.journey.kind.${order.manufacturingKind}`
+    ? kindLabel
+    : null;
+
   return (
     <View style={{ gap: compact ? 4 : 6, width: '100%' }}>
       {order.dealerName ? (
         <AppText variant="caption" color="muted" numberOfLines={1} style={{ width: '100%' }}>
           {order.dealerName}
+        </AppText>
+      ) : null}
+      {kindKey ? (
+        <AppText
+          variant="caption"
+          weight={titleWeight}
+          color="brand"
+          numberOfLines={1}
+          style={{
+            width: '100%',
+            fontSize: 10,
+            lineHeight: 12,
+            letterSpacing: locale === 'ar' ? 0 : 0.5,
+            textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          }}
+        >
+          {kindKey}
         </AppText>
       ) : null}
       <AppText
@@ -582,6 +607,11 @@ function LaneCardBody({
       >
         {order.title}
       </AppText>
+      {isRfq && order.manufacturingKind === 'modified' ? (
+        <AppText variant="caption" color="muted" numberOfLines={1} style={{ width: '100%' }}>
+          {t('mobile.orders.journey.kind.basedOnCatalog')}
+        </AppText>
+      ) : null}
       <AppText
         variant="caption"
         color="secondary"
@@ -590,9 +620,6 @@ function LaneCardBody({
         style={{ letterSpacing: 0.2, width: '100%' }}
       >
         {isRfq ? `${t('mobile.orders.customerRequestLabel')} · ${order.number}` : soQty}
-        {!isRfq && order.manufacturingKind
-          ? ` · ${t(`mobile.orders.journey.kind.${order.manufacturingKind}`)}`
-          : ''}
       </AppText>
 
       <View

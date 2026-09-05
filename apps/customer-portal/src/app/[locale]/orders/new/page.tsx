@@ -101,6 +101,7 @@ function CreateOrderForm() {
   const [notes, setNotes] = useState('');
   const [fabric, setFabric] = useState('');
   const [fabricDescription, setFabricDescription] = useState('');
+  const [extraFabrics, setExtraFabrics] = useState<Array<{ id: string; type: string; color: string; role: string }>>([]);
   const [width, setWidth] = useState('');
   const [height, setHeight] = useState('');
   const [depth, setDepth] = useState('');
@@ -293,13 +294,8 @@ function CreateOrderForm() {
   }
   function applyPreview(preview: ExtractPreview) {
     setCustomProductName((v) => fillIfEmpty(v, preview.productName));
-    if (preview.productName && !productId) {
-      const match = (productsQuery.data ?? []).find(
-        (p) =>
-          localizedName(locale, p).toLowerCase() === preview.productName!.trim().toLowerCase(),
-      );
-      if (match) setProductId(match.id);
-    }
+    // AI may suggest a catalog name. Do not silently attach productId —
+    // that would reclassify a custom intake as STANDARD.
     setQuantity((v) => (v === '1' || !v.trim() ? preview.quantity?.trim() || v : v));
     setFabric((v) => fillIfEmpty(v, preview.fabric));
     setFabricDescription((v) => fillIfEmpty(v, preview.fabricDescription));
@@ -481,6 +477,20 @@ function CreateOrderForm() {
               productName: name,
               quantity: qty,
               fabric: fabric.trim() || undefined,
+              color: extraFabrics[0]?.color?.trim() || undefined,
+              fabrics: [
+                ...(fabric.trim()
+                  ? [{ key: 'primary', type: fabric.trim(), notes: fabricDescription.trim() || null }]
+                  : []),
+                ...extraFabrics
+                  .filter((f) => f.type.trim())
+                  .map((f) => ({
+                    key: f.id,
+                    type: f.type.trim(),
+                    color: f.color.trim() || null,
+                    role: f.role.trim() || null,
+                  })),
+              ].filter((f) => f.type),
               description: fabricDescription.trim() || undefined,
               notes: notes.trim() || undefined,
               width: width ? Number(width) : undefined,
@@ -778,6 +788,53 @@ function CreateOrderForm() {
             rows={2}
             disabled={busy}
           />
+          {extraFabrics.map((row) => (
+            <div key={row.id} className="grid gap-3 sm:grid-cols-3">
+              <Input
+                label={tc('fabricName')}
+                value={row.type}
+                onChange={(e) =>
+                  setExtraFabrics((rows) =>
+                    rows.map((r) => (r.id === row.id ? { ...r, type: e.target.value } : r)),
+                  )
+                }
+                disabled={busy}
+              />
+              <Input
+                label={tc('fabricColor')}
+                value={row.color}
+                onChange={(e) =>
+                  setExtraFabrics((rows) =>
+                    rows.map((r) => (r.id === row.id ? { ...r, color: e.target.value } : r)),
+                  )
+                }
+                disabled={busy}
+              />
+              <Input
+                label={tc('fabricRole')}
+                value={row.role}
+                onChange={(e) =>
+                  setExtraFabrics((rows) =>
+                    rows.map((r) => (r.id === row.id ? { ...r, role: e.target.value } : r)),
+                  )
+                }
+                disabled={busy}
+              />
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            onClick={() =>
+              setExtraFabrics((rows) => [
+                ...rows,
+                { id: `fab-${rows.length + 2}`, type: '', color: '', role: '' },
+              ])
+            }
+          >
+            {tc('addFabric')}
+          </Button>
         </div>
       </Card>
 

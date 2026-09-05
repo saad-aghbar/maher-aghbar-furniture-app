@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
@@ -14,6 +14,8 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InventoryService } from './inventory.service';
+import { RawMaterialsReportService } from './raw-materials-report.service';
+import { parsePdfQuery } from '../../common/helpers/pdf.util';
 import { ListFinishedLotsDto } from './dto/finished-lots.dto';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -351,12 +353,29 @@ class ScanCountDto {
 @ApiTags('inventory')
 @Controller('inventory')
 export class InventoryController {
-  constructor(private readonly inventory: InventoryService) {}
+  constructor(
+    private readonly inventory: InventoryService,
+    private readonly rawMaterialsReport: RawMaterialsReportService,
+  ) {}
 
   @Get('overview')
   @RequirePermissions('inventory.read')
   overview() {
     return this.inventory.overview();
+  }
+
+  @Get('reports/raw-materials')
+  @RequirePermissions('report.inventory.read', 'inventory.cost.read')
+  getRawMaterialsReport(
+    @Query('period') period: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('lang') lang: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const { locale } = parsePdfQuery({ lang, acceptLanguage });
+    return this.rawMaterialsReport.build({ period, from, to, locale, user });
   }
 
   @Get('semi-finished')
@@ -369,6 +388,15 @@ export class InventoryController {
   @RequirePermissions('inventory.read')
   listFinishedLots(@Query() query: ListFinishedLotsDto) {
     return this.inventory.listFinishedLots(query);
+  }
+
+  @Get('fabric-holding')
+  @RequirePermissions('inventory.read')
+  listFabricHolding(
+    @Query('q') q?: string,
+    @CurrentUser() user?: AuthUser,
+  ) {
+    return this.inventory.listFabricHolding(q, user?.permissions);
   }
 
   @Get('lots/by-code/:code')

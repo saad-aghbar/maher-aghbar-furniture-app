@@ -17,7 +17,15 @@ export type InventoryScanMatchKind =
   | 'UNKNOWN'
   | 'ARCHIVED'
   | 'DISALLOWED'
+  | 'ORDER_FABRIC'
   | 'ERROR';
+
+/** Identity of a scanned order-fabric bundle, for the ORDER_FABRIC result. */
+export type ScannedFabricBundle = {
+  code: string;
+  label: string | null;
+  orderNumber: string | null;
+};
 
 export type InventoryScanMatchCurrent = {
   id: string;
@@ -36,6 +44,10 @@ type Props = {
   onKeepCurrent: () => void;
   /** Only for MISMATCH when the form may change material. */
   onUseScanned?: () => void;
+  /** Set for ORDER_FABRIC so the worker sees which order owns the bundle. */
+  fabric?: ScannedFabricBundle | null;
+  /** Jump to the fabric bundle detail screen. */
+  onOpenFabric?: () => void;
 };
 
 export function classifyLabelScan(args: {
@@ -61,6 +73,8 @@ export function InventoryScanMatchResult({
   onScanAgain,
   onKeepCurrent,
   onUseScanned,
+  fabric,
+  onOpenFabric,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
@@ -132,6 +146,98 @@ export function InventoryScanMatchResult({
               {t('mobile.inventory.labelMatchesSelected')}
             </AppText>
           </View>
+        </View>
+      </View>
+    );
+  }
+
+  if (kind === 'ORDER_FABRIC') {
+    return (
+      <View
+        accessibilityLiveRegion="polite"
+        accessibilityLabel={t('mobile.inventory.fabricScanNotStockTitle')}
+        style={{
+          borderRadius: theme.radius.xl,
+          borderWidth: 1.5,
+          borderColor: colors.warning,
+          backgroundColor: colors.warningSoft,
+          padding: theme.spacing.md,
+          gap: theme.spacing.md,
+          overflow: 'hidden',
+        }}
+      >
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            [isRTL ? 'right' : 'left']: 0,
+            width: 4,
+            backgroundColor: colors.warning,
+          }}
+        />
+        <View
+          style={{
+            flexDirection: row,
+            alignItems: 'flex-start',
+            gap: theme.spacing.md,
+            paddingStart: 4,
+          }}
+        >
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.warning,
+            }}
+          >
+            <Ionicons name="color-palette-outline" size={26} color={colors.warning} />
+          </View>
+          <View style={{ flex: 1, gap: theme.spacing.xs }}>
+            <AppText variant="body" weight="semibold" color="warning">
+              {t('mobile.inventory.fabricScanNotStockTitle')}
+            </AppText>
+            <AppText variant="caption" color="secondary">
+              {t('mobile.inventory.fabricScanNotStockBody', {
+                order: fabric?.orderNumber ?? '—',
+              })}
+            </AppText>
+            {fabric?.label ? (
+              <AppText variant="caption" weight="medium">
+                {fabric.label}
+              </AppText>
+            ) : null}
+            {fabric?.code ? (
+              <AppText variant="caption" color="muted" dir="ltr">
+                {fabric.code}
+              </AppText>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={{ gap: theme.spacing.sm, marginStart: 4 }}>
+          {onOpenFabric ? (
+            <ActionPill
+              label={t('mobile.inventory.fabricScanOpenBundle')}
+              tone="brand"
+              onPress={onOpenFabric}
+            />
+          ) : null}
+          <ActionPill
+            label={t('mobile.inventory.scanAgain')}
+            tone="neutral"
+            onPress={onScanAgain}
+          />
+          <ActionPill
+            label={t('mobile.inventory.cancel')}
+            tone="neutral"
+            onPress={onKeepCurrent}
+          />
         </View>
       </View>
     );

@@ -12,6 +12,7 @@ export type InventoryScanResolveStatus =
   | 'FOUND'
   | 'FOUND_KIT'
   | 'FOUND_LOT'
+  | 'ORDER_FABRIC'
   | 'NOT_FOUND'
   | 'ERROR';
 
@@ -19,6 +20,7 @@ export type InventoryScanResolve =
   | { status: 'FOUND'; item: InventoryItem }
   | { status: 'FOUND_KIT'; kit: WipKitCard }
   | { status: 'FOUND_LOT'; lot: SemiFinishedLot }
+  | { status: 'ORDER_FABRIC'; lot: SemiFinishedLot }
   | { status: 'NOT_FOUND' }
   | { status: 'ERROR' };
 
@@ -56,6 +58,12 @@ export async function resolveInventoryScan(code: string): Promise<InventoryScanR
 
   try {
     const lot = await getInventoryLotByCode(trimmed);
+    const kind = String((lot as { scanKind?: string | null }).scanKind ?? '');
+    const isFabric =
+      kind === 'ORDER_FABRIC' ||
+      Boolean((lot as { fabricProcurement?: { id?: string } | null }).fabricProcurement?.id) ||
+      String(lot.qrCode ?? '').startsWith('FB-');
+    if (isFabric) return { status: 'ORDER_FABRIC', lot };
     return { status: 'FOUND_LOT', lot };
   } catch (err) {
     if (!isNotFoundErr(err)) {

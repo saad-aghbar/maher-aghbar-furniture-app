@@ -24,6 +24,8 @@ import {
   productionNotReadyException,
   type ExecutableTaskInput,
 } from './production-readiness';
+import { modifiedMaterialsReviewRequired } from './catalog-seed-preview';
+import { loadFabricReadinessForSalesOrder } from './fabric-readiness-load';
 import {
   HAS_EXECUTABLE,
   UNASSIGNED_EXECUTABLE,
@@ -973,6 +975,7 @@ export class ProductionService {
         salesOrderLine: {
           select: {
             id: true,
+            salesOrderId: true,
             description: true,
             quantity: true,
             orderSpec: true,
@@ -997,6 +1000,7 @@ export class ProductionService {
                 factoryNotes: true,
                 packagingExpectation: true,
                 workflowId: true,
+                materialsReviewedAt: true,
                 materialRequirements: {
                   orderBy: { sortOrder: 'asc' },
                   select: {
@@ -1006,6 +1010,7 @@ export class ProductionService {
                     unit: true,
                     expectedQty: true,
                     source: true,
+                    needsReview: true,
                     requestedFabricLabel: true,
                     inventoryItem: {
                       select: { id: true, sku: true, nameEn: true, category: true, unit: true },
@@ -1118,6 +1123,20 @@ export class ProductionService {
     const scheduleCount = await this.prisma.productionSchedule.count({
       where: { productionOrderId: id },
     });
+    const lineSetup = order.salesOrderLine?.productionSetup ?? null;
+    const materialsReviewRequired = modifiedMaterialsReviewRequired({
+      manufacturingComplexity:
+        order.salesOrderLine?.manufacturingComplexity ??
+        lineSetup?.manufacturingComplexity ??
+        null,
+      productId: order.productId ?? order.salesOrderLine?.product?.id ?? null,
+      materialsReviewedAt: lineSetup?.materialsReviewedAt ?? null,
+      materialsNeedReview: (lineSetup?.materialRequirements ?? []).some((m) => m.needsReview),
+    });
+    const fabric = await loadFabricReadinessForSalesOrder(
+      this.prisma,
+      order.salesOrderId ?? order.salesOrderLine?.salesOrderId ?? null,
+    );
     const readiness = assessProductionReadiness({
       status: order.status,
       currentStageCode: order.currentStageCode,
@@ -1125,14 +1144,14 @@ export class ProductionService {
       schedulePresent: scheduleCount > 0,
       isLate,
       plannedStartDate: order.plannedStartDate,
+      materialsReviewRequired,
+      fabricReadiness: fabric.block,
       openBlockers: openBlockers.map((b) => ({
         kind: String(b.category ?? 'OTHER'),
         taskId: b.taskId,
         message: b.reason ?? undefined,
       })),
     });
-
-    const lineSetup = order.salesOrderLine?.productionSetup ?? null;
     const productionSpecification = lineSetup
       ? {
           manufacturingName: lineSetup.manufacturingName,
@@ -1150,7 +1169,7 @@ export class ProductionService {
                 displayName: m.displayName,
                 category: m.category,
                 unit: m.unit,
-                expectedQty: Number(m.expectedQty),
+                expectedQty: m.expectedQty == null ? null : Number(m.expectedQty),
                 source: m.source,
                 requestedFabricLabel: m.requestedFabricLabel,
                 inventoryItem: m.inventoryItem,
@@ -1543,8 +1562,18 @@ export class ProductionService {
         r.code === 'MISSING_DATE' ||
         r.code === 'MISSING_PRODUCTION_START' ||
         r.code === 'NO_EXECUTABLE_TASKS' ||
-        r.code === 'STATUS_NOT_STARTABLE',
+        r.code === 'STATUS_NOT_STARTABLE' ||
+        r.code === 'MATERIALS_REVIEW_REQUIRED',
     );
+    if (
+      hardBlock.length === 1 &&
+      hardBlock[0]?.code === 'MATERIALS_REVIEW_REQUIRED'
+    ) {
+      throw new BadRequestException({
+        code: 'MATERIALS_REVIEW_REQUIRED',
+        message: 'Review modifications before Confirm.',
+      });
+    }
     if (hardBlock.length > 0 || !readiness.canStart) {
       throw new BadRequestException(productionNotReadyException(readiness));
     }

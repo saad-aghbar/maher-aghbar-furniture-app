@@ -53,6 +53,7 @@ export type FabricLikeItem = {
   fabricType?: string | null;
   fabricColor?: string | null;
   fabricCode?: string | null;
+  fabrics?: unknown;
 };
 
 export function resolveSubmissionAnchor(input: {
@@ -116,7 +117,7 @@ export function computeDealerEditPolicy(input: {
 
   const fabricLocked = input.isDealer && input.fabricInProduction;
   if (fabricLocked) {
-    lockedFields.push('fabric', 'color', 'fabricType', 'fabricColor', 'fabricCode');
+    lockedFields.push('fabric', 'color', 'fabricType', 'fabricColor', 'fabricCode', 'fabrics');
     lockReasons.push({
       code: 'FABRIC_LOCKED',
       field: 'fabric',
@@ -168,9 +169,13 @@ export function detectsFabricMutation(
       next.fabricType != null ||
       next.color != null ||
       next.fabricColor != null ||
-      next.fabricCode != null;
+      next.fabricCode != null ||
+      next.fabrics != null;
     if (!sentFabric) continue;
     if (nextFabric !== prevFabric || nextColor !== prevColor || nextCode !== prevCode) {
+      return true;
+    }
+    if (JSON.stringify(next.fabrics ?? null) !== JSON.stringify(prev.fabrics ?? null)) {
       return true;
     }
   }
@@ -183,7 +188,8 @@ function hasFabricValue(item: FabricLikeItem): boolean {
       norm(item.fabricType) ||
       norm(item.color) ||
       norm(item.fabricColor) ||
-      norm(item.fabricCode),
+      norm(item.fabricCode) ||
+      (Array.isArray(item.fabrics) && item.fabrics.length > 0),
   );
 }
 
@@ -205,6 +211,7 @@ export function preserveFabricOnItems<T extends FabricLikeItem>(
         fabricType: undefined,
         fabricColor: undefined,
         fabricCode: undefined,
+        fabrics: undefined,
       };
     }
     return {
@@ -214,6 +221,7 @@ export function preserveFabricOnItems<T extends FabricLikeItem>(
       fabricType: (prev.fabricType ?? undefined) as T['fabricType'],
       fabricColor: (prev.fabricColor ?? undefined) as T['fabricColor'],
       fabricCode: (prev.fabricCode ?? undefined) as T['fabricCode'],
+      fabrics: (prev.fabrics ?? undefined) as T['fabrics'],
     };
   });
 }

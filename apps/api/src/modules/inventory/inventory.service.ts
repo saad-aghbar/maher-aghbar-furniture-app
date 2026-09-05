@@ -28,6 +28,7 @@ import {
 import { roundMoney } from '../../common/helpers/money.util';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
+import { assessFabricReadiness } from '../production/fabric-readiness';
 import { inventoryScanPayload } from '@maher/types';
 import { PurchasingService } from '../purchasing/purchasing.service';
 import { SchedulingQueueService } from '../scheduling/scheduling-queue';
@@ -1833,6 +1834,129 @@ export class InventoryService {
     };
   }
 
+  async listFabricHolding(q?: string, permissions: string[] = []) {
+    const needle = q?.trim();
+    const lots = await this.prisma.inventoryLot.findMany({
+      where: {
+        fabricProcurementId: { not: null },
+        ...(needle
+          ? {
+              OR: [
+                { qrCode: { contains: needle, mode: 'insensitive' } },
+                { salesOrder: { number: { contains: needle, mode: 'insensitive' } } },
+                {
+                  fabricProcurement: {
+                    requirement: { requestedFabricLabel: { contains: needle, mode: 'insensitive' } },
+                  },
+                },
+                { salesOrder: { customer: { nameEn: { contains: needle, mode: 'insensitive' } } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        location: { select: { id: true, code: true, name: true } },
+        warehouse: { select: { id: true, code: true, nameEn: true, nameAr: true } },
+        inventoryItem: { select: { id: true, sku: true, nameEn: true, nameAr: true, imageUrl: true, unit: true } },
+        salesOrder: {
+          select: {
+            id: true,
+            number: true,
+            customer: { select: { nameEn: true, nameAr: true } },
+          },
+        },
+        fabricProcurement: {
+          include: {
+            requirement: true,
+            salesOrderLine: {
+              select: {
+                description: true,
+                product: { select: { nameEn: true, imageUrl: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    const showCost = permissions.includes('inventory.cost.read');
+    const showSupplier = permissions.includes('supplier.read');
+    const grouped = new Map<string, typeof lots>();
+    for (const lot of lots) {
+      const key = lot.fabricProcurementId ?? lot.id;
+      const list = grouped.get(key) ?? [];
+      list.push(lot);
+      grouped.set(key, list);
+    }
+    const holding = [...grouped.values()].map((group) => {
+      const first = group[0]!;
+      const req = first.fabricProcurement?.requirement;
+      const readiness = assessFabricReadiness({
+        requirement: {
+          id: req?.id ?? first.id,
+          salesOrderId: first.salesOrderId ?? first.fabricProcurement?.salesOrderId ?? '',
+          label: req?.requestedFabricLabel || req?.displayName || first.inventoryItem.nameEn,
+          sku: req?.sku ?? first.inventoryItem.sku,
+          inventoryItemId: req?.inventoryItemId ?? first.inventoryItemId,
+          expectedQty: req?.expectedQty != null ? Number(req.expectedQty) : null,
+          qtyIsEstimate: req?.qtyIsEstimate,
+          unit: req?.unit || first.inventoryItem.unit,
+          fabricRole: req?.fabricRole,
+          stageCode: req?.stageCode,
+        },
+        procurement: first.fabricProcurement
+          ? {
+              state: first.fabricProcurement.state,
+              fabricHoldOverriddenAt: first.fabricProcurement.fabricHoldOverriddenAt,
+              expectedAvailableAt: first.fabricProcurement.expectedAvailableAt,
+            }
+          : null,
+        lots: group.map((l) => ({
+          id: l.id,
+          quantity: Number(l.quantity),
+          remainingQty: l.remainingQty != null ? Number(l.remainingQty) : null,
+          status: l.status,
+          allocationMode: l.allocationMode,
+          salesOrderId: l.salesOrderId,
+          locationId: l.locationId,
+          inventoryItemId: l.inventoryItemId,
+        })),
+      });
+      return {
+        id: first.fabricProcurementId ?? first.id,
+        label: readiness.label,
+        role: readiness.role,
+        sku: first.inventoryItem.sku,
+        imageUrl: first.inventoryItem.imageUrl,
+        salesOrderId: first.salesOrder?.id ?? first.salesOrderId ?? null,
+        orderNumber: first.salesOrder?.number ?? null,
+        dealerName: first.salesOrder?.customer.nameEn ?? first.salesOrder?.customer.nameAr ?? null,
+        productName:
+          first.fabricProcurement?.salesOrderLine?.description ??
+          first.fabricProcurement?.salesOrderLine?.product?.nameEn ??
+          null,
+        productImageUrl: first.fabricProcurement?.salesOrderLine?.product?.imageUrl ?? null,
+        stageCode: readiness.stageCode,
+        derivedStatus: readiness.derivedStatus,
+        expectedQty: readiness.expectedQty,
+        arrivedQty: readiness.arrivedQty,
+        unit: readiness.unit,
+        supplier: showSupplier ? first.supplierId : null,
+        lots: group.map((l) => ({
+          id: l.id,
+          qrCode: l.qrCode,
+          remainingQty: l.remainingQty != null ? Number(l.remainingQty) : Number(l.quantity),
+          status: l.status,
+          locationLabel: l.location?.name?.trim() || l.location?.code || null,
+          warehouseLabel: l.warehouse.nameEn || l.warehouse.code,
+          unitCost: showCost && l.unitCost != null ? Number(l.unitCost) : null,
+        })),
+      };
+    });
+    return { holding };
+  }
+
   async findLotByCode(raw: string) {
     const code = String(raw ?? '').trim();
     if (!code) {
@@ -1843,20 +1967,125 @@ export class InventoryService {
       include: {
         inventoryItem: { include: { product: true } },
         warehouse: true,
+        location: true,
         productionOrder: { select: { id: true, number: true, productDescription: true } },
         stageInstance: { include: { stageDefinition: true } },
         wipPiece: { select: { kit: { select: { id: true, qrCode: true } } } },
+        fabricProcurement: {
+          select: {
+            id: true,
+            salesOrderId: true,
+            state: true,
+            fabricHoldOverriddenAt: true,
+            expectedAvailableAt: true,
+            requirement: {
+              select: {
+                id: true,
+                requestedFabricLabel: true,
+                fabricRole: true,
+                stageCode: true,
+                expectedQty: true,
+                unit: true,
+                sku: true,
+                inventoryItemId: true,
+                qtyIsEstimate: true,
+                displayName: true,
+              },
+            },
+            salesOrderLine: {
+              select: {
+                description: true,
+                product: { select: { nameEn: true, nameAr: true, imageUrl: true } },
+              },
+            },
+          },
+        },
+        salesOrder: {
+          select: {
+            id: true,
+            number: true,
+            customer: { select: { nameEn: true, nameAr: true } },
+          },
+        },
       },
     });
     if (!lot) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Lot not found.' });
     }
     const [mapped] = await this.withLotTraceability([lot]);
+    const req = lot.fabricProcurement?.requirement;
+    const fabricReadiness = lot.fabricProcurement
+      ? assessFabricReadiness({
+          requirement: {
+            id: req?.id ?? lot.id,
+            salesOrderId: lot.fabricProcurement.salesOrderId ?? lot.salesOrderId ?? '',
+            label: req?.requestedFabricLabel || req?.displayName || lot.inventoryItem.nameEn,
+            sku: req?.sku ?? lot.inventoryItem.sku,
+            inventoryItemId: req?.inventoryItemId ?? lot.inventoryItemId,
+            expectedQty: req?.expectedQty != null ? Number(req.expectedQty) : null,
+            qtyIsEstimate: req?.qtyIsEstimate,
+            unit: req?.unit || lot.inventoryItem.unit,
+            fabricRole: req?.fabricRole,
+            stageCode: req?.stageCode,
+          },
+          procurement: {
+            state: lot.fabricProcurement.state,
+            fabricHoldOverriddenAt: lot.fabricProcurement.fabricHoldOverriddenAt,
+            expectedAvailableAt: lot.fabricProcurement.expectedAvailableAt,
+          },
+          lots: [
+            {
+              id: lot.id,
+              quantity: Number(lot.quantity),
+              remainingQty: lot.remainingQty != null ? Number(lot.remainingQty) : null,
+              status: lot.status,
+              allocationMode: lot.allocationMode,
+              salesOrderId: lot.salesOrderId,
+              locationId: lot.locationId,
+              inventoryItemId: lot.inventoryItemId,
+            },
+          ],
+        })
+      : null;
     return {
       ...mapped,
       wipKit: lot.wipPiece?.kit
         ? { id: lot.wipPiece.kit.id, qrCode: lot.wipPiece.kit.qrCode }
         : null,
+      fabricProcurement: lot.fabricProcurement
+        ? {
+            id: lot.fabricProcurement.id,
+            salesOrderId: lot.fabricProcurement.salesOrderId,
+            label: lot.fabricProcurement.requirement.requestedFabricLabel,
+            role: lot.fabricProcurement.requirement.fabricRole,
+            stageCode: lot.fabricProcurement.requirement.stageCode,
+            state: lot.fabricProcurement.state,
+            derivedStatus: fabricReadiness?.derivedStatus ?? null,
+            expectedQty: fabricReadiness?.expectedQty ?? null,
+            arrivedQty: fabricReadiness?.arrivedQty ?? null,
+            unit: fabricReadiness?.unit ?? lot.inventoryItem.unit,
+            overridden: fabricReadiness?.overridden ?? false,
+          }
+        : null,
+      scanKind:
+        lot.fabricProcurementId || String(lot.qrCode ?? '').startsWith('FB-')
+          ? 'ORDER_FABRIC'
+          : null,
+      location: lot.location ?? null,
+      salesOrder: lot.salesOrder
+        ? { id: lot.salesOrder.id, number: lot.salesOrder.number }
+        : null,
+      dealerNameEn: lot.salesOrder?.customer?.nameEn ?? null,
+      dealerNameAr: lot.salesOrder?.customer?.nameAr ?? null,
+      productNameEn:
+        lot.fabricProcurement?.salesOrderLine?.description ||
+        lot.fabricProcurement?.salesOrderLine?.product?.nameEn ||
+        mapped?.productNameEn ||
+        null,
+      productImageUrl:
+        lot.fabricProcurement?.salesOrderLine?.product?.imageUrl ??
+        lot.inventoryItem.product?.imageUrl ??
+        null,
     };
   }
 
@@ -2363,8 +2592,15 @@ export class InventoryService {
           if (!lineSetup.salesOrderLine.productionRequired) continue;
           const lineQty = Number(lineSetup.salesOrderLine.quantity) || 1;
           for (const req of lineSetup.materialRequirements) {
+            if (String(req.category ?? '').toUpperCase() === 'FABRIC') {
+              continue;
+            }
             if (!req.inventoryItemId) {
               ready = false;
+              continue;
+            }
+            const neededQty = req.expectedQty == null ? null : Number(req.expectedQty);
+            if (neededQty == null) {
               continue;
             }
             const balance = await tx.inventoryBalance.findFirst({
@@ -2374,7 +2610,7 @@ export class InventoryService {
               },
               orderBy: { availableQty: 'desc' },
             });
-            const needed = Number(req.expectedQty) * lineQty;
+            const needed = neededQty * lineQty;
             const free = Number(balance?.availableQty ?? 0) - Number(balance?.reservedQty ?? 0);
             if (!balance || free < needed) {
               ready = false;

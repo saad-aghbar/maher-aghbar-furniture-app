@@ -13,7 +13,7 @@ import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { WarehousePickList } from '@/features/inventory/components/WarehousePickList';
 import { resolveInventoryScan } from '@/features/inventory/resolveInventoryScan';
 import { useLocale } from '@/i18n';
-import { haptics } from '@/motion';
+import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
 import { PurchasingFloorBoard } from './PurchasingFloorBoard';
 
@@ -94,9 +94,11 @@ export function ReceiveGoodsSheet({ open, onClose, order, submitting, onSubmit }
 
   const [step, setStep] = useState<'edit' | 'review'>('edit');
   const [warehouseId, setWarehouseId] = useState('');
+  const [locationId, setLocationId] = useState('');
   const [drafts, setDrafts] = useState<LineDraft[]>([]);
   const [idempotencyKey, setIdempotencyKey] = useState('');
   const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
+  const [scanNote, setScanNote] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
 
   const warehousesQuery = useQuery({
@@ -115,6 +117,7 @@ export function ReceiveGoodsSheet({ open, onClose, order, submitting, onSubmit }
       setStep('edit');
       setDrafts([]);
       setWarehouseId('');
+      setLocationId('');
       setIdempotencyKey('');
       setFocusedLineId(null);
       setScanning(false);
@@ -162,6 +165,7 @@ export function ReceiveGoodsSheet({ open, onClose, order, submitting, onSubmit }
     void haptics.confirmMedium();
     onSubmit({
       warehouseId,
+      locationId: locationId || undefined,
       idempotencyKey: idempotencyKey || `grn-${order.id}-${createRequestId()}`,
       lines: receivable.map((d) => ({
         inventoryItemId: d.inventoryItemId,
@@ -192,15 +196,25 @@ export function ReceiveGoodsSheet({ open, onClose, order, submitting, onSubmit }
       if (!code) return;
       void haptics.selection();
       const resolved = await resolveInventoryScan(code);
-      if (resolved.status !== 'FOUND') {
+      // A fabric bundle QR still identifies a real material — focus its line.
+      const scannedItemId =
+        resolved.status === 'FOUND'
+          ? resolved.item.id
+          : resolved.status === 'ORDER_FABRIC'
+            ? resolved.lot.inventoryItem.id
+            : null;
+      if (!scannedItemId) {
         void haptics.error();
+        setScanNote(t('mobile.purchasing.scanNoLineMatch'));
         return;
       }
-      const match = drafts.find((d) => d.inventoryItemId === resolved.item.id);
+      const match = drafts.find((d) => d.inventoryItemId === scannedItemId);
       if (!match) {
         void haptics.error();
+        setScanNote(t('mobile.purchasing.scanNoLineMatch'));
         return;
       }
+      setScanNote(null);
       setFocusedLineId(match.lineId);
       void haptics.confirmLight();
     } finally {
@@ -246,6 +260,15 @@ export function ReceiveGoodsSheet({ open, onClose, order, submitting, onSubmit }
               style={{ borderRadius: theme.radius.xl }}
             />
 
+            {scanNote ? (
+              <AppText
+                variant="caption"
+                style={{ color: colors.warning, textAlign: isRTL ? 'right' : 'left' }}
+              >
+                {scanNote}
+              </AppText>
+            ) : null}
+
             <View style={{ gap: theme.spacing.sm }}>
               <AppText
                 variant="caption"
@@ -257,11 +280,51 @@ export function ReceiveGoodsSheet({ open, onClose, order, submitting, onSubmit }
               <WarehousePickList
                 warehouses={rawWarehouses}
                 selectedId={warehouseId}
-                onSelect={setWarehouseId}
+                onSelect={(id) => {
+                  setWarehouseId(id);
+                  setLocationId('');
+                }}
                 listHeight={warehouseListHeight}
                 resetToken={open}
               />
             </View>
+            {(() => {
+              const locs = rawWarehouses.find((w) => w.id === warehouseId)?.locations ?? [];
+              if (!locs.length) return null;
+              return (
+                <View style={{ gap: theme.spacing.sm }}>
+                  <AppText
+                    variant="caption"
+                    weight={titleWeight}
+                    style={{ textAlign: isRTL ? 'right' : 'left', color: colors.brand }}
+                  >
+                    {t('mobile.purchasing.holdingLocation')}
+                  </AppText>
+                  <AppText variant="caption" color="muted">
+                    {t('mobile.purchasing.holdingLocationHint')}
+                  </AppText>
+                  {locs.map((loc) => (
+                    <AnimatedPressable
+                      key={loc.id}
+                      variant="button"
+                      onPress={() => setLocationId(loc.id)}
+                      style={{
+                        paddingVertical: theme.spacing.sm,
+                        paddingHorizontal: theme.spacing.md,
+                        borderRadius: theme.radius.lg,
+                        borderWidth: 1,
+                        borderColor: locationId === loc.id ? colors.brand : colors.border,
+                        backgroundColor: locationId === loc.id ? colors.brandSoft : colors.surfaceSecondary,
+                      }}
+                    >
+                      <AppText weight={locationId === loc.id ? titleWeight : 'regular'}>
+                        {loc.name?.trim() || loc.code}
+                      </AppText>
+                    </AnimatedPressable>
+                  ))}
+                </View>
+              );
+            })()}
 
             {drafts.map((line) => {
               const focused = focusedLineId === line.lineId;

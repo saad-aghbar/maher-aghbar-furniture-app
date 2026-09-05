@@ -108,5 +108,14 @@
   "WAITING_RETURN": "بانتظار الإرجاع",
   "RETURNED": "أُعيد",
   "INSPECTING": "قيد الفحص",
-  "RESOLVED": "مُغلق"
+  "RESOLVED": "مُغلق",
+  "NEEDS_ORDERING": "يلزم الطلب",
+  "AWAITING_SUPPLIER": "بانتظار المورد",
+  "SUPPLIER_CONFIRMED": "أكّد المورد",
+  "PARTIALLY_AVAILABLE": "متوفر جزئياً",
+  "UNAVAILABLE": "غير متوفر",
+  "WAITING": "انتظار",
+  "READY_FOR_PICKUP": "جاهز للاستلام",
+  "ARRIVED": "واصل",
+  "PARTIAL": "جزئي"
 }

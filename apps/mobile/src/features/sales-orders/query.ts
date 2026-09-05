@@ -1,5 +1,6 @@
-import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
+import { keepPreviousListDataIfSameScope } from '@/api/keepPreviousListScope';
 import {
   flattenPaginatedPages,
   getNextPageParamFromMeta,
@@ -14,6 +15,7 @@ import {
   type SalesOrderListFilters,
   type UpdateSalesOrderInput,
 } from './api';
+import { listRequests } from '@/api/modules/requests';
 
 export type OrdersListQueryFilters = Omit<SalesOrderListFilters, 'page' | 'pageSize'>;
 
@@ -33,13 +35,62 @@ export function useOrdersInfiniteQuery(
     getNextPageParam: getNextPageParamFromMeta,
     enabled,
     staleTime: 30_000,
-    // Keep the board visible while search / sort loads — avoids unmounting the search field.
-    placeholderData: keepPreviousData,
+    // Keep the board visible while search / sort loads — never across type or journey.
+    placeholderData: (previousData, previousQuery) =>
+      keepPreviousListDataIfSameScope(
+        previousData,
+        previousQuery,
+        {
+          orderType: filters.orderType ?? null,
+          journeyBucket: filters.journeyBucket ?? null,
+        },
+        ['orderType', 'journeyBucket'],
+      ),
   });
 }
 
 export function flattenOrdersPages(
   data: ReturnType<typeof useOrdersInfiniteQuery>['data'],
+) {
+  return flattenPaginatedPages(data?.pages);
+}
+
+export type AdminRequestsListFilters = Omit<
+  import('@/api/modules/requests').ListRequestsFilters,
+  'page' | 'pageSize'
+>;
+
+export function useAdminRequestsInfiniteQuery(
+  filters: AdminRequestsListFilters,
+  enabled: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.requests.list(filters),
+    queryFn: ({ pageParam }) =>
+      listRequests({
+        ...filters,
+        page: pageParam,
+        pageSize: 20,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: getNextPageParamFromMeta,
+    enabled,
+    staleTime: 15_000,
+    placeholderData: (previousData, previousQuery) =>
+      keepPreviousListDataIfSameScope(
+        previousData,
+        previousQuery,
+        {
+          requestType: filters.requestType ?? null,
+          statusGroup: filters.statusGroup ?? null,
+        },
+        ['requestType', 'statusGroup'],
+      ),
+  });
+}
+
+export function flattenRequestsPages(
+  data: ReturnType<typeof useAdminRequestsInfiniteQuery>['data'],
 ) {
   return flattenPaginatedPages(data?.pages);
 }

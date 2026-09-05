@@ -41,10 +41,19 @@ describe('staff vs identity permission isolation', () => {
     expect(hasPermission(pack, 'purchase-order.read')).toBe(true);
   });
 
-  it('PURCHASING pack includes inventory.receive (Piece 6)', () => {
+  it('PURCHASING pack includes fabric procurement', () => {
     const pack = [...SYSTEM_STAFF_PRESETS.PURCHASING.permissionCodes];
+    expect(hasPermission(pack, 'fabric.procurement.read')).toBe(true);
+    expect(hasPermission(pack, 'fabric.procurement.manage')).toBe(true);
     expect(hasPermission(pack, 'purchase-order.read')).toBe(true);
     expect(hasPermission(pack, 'inventory.receive')).toBe(true);
+  });
+
+  it('PRODUCTION_MANAGEMENT can read fabric tracker and override holds', () => {
+    const pack = [...SYSTEM_STAFF_PRESETS.PRODUCTION_MANAGEMENT.permissionCodes];
+    expect(hasPermission(pack, 'fabric.procurement.read')).toBe(true);
+    expect(hasPermission(pack, 'production.fabric.override')).toBe(true);
+    expect(hasPermission(pack, 'fabric.procurement.manage')).toBe(false);
   });
 
   it('dealers and workers are denied purchase receive and purchase-order packs', () => {

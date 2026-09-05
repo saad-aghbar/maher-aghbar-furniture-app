@@ -25,5 +25,6 @@ describe('purchasingFilters', () => {
     expect(statusFiltersForTab('orders')[0]).toBe('ALL');
     expect(statusFiltersForTab('requests')).toContain('SUBMITTED');
     expect(statusFiltersForTab('invoices')).toContain('PAID');
+    expect(statusFiltersForTab('fabric')).toContain('NEEDS_ORDERING');
   });
 });

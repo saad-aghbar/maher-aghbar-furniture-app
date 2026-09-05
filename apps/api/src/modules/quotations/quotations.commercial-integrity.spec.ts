@@ -333,6 +333,106 @@ describe('quotations commercial integrity', () => {
     );
   });
 
+  it('does not promote a description-matched line to STANDARD or invent a price', async () => {
+    const { service, prisma, sequences } = makeService();
+    sequences.next.mockResolvedValue('QT-NEW');
+    prisma.dealerPrice.findMany.mockResolvedValue([{ productId: 'p1', price: 6000 }]);
+    prisma.product.findMany.mockResolvedValue([
+      {
+        id: 'p1',
+        sku: 'MIL',
+        nameEn: 'Milano Sofa',
+        nameAr: null,
+        nameHe: null,
+        basePrice: 5000,
+      },
+    ]);
+    prisma.quotation.create.mockResolvedValue({ id: 'q-new', status: 'DRAFT', lines: [] });
+    await service.create(
+      {
+        customerId: 'customer-a',
+        lines: [
+          {
+            description: 'Milano Sofa custom corner',
+            quantity: 1,
+            unitPrice: 0,
+            manufacturingComplexity: 'CUSTOM',
+          },
+        ],
+      },
+      'admin-1',
+    );
+    expect(prisma.quotation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lines: {
+            create: expect.arrayContaining([
+              expect.objectContaining({
+                unitPrice: '0.000',
+                manufacturingComplexity: 'CUSTOM',
+              }),
+            ]),
+          },
+        }),
+      }),
+    );
+  });
+
+  it('copies quotation complexity and measurements on accept instead of reclassifying', async () => {
+    const { service, prisma, tx } = makeService();
+    const customQuote = {
+      ...sentQuote,
+      lines: [
+        {
+          id: 'l1',
+          description: 'Custom Corner Sofa',
+          quantity: 1,
+          unitPrice: 6000,
+          manufacturingComplexity: 'CUSTOM',
+          productId: 'p1',
+          width: 220,
+          height: 85,
+          depth: 95,
+          customMeasurements: [{ key: 'arm', label: 'Arm', value: 70, catalogValue: 60 }],
+        },
+      ],
+    };
+    prisma.quotation.findFirst.mockResolvedValue(customQuote);
+    tx.product.findMany.mockResolvedValue([
+      {
+        id: 'p1',
+        width: 220,
+        height: 85,
+        depth: 95,
+        seatHeight: 45,
+        imageUrl: null,
+        nameEn: 'Milano',
+      },
+    ]);
+    tx.quotation.findFirstOrThrow.mockResolvedValue({
+      ...customQuote,
+      status: 'ACCEPTED',
+      acceptedById: 'dealer-a',
+      salesOrders: [{ id: 'so-1', number: 'SO-UAT-1', status: 'DRAFT' }],
+    });
+    await service.accept('q-a', dealer());
+    const created = tx.salesOrder.create.mock.calls[0]?.[0] as {
+      data: {
+        lines: {
+          create: Array<{
+            manufacturingComplexity: string;
+            orderSpec?: { manufacturingComplexity?: string; customMeasurements?: unknown };
+          }>;
+        };
+      };
+    };
+    expect(created.data.lines.create[0]?.manufacturingComplexity).toBe('CUSTOM');
+    expect(created.data.lines.create[0]?.orderSpec?.manufacturingComplexity).toBe('CUSTOM');
+    expect(created.data.lines.create[0]?.orderSpec?.customMeasurements).toEqual([
+      expect.objectContaining({ key: 'arm', value: 70 }),
+    ]);
+  });
+
   it('refuses dealer accept after valid-until and marks EXPIRED', async () => {
     const { service, prisma } = makeService();
     prisma.quotation.findFirst.mockResolvedValue({

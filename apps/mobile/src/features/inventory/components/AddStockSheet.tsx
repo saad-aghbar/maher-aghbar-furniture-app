@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
@@ -114,6 +115,7 @@ export function AddStockSheet({
   const { t, locale, formatDate } = useLocale();
   const { theme, colors, colorScheme } = useTheme();
   const { user } = useAuth();
+  const router = useRouter();
   const { height } = useWindowDimensions();
   const sheetHeight = Math.round(height * 0.82);
   const warehouseListHeight = Math.round(height * 0.28);
@@ -132,11 +134,17 @@ export function AddStockSheet({
   const [confirmItem, setConfirmItem] = useState<InventoryItem | null>(null);
   const [confirmMode, setConfirmMode] = useState<InlineScanSelectMode>('confirm');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmFabric, setConfirmFabric] = useState<{
+    code: string;
+    label: string | null;
+    orderNumber: string | null;
+  } | null>(null);
   const canReceive = can(user, 'inventory.receive');
   const knownItem = Boolean(initialItem?.id);
   const {
     verifyKind,
     verifyScanned,
+    verifyFabric,
     verifyBusy,
     clearLabelVerify,
     resetLabelVerify,
@@ -246,7 +254,24 @@ export function AddStockSheet({
     setError(null);
     try {
       const resolved = await resolveInventoryScan(code);
-      if (resolved.status === 'NOT_FOUND' || resolved.status === 'FOUND_KIT' || resolved.status === 'FOUND_LOT') {
+      if (resolved.status === 'ORDER_FABRIC') {
+        // Order fabric is committed stock — say so instead of "not found".
+        void haptics.error();
+        setConfirmItem(null);
+        setConfirmFabric({
+          code: resolved.lot.qrCode ?? code,
+          label: resolved.lot.fabricProcurement?.label ?? resolved.lot.inventoryItem.nameEn,
+          orderNumber: resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
+        });
+        setConfirmMode('order-fabric');
+        setConfirmOpen(true);
+        return;
+      }
+      if (
+        resolved.status === 'NOT_FOUND' ||
+        resolved.status === 'FOUND_KIT' ||
+        resolved.status === 'FOUND_LOT'
+      ) {
         void haptics.error();
         setConfirmItem(null);
         setConfirmMode('not-found');
@@ -280,6 +305,7 @@ export function AddStockSheet({
   function clearCodeConfirm() {
     setConfirmOpen(false);
     setConfirmItem(null);
+    setConfirmFabric(null);
   }
 
   async function lookup() {
@@ -358,6 +384,7 @@ export function AddStockSheet({
                 allowChangeItem
                 resultKind={verifyKind}
                 resultScanned={verifyScanned}
+                resultFabric={verifyFabric}
                 onScanPress={() => void runLabelVerify()}
                 onClearResult={clearLabelVerify}
                 onScanAgain={() => void runLabelVerify()}
@@ -417,6 +444,19 @@ export function AddStockSheet({
                   <InventoryScanSelectInline
                     mode={confirmMode}
                     item={confirmItem}
+                    fabric={confirmFabric}
+                    onOpenFabric={
+                      confirmFabric
+                        ? () => {
+                            const code = confirmFabric.code;
+                            clearCodeConfirm();
+                            onClose?.();
+                            router.push(
+                              `/(app)/(admin)/inventory/fabric-bundle/${encodeURIComponent(code)}` as Href,
+                            );
+                          }
+                        : undefined
+                    }
                     onCancel={clearCodeConfirm}
                     onScanAgain={() => {
                       clearCodeConfirm();

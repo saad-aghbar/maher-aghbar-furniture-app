@@ -1,9 +1,12 @@
 import 'react-native-gesture-handler';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { lockNativeLayoutLtr } from '@/i18n/lockNativeLayoutLtr';
 import { useStackMotionOptions } from '@/navigation/stackMotion';
 import { AppProviders } from '@/providers/AppProviders';
 import { useTheme } from '@/theme';
+
+lockNativeLayoutLtr();
 
 function RootNavigator() {
   const { colorScheme } = useTheme();

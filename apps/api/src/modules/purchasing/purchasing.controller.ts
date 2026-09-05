@@ -22,7 +22,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { Prisma, PurchaseOrderStatus, PurchaseRequestStatus } from '@maher/database';
+import {
+  FabricProcurementEventKind,
+  FabricProcurementState,
+  InventoryTxType,
+  Prisma,
+  PurchaseOrderStatus,
+  PurchaseRequestStatus,
+} from '@maher/database';
 import { PrismaService } from '../../common/prisma.service';
 import { SequenceService } from '../../common/sequence.service';
 import { RequirePermissions } from '../../common/decorators/auth.decorators';
@@ -33,7 +40,6 @@ import type { AuthUser } from '@maher/types';
 import { PurchasingService } from './purchasing.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { SupplierInvoicesService } from '../supplier-invoices/supplier-invoices.service';
-import { InventoryTxType } from '@maher/database';
 import {
   classifyPurchaseOrder,
   purchaseVariance,
@@ -43,6 +49,7 @@ import {
   isOverReceipt,
   remainingOrderedQty,
 } from './goods-receipt-cost';
+import { createFabricLotsForGoodsReceipt } from './goods-receipt-fabric-lots';
 
 class PurchaseLineDto {
   @IsString()
@@ -981,6 +988,8 @@ export class PurchasingController {
     @Body()
     body: {
       warehouseId: string;
+      locationId?: string;
+      photoDocumentId?: string;
       deliveryDocRef?: string;
       notes?: string;
       /** Request-level key — retries return the same GRN instead of duplicating stock. */
@@ -1000,7 +1009,11 @@ export class PurchasingController {
   ) {
     const po = await this.prisma.purchaseOrder.findUniqueOrThrow({
       where: { id },
-      include: { lines: true, goodsReceipts: { include: { lines: true } } },
+      include: {
+        lines: true,
+        goodsReceipts: { include: { lines: true } },
+        supplier: { select: { id: true } },
+      },
     });
     const warehouse = await this.prisma.warehouse.findUniqueOrThrow({
       where: { id: body.warehouseId },
@@ -1159,6 +1172,71 @@ export class PurchasingController {
           idempotencyKey: `grn:${grn.id}:${prepared.inventoryItemId}`,
           db: tx,
         });
+      }
+
+      const itemIds = [...new Set(lineCreates.map((l) => l.inventoryItemId))];
+      const items = itemIds.length
+        ? await tx.inventoryItem.findMany({
+            where: { id: { in: itemIds } },
+            select: { id: true, category: true },
+          })
+        : [];
+      const categoryByItem = new Map(items.map((i) => [i.id, i.category]));
+      const unusedPoLines = [...po.lines];
+      const fabricLines = lineCreates.flatMap((prepared) => {
+        if (prepared._accepted <= 0) return [];
+        const matchIdx = unusedPoLines.findIndex(
+          (l) => l.inventoryItemId === prepared.inventoryItemId && l.fabricProcurementId,
+        );
+        const match = matchIdx >= 0 ? unusedPoLines.splice(matchIdx, 1)[0] : null;
+        if (!match?.fabricProcurementId) return [];
+        return [
+          {
+            inventoryItemId: prepared.inventoryItemId,
+            acceptedQty: prepared._accepted,
+            unitCost: prepared._unitCostNum,
+            category: categoryByItem.get(prepared.inventoryItemId) ?? null,
+            fabricProcurementId: match.fabricProcurementId,
+            salesOrderId: match.salesOrderId,
+            salesOrderLineId: match.salesOrderLineId,
+          },
+        ];
+      });
+      if (fabricLines.length) {
+        const soIds = [...new Set(fabricLines.map((l) => l.salesOrderId).filter(Boolean))] as string[];
+        const so = soIds.length
+          ? await tx.salesOrder.findFirst({
+              where: { id: { in: soIds } },
+              select: { number: true },
+            })
+          : null;
+        await createFabricLotsForGoodsReceipt({
+          tx,
+          goodsReceiptId: grn.id,
+          purchaseOrderId: id,
+          supplierId: po.supplierId,
+          warehouseId: body.warehouseId,
+          locationId: body.locationId ?? null,
+          salesOrderNumber: so?.number ?? null,
+          photoDocumentId: body.photoDocumentId ?? null,
+          lines: fabricLines,
+        });
+        for (const line of fabricLines) {
+          if (!line.fabricProcurementId) continue;
+          await tx.fabricProcurement.update({
+            where: { id: line.fabricProcurementId },
+            data: { state: FabricProcurementState.READY_FOR_PICKUP },
+          });
+          await tx.fabricProcurementEvent.create({
+            data: {
+              procurementId: line.fabricProcurementId,
+              kind: FabricProcurementEventKind.RECEIVED,
+              userId: user.id,
+              note: `GRN ${number}`,
+              payload: { goodsReceiptId: grn.id, qty: line.acceptedQty } as Prisma.InputJsonValue,
+            },
+          });
+        }
       }
 
       const allReceipts = await tx.goodsReceipt.findMany({

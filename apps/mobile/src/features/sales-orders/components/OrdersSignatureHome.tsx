@@ -67,10 +67,14 @@ import { OrdersListSkeleton } from './OrdersListSkeleton';
 import { OrdersProgressCard, type OrdersProgressCardModel } from './OrdersProgressCard';
 import {
   OrdersRfqInboxChips,
-  RFQ_SUBCHIP_STATUSES,
   type RfqInboxSubchip,
 } from './OrdersRfqInboxChips';
 import { OrdersStageSpine } from './OrdersStageSpine';
+import {
+  OrderTypeLensBar,
+  type OrderTypeCounts,
+  type OrderTypeFocus,
+} from './OrderTypeLensBar';
 
 if (
   Platform.OS === 'android' &&
@@ -105,6 +109,13 @@ type Props = {
    * never derive from loadedRows.length.
    */
   journeyCounts?: Partial<Record<AdminLifecycleChipKey, number>> | null;
+  /** Admin Standard / Modified / Custom lens — server-scoped. */
+  orderTypeFocus?: OrderTypeFocus;
+  onOrderTypeFocusChange?: (next: OrderTypeFocus) => void;
+  orderTypeCounts?: OrderTypeCounts | null;
+  rfqSubchip?: RfqInboxSubchip;
+  onRfqSubchipChange?: (next: RfqInboxSubchip) => void;
+  requestInboxCounts?: import('@/api/modules/requests').RequestInboxCounts | null;
   /** Admin only — production-style dealer filter under On the line. */
   dealerLabel?: string | null;
   onOpenDealerFilter?: () => void;
@@ -253,6 +264,12 @@ export function OrdersSignatureHome({
   adminLifecycleFocus = 'all',
   onAdminLifecycleFocusChange,
   journeyCounts = null,
+  orderTypeFocus = 'all',
+  onOrderTypeFocusChange,
+  orderTypeCounts = null,
+  rfqSubchip = 'all',
+  onRfqSubchipChange,
+  requestInboxCounts = null,
   dealerLabel = null,
   onOpenDealerFilter,
   onClearDealerFilter,
@@ -275,7 +292,6 @@ export function OrdersSignatureHome({
   const [confirmDeliveryId, setConfirmDeliveryId] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [resolvingConfirm, setResolvingConfirm] = useState(false);
-  const [rfqSubchip, setRfqSubchip] = useState<RfqInboxSubchip>('all');
   const isDealer = variant === 'dealer';
   const isAdmin = variant === 'admin';
 
@@ -422,14 +438,10 @@ export function OrdersSignatureHome({
 
   const requestInboxItems = useMemo(() => {
     if (!isAdmin || deskMode !== 'requests') return [];
-    const statuses = RFQ_SUBCHIP_STATUSES[rfqSubchip];
     return [...allStream]
       .filter((o) => o.kind === 'rfq')
-      .filter((o) =>
-        statuses ? statuses.includes(String(o.status).toUpperCase()) : true,
-      )
       .sort(sortForFloor);
-  }, [allStream, deskMode, isAdmin, rfqSubchip]);
+  }, [allStream, deskMode, isAdmin]);
 
   const sections: BoardSection[] = isAdmin ? adminSections : dealerSections;
 
@@ -493,14 +505,36 @@ export function OrdersSignatureHome({
                 />
               ) : null}
               {deskMode === 'orders' && onAdminLifecycleFocusChange ? (
-                <AdminLifecycleChips
-                  value={adminLifecycleFocus}
-                  onChange={onAdminLifecycleFocusChange}
-                  counts={adminLifecycleCounts}
-                />
+                <>
+                  {onOrderTypeFocusChange ? (
+                    <OrderTypeLensBar
+                      value={orderTypeFocus}
+                      counts={orderTypeCounts}
+                      onChange={onOrderTypeFocusChange}
+                    />
+                  ) : null}
+                  <AdminLifecycleChips
+                    value={adminLifecycleFocus}
+                    onChange={onAdminLifecycleFocusChange}
+                    counts={adminLifecycleCounts}
+                  />
+                </>
               ) : null}
               {deskMode === 'requests' ? (
-                <OrdersRfqInboxChips value={rfqSubchip} onChange={setRfqSubchip} />
+                <>
+                  {onOrderTypeFocusChange ? (
+                    <OrderTypeLensBar
+                      value={orderTypeFocus}
+                      counts={orderTypeCounts}
+                      onChange={onOrderTypeFocusChange}
+                    />
+                  ) : null}
+                  <OrdersRfqInboxChips
+                    value={rfqSubchip}
+                    onChange={onRfqSubchipChange ?? (() => undefined)}
+                    counts={requestInboxCounts}
+                  />
+                </>
               ) : null}
             </>
           ) : (

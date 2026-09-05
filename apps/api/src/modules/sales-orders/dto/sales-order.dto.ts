@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { SalesOrderStatus } from '@maher/database';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
   IsIn,
@@ -79,6 +79,19 @@ export class ListSalesOrdersDto extends PaginationDto {
   @IsOptional()
   @IsString()
   deliveryTo?: string;
+
+  /**
+   * Admin Standard / Modified / Custom lens (COUNT=DATASET).
+   * Rolled via rollupOrderType — not a DB column.
+   */
+  @ApiPropertyOptional({ enum: ['STANDARD', 'MODIFIED', 'CUSTOM'] })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value == null || value === '') return undefined;
+    return String(value).toUpperCase();
+  })
+  @IsIn(['STANDARD', 'MODIFIED', 'CUSTOM'])
+  orderType?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
 }
 
 export class UpdateSalesOrderDto {

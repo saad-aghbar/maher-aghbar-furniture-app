@@ -17,16 +17,35 @@ Surfaces: `(admin)`, `(customer)`, `(employee)` under `app/(app)/`.
 | `assets/` | Icons, splash, brand, fonts |
 | `app.config.ts`, `eas.json` | Expo / EAS |
 
+## Run on the physical iPhone
+
+The Maher development app is already installed. From the **repo root**, same Wi‑Fi as the phone:
+
+```bash
+pnpm dev:api                 # API :4000
+pnpm mobile:dev-client       # Metro :8081 for the iPhone app
+```
+
+Tap **Maher Al-Aghbar Furniture** (not Expo Go). Login `admin` / `123`.
+
+Rebuild native only when plugins / native deps / `app.config.ts` change, or the app was deleted:
+
+```bash
+pnpm mobile:ios:device
+```
+
+Signing, trust, and LAN URL details: [docs/mobile-iphone-dev-build.md](../../docs/mobile-iphone-dev-build.md).
+
 ## Commands
 
 ```bash
-pnpm mobile:start          # Metro :8081 (clears cache)
+pnpm mobile:dev-client     # Metro for the physical iPhone Maher app (daily)
+pnpm mobile:ios:device     # Xcode reinstall onto a connected iPhone
+pnpm mobile:start          # Metro for simulator Expo Go 54 only (optional)
 pnpm mobile:typecheck
 pnpm mobile:test
 pnpm mobile:doctor
 ```
-
-API must be on `:4000`. See root README for Expo Go / ABI recovery.
 
 ## Dependencies
 

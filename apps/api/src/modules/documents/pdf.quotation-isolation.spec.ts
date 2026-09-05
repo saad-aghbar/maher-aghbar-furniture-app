@@ -7,7 +7,7 @@ describe('quotation PDF ownership', () => {
     const prisma = {
       quotation: { findFirst: jest.fn() },
     };
-    const ctrl = new PdfController(prisma as never, {} as never, {} as never);
+    const ctrl = new PdfController(prisma as never, {} as never, {} as never, {} as never);
     return { ctrl, prisma };
   }
 

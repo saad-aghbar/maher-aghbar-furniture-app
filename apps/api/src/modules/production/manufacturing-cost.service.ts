@@ -228,12 +228,14 @@ export class ManufacturingCostService {
       for (const m of line.productionSetup?.materialRequirements ?? []) {
         const sku = m.sku ?? m.inventoryItem?.sku;
         if (!sku) continue;
+        const expected = m.expectedQty == null ? null : Number(m.expectedQty);
+        if (expected == null) continue;
         planned.push({
           salesOrderLineId: line.id,
           sku,
           displayName: m.displayName ?? m.inventoryItem?.nameEn ?? null,
           category: (m.category as string | null) ?? m.inventoryItem?.category ?? null,
-          plannedQty: Number(m.expectedQty) * lineQty,
+          plannedQty: expected * lineQty,
         });
       }
     }
@@ -673,12 +675,14 @@ export class ManufacturingCostService {
       .map((m) => {
         const sku = m.sku ?? m.inventoryItem?.sku;
         if (!sku) return null;
+        const expected = m.expectedQty == null ? null : Number(m.expectedQty);
+        if (expected == null) return null;
         return {
           salesOrderLineId,
           sku,
           displayName: m.displayName ?? m.inventoryItem?.nameEn ?? null,
           category: (m.category as string | null) ?? m.inventoryItem?.category ?? null,
-          plannedQty: Number(m.expectedQty) * lineQty,
+          plannedQty: expected * lineQty,
         };
       })
       .filter((x): x is PlannedRow => Boolean(x));

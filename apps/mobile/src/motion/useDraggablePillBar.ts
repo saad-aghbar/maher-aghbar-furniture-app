@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { I18nManager } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import {
   Easing,
@@ -127,6 +128,8 @@ export function useDraggablePillBar({
   const hoverIndex = useSharedValue(Math.max(0, activeIndex));
   const activeIndexSV = useSharedValue(Math.max(0, activeIndex));
   const timingMs = useSharedValue(timing?.duration ?? 0);
+  /** Native RTL mirrors translateX; onLayout.x stays physical-from-left. */
+  const txMirror = useSharedValue(I18nManager.isRTL ? -1 : 1);
 
   const layoutXs = useSharedValue<number[]>([]);
   const layoutWs = useSharedValue<number[]>([]);
@@ -134,6 +137,10 @@ export function useDraggablePillBar({
   useEffect(() => {
     timingMs.value = timing?.duration ?? 0;
   }, [timing, timingMs]);
+
+  useEffect(() => {
+    txMirror.value = I18nManager.isRTL ? -1 : 1;
+  }, [txMirror]);
 
   useEffect(() => {
     activeIndexSV.value = Math.max(0, activeIndex);
@@ -149,8 +156,9 @@ export function useDraggablePillBar({
     hoverIndex.value = Math.max(0, activeIndex);
     const target = layouts[activeIndex];
     if (!target || target.width <= 0) return;
+    const x = target.x * txMirror.value;
     if (reduceMotion) {
-      pillX.value = target.x;
+      pillX.value = x;
       pillW.value = target.width;
       return;
     }
@@ -159,11 +167,11 @@ export function useDraggablePillBar({
         duration: timing.duration,
         easing: Easing.bezier(0.4, 0, 0.2, 1),
       };
-      pillX.value = withTiming(target.x, cfg);
+      pillX.value = withTiming(x, cfg);
       pillW.value = withTiming(target.width, cfg);
       return;
     }
-    pillX.value = withSpring(target.x, spring);
+    pillX.value = withSpring(x, spring);
     pillW.value = withSpring(target.width, spring);
   }, [
     activeIndex,
@@ -175,6 +183,7 @@ export function useDraggablePillBar({
     reduceMotion,
     spring,
     timing,
+    txMirror,
   ]);
 
   const select = (index: number) => {
@@ -205,7 +214,7 @@ export function useDraggablePillBar({
       if (xs.length === 0) return;
       const next = scrubPill(e.x, xs, ws);
       // Follow the finger immediately — lag feels wrong on fast scrubs
-      pillX.value = next.x;
+      pillX.value = next.x * txMirror.value;
       pillW.value = next.width;
       if (next.index !== hoverIndex.value) {
         hoverIndex.value = next.index;
@@ -216,8 +225,9 @@ export function useDraggablePillBar({
     .onEnd(() => {
       const xs = layoutXs.value;
       const ws = layoutWs.value;
-      const idx = nearestIndex(pillX.value + pillW.value / 2, xs, ws);
-      const tx = xs[idx] ?? 0;
+      const physicalX = pillX.value * txMirror.value;
+      const idx = nearestIndex(physicalX + pillW.value / 2, xs, ws);
+      const tx = (xs[idx] ?? 0) * txMirror.value;
       const tw = ws[idx] ?? 0;
       const ms = timingMs.value;
       if (ms > 0) {

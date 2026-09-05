@@ -12,6 +12,7 @@ import {
   InventoryScanMatchResult,
   type InventoryScanMatchCurrent,
   type InventoryScanMatchKind,
+  type ScannedFabricBundle,
 } from './InventoryScanMatchResult';
 
 type Props = {
@@ -24,6 +25,9 @@ type Props = {
   allowChangeItem?: boolean;
   resultKind?: InventoryScanMatchKind | null;
   resultScanned?: InventoryItem | null;
+  /** Set when the scan resolved to an order-linked fabric bundle. */
+  resultFabric?: ScannedFabricBundle | null;
+  onOpenFabric?: (bundle: ScannedFabricBundle) => void;
   onClearResult: () => void;
   onScanAgain: () => void;
   onUseScanned?: (item: InventoryItem) => void;
@@ -42,6 +46,8 @@ export function KnownItemLabelConfirm({
   allowChangeItem = true,
   resultKind = null,
   resultScanned = null,
+  resultFabric = null,
+  onOpenFabric,
   onClearResult,
   onScanAgain,
   onUseScanned,
@@ -156,6 +162,10 @@ export function KnownItemLabelConfirm({
           kind={kind}
           current={current}
           scanned={scanned}
+          fabric={resultFabric}
+          onOpenFabric={
+            resultFabric && onOpenFabric ? () => onOpenFabric(resultFabric) : undefined
+          }
           onScanAgain={onScanAgain}
           onKeepCurrent={onClearResult}
           onUseScanned={

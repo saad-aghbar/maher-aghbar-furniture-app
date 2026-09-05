@@ -15,6 +15,7 @@ import { assertCustomerOwns } from '../../common/helpers/customer-scope';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulingQueueService, type SchedulingJobName } from './scheduling-queue';
 import { bomReservationNeeds } from '../../common/helpers/inventory-reservation.util';
+import { loadFabricReadinessForSalesOrder } from '../production/fabric-readiness-load';
 import type { BomDefaults } from '../../common/helpers/order-costing.util';
 import {
   type AllocationToValidate,
@@ -1237,6 +1238,33 @@ export class SchedulingService implements OnModuleInit {
         // keeps that status so we do not credit another order's reservation.
         if ((row.reserved ?? 0) + 1e-9 < qty) continue;
         inventory[key] = { ...row, available: (row.available ?? 0) + qty };
+      }
+    }
+    if (po.salesOrderId) {
+      const fabric = await loadFabricReadinessForSalesOrder(this.prisma, po.salesOrderId);
+      for (const item of fabric.items) {
+        if (!item.sku) continue;
+        const key = inventorySkuKey(item.sku);
+        const row = inventory[key] ?? { available: 0, reserved: 0, incoming: [] };
+        if (item.readyForProduction) {
+          inventory[key] = {
+            ...row,
+            available: (row.available ?? 0) + (item.expectedQty ?? item.arrivedQty ?? 0),
+          };
+          continue;
+        }
+        if (item.expectedAvailableAt) {
+          const readyAt = new Date(item.expectedAvailableAt);
+          if (!Number.isNaN(readyAt.getTime())) {
+            inventory[key] = {
+              ...row,
+              incoming: [
+                ...(row.incoming ?? []),
+                { qty: item.expectedQty ?? 1, readyAt },
+              ],
+            };
+          }
+        }
       }
     }
     return { ...assessMaterialReadiness(required, inventory), inventory };

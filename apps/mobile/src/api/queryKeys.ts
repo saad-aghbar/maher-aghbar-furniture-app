@@ -70,6 +70,8 @@ export const queryKeys = {
       [...queryKeys.salesOrders.detail(id), 'production-setup'] as const,
     productionSetupReleasePreview: (id: string) =>
       [...queryKeys.salesOrders.productionSetup(id), 'release-preview'] as const,
+    catalogSeedPreview: (salesOrderId: string, lineId: string) =>
+      [...queryKeys.salesOrders.productionSetup(salesOrderId), 'catalog-seed-preview', lineId] as const,
   },
   requests: {
     all: ['requests'] as const,
@@ -111,6 +113,9 @@ export const queryKeys = {
     openReceipts: (itemId: string) =>
       [...queryKeys.inventory.all, 'open-receipts', itemId] as const,
     overview: () => [...queryKeys.inventory.all, 'overview'] as const,
+    fabricHolding: (q?: string) => [...queryKeys.inventory.all, 'fabric-holding', q ?? ''] as const,
+    fabricBundle: (code: string) =>
+      [...queryKeys.inventory.all, 'fabric-bundle', code] as const,
     lowStock: () => [...queryKeys.inventory.all, 'low-stock'] as const,
     semiFinished: (filters: unknown = {}) =>
       [...queryKeys.inventory.all, 'semi-finished', filters] as const,
@@ -188,6 +193,15 @@ export const queryKeys = {
     suppliers: (filters: unknown = {}) =>
       [...queryKeys.purchasing.all, 'suppliers', filters] as const,
     materialDemand: () => [...queryKeys.purchasing.all, 'material-demand'] as const,
+    fabricLists: () => [...queryKeys.purchasing.all, 'fabric'] as const,
+    fabricList: (filters: unknown = {}) =>
+      [...queryKeys.purchasing.fabricLists(), filters] as const,
+    fabricDetails: () => [...queryKeys.purchasing.all, 'fabric-detail'] as const,
+    fabricDetail: (id: string) => [...queryKeys.purchasing.fabricDetails(), id] as const,
+    fabricTracker: (salesOrderId: string) =>
+      [...queryKeys.purchasing.all, 'fabric-tracker', salesOrderId] as const,
+    fabricTaskBoard: (taskId: string) =>
+      [...queryKeys.purchasing.all, 'fabric-task-board', taskId] as const,
   },
   payments: {
     all: ['payments'] as const,

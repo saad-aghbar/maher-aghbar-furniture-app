@@ -66,6 +66,7 @@ describe('SalesOrdersService.list scope', () => {
       dealerPrice: { findMany: jest.fn().mockResolvedValue([]) },
       product: { findMany: jest.fn().mockResolvedValue([]) },
       productionStageDefinition: { findMany: jest.fn().mockResolvedValue([]) },
+      auditEvent: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     const sequences = {} as SequenceService;
@@ -110,6 +111,7 @@ describe('SalesOrdersService.list scope', () => {
         unitPrice: 1000,
         lineTotal: 1000,
         productId: 'p1',
+        manufacturingComplexity: 'STANDARD',
         product: {
           id: 'p1',
           sku: 'S1',

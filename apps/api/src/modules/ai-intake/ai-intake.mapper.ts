@@ -1,5 +1,7 @@
 import type { ExtractedLineItem } from '@maher/integrations';
 import { Prisma } from '@maher/database';
+import { mapRequestItemCreate } from '../requests/request-line-classify';
+import type { RequestItemDto } from '../requests/dto/request.dto';
 
 const ITEMS_FIELD = '__items';
 
@@ -90,7 +92,7 @@ export function resolveLineItems(
 export function lineItemsToRequestCreate(
   items: ExtractedLineItem[],
   headerNote?: string,
-): Prisma.RequestItemCreateWithoutRequestInput[] {
+): Prisma.RequestItemUncheckedCreateWithoutRequestInput[] {
   return items.map((item, index) => {
     const dimNote = dimsNote({
       width: item.width ?? undefined,
@@ -105,18 +107,18 @@ export function lineItemsToRequestCreate(
       .filter(Boolean)
       .join('\n');
 
-    return {
+    const dto: RequestItemDto = {
       productName: item.productName,
       quantity: Number(item.quantity ?? 1) || 1,
       category: item.category ?? undefined,
       material: item.material ?? undefined,
-      fabricType: item.fabricType ?? undefined,
+      fabric: item.fabricType ?? undefined,
       width: parseDim(item.width),
       height: parseDim(item.height),
       depth: parseDim(item.depth),
       notes: notes || undefined,
-      sortOrder: index,
     };
+    return mapRequestItemCreate(dto, index, null);
   });
 }
 

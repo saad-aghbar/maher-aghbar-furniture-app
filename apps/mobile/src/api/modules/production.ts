@@ -475,12 +475,60 @@ export type OrderPlanSetupTask = {
   assigneeName?: string | null;
 };
 
+export type OrderPlanCatalogTemplate = {
+  showBoard: boolean;
+  actionAvailable: boolean;
+  hasUsableDefinition: boolean;
+  manufacturingComplexity?: string | null;
+  product?: {
+    id: string;
+    sku?: string | null;
+    nameEn?: string | null;
+    nameAr?: string | null;
+    nameHe?: string | null;
+  } | null;
+  quantity?: number;
+  requestedFabricLabel?: string | null;
+  requestedFabricNeedsReview?: boolean;
+};
+
+export type OrderPlanDims = {
+  width?: number | null;
+  height?: number | null;
+  depth?: number | null;
+  seatHeight?: number | null;
+};
+
+export type OrderPlanMeasurement = {
+  key: string;
+  label: string;
+  value: number | string | null;
+  unit?: string | null;
+  catalogValue?: number | string | null;
+};
+
+export type OrderPlanCatalogDiffRow = {
+  field: string;
+  label: string;
+  from: unknown;
+  to: unknown;
+  delta?: number | null;
+};
+
 export type OrderPlanSetupResponse = {
   productionOrderId: string;
   salesOrderId: string | null;
   salesOrderLineId: string | null;
+  manufacturingComplexity?: string | null;
+  catalogDimensions?: OrderPlanDims | null;
+  orderDimensions?: OrderPlanDims | null;
+  measurements?: OrderPlanMeasurement[] | null;
+  changesFromCatalog?: OrderPlanCatalogDiffRow[];
+  materialsReviewedAt?: string | null;
+  materialsReviewRequired?: boolean;
   planEditable: boolean;
   factoryReleased: boolean;
+  catalogTemplate?: OrderPlanCatalogTemplate | null;
   plannedStartDate?: string | null;
   requiredDeliveryDate?: string | null;
   committedDeliveryDate?: string | null;
@@ -526,6 +574,8 @@ export type OrderPlanSetupResponse = {
     hasMaterials: boolean;
     hasExecutableTasks?: boolean;
     hasProductionStart?: boolean;
+    materialsReviewRequired?: boolean;
+    materialsReviewed?: boolean;
     assignment: { required: number; assigned: number; missing: string[] };
     dates?: { required: number; ready: number; missing: string[] };
     canConfirm: boolean;

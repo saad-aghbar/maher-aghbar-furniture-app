@@ -6,7 +6,7 @@
  * See docs/piece12-management-tile-map.md for the full tile → demo map.
  *
  * This module only logs the mapping at seed time so demo:reset output
- * documents which SO-P*/RET-P* rows drive management-summary tiles.
+ * documents which SO-P* / RET-P* rows drive management-summary tiles.
  */
 import type { PrismaClient } from '@prisma/client';
 

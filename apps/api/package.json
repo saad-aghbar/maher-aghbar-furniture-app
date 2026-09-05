@@ -9,6 +9,7 @@
     "start:prod": "node dist/main.js",
     "lint": "eslint \"{src,test}/**/*.ts\" --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "demo:fabric-uat": "ts-node --project tsconfig.json --transpile-only src/demo/fabric-uat.ts",
     "test": "jest --passWithNoTests --testPathIgnorePatterns=pdf.util.test && jest --passWithNoTests --testPathPattern=pdf.util.test --runInBand --testTimeout=120000",
     "test:watch": "jest --watch"
   },

@@ -9,6 +9,8 @@
   "INTERNAL_ERROR": "Something went wrong. Please try again.",
   "REQUEST_FAILED": "That didn’t go through. Try again.",
   "NETWORK": "Check your connection and try again.",
+  "NETWORK_ERROR": "Could not load the product production plan. Try again.",
+  "TIMEOUT": "The request timed out. Try again.",
 
   "USERNAME_IN_USE": "A user with this username already exists.",
   "EMAIL_IN_USE": "A user with this email already exists.",
@@ -40,6 +42,11 @@
   "PROFILE_LOCKED": "This account is managed by an administrator.",
 
   "INSUFFICIENT_STOCK": "Insufficient stock for this operation.",
+  "FABRIC_NOT_READY": "Required fabric is not ready for this stage.",
+  "FABRIC_WRONG_ORDER": "This fabric belongs to another order.",
+  "FABRIC_WRONG_RECEIVED": "This is not the fabric required for this task.",
+  "FABRIC_ALREADY_ISSUED": "This fabric bundle is not available to take in.",
+  "FABRIC_WRONG_STAGE": "This fabric is for a different production stage.",
   "INSUFFICIENT_SEMI_FINISHED_STOCK": "Required semi-finished stock is not ready for this task.",
   "WAREHOUSE_CONFIGURATION_REQUIRED": "A warehouse must be configured before this stock can be placed.",
   "WAREHOUSE_TYPE_MISMATCH": "Selected warehouse cannot store this inventory type.",
@@ -57,6 +64,14 @@
 
   "SUPPLIER_NOT_CERTIFIED": "Supplier must be certified before creating a purchase order.",
   "ORDER_LOCKED": "This order is locked and can no longer be edited.",
+  "SETUP_LOCKED": "Production has started or been confirmed — the production plan can no longer be changed from the catalog.",
+  "WORKFLOW_CHANGE_REQUIRED": "The product production plan uses a different workflow. Confirm the change before applying.",
+  "CUSTOM_NO_TEMPLATE": "Custom products have no catalog production plan. Prepare the production plan for this order.",
+  "WORKFLOW_REQUIRED": "Select a published workflow for this line.",
+  "SETUP_INCOMPLETE": "Production setup is incomplete and cannot be released.",
+  "NO_CATALOG_PRODUCT": "This line has no catalog product to load a production plan from.",
+  "NO_PUBLISHED_WORKFLOW": "This product has no published workflow.",
+  "MATERIALS_REVIEW_REQUIRED": "Review modifications before Confirm.",
   "FABRIC_LOCKED": "Fabric fields are locked because production has started.",
 
   "STAGE_LOCKED": "This stage is locked until prerequisites are completed.",

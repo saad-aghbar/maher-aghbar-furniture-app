@@ -61,8 +61,18 @@ export type ReadinessReasonCode =
   | 'MISSING_PRODUCTION_START'
   | 'NO_EXECUTABLE_TASKS'
   | 'MATERIALS_HOLD'
+  | 'MATERIALS_REVIEW_REQUIRED'
   | 'STATUS_NOT_STARTABLE'
-  | 'OPEN_BLOCKER';
+  | 'OPEN_BLOCKER'
+  | 'FABRIC_NOT_ORDERED'
+  | 'FABRIC_AWAITING_SUPPLIER'
+  | 'FABRIC_UNAVAILABLE'
+  | 'FABRIC_PARTIAL'
+  | 'FABRIC_LATE'
+  | 'FABRIC_LOCATION_MISSING'
+  | 'FABRIC_READY_NOT_TAKEN'
+  | 'FABRIC_WRONG_RECEIVED'
+  | 'FABRIC_HOLD_OVERRIDDEN';
 
 export type ReadinessMissingAssignment = {
   taskId: string;
@@ -113,6 +123,19 @@ export type ProductionReadinessDto = {
   blockers: Array<{ kind: string; taskId?: string; message?: string }>;
   reasons: ReadinessReason[];
   boardBucket: ProductionBoardBucket;
+  fabricReadiness?: {
+    required: number;
+    ready: number;
+    missing: Array<{
+      label: string;
+      qty: number | null;
+      unit: string;
+      derivedStatus: string;
+      attentionCode: string | null;
+      stageCode: string | null;
+    }>;
+    overridden: boolean;
+  };
 };
 
 export type ExecutableTaskInput = {
@@ -157,6 +180,9 @@ export type AssessReadinessInput = {
    * Piece 2 gate is upstream; Piece 3 assumes PO exists after release.
    */
   setupReady?: boolean;
+  /** MODIFIED lines must have an explicit materials review before Confirm. */
+  materialsReviewRequired?: boolean;
+  fabricReadiness?: ProductionReadinessDto['fabricReadiness'];
 };
 
 /** Floor-executable tasks: non-cancelled, non-rework, non-LOGISTICS / non-DELIVERY. */
@@ -370,6 +396,12 @@ export function assessProductionReadiness(input: AssessReadinessInput): Producti
       message: 'Set the order production start date before Confirm.',
     });
   }
+  if (input.materialsReviewRequired) {
+    reasons.push({
+      code: 'MATERIALS_REVIEW_REQUIRED',
+      message: 'Review modifications before Confirm.',
+    });
+  }
   if (!materialsReady) {
     reasons.push({
       code: 'MATERIALS_HOLD',
@@ -383,6 +415,17 @@ export function assessProductionReadiness(input: AssessReadinessInput): Producti
       message: b.message ?? b.kind,
     });
   }
+  const fabricReadiness = input.fabricReadiness;
+  if (fabricReadiness) {
+    for (const miss of fabricReadiness.missing) {
+      const code = (miss.attentionCode ?? 'FABRIC_NOT_ORDERED') as ReadinessReasonCode;
+      reasons.push({
+        code,
+        stageCode: miss.stageCode ?? undefined,
+        message: `${miss.label} is not ready for production.`,
+      });
+    }
+  }
 
   /** Hard gate: status + workflow + all assignments + all dates + order production start. Materials hold is soft. */
   const hardCodes: ReadinessReasonCode[] = [
@@ -391,6 +434,7 @@ export function assessProductionReadiness(input: AssessReadinessInput): Producti
     'MISSING_PRODUCTION_START',
     'NO_EXECUTABLE_TASKS',
     'STATUS_NOT_STARTABLE',
+    'MATERIALS_REVIEW_REQUIRED',
   ];
   const hardReasons = reasons.filter((r) => hardCodes.includes(r.code));
   const canStart =
@@ -426,6 +470,7 @@ export function assessProductionReadiness(input: AssessReadinessInput): Producti
     blockers,
     reasons,
     boardBucket,
+    fabricReadiness,
   };
 }
 
@@ -435,7 +480,9 @@ export function productionNotReadyException(readiness: ProductionReadinessDto) {
       r.code === 'MISSING_ASSIGNMENT' ||
       r.code === 'MISSING_DATE' ||
       r.code === 'NO_EXECUTABLE_TASKS' ||
-      r.code === 'STATUS_NOT_STARTABLE',
+      r.code === 'STATUS_NOT_STARTABLE' ||
+      r.code === 'MISSING_PRODUCTION_START' ||
+      r.code === 'MATERIALS_REVIEW_REQUIRED',
   );
   const detail = (hard.length > 0 ? hard : readiness.reasons)
     .map((r) => r.message)

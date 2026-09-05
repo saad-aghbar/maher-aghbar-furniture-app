@@ -74,6 +74,7 @@ export function CreateStockCountSheet({
   const {
     verifyKind,
     verifyScanned,
+    verifyFabric,
     verifyBusy,
     clearLabelVerify,
     resetLabelVerify,
@@ -239,6 +240,7 @@ export function CreateStockCountSheet({
                       allowChangeItem
                       resultKind={verifyKind}
                       resultScanned={verifyScanned}
+                      resultFabric={verifyFabric}
                       onScanPress={() => void runLabelVerify()}
                       onClearResult={clearLabelVerify}
                       onScanAgain={() => void runLabelVerify()}

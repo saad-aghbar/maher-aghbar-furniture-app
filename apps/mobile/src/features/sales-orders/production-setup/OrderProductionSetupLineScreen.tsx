@@ -704,7 +704,9 @@ export function OrderProductionSetupLineScreen({
                         : t('mobile.productionSetup.seedFromCatalog')
                     }
                     onPress={() =>
-                      actions.seedFromCatalog.mutate(line.id, {
+                      actions.seedFromCatalog.mutate(
+                        { lineId: line.id },
+                        {
                         onSuccess: () =>
                           showToast({
                             variant: 'success',

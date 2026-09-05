@@ -61,6 +61,7 @@ import {
   TaskMaterialsFloorSection,
   type TaskMaterialsFloorHandle,
 } from './components/TaskMaterialsFloorSection';
+import { TaskFabricTakeInBoard } from './components/TaskFabricTakeInBoard';
 import {
   TaskIncomingWorkFloorSection,
   type TaskIncomingFloorHandle,
@@ -1302,6 +1303,7 @@ export function TaskDetailScreen({
               {canRecordUsage ? (
                 <TaskMaterialsFloorSection ref={materialsRef} taskId={taskId} />
               ) : null}
+              {canRecordUsage ? <TaskFabricTakeInBoard taskId={taskId} /> : null}
 
               <TaskIncomingWorkFloorSection
                 ref={incomingRef}

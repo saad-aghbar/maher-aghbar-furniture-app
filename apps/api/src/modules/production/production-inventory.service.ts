@@ -20,6 +20,8 @@ import {
 } from './product-inventory-output.resolver';
 import { jsonIdList } from '../../common/helpers/inventory-stage-behavior.util';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
+import { fabricStageIsReady } from './fabric-readiness';
+import { loadFabricReadinessForSalesOrder } from './fabric-readiness-load';
 
 const QC_PASS: QualityResult[] = [QualityResult.PASSED, QualityResult.PASSED_WITH_NOTES];
 
@@ -246,7 +248,7 @@ export class ProductionInventoryService {
     });
     const qty = Number(po.quantity) || 1;
     if (snap.consumesRawMaterials) {
-      await this.assertRawReady(db, po, qty);
+      await this.assertRawReady(db, po, qty, params.stageInstanceId);
     }
     if (snap.consumesSemiFinished) {
       await this.assertSemiFinishedReady(db, po.id, qty, snap);
@@ -561,16 +563,78 @@ export class ProductionInventoryService {
 
   private async assertRawReady(
     db: Tx | PrismaService,
-    po: { id: string; product: { bomDefaults: Prisma.JsonValue } | null },
+    po: { id: string; salesOrderId?: string | null; product: { bomDefaults: Prisma.JsonValue } | null },
     qty: number,
+    stageInstanceId: string,
   ) {
-    const needs = bomReservationNeeds((po.product?.bomDefaults ?? null) as BomDefaults | null, qty);
-    if (!needs.length) {
-      throw new BadRequestException({
-        code: 'INSUFFICIENT_STOCK',
-        message: 'Required materials are not ready for this task.',
+    const snap = await db.productionOrderWorkflowSnapshotNode.findFirst({
+      where: { stageInstanceId },
+      include: {
+        materialInputs: {
+          include: {
+            inventoryItem: { select: { id: true, sku: true, itemClass: true, category: true } },
+          },
+        },
+        stageDefinition: { select: { code: true } },
+      },
+    });
+    const stageInputs = (snap?.materialInputs ?? []).filter(
+      (row) =>
+        row.inventoryItem?.itemClass === InventoryItemClass.RAW_MATERIAL &&
+        (row.required || Number(row.qtyPerUnit) > 0),
+    );
+    const fabricInputs = stageInputs.filter(
+      (row) => String(row.inventoryItem?.category ?? '').toUpperCase() === 'FABRIC',
+    );
+    const otherInputs = stageInputs.filter(
+      (row) => String(row.inventoryItem?.category ?? '').toUpperCase() !== 'FABRIC',
+    );
+
+    if (fabricInputs.length || po.salesOrderId) {
+      const fabric = await loadFabricReadinessForSalesOrder(db as never, po.salesOrderId);
+      const stageCode = snap?.stageDefinition?.code ?? (snap as { stageCode?: string })?.stageCode ?? null;
+      const gate = fabricStageIsReady(fabric.items, stageCode, {
+        applyUnscoped: fabricInputs.length > 0,
       });
+      if (!gate.ready) {
+        const names = gate.missing.map((m) => m.label).join(', ');
+        throw new BadRequestException({
+          code: 'FABRIC_NOT_READY',
+          message: names
+            ? `Fabric not ready: ${names}`
+            : 'Required fabric is not ready for this stage.',
+          details: { missing: gate.missing },
+        });
+      }
     }
+
+    if (otherInputs.length) {
+      for (const row of otherInputs) {
+        const needQty = (Number(row.qtyPerUnit) || 0) * qty;
+        if (!(needQty > 0)) continue;
+        const onHand = await this.rawOnHand(db as Tx, row.inventoryItemId);
+        if (onHand + 1e-9 < needQty) {
+          throw new BadRequestException({
+            code: 'INSUFFICIENT_STOCK',
+            message: 'Required materials are not ready for this task.',
+          });
+        }
+      }
+      return;
+    }
+
+    if (stageInputs.length) return;
+
+    // Legacy snapshots with no per-stage map: fall back to product BOM.
+    // Stages that consume raw but have an empty frozen map (e.g. carpentry
+    // after a correctly attributed seed) are allowed to start.
+    const hasAnyFrozenInputs = await db.productionOrderWorkflowSnapshotMaterialInput.count({
+      where: { snapshotNode: { snapshot: { productionOrderId: po.id } } },
+    });
+    if (hasAnyFrozenInputs > 0) return;
+
+    const needs = bomReservationNeeds((po.product?.bomDefaults ?? null) as BomDefaults | null, qty);
+    if (!needs.length) return;
     for (const need of needs) {
       const item = await this.resolveRawItem(db as Tx, need);
       if (!item) {

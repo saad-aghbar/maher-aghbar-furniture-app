@@ -108,5 +108,14 @@
   "WAITING_RETURN": "ממתין להחזרה",
   "RETURNED": "הוחזר",
   "INSPECTING": "בבדיקה",
-  "RESOLVED": "נסגר"
+  "RESOLVED": "נסגר",
+  "NEEDS_ORDERING": "דורש הזמנה",
+  "AWAITING_SUPPLIER": "ממתין לספק",
+  "SUPPLIER_CONFIRMED": "הספק אישר",
+  "PARTIALLY_AVAILABLE": "זמין חלקית",
+  "UNAVAILABLE": "לא זמין",
+  "WAITING": "ממתין",
+  "READY_FOR_PICKUP": "מוכן לאיסוף",
+  "ARRIVED": "הגיע",
+  "PARTIAL": "חלקי"
 }

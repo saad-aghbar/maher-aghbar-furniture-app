@@ -1,10 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Priority, RequestSource, RequestStatus } from '@maher/database';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -17,6 +18,7 @@ import {
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 import { PHONE_E164_PATTERN } from '../../customers/dto/customer.dto';
+import { FabricSelectionDto } from '../../../common/dto/fabric-selection.dto';
 
 export class ListRequestsDto extends PaginationDto {
   @ApiPropertyOptional({ enum: RequestStatus })
@@ -41,6 +43,19 @@ export class ListRequestsDto extends PaginationDto {
   @IsOptional()
   @IsEnum(RequestSource)
   source?: RequestSource;
+
+  /**
+   * Admin Standard / Modified / Custom lens (COUNT=DATASET).
+   * Rolled via rollupOrderType — not a DB column.
+   */
+  @ApiPropertyOptional({ enum: ['STANDARD', 'MODIFIED', 'CUSTOM'] })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value == null || value === '') return undefined;
+    return String(value).toUpperCase();
+  })
+  @IsIn(['STANDARD', 'MODIFIED', 'CUSTOM'])
+  requestType?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
 }
 
 export class CustomMeasurementItemDto {
@@ -119,6 +134,13 @@ export class RequestItemDto {
   @IsOptional()
   @IsString()
   color?: string;
+
+  @ApiPropertyOptional({ type: [FabricSelectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FabricSelectionDto)
+  fabrics?: FabricSelectionDto[];
 
   @ApiPropertyOptional()
   @IsOptional()

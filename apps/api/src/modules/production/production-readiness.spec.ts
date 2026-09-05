@@ -133,6 +133,17 @@ describe('production-readiness', () => {
     expect(ready.materialsReady).toBe(true);
   });
 
+  it('blocks canStart when MODIFIED materials review is still required', () => {
+    const r = assessProductionReadiness({
+      status: 'PLANNED',
+      tasks: [dated(carpentry, 'u1'), dated({ ...assembly, assignedEmployeeId: null }, 'u2')],
+      plannedStartDate: '2026-09-01T08:00:00.000Z',
+      materialsReviewRequired: true,
+    });
+    expect(r.canStart).toBe(false);
+    expect(r.reasons.some((x) => x.code === 'MATERIALS_REVIEW_REQUIRED')).toBe(true);
+  });
+
   it('blocks canStart when order production start date is missing', () => {
     const r = assessProductionReadiness({
       status: 'PLANNED',

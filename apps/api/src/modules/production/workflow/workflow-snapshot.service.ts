@@ -6,6 +6,7 @@ import { buildStageTaskInstructions } from '../../../common/helpers/stage-task-i
 import { WorkflowVersionService } from './workflow-version.service';
 import type { CompilerOrderOverride, CompiledProductionWorkflow } from './domain';
 import { resolveProductStageOutput } from '../product-inventory-output.resolver';
+import { distributeMaterialsToSnapshotNodes } from '../distribute-stage-materials';
 
 type Tx = Prisma.TransactionClient;
 
@@ -65,7 +66,8 @@ export class WorkflowSnapshotService {
       workflowId?: string;
       /**
        * Piece 2: when provided, replace product stage material inputs on snapshot nodes
-       * (expected materials from order production setup). Attached to first raw-consuming node.
+       * (expected materials from order production setup). Distributed onto the
+       * catalog stage that consumes each SKU — not dumped onto the first raw node.
        */
       materialOverrides?: Array<{
         inventoryItemId: string;
@@ -336,6 +338,38 @@ export class WorkflowSnapshotService {
           include: { inventoryItem: { select: { sku: true, unit: true } } },
         })
       : [];
+    const overrideRows =
+      Array.isArray(meta.materialOverrides) && meta.materialOverrides.length > 0
+        ? meta.materialOverrides
+        : [];
+    const distributedOverrides = overrideRows.length
+      ? distributeMaterialsToSnapshotNodes(
+          compiled.included.map((n) => ({
+            id: n.nodeKey,
+            stageCode: n.stageCode,
+            sourceWorkflowNodeId: n.sourceWorkflowNodeId,
+            stageDefinitionId: n.stageDefinitionId,
+            consumesRawMaterials: n.consumesRawMaterials ?? false,
+            sortOrder: n.sortOrder,
+          })),
+          productMaterialInputs.map((row) => ({
+            inventoryItemId: row.inventoryItemId,
+            workflowNodeId: row.workflowNodeId,
+            stageDefinitionId: row.stageDefinitionId,
+            qtyPerUnit: row.qtyPerUnit,
+            unit: row.unit,
+            quantityMode: row.quantityMode,
+            sku: row.inventoryItem.sku,
+          })),
+          overrideRows,
+        )
+      : [];
+    const distributedByNodeKey = new Map<string, typeof distributedOverrides>();
+    for (const row of distributedOverrides) {
+      const list = distributedByNodeKey.get(row.snapshotNodeId) ?? [];
+      list.push(row);
+      distributedByNodeKey.set(row.snapshotNodeId, list);
+    }
 
     const nodeIdByKey = new Map<string, string>();
 
@@ -444,34 +478,25 @@ export class WorkflowSnapshotService {
       const materialRows = productMaterialInputs.filter(
         (row) => row.workflowNodeId === n.sourceWorkflowNodeId,
       );
-      const useOverrides = Array.isArray(meta.materialOverrides) && meta.materialOverrides.length > 0;
-      if (useOverrides) {
-        // Attach all order expected materials to the first raw-consuming production node only.
-        const isFirstRawConsumer =
-          (n.consumesRawMaterials ?? false) &&
-          !compiled.included.some(
-            (other) =>
-              other.sortOrder < n.sortOrder && (other.consumesRawMaterials ?? false),
-          );
-        if (isFirstRawConsumer || (!compiled.included.some((o) => o.consumesRawMaterials) && n.sortOrder === compiled.included[0]?.sortOrder)) {
-          for (const row of meta.materialOverrides!) {
-            const sku = row.sku?.trim();
-            if (!sku) continue;
-            await tx.productionOrderWorkflowSnapshotMaterialInput.create({
-              data: {
-                snapshotNodeId: snapNode.id,
-                stageCode: n.stageCode,
-                inventoryItemId: row.inventoryItemId,
-                sku,
-                qtyPerUnit: row.qtyPerUnit,
-                quantityMode: row.quantityMode ?? 'LINEAR',
-                unit: row.unit || 'pcs',
-                required: row.required ?? true,
-              },
-            });
-          }
+      const overrideForNode = distributedByNodeKey.get(n.nodeKey) ?? [];
+      if (overrideForNode.length) {
+        for (const row of overrideForNode) {
+          const sku = row.sku?.trim();
+          if (!sku) continue;
+          await tx.productionOrderWorkflowSnapshotMaterialInput.create({
+            data: {
+              snapshotNodeId: snapNode.id,
+              stageCode: n.stageCode,
+              inventoryItemId: row.inventoryItemId,
+              sku,
+              qtyPerUnit: row.qtyPerUnit,
+              quantityMode: row.quantityMode,
+              unit: row.unit || 'pcs',
+              required: row.required,
+            },
+          });
         }
-      } else {
+      } else if (!overrideRows.length) {
         for (const row of materialRows) {
           const sku = row.inventoryItem.sku?.trim();
           if (!sku) continue;

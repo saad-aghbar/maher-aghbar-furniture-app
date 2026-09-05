@@ -59,4 +59,5 @@ Enforced by `pnpm check:boundaries` (Batch 5).
 | Users / employees | API `users`, `roles` · Web `users/`, `employees/`, `roles/` |
 | Factory UAT (88 assertions) | `pnpm smoke:factory-lifecycle` → `scripts/factory-lifecycle-uat.mjs` (API must be up; needs `nile` + `seed:factory-uat-only`) |
 | Launch the websites | `pnpm launch` / `pnpm dev:admin` — see root README |
-| Launch Mobile | `pnpm mobile:start` with API on `:4000` |
+| Launch Mobile (simulator Expo Go 54) | `pnpm mobile:start` with API on `:4000` |
+| Launch Mobile (physical iPhone development app) | `pnpm mobile:dev-client` after one-time `pnpm mobile:ios:device` — [mobile-iphone-dev-build.md](../mobile-iphone-dev-build.md) |

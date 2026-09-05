@@ -37,6 +37,17 @@ export type RequestItem = {
   fabricColor?: string | null;
   fabric?: string | null;
   color?: string | null;
+  fabrics?: Array<{
+    key?: string;
+    type?: string | null;
+    code?: string | null;
+    color?: string | null;
+    role?: string | null;
+    photoDocumentId?: string | null;
+    quantity?: number | null;
+    unit?: string | null;
+    notes?: string | null;
+  }> | null;
   description?: string | null;
   /** STANDARD | MODIFIED | CUSTOM — order-line vs catalog (Piece 1). */
   manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;

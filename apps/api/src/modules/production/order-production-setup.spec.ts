@@ -99,6 +99,20 @@ describe('Piece 2 order production setup', () => {
       salesOrderLineMaterialRequirement: {
         deleteMany: jest.fn(),
         createMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      fabricProcurement: {
+        create: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      salesOrderLine: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'line-1', productId: 'p1' }),
+      },
+      productStageMaterialInput: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      productionOrderWorkflowSnapshot: {
+        findUnique: jest.fn().mockResolvedValue(null),
       },
       productionOrder: {
         count: jest.fn().mockResolvedValue(overrides.poCount ?? 0),
@@ -393,6 +407,15 @@ describe('Piece 4 manufacturing specification', () => {
         findUniqueOrThrow: jest.fn(),
       },
       salesOrderLineMaterialRequirement: { deleteMany: jest.fn(), createMany: jest.fn() },
+      salesOrderLine: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'line-1', productId: 'p1' }),
+      },
+      productStageMaterialInput: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      productionOrderWorkflowSnapshot: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
       productionOrder: {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn(),

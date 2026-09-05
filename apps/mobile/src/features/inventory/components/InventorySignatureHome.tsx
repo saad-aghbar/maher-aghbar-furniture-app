@@ -27,6 +27,7 @@ import {
   getInventoryItem,
   openInventoryLabelPdf,
   openInventoryQrLabelPdf,
+  openRawMaterialsReportPdf,
   openWipKitQrLabelPdf,
   type InventoryCategoryGroup,
   type InventoryItem,
@@ -51,6 +52,8 @@ import {
 } from '../selectInventoryOps';
 import { AddStockSheet, type StockMoveMode } from './AddStockSheet';
 import { InventoryCategoryRail } from './InventoryCategoryRail';
+import { RawMaterialsReportRow } from './RawMaterialsReportRow';
+import { RawMaterialsReportSheet } from './RawMaterialsReportSheet';
 import { InventoryGroupLoadError } from './InventoryGroupLoadError';
 import { InventoryCompositionChrome } from './InventoryCompositionChrome';
 import { CreateInventoryItemSheet } from './CreateInventoryItemSheet';
@@ -60,6 +63,7 @@ import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { EditInventoryItemSheet } from './EditInventoryItemSheet';
 import { InventoryLowStockFocus } from './InventoryLowStockFocus';
 import { InventoryMaterialRow } from './InventoryMaterialRow';
+import { FabricDeskSection } from './FabricDeskSection';
 import { InventoryQrSheet, qrItemFromApi, qrItemFromCard, type InventoryQrItem } from './InventoryQrSheet';
 import { InventoryScanResultSheet } from './InventoryScanResultSheet';
 import { InventorySemiOrderDetailSheet } from './InventorySemiOrderDetailSheet';
@@ -86,6 +90,10 @@ import { InventoryFinishedOrderCard } from './InventoryFinishedOrderCard';
 import { InventoryLotInspectSheet } from './InventoryLotInspectSheet';
 import { InventoryFgLotInspectSheet } from './InventoryFgLotInspectSheet';
 import { warehousesForLifecycle, warehouseTypeForLifecycle } from '../preferWarehouseForReceive';
+import {
+  canOpenRawMaterialsReport,
+  type RawMaterialsReportRequest,
+} from '../rawMaterialsReport';
 import {
   boardParamsForSemiFilter,
   selectSemiOrdersFromBoard,
@@ -185,6 +193,7 @@ export function InventorySignatureHome({
   const canEdit = can(user, 'inventory.adjust');
   const canLabelPdf = can(user, 'inventory.read');
   const canEditCost = can(user, 'inventory.cost.read');
+  const canRawReport = canOpenRawMaterialsReport(user);
   const canCreateWarehouse = can(user, 'warehouse.manage');
 
   const [section, setSection] = useState<InventoryHomeSection>('items');
@@ -217,6 +226,8 @@ export function InventorySignatureHome({
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createOpsOpen, setCreateOpsOpen] = useState(false);
   const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
+  const [rawReportOpen, setRawReportOpen] = useState(false);
+  const pendingRawReportRef = useRef<RawMaterialsReportRequest | null>(null);
   const [inspectLot, setInspectLot] = useState<SemiFinishedLot | null>(null);
   const [inspectFgLot, setInspectFgLot] = useState<FinishedLot | null>(null);
   const [editItem, setEditItem] = useState<InventoryItemCardModel | null>(null);
@@ -413,6 +424,31 @@ export function InventorySignatureHome({
     if (next) openQrLabelPdf(next);
   }
 
+  /** Close period sheet first — stacking PdfDownloadSheet on it freezes iOS. */
+  function queueRawMaterialsReport(request: RawMaterialsReportRequest) {
+    pendingRawReportRef.current = request;
+    setRawReportOpen(false);
+  }
+
+  function flushRawMaterialsReport() {
+    const request = pendingRawReportRef.current;
+    pendingRawReportRef.current = null;
+    if (!request) return;
+    void (async () => {
+      const opts = await pickPdfOptions();
+      if (!opts) return;
+      try {
+        await openRawMaterialsReportPdf(request, opts);
+      } catch {
+        void haptics.error();
+        showToast({
+          variant: 'error',
+          message: t('mobile.inventory.rawReport.failed'),
+        });
+      }
+    })();
+  }
+
   function lotScanPayload(lot: SemiFinishedLot): string | null {
     return lot.qrCode?.trim() || lot.wipKit?.qrCode?.trim() || null;
   }
@@ -508,6 +544,15 @@ export function InventorySignatureHome({
       void haptics.confirmLight();
       setInspectKitSeed(resolved.kit);
       setInspectKitId(resolved.kit.id);
+      return;
+    }
+    if (resolved.status === 'ORDER_FABRIC') {
+      // Order-linked fabric has its own identity screen — never a generic SKU view.
+      void haptics.confirmLight();
+      const bundleCode = resolved.lot.qrCode ?? code;
+      router.push(
+        `/(app)/(admin)/inventory/fabric-bundle/${encodeURIComponent(bundleCode)}` as Href,
+      );
       return;
     }
     if (resolved.status === 'FOUND_LOT') {
@@ -910,11 +955,16 @@ export function InventorySignatureHome({
         }
       >
         {section === 'items' && lifecycle === 'materials' ? (
-          <InventoryCategoryRail
-            groups={groups}
-            active={categoryGroup}
-            onChange={setCategoryGroup}
-          />
+          <>
+            <InventoryCategoryRail
+              groups={groups}
+              active={categoryGroup}
+              onChange={setCategoryGroup}
+            />
+            {canRawReport ? (
+              <RawMaterialsReportRow onPress={() => setRawReportOpen(true)} />
+            ) : null}
+          </>
         ) : null}
       </InventoryCompositionChrome>
 
@@ -968,7 +1018,12 @@ export function InventorySignatureHome({
           </AppText>
         </View>
       ) : section === 'items' && lifecycle === 'materials' ? (
-        <View style={{ gap: 4, marginBottom: theme.spacing.xs }}>
+        categoryGroup === 'fabric' ? (
+          <View style={{ marginBottom: theme.spacing.xs }}>
+            <FabricDeskSection q={q || undefined} enabled={allowed} />
+          </View>
+        ) : (
+        <View style={{ gap: theme.spacing.sm, marginBottom: theme.spacing.xs }}>
           <AppText
             variant="body"
             weight={locale === 'ar' ? 'medium' : 'semibold'}
@@ -984,6 +1039,7 @@ export function InventorySignatureHome({
             {t('mobile.inventory.materialsSectionHint')}
           </AppText>
         </View>
+        )
       ) : (
         <AppText
           variant="caption"
@@ -1656,6 +1712,15 @@ export function InventorySignatureHome({
             });
           });
         }}
+      />
+      <RawMaterialsReportSheet
+        open={rawReportOpen}
+        onClose={() => {
+          pendingRawReportRef.current = null;
+          setRawReportOpen(false);
+        }}
+        onConfirm={queueRawMaterialsReport}
+        onClosed={flushRawMaterialsReport}
       />
       {pdfDownloadSheet}
     </AppScreen>

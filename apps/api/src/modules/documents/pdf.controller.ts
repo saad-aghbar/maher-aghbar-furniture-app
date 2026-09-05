@@ -32,6 +32,8 @@ import { isDealerVisibleQuotationStatus } from '../quotations/quotation-visibili
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 import { InventoryItemReportService } from '../inventory/inventory-item-report.service';
 import { mapInventoryItemReportToPdfSpec } from '../inventory/inventory-item-report-pdf';
+import { RawMaterialsReportService } from '../inventory/raw-materials-report.service';
+import { buildRawMaterialsReportPdf } from '../inventory/raw-materials-report-pdf';
 import { LocalStorageService } from '../../integrations/storage/local-storage.service';
 
 @ApiTags('pdf')
@@ -41,6 +43,7 @@ export class PdfController {
     private readonly prisma: PrismaService,
     private readonly inventoryItemReport: InventoryItemReportService,
     private readonly storage: LocalStorageService,
+    private readonly rawMaterialsReport: RawMaterialsReportService,
   ) {}
 
   private opts(
@@ -441,6 +444,55 @@ export class PdfController {
     sendPdf(res, `item-report-${report.identity.sku}.pdf`, buffer);
   }
 
+  @Get('inventory/reports/raw-materials/pdf')
+  @RequirePermissions('report.inventory.read', 'inventory.cost.read')
+  async rawMaterialsReportPdf(
+    @CurrentUser() user: AuthUser,
+    @Query('period') period: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    return this.sendRawMaterialsPdf(user, { period, from, to, lang, theme }, acceptLanguage, res);
+  }
+
+  /** Plan path — PdfController has no `/documents` prefix, so this is the literal URL. */
+  @Get('documents/inventory/reports/raw-materials')
+  @RequirePermissions('report.inventory.read', 'inventory.cost.read')
+  async rawMaterialsReportPdfAlias(
+    @CurrentUser() user: AuthUser,
+    @Query('period') period: string | undefined,
+    @Query('from') from: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    return this.sendRawMaterialsPdf(user, { period, from, to, lang, theme }, acceptLanguage, res);
+  }
+
+  private async sendRawMaterialsPdf(
+    user: AuthUser,
+    query: { period?: string; from?: string; to?: string; lang?: string; theme?: string },
+    acceptLanguage: string | undefined,
+    res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang: query.lang, theme: query.theme }, acceptLanguage);
+    const payload = await this.rawMaterialsReport.build({
+      period: query.period,
+      from: query.from,
+      to: query.to,
+      locale,
+      user,
+    });
+    const buffer = await buildRawMaterialsReportPdf(payload, pdfTheme);
+    sendPdf(res, `raw-materials-${payload.period.fromYmd}-${payload.period.toYmd}.pdf`, buffer);
+  }
+
   /** Warehouse print sheet — centered photo + large QR (not the item report). */
   @Get('inventory/items/:id/qr-label')
   @RequirePermissions('inventory.read')
@@ -676,6 +728,62 @@ export class PdfController {
       image: photo ?? undefined,
     });
     sendPdf(res, `wip-piece-${piece.qrCode || piece.id}.pdf`, buffer);
+  }
+
+  @Get('inventory/lots/:id/qr-label')
+  @RequirePermissions('inventory.read')
+  async fabricLotQrLabel(
+    @Param('id') id: string,
+    @Query('lang') lang: string | undefined,
+    @Query('theme') theme: string | undefined,
+    @Headers('accept-language') acceptLanguage: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { locale, theme: pdfTheme } = this.opts({ lang, theme }, acceptLanguage);
+    const m = pdfMessages(locale);
+    const lot = await this.prisma.inventoryLot.findUnique({
+      where: { id },
+      include: {
+        inventoryItem: true,
+        warehouse: true,
+        location: true,
+        salesOrder: { select: { number: true } },
+        fabricProcurement: {
+          include: {
+            requirement: {
+              select: { requestedFabricLabel: true, fabricRole: true, stageCode: true },
+            },
+          },
+        },
+      },
+    });
+    if (!lot) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Lot not found.' });
+    }
+    const label =
+      lot.fabricProcurement?.requirement.requestedFabricLabel ||
+      lot.inventoryItem.nameEn ||
+      lot.inventoryItem.sku;
+    const scanCode = printableScanCode(lot.qrCode, '');
+    const details: Array<{ label: string; value: string }> = [
+      { label: m.unit, value: `${Number(lot.remainingQty ?? lot.quantity)} ${lot.inventoryItem.unit}` },
+    ];
+    if (lot.salesOrder?.number) details.push({ label: 'Order', value: lot.salesOrder.number });
+    if (lot.fabricProcurement?.requirement.fabricRole) {
+      details.push({ label: 'Placement', value: lot.fabricProcurement.requirement.fabricRole });
+    }
+    if (lot.location?.code) details.push({ label: 'Location', value: lot.location.code });
+    const buffer = await buildInventoryLabelPdf({
+      locale,
+      theme: pdfTheme,
+      title: label,
+      subtitle: lot.qrCode ?? lot.inventoryItem.sku,
+      sku: lot.qrCode ?? lot.inventoryItem.sku,
+      scanCode,
+      details,
+      hint: m.labelScanHint,
+    });
+    sendPdf(res, `fabric-lot-${lot.qrCode || lot.id}.pdf`, buffer);
   }
 
   private async bufferFromStorageKey(key: string | null | undefined): Promise<Buffer | null> {

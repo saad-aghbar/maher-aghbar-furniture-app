@@ -45,11 +45,11 @@ export function SetupFabricSection({
   const hasShortage = shortageQty != null && shortageQty > 0;
 
   return (
-    <OrderBoardCard accent={colors.info}>
+    <OrderBoardCard accent={colors.brand}>
       <OrderSectionHeader
         icon="color-palette-outline"
         label={t('mobile.productionSetup.sections.fabric')}
-        accent={colors.info}
+        accent={colors.brand}
       />
       <View
         style={{

@@ -3,12 +3,15 @@ import { resolveInventoryScan } from './resolveInventoryScan';
 import {
   classifyLabelScan,
   type InventoryScanMatchKind,
+  type ScannedFabricBundle,
 } from './components/InventoryScanMatchResult';
 import type { InventoryItem } from './api';
 
 export type LabelVerifyOutcome = {
   kind: InventoryScanMatchKind;
   scanned: InventoryItem | null;
+  /** Present when the scan was an order-linked fabric bundle. */
+  fabric?: ScannedFabricBundle;
 };
 
 /**
@@ -32,7 +35,25 @@ export async function runInventoryLabelVerify(args: {
   qrLog(0, `VERIFY lookup start ${code}`);
   try {
     const resolved = await resolveInventoryScan(code);
-    if (resolved.status === 'NOT_FOUND' || resolved.status === 'FOUND_KIT' || resolved.status === 'FOUND_LOT') {
+    if (resolved.status === 'ORDER_FABRIC') {
+      // Real answer: this bundle belongs to an order, it is not free stock.
+      qrLog(0, 'VERIFY lookup ORDER_FABRIC');
+      return {
+        kind: 'ORDER_FABRIC',
+        scanned: null,
+        fabric: {
+          code: resolved.lot.qrCode ?? code,
+          label: resolved.lot.fabricProcurement?.label ?? resolved.lot.inventoryItem.nameEn,
+          orderNumber:
+            resolved.lot.salesOrder?.number ?? resolved.lot.salesOrderNumber ?? null,
+        },
+      };
+    }
+    if (
+      resolved.status === 'NOT_FOUND' ||
+      resolved.status === 'FOUND_KIT' ||
+      resolved.status === 'FOUND_LOT'
+    ) {
       qrLog(0, `VERIFY lookup ${resolved.status}`);
       return { kind: 'UNKNOWN', scanned: null };
     }

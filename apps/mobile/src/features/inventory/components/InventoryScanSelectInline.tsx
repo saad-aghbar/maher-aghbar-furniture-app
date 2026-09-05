@@ -18,6 +18,7 @@ export type InlineScanSelectMode =
   | 'blocked-type'
   | 'blocked-inactive'
   | 'not-found'
+  | 'order-fabric'
   | 'error';
 
 type Props = {
@@ -26,6 +27,9 @@ type Props = {
   onScanAgain: () => void;
   onCancel: () => void;
   onUseMaterial?: () => void;
+  /** Bundle identity when `mode` is `order-fabric`. */
+  fabric?: { code: string; label: string | null; orderNumber: string | null } | null;
+  onOpenFabric?: () => void;
 };
 
 /**
@@ -38,6 +42,8 @@ export function InventoryScanSelectInline({
   onScanAgain,
   onCancel,
   onUseMaterial,
+  fabric,
+  onOpenFabric,
 }: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
@@ -52,9 +58,11 @@ export function InventoryScanSelectInline({
         ? t('mobile.inventory.inactiveCannotSelect')
         : mode === 'blocked-type'
           ? t('mobile.inventory.cannotUseHere')
-          : mode === 'not-found'
-            ? t('mobile.inventory.itemNotFound')
-            : t('mobile.inventory.couldntIdentifyItem');
+          : mode === 'order-fabric'
+            ? t('mobile.inventory.fabricScanNotStockTitle')
+            : mode === 'not-found'
+              ? t('mobile.inventory.itemNotFound')
+              : t('mobile.inventory.couldntIdentifyItem');
 
   return (
     <View
@@ -110,7 +118,13 @@ export function InventoryScanSelectInline({
           }}
         >
           <Ionicons
-            name={mode === 'error' ? 'cloud-offline-outline' : 'alert-circle-outline'}
+            name={
+              mode === 'error'
+                ? 'cloud-offline-outline'
+                : mode === 'order-fabric'
+                  ? 'color-palette-outline'
+                  : 'alert-circle-outline'
+            }
             size={28}
             color={colors.warning}
           />
@@ -134,6 +148,26 @@ export function InventoryScanSelectInline({
         </AppText>
       ) : null}
 
+      {mode === 'order-fabric' ? (
+        <View style={{ gap: 2 }}>
+          <AppText variant="caption" color="muted">
+            {t('mobile.inventory.fabricScanNotStockBody', {
+              order: fabric?.orderNumber ?? '—',
+            })}
+          </AppText>
+          {fabric?.label ? (
+            <AppText variant="caption" weight="medium">
+              {fabric.label}
+            </AppText>
+          ) : null}
+          {fabric?.code ? (
+            <AppText variant="caption" color="muted" dir="ltr">
+              {fabric.code}
+            </AppText>
+          ) : null}
+        </View>
+      ) : null}
+
       {mode === 'not-found' ? (
         <AppText variant="caption" color="muted">
           {t('mobile.inventory.labelUnknownBody')}
@@ -154,6 +188,16 @@ export function InventoryScanSelectInline({
             onPress={() => {
               void haptics.confirmLight();
               onUseMaterial?.();
+            }}
+          />
+        ) : null}
+        {mode === 'order-fabric' && onOpenFabric ? (
+          <ActionPill
+            label={t('mobile.inventory.fabricScanOpenBundle')}
+            brand
+            onPress={() => {
+              void haptics.selection();
+              onOpenFabric();
             }}
           />
         ) : null}

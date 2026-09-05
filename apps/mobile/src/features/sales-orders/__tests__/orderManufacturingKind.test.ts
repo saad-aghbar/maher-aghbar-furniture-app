@@ -17,5 +17,6 @@ describe('orderManufacturingKind', () => {
       'custom',
     );
     expect(resolveOrderManufacturingKind([])).toBe('standard');
+    expect(resolveOrderManufacturingKind([null])).toBe('custom');
   });
 });

@@ -13,9 +13,10 @@ import {
   SalesOrderProductionSetupStatus,
   SalesOrderStatus,
 } from '@maher/database';
-import type { AuthUser, OrderLineSpecSnapshot, OrderMeasurement } from '@maher/types';
+import type { AuthUser, OrderFabricSelection, OrderLineSpecSnapshot, OrderMeasurement } from '@maher/types';
 import {
   buildCatalogDiff,
+  normalizeOrderFabrics,
   normalizeOrderMeasurements,
 } from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
@@ -28,12 +29,32 @@ import {
 import { NotificationsService } from '../notifications/notifications.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { WorkflowSnapshotService } from './workflow/workflow-snapshot.service';
+import { distributeMaterialsToSnapshotNodes } from './distribute-stage-materials';
+import { expectedQtyNumber } from './fabric-readiness';
+import { ensureFabricProcurementsForSalesOrder } from './ensure-fabric-procurements';
 import type {
   MaterialRequirementInputDto,
   PatchLineSetupDto,
   PutLineMaterialsDto,
 } from './order-production-setup.dto';
 import { PIECE2_EXPECTED_MATERIAL_COSTING_HOOK } from './order-production-setup.costing-hook';
+import {
+  CATALOG_TEMPLATE_AUDIT_ACTION,
+  bomMaterialCount,
+  catalogSeedActionAvailable,
+  catalogSeedRequiresWorkflowConfirm,
+  countExecutableWorkflowTasks,
+  countSemiWipOutputs,
+  fabricLabelFromSpec,
+  hasUsableCatalogProductionDefinition,
+  isProductionOrderLocked,
+  resolveLinePlanType,
+  SEED_WILL_NOT_CHANGE,
+  STARTED_PRODUCTION_STATUSES,
+  type CatalogSeedPreviewDto,
+  type CatalogSeedUnavailableReason,
+  type CatalogWorkflowIdentity,
+} from './catalog-seed-preview';
 
 type Tx = Prisma.TransactionClient;
 
@@ -82,6 +103,15 @@ export class OrderProductionSetupService {
   }
 
   private fabricLabel(spec: OrderLineSpecSnapshot | null): string | null {
+    const fromList = spec?.fabrics
+      ?.map((row) => {
+        const parts = [row.type, row.code, row.color]
+          .map((x) => (x != null ? String(x).trim() : ''))
+          .filter(Boolean);
+        return parts.join(' · ');
+      })
+      .filter(Boolean);
+    if (fromList?.length) return fromList.join('; ');
     if (!spec?.fabric) return null;
     const parts = [spec.fabric.type, spec.fabric.code, spec.fabric.color]
       .map((x) => (x != null ? String(x).trim() : ''))
@@ -196,6 +226,7 @@ export class OrderProductionSetupService {
         },
       });
       void setup;
+      await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
       return this.getSetup(salesOrderId, user);
     }
 
@@ -214,6 +245,7 @@ export class OrderProductionSetupService {
         },
       },
     });
+    await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
 
     await this.prisma.auditEvent.create({
       data: {
@@ -247,6 +279,7 @@ export class OrderProductionSetupService {
           inventoryItemId: string;
           qtyPerUnit: unknown;
           unit: string;
+          quantityMode?: string | null;
           inventoryItem: {
             id: string;
             sku: string;
@@ -284,6 +317,7 @@ export class OrderProductionSetupService {
       seatHeight: this.num(spec?.requestedDimensions?.seatHeight) ?? catalogDimensions.seatHeight,
     };
     const requestedFabric = this.fabricLabel(spec);
+    const dealerFabrics = normalizeOrderFabrics(spec?.fabrics, spec?.fabric ?? undefined);
     const packaging = this.extractPackaging(line.product?.stageInventoryOutputs ?? []);
     const measurements = normalizeOrderMeasurements(spec?.customMeasurements);
 
@@ -291,6 +325,7 @@ export class OrderProductionSetupService {
       complexity,
       product: line.product,
       requestedFabric,
+      dealerFabrics,
     });
 
     const needsReview = complexity === ManufacturingComplexity.MODIFIED || complexity === ManufacturingComplexity.CUSTOM;
@@ -348,12 +383,16 @@ export class OrderProductionSetupService {
   private seedMaterials(input: {
     complexity: ManufacturingComplexity;
     requestedFabric: string | null;
+    dealerFabrics?: OrderFabricSelection[];
     product: {
       bomDefaults: unknown;
       stageMaterialInputs: Array<{
         inventoryItemId: string;
         qtyPerUnit: unknown;
         unit: string;
+        quantityMode?: string | null;
+        workflowNodeId?: string | null;
+        stageDefinition?: { code?: string | null } | null;
         inventoryItem: {
           id: string;
           sku: string;
@@ -364,23 +403,29 @@ export class OrderProductionSetupService {
       }>;
     } | null;
   }): Prisma.SalesOrderLineMaterialRequirementCreateWithoutLineSetupInput[] {
-    if (!input.product || input.complexity === ManufacturingComplexity.CUSTOM) {
-      return [];
-    }
-
+    const dealerFabrics = input.dealerFabrics ?? [];
     const needsReview = input.complexity === ManufacturingComplexity.MODIFIED;
-    const fromStages = input.product.stageMaterialInputs;
-    if (fromStages.length > 0) {
+    const fromStages = input.product?.stageMaterialInputs ?? [];
+    const fabricStages = fromStages.filter(
+      (row) => String(row.inventoryItem.category).toUpperCase() === 'FABRIC',
+    );
+    const otherStages = fromStages.filter(
+      (row) => String(row.inventoryItem.category).toUpperCase() !== 'FABRIC',
+    );
+
+    const rows: Prisma.SalesOrderLineMaterialRequirementCreateWithoutLineSetupInput[] = [];
+    let sort = 0;
+
+    if (input.product && input.complexity !== ManufacturingComplexity.CUSTOM && otherStages.length > 0) {
       const byItem = new Map<string, Prisma.SalesOrderLineMaterialRequirementCreateWithoutLineSetupInput>();
-      let sort = 0;
-      for (const row of fromStages) {
+      for (const row of otherStages) {
         const existing = byItem.get(row.inventoryItemId);
         const qty = Number(row.qtyPerUnit) || 0;
         if (existing) {
-          existing.expectedQty = new Prisma.Decimal(Number(existing.expectedQty) + qty);
+          const prev = expectedQtyNumber(existing.expectedQty) ?? 0;
+          existing.expectedQty = new Prisma.Decimal(prev + qty);
           continue;
         }
-        const isFabric = String(row.inventoryItem.category).toUpperCase() === 'FABRIC';
         byItem.set(row.inventoryItemId, {
           inventoryItem: { connect: { id: row.inventoryItemId } },
           sku: row.inventoryItem.sku,
@@ -389,32 +434,105 @@ export class OrderProductionSetupService {
           unit: row.unit || row.inventoryItem.unit || 'pcs',
           expectedQty: new Prisma.Decimal(qty || 1),
           source: SalesOrderMaterialRequirementSource.CATALOG,
-          needsReview: needsReview && isFabric,
-          requestedFabricLabel: isFabric ? input.requestedFabric ?? undefined : undefined,
+          needsReview,
+          stageCode: row.stageDefinition?.code ?? undefined,
+          workflowNodeId: row.workflowNodeId ?? undefined,
           sortOrder: sort++,
         });
       }
-      return [...byItem.values()];
+      rows.push(...byItem.values());
+    } else if (
+      input.product &&
+      input.complexity !== ManufacturingComplexity.CUSTOM &&
+      otherStages.length === 0 &&
+      fabricStages.length === 0
+    ) {
+      const bom = (input.product.bomDefaults ?? null) as BomDefaults | null;
+      const materials = bom?.materials ?? [];
+      for (const [idx, m] of materials.entries()) {
+        const isFabric = String(m.category ?? '').toUpperCase() === 'FABRIC';
+        if (isFabric) continue;
+        rows.push({
+          sku: m.sku?.trim() || undefined,
+          displayName: m.sku?.trim() || m.category || 'Material',
+          category: (m.category as never) ?? undefined,
+          unit: 'pcs',
+          expectedQty: new Prisma.Decimal(Number(m.qty) || 1),
+          source: SalesOrderMaterialRequirementSource.CATALOG,
+          needsReview,
+          sortOrder: sort++,
+        });
+        void idx;
+      }
     }
 
-    const bom = (input.product.bomDefaults ?? null) as BomDefaults | null;
-    const materials = bom?.materials ?? [];
-    return materials.map((m, idx) => ({
-      sku: m.sku?.trim() || undefined,
-      displayName: m.sku?.trim() || m.category || 'Material',
-      category: (m.category as never) ?? undefined,
-      unit: 'pcs',
-      expectedQty: new Prisma.Decimal(Number(m.qty) || 1),
-      source: SalesOrderMaterialRequirementSource.CATALOG,
-      needsReview:
-        needsReview &&
-        (String(m.category ?? '').toUpperCase() === 'FABRIC' || Boolean(input.requestedFabric)),
-      requestedFabricLabel:
-        String(m.category ?? '').toUpperCase() === 'FABRIC'
-          ? input.requestedFabric ?? undefined
-          : undefined,
-      sortOrder: idx,
-    }));
+    const catalogFabricPool = [...fabricStages];
+    if (dealerFabrics.length) {
+      for (const sel of dealerFabrics) {
+        const catalog = catalogFabricPool.shift();
+        const labelParts = [sel.type, sel.code, sel.color].filter((x) => String(x ?? '').trim());
+        const label = labelParts.length ? labelParts.join(' · ') : input.requestedFabric;
+        const qty = sel.quantity != null && Number.isFinite(Number(sel.quantity))
+          ? Number(sel.quantity)
+          : catalog
+            ? Number(catalog.qtyPerUnit) || null
+            : null;
+        rows.push({
+          inventoryItem: catalog ? { connect: { id: catalog.inventoryItemId } } : undefined,
+          sku: catalog?.inventoryItem.sku,
+          displayName: catalog?.inventoryItem.nameEn ?? sel.type ?? 'Fabric',
+          category: 'FABRIC' as never,
+          unit: sel.unit || catalog?.unit || catalog?.inventoryItem.unit || 'm',
+          expectedQty: qty != null ? new Prisma.Decimal(qty) : null,
+          qtyIsEstimate: qty == null,
+          source: SalesOrderMaterialRequirementSource.CATALOG,
+          needsReview: needsReview || Boolean(label),
+          requestedFabricLabel: label ?? undefined,
+          stageCode: catalog?.stageDefinition?.code ?? undefined,
+          workflowNodeId: catalog?.workflowNodeId ?? undefined,
+          fabricRole: sel.role ?? undefined,
+          fabricSelectionKey: sel.key ?? undefined,
+          sortOrder: sort++,
+        });
+      }
+      for (const catalog of catalogFabricPool) {
+        const qty = Number(catalog.qtyPerUnit) || 1;
+        rows.push({
+          inventoryItem: { connect: { id: catalog.inventoryItemId } },
+          sku: catalog.inventoryItem.sku,
+          displayName: catalog.inventoryItem.nameEn,
+          category: catalog.inventoryItem.category as never,
+          unit: catalog.unit || catalog.inventoryItem.unit || 'm',
+          expectedQty: new Prisma.Decimal(qty),
+          source: SalesOrderMaterialRequirementSource.CATALOG,
+          needsReview: needsReview || Boolean(input.requestedFabric),
+          requestedFabricLabel: input.requestedFabric ?? undefined,
+          stageCode: catalog.stageDefinition?.code ?? undefined,
+          workflowNodeId: catalog.workflowNodeId ?? undefined,
+          sortOrder: sort++,
+        });
+      }
+    } else {
+      for (const catalog of catalogFabricPool) {
+        const qty = Number(catalog.qtyPerUnit) || 1;
+        rows.push({
+          inventoryItem: { connect: { id: catalog.inventoryItemId } },
+          sku: catalog.inventoryItem.sku,
+          displayName: catalog.inventoryItem.nameEn,
+          category: catalog.inventoryItem.category as never,
+          unit: catalog.unit || catalog.inventoryItem.unit || 'm',
+          expectedQty: new Prisma.Decimal(qty),
+          source: SalesOrderMaterialRequirementSource.CATALOG,
+          needsReview: needsReview || Boolean(input.requestedFabric),
+          requestedFabricLabel: input.requestedFabric ?? undefined,
+          stageCode: catalog.stageDefinition?.code ?? undefined,
+          workflowNodeId: catalog.workflowNodeId ?? undefined,
+          sortOrder: sort++,
+        });
+      }
+    }
+
+    return rows;
   }
 
   async getSetup(salesOrderId: string, user?: AuthUser): Promise<Record<string, unknown>> {
@@ -569,12 +687,14 @@ export class OrderProductionSetupService {
         const lineQty = lineQtyById.get(line.id) || 1;
         const materials = line.materialRequirements.map((m) => {
           const sku = m.sku ?? m.inventoryItem?.sku ?? null;
-          const expectedQty = Number(m.expectedQty);
+          const expectedQty = expectedQtyNumber(m.expectedQty);
           const mappedCost = sku && materialCosts.has(sku) ? materialCosts.get(sku)! : null;
           const costAvailable = mappedCost != null && mappedCost > 0;
           const unitCost = costAvailable ? mappedCost : null;
           const estimatedLineCost =
-            costAvailable && unitCost != null ? unitCost * expectedQty * lineQty : null;
+            costAvailable && unitCost != null && expectedQty != null
+              ? unitCost * expectedQty * lineQty
+              : null;
           return {
             id: m.id,
             inventoryItemId: m.inventoryItemId,
@@ -583,11 +703,15 @@ export class OrderProductionSetupService {
             category: m.category ?? m.inventoryItem?.category ?? null,
             unit: m.unit,
             expectedQty,
-            totalExpectedQty: expectedQty * lineQty,
+            qtyIsEstimate: m.qtyIsEstimate,
+            totalExpectedQty: expectedQty != null ? expectedQty * lineQty : null,
             source: m.source,
             needsReview: m.needsReview,
             notes: m.notes,
             requestedFabricLabel: m.requestedFabricLabel,
+            fabricRole: m.fabricRole,
+            fabricSelectionKey: m.fabricSelectionKey,
+            stageCode: m.stageCode,
             inventoryItem: m.inventoryItem,
             availability: lineReadiness?.byRequirementId[m.id] ?? null,
             unitCost,
@@ -619,7 +743,7 @@ export class OrderProductionSetupService {
           fabric: {
             requestedLabel: line.requestedFabricLabel,
             selected: selectedFabric,
-            expectedQty: fabricMaterials.reduce((s, m) => s + m.expectedQty, 0),
+            expectedQty: fabricMaterials.reduce((s, m) => s + (m.expectedQty ?? 0), 0),
             availableQty: fabricAvail?.available ?? null,
             shortageQty: fabricAvail?.short ?? null,
             unitCostAvailable: selectedFabric?.costAvailable ?? false,
@@ -884,7 +1008,8 @@ export class OrderProductionSetupService {
   private summarizeLineMaterialCosts(
     materials: Array<{
       category: string | null;
-      expectedQty: number;
+      // Fabric requirements may carry an unknown quantity until the dealer spec lands.
+      expectedQty: number | null;
       unitCost: number | null;
       estimatedCost: number | null;
       costAvailable: boolean;
@@ -905,7 +1030,7 @@ export class OrderProductionSetupService {
     let anyAvailable = false;
     let anyUnavailable = false;
     for (const m of materials) {
-      const qty = m.expectedQty;
+      const qty = m.expectedQty ?? 0;
       const cost = m.costAvailable && m.estimatedCost != null ? m.estimatedCost : 0;
       if (m.costAvailable) anyAvailable = true;
       else anyUnavailable = true;
@@ -1018,12 +1143,20 @@ export class OrderProductionSetupService {
           inventoryItemId: string | null;
           needsReview: boolean;
           expectedQty: unknown;
+          category?: string | null;
+          qtyIsEstimate?: boolean | null;
         }>;
       }>;
     },
-    opts?: { requireMaterials?: boolean },
+    opts?: {
+      requireMaterials?: boolean;
+      requireWorkflow?: boolean;
+      requireLinesReady?: boolean;
+    },
   ): { ok: boolean; issues: SetupValidationIssue[] } {
     const requireMaterials = opts?.requireMaterials !== false;
+    const requireWorkflow = opts?.requireWorkflow !== false;
+    const requireLinesReady = opts?.requireLinesReady !== false;
     const issues: SetupValidationIssue[] = [];
     if (!setup.lines.length) {
       issues.push({
@@ -1041,20 +1174,22 @@ export class OrderProductionSetupService {
           section: 'spec',
         });
       }
-      if (!line.workflowId) {
-        issues.push({
-          code: 'WORKFLOW_REQUIRED',
-          message: 'Select a published workflow for this line.',
-          lineId: line.salesOrderLineId,
-          section: 'workflow',
-        });
-      } else if (!line.workflowConfirmedAt) {
-        issues.push({
-          code: 'WORKFLOW_UNCONFIRMED',
-          message: 'Confirm the selected workflow path.',
-          lineId: line.salesOrderLineId,
-          section: 'workflow',
-        });
+      if (requireWorkflow) {
+        if (!line.workflowId) {
+          issues.push({
+            code: 'WORKFLOW_REQUIRED',
+            message: 'Select a published workflow for this line.',
+            lineId: line.salesOrderLineId,
+            section: 'workflow',
+          });
+        } else if (!line.workflowConfirmedAt) {
+          issues.push({
+            code: 'WORKFLOW_UNCONFIRMED',
+            message: 'Confirm the selected workflow path.',
+            lineId: line.salesOrderLineId,
+            section: 'workflow',
+          });
+        }
       }
       if (requireMaterials) {
         if (!line.materialRequirements.length) {
@@ -1075,7 +1210,18 @@ export class OrderProductionSetupService {
             });
             break;
           }
-          if (Number(m.expectedQty) <= 0) {
+          if (expectedQtyNumber(m.expectedQty) == null) {
+            const isFabric = String(m.category ?? '').toUpperCase() === 'FABRIC';
+            if (!isFabric && !m.qtyIsEstimate) {
+              issues.push({
+                code: 'MATERIAL_QTY_REQUIRED',
+                message: 'Material expected quantity must be greater than zero.',
+                lineId: line.salesOrderLineId,
+                section: 'materials',
+              });
+              break;
+            }
+          } else if (Number(m.expectedQty) <= 0) {
             issues.push({
               code: 'MATERIAL_QTY_REQUIRED',
               message: 'Material expected quantity must be greater than zero.',
@@ -1095,7 +1241,11 @@ export class OrderProductionSetupService {
           }
         }
       }
-      if (line.status !== SalesOrderLineSetupStatus.READY && setup.status === SalesOrderProductionSetupStatus.READY_FOR_RELEASE) {
+      if (
+        requireLinesReady &&
+        line.status !== SalesOrderLineSetupStatus.READY &&
+        setup.status === SalesOrderProductionSetupStatus.READY_FOR_RELEASE
+      ) {
         issues.push({
           code: 'LINE_NOT_READY',
           message: 'All lines must be READY before release.',
@@ -1115,6 +1265,7 @@ export class OrderProductionSetupService {
         inventoryItemId: string | null;
         expectedQty: unknown;
         needsReview: boolean;
+        category?: string | null;
       }>;
     }>,
     lineQtyById: Map<string, number>,
@@ -1161,8 +1312,19 @@ export class OrderProductionSetupService {
             available: 0,
             reserved: 0,
             free: 0,
-            short: Number(m.expectedQty) * qty,
+            short: (expectedQtyNumber(m.expectedQty) ?? 0) * qty,
             status: 'NEEDS_SELECTION',
+          };
+          continue;
+        }
+        const isFabric = String(m.category ?? '').toUpperCase() === 'FABRIC';
+        if (isFabric) {
+          byRequirementId[m.id] = {
+            available: 0,
+            reserved: 0,
+            free: 0,
+            short: 0,
+            status: 'ORDER_ALLOCATED',
           };
           continue;
         }
@@ -1176,7 +1338,7 @@ export class OrderProductionSetupService {
         const available = Number(balance?.availableQty ?? 0);
         const reserved = Number(balance?.reservedQty ?? 0);
         const free = available - reserved;
-        const needed = Number(m.expectedQty) * qty;
+        const needed = (expectedQtyNumber(m.expectedQty) ?? 0) * qty;
         const short = Math.max(0, needed - free);
         if (short > 0) {
           lineStatus = lineStatus === 'NEEDS_REVIEW' || lineStatus === 'NEEDS_SELECTION' ? lineStatus : 'SHORTAGE';
@@ -1371,7 +1533,8 @@ export class OrderProductionSetupService {
       displayName: string | null;
       category: string | null;
       unit: string;
-      expectedQty: number;
+      // Null until a fabric quantity is known (dealer spec / supplier confirm).
+      expectedQty: number | null;
       source: SalesOrderMaterialRequirementSource;
       needsReview: boolean;
       notes: string | null;
@@ -1398,7 +1561,7 @@ export class OrderProductionSetupService {
         displayName: m.displayName ?? item?.nameEn ?? null,
         category,
         unit: m.unit ?? item?.unit ?? 'pcs',
-        expectedQty: Number(m.expectedQty) || 0,
+        expectedQty: expectedQtyNumber(m.expectedQty),
         source: (m.source as SalesOrderMaterialRequirementSource) ?? SalesOrderMaterialRequirementSource.FACTORY_MODIFIED,
         needsReview: Boolean(m.needsReview),
         notes: m.notes ?? null,
@@ -1408,9 +1571,50 @@ export class OrderProductionSetupService {
     return out;
   }
 
-  async seedFromCatalog(salesOrderId: string, lineId: string, user: AuthUser) {
+  async previewSeedFromCatalog(
+    salesOrderId: string,
+    lineId: string,
+    user: AuthUser,
+  ): Promise<CatalogSeedPreviewDto> {
     this.assertStaff(user);
-    const setup = await this.requireEditableSetup(salesOrderId);
+    return this.buildCatalogSeedPreview(salesOrderId, lineId);
+  }
+
+  async seedFromCatalog(
+    salesOrderId: string,
+    lineId: string,
+    user: AuthUser,
+    opts?: { confirmWorkflowChange?: boolean },
+  ) {
+    this.assertStaff(user);
+    const preview = await this.buildCatalogSeedPreview(salesOrderId, lineId);
+    const planType = resolveLinePlanType({
+      manufacturingComplexity: preview.manufacturingComplexity,
+      productId: preview.productId,
+    });
+    if (planType === 'CUSTOM' || !preview.productId || !preview.product) {
+      throw new BadRequestException({
+        code: 'CUSTOM_NO_TEMPLATE',
+        message:
+          'Custom products have no catalog production plan. Prepare the production plan for this order.',
+      });
+    }
+    if (preview.factoryLocked) {
+      throw new BadRequestException({
+        code: 'SETUP_LOCKED',
+        message: 'Production has started or been confirmed — setup can no longer be edited.',
+      });
+    }
+    if (preview.requiresWorkflowChangeConfirmation && !opts?.confirmWorkflowChange) {
+      throw new BadRequestException({
+        code: 'WORKFLOW_CHANGE_REQUIRED',
+        message:
+          'The product production plan uses a different workflow. Confirm the change before applying.',
+        details: preview,
+      });
+    }
+
+    const setup = await this.requireEditableLineSetup(salesOrderId, lineId);
     const line = setup.lines.find((l) => l.salesOrderLineId === lineId || l.id === lineId);
     if (!line) {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Setup line not found.' });
@@ -1418,45 +1622,13 @@ export class OrderProductionSetupService {
 
     const soLine = await this.prisma.salesOrderLine.findUnique({
       where: { id: line.salesOrderLineId },
-      include: {
-        product: {
-          select: {
-            id: true,
-            nameEn: true,
-            width: true,
-            height: true,
-            depth: true,
-            seatHeight: true,
-            bomDefaults: true,
-            workflowConfiguration: { select: { workflowId: true } },
-            stageMaterialInputs: {
-              include: {
-                inventoryItem: {
-                  select: {
-                    id: true,
-                    sku: true,
-                    nameEn: true,
-                    category: true,
-                    unit: true,
-                  },
-                },
-              },
-            },
-            stageInventoryOutputs: {
-              select: {
-                expectedPieceCount: true,
-                pieceLabels: true,
-                inventoryTracking: true,
-              },
-            },
-          },
-        },
-      },
+      include: { product: { select: this.catalogProductSelect() } },
     });
     if (!soLine?.productId || !soLine.product) {
       throw new BadRequestException({
-        code: 'NO_CATALOG_PRODUCT',
-        message: 'Cannot seed from catalog for a CUSTOM line without a product.',
+        code: 'CUSTOM_NO_TEMPLATE',
+        message:
+          'Custom products have no catalog production plan. Prepare the production plan for this order.',
       });
     }
 
@@ -1475,32 +1647,33 @@ export class OrderProductionSetupService {
       false,
     );
 
+    const previousComplexity = line.manufacturingComplexity;
+    const catalogWorkflowId = soLine.product.workflowConfiguration?.workflowId ?? null;
+    const quantityModeByItemId = this.quantityModeByInventoryItem(
+      soLine.product.stageMaterialInputs,
+    );
+
     await this.prisma.$transaction(async (tx) => {
       await tx.salesOrderLineMaterialRequirement.deleteMany({ where: { lineSetupId: line.id } });
-      // Explicit CUSTOM on the setup line is sticky — seed may refresh materials/dims
-      // from catalog inspiration but must not auto-clear CUSTOM.
-      const keepCustom =
-        line.manufacturingComplexity === ManufacturingComplexity.CUSTOM;
+      const stickyComplexity =
+        line.manufacturingComplexity ?? soLine.manufacturingComplexity ?? seeded.manufacturingComplexity;
+      const keepOrderSpec =
+        stickyComplexity === ManufacturingComplexity.CUSTOM ||
+        stickyComplexity === ManufacturingComplexity.MODIFIED;
       await tx.salesOrderLineSetup.update({
         where: { id: line.id },
         data: {
           manufacturingName: seeded.manufacturingName,
-          manufacturingComplexity: keepCustom
-            ? ManufacturingComplexity.CUSTOM
-            : seeded.manufacturingComplexity,
+          manufacturingComplexity: stickyComplexity,
           catalogDimensions: seeded.catalogDimensions,
-          // Preserve order dims when MODIFIED/CUSTOM already set (no auto material scale either —
-          // seedMaterials copies catalog qty as-is).
-          orderDimensions: keepCustom
+          orderDimensions: keepOrderSpec
             ? (line.orderDimensions as Prisma.InputJsonValue) ?? seeded.orderDimensions
             : seeded.orderDimensions,
-          workflowId: soLine.product!.workflowConfiguration?.workflowId ?? null,
+          workflowId: catalogWorkflowId,
           workflowConfirmedAt: seeded.workflowConfirmedAt ?? null,
           packagingExpectation: seeded.packagingExpectation,
-          requestedFabricLabel: keepCustom
-            ? line.requestedFabricLabel
-            : seeded.requestedFabricLabel,
-          measurements: keepCustom
+          requestedFabricLabel: line.requestedFabricLabel ?? seeded.requestedFabricLabel,
+          measurements: keepOrderSpec
             ? ((line.measurements as Prisma.InputJsonValue) ?? seeded.measurements ?? Prisma.JsonNull)
             : seeded.measurements ?? Prisma.JsonNull,
           status: SalesOrderLineSetupStatus.NEEDS_REVIEW,
@@ -1510,8 +1683,410 @@ export class OrderProductionSetupService {
       });
     });
 
+    await ensureFabricProcurementsForSalesOrder(this.prisma, salesOrderId);
     await this.recomputeLineAndHeaderStatus(setup.id, line.id);
+    await this.syncLineMaterialsToProductionOrders(line.id, quantityModeByItemId);
+
+    if (preview.requiresWorkflowChangeConfirmation && catalogWorkflowId) {
+      for (const poId of preview.unreleasedProductionOrderIds) {
+        await this.workflowSnapshots.assignWorkflowToProductionOrder(
+          poId,
+          catalogWorkflowId,
+          user.id,
+        );
+      }
+    }
+
+    await this.prisma.auditEvent.create({
+      data: {
+        userId: user.id,
+        action: CATALOG_TEMPLATE_AUDIT_ACTION,
+        entityType: 'SalesOrderLineSetup',
+        entityId: line.id,
+        oldValues: {
+          salesOrderId,
+          lineId: line.salesOrderLineId,
+          manufacturingComplexity: previousComplexity,
+          current: preview.current,
+        },
+        newValues: {
+          salesOrderId,
+          lineId: line.salesOrderLineId,
+          productId: preview.product.id,
+          product: preview.product,
+          sourceWorkflow: preview.productPlan.workflow,
+          previousSetup: preview.current,
+          appliedSetup: preview.productPlan,
+          appliedBy: user.id,
+          appliedAt: new Date().toISOString(),
+          workflowChanged: preview.requiresWorkflowChangeConfirmation,
+          manufacturingComplexity: previousComplexity,
+        },
+      },
+    });
+
     return this.getSetup(salesOrderId, user);
+  }
+
+  private catalogProductSelect() {
+    return {
+      id: true,
+      sku: true,
+      nameEn: true,
+      nameAr: true,
+      nameHe: true,
+      width: true,
+      height: true,
+      depth: true,
+      seatHeight: true,
+      bomDefaults: true,
+      workflowConfiguration: {
+        select: {
+          workflowId: true,
+          workflow: {
+            select: {
+              id: true,
+              code: true,
+              nameEn: true,
+              nameAr: true,
+              nameHe: true,
+              status: true,
+              activeVersion: {
+                select: {
+                  id: true,
+                  versionNumber: true,
+                  status: true,
+                  nodes: {
+                    select: {
+                      defaultEstimatedMinutes: true,
+                      stageDefinition: { select: { executionKind: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      stageMaterialInputs: {
+        include: {
+          inventoryItem: {
+            select: {
+              id: true,
+              sku: true,
+              nameEn: true,
+              category: true,
+              unit: true,
+            },
+          },
+          stageDefinition: { select: { code: true } },
+        },
+      },
+      stageInventoryOutputs: {
+        select: {
+          expectedPieceCount: true,
+          pieceLabels: true,
+          inventoryTracking: true,
+        },
+      },
+    } satisfies Prisma.ProductSelect;
+  }
+
+  private quantityModeByInventoryItem(
+    rows: Array<{ inventoryItemId: string; quantityMode?: string | null }>,
+  ): Map<string, 'LINEAR' | 'FIXED' | 'SETUP_PLUS_LINEAR' | 'BATCH' | 'PARALLEL_CAPACITY'> {
+    const out = new Map<
+      string,
+      'LINEAR' | 'FIXED' | 'SETUP_PLUS_LINEAR' | 'BATCH' | 'PARALLEL_CAPACITY'
+    >();
+    for (const row of rows) {
+      if (out.has(row.inventoryItemId)) continue;
+      out.set(row.inventoryItemId, this.asQuantityMode(row.quantityMode));
+    }
+    return out;
+  }
+
+  private asQuantityMode(
+    value: unknown,
+  ): 'LINEAR' | 'FIXED' | 'SETUP_PLUS_LINEAR' | 'BATCH' | 'PARALLEL_CAPACITY' {
+    const mode = String(value ?? 'LINEAR').toUpperCase();
+    if (
+      mode === 'FIXED' ||
+      mode === 'SETUP_PLUS_LINEAR' ||
+      mode === 'BATCH' ||
+      mode === 'PARALLEL_CAPACITY'
+    ) {
+      return mode;
+    }
+    return 'LINEAR';
+  }
+
+  private workflowIdentity(
+    workflow:
+      | {
+          id: string;
+          code?: string | null;
+          nameEn?: string | null;
+          nameAr?: string | null;
+          nameHe?: string | null;
+          activeVersion?: { versionNumber?: number | null } | null;
+        }
+      | null
+      | undefined,
+    versionNumber?: number | null,
+  ): CatalogWorkflowIdentity | null {
+    if (!workflow?.id) return null;
+    return {
+      id: workflow.id,
+      code: workflow.code ?? null,
+      nameEn: workflow.nameEn ?? null,
+      nameAr: workflow.nameAr ?? null,
+      nameHe: workflow.nameHe ?? null,
+      versionNumber: versionNumber ?? workflow.activeVersion?.versionNumber ?? null,
+    };
+  }
+
+  private async buildCatalogSeedPreview(
+    salesOrderId: string,
+    lineId: string,
+  ): Promise<CatalogSeedPreviewDto> {
+    const setup = await this.prisma.salesOrderProductionSetup.findUnique({
+      where: { salesOrderId },
+      include: {
+        lines: { include: { materialRequirements: true, workflow: true } },
+      },
+    });
+    if (!setup) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Production setup not found.' });
+    }
+    const line = setup.lines.find((l) => l.salesOrderLineId === lineId || l.id === lineId);
+    if (!line) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Setup line not found.' });
+    }
+
+    const soLine = await this.prisma.salesOrderLine.findUnique({
+      where: { id: line.salesOrderLineId },
+      include: { product: { select: this.catalogProductSelect() } },
+    });
+
+    const pos = await this.prisma.productionOrder.findMany({
+      where: { salesOrderLineId: line.salesOrderLineId, archivedAt: null },
+      select: {
+        id: true,
+        status: true,
+        releasedToFactoryAt: true,
+        actualStartDate: true,
+        workflowSnapshot: {
+          select: {
+            sourceWorkflowId: true,
+            sourceVersionNumber: true,
+            sourceWorkflow: {
+              select: {
+                id: true,
+                code: true,
+                nameEn: true,
+                nameAr: true,
+                nameHe: true,
+              },
+            },
+          },
+        },
+        tasks: {
+          where: { status: { not: 'CANCELLED' } },
+          select: { id: true },
+        },
+      },
+    });
+
+    const factoryLocked = pos.some((po) => isProductionOrderLocked(po));
+    const unreleasedProductionOrderIds = pos
+      .filter((po) => !isProductionOrderLocked(po))
+      .map((po) => po.id);
+    const snapshot = pos.find((po) => po.workflowSnapshot)?.workflowSnapshot ?? null;
+    const currentWorkflow = this.workflowIdentity(
+      snapshot?.sourceWorkflow ?? line.workflow,
+      snapshot?.sourceVersionNumber ?? null,
+    );
+    const currentWorkflowId =
+      snapshot?.sourceWorkflowId ?? line.workflowId ?? currentWorkflow?.id ?? null;
+
+    const emptySummary = {
+      materials: 0,
+      workflow: null as CatalogWorkflowIdentity | null,
+      stages: 0,
+      tasks: 0,
+      semiWip: 0,
+      hasDurationEstimates: false,
+    };
+
+    const current = {
+      ...emptySummary,
+      materials: line.materialRequirements.length,
+      workflow: currentWorkflow,
+      stages: snapshot ? 0 : line.workflow ? 0 : 0,
+      tasks: pos.reduce((n, po) => n + (po.tasks?.length ?? 0), 0),
+      hasExistingPlan:
+        line.materialRequirements.length > 0 ||
+        Boolean(currentWorkflowId) ||
+        pos.some((po) => (po.tasks?.length ?? 0) > 0),
+    };
+
+    if (snapshot) {
+      const snapNodes = await this.prisma.productionOrderWorkflowSnapshotNode.count({
+        where: {
+          snapshot: { productionOrderId: { in: pos.map((p) => p.id) } },
+        },
+      });
+      current.stages = snapNodes;
+    }
+
+    const product = soLine?.product ?? null;
+    const complexity =
+      soLine?.manufacturingComplexity ??
+      line.manufacturingComplexity ??
+      null;
+    const requestedFabric =
+      line.requestedFabricLabel ?? fabricLabelFromSpec(soLine?.orderSpec) ?? null;
+    const spec = this.asSpec(soLine?.orderSpec);
+    const dealerFabrics = normalizeOrderFabrics(spec?.fabrics, spec?.fabric ?? undefined);
+
+    if (!soLine?.productId || !product) {
+      return {
+        salesOrderId,
+        lineId: line.salesOrderLineId,
+        setupLineId: line.id,
+        manufacturingComplexity: complexity,
+        productId: soLine?.productId ?? null,
+        product: null,
+        quantity: Number(soLine?.quantity) || 0,
+        requestedFabricLabel: requestedFabric,
+        actionAvailable: false,
+        unavailableReason: 'no_product',
+        hasUsableDefinition: false,
+        workflowWouldChange: false,
+        requiresWorkflowChangeConfirmation: false,
+        factoryLocked,
+        current,
+        productPlan: emptySummary,
+        materials: [],
+        willNotChange: SEED_WILL_NOT_CHANGE,
+        assignmentImpact: {
+          workersPreserved: true,
+          datesPreserved: true,
+          timesPreserved: true,
+          sequencePreserved: true,
+          assignmentsWouldBeRemoved: false,
+        },
+        unreleasedProductionOrderIds,
+      };
+    }
+
+    const wf = product.workflowConfiguration?.workflow ?? null;
+    const version = wf?.activeVersion ?? null;
+    const published = String(version?.status ?? '').toUpperCase() === 'PUBLISHED';
+    const nodeCount = version?.nodes?.length ?? 0;
+    const usable = hasUsableCatalogProductionDefinition({
+      workflowId: product.workflowConfiguration?.workflowId ?? null,
+      published,
+      nodeCount,
+      stageMaterialInputCount: product.stageMaterialInputs.length,
+      bomMaterialCount: bomMaterialCount(product.bomDefaults),
+      stageInventoryOutputCount: product.stageInventoryOutputs.length,
+    });
+
+    const seededMaterials = this.seedMaterials({
+      complexity: complexity ?? ManufacturingComplexity.STANDARD,
+      product: product as never,
+      requestedFabric,
+      dealerFabrics,
+    });
+    const modeByItem = this.quantityModeByInventoryItem(product.stageMaterialInputs);
+    const materials = seededMaterials.map((m) => {
+      const itemId =
+        m.inventoryItem && 'connect' in m.inventoryItem
+          ? (m.inventoryItem as { connect: { id: string } }).connect.id
+          : null;
+      return {
+        sku: (m.sku as string | undefined) ?? null,
+        expectedQty: Number(m.expectedQty) || 0,
+        quantityMode: itemId ? (modeByItem.get(itemId) ?? 'LINEAR') : 'LINEAR',
+      };
+    });
+
+    const catalogWorkflow = this.workflowIdentity(wf, version?.versionNumber ?? null);
+    const catalogWorkflowId = product.workflowConfiguration?.workflowId ?? null;
+    const workflowWouldChange = catalogSeedRequiresWorkflowConfirm({
+      hasProductionOrder: pos.length > 0,
+      currentWorkflowId,
+      catalogWorkflowId,
+    });
+
+    let unavailableReason: CatalogSeedUnavailableReason = null;
+    const planType = resolveLinePlanType({
+      manufacturingComplexity: complexity,
+      productId: soLine.productId,
+    });
+    if (planType === 'CUSTOM') unavailableReason = 'custom';
+    else if (!usable) unavailableReason = 'no_definition';
+    else if (factoryLocked) unavailableReason = 'locked';
+
+    const actionAvailable = catalogSeedActionAvailable({
+      manufacturingComplexity: complexity,
+      productId: soLine.productId,
+      usableDefinition: usable,
+      planEditable: !factoryLocked,
+      factoryLocked,
+    });
+
+    const productPlan = {
+      materials: materials.length,
+      workflow: catalogWorkflow,
+      stages: nodeCount,
+      tasks: countExecutableWorkflowTasks(
+        (version?.nodes ?? []).map((n) => ({
+          executionKind: n.stageDefinition?.executionKind ?? null,
+        })),
+      ),
+      semiWip: countSemiWipOutputs(product.stageInventoryOutputs),
+      hasDurationEstimates: (version?.nodes ?? []).some(
+        (n) => Number(n.defaultEstimatedMinutes) > 0,
+      ),
+    };
+
+    return {
+      salesOrderId,
+      lineId: line.salesOrderLineId,
+      setupLineId: line.id,
+      manufacturingComplexity: complexity,
+      productId: soLine.productId,
+      product: {
+        id: product.id,
+        sku: product.sku ?? null,
+        nameEn: product.nameEn ?? null,
+        nameAr: product.nameAr ?? null,
+        nameHe: product.nameHe ?? null,
+      },
+      quantity: Number(soLine.quantity) || 0,
+      requestedFabricLabel: requestedFabric,
+      actionAvailable,
+      unavailableReason,
+      hasUsableDefinition: usable,
+      workflowWouldChange,
+      requiresWorkflowChangeConfirmation: workflowWouldChange,
+      factoryLocked,
+      current,
+      productPlan,
+      materials,
+      willNotChange: SEED_WILL_NOT_CHANGE,
+      assignmentImpact: {
+        workersPreserved: !workflowWouldChange,
+        datesPreserved: !workflowWouldChange,
+        timesPreserved: !workflowWouldChange,
+        sequencePreserved: !workflowWouldChange,
+        assignmentsWouldBeRemoved: workflowWouldChange,
+      },
+      unreleasedProductionOrderIds,
+    };
   }
 
   async markReady(salesOrderId: string, user: AuthUser) {
@@ -1618,7 +2193,15 @@ export class OrderProductionSetupService {
 
     for (const line of setup.lines) {
       const product = line.salesOrderLine.product;
-      if (!line.materialRequirements.length) {
+      const complexity =
+        line.manufacturingComplexity ?? line.salesOrderLine.manufacturingComplexity;
+      // STANDARD: opening Production Plan must not auto-import the product template.
+      // CUSTOM: no catalog template exists — leave materials empty for the manual desk.
+      if (
+        !line.materialRequirements.length &&
+        complexity !== ManufacturingComplexity.STANDARD &&
+        complexity !== ManufacturingComplexity.CUSTOM
+      ) {
         await this.seedFromCatalog(salesOrderId, line.id, user).catch(() => undefined);
       }
 
@@ -1640,12 +2223,14 @@ export class OrderProductionSetupService {
         refreshed.workflowId ?? product?.workflowConfiguration?.workflowId ?? null;
 
       if (!workflowId) {
-        throw new BadRequestException({
-          code: 'WORKFLOW_REQUIRED',
-          message:
-            'Assign a published product workflow before opening the production plan.',
-          lineId: line.salesOrderLineId,
+        await this.prisma.salesOrderLineSetup.update({
+          where: { id: line.id },
+          data: {
+            manufacturingName: name,
+            status: SalesOrderLineSetupStatus.NEEDS_REVIEW,
+          },
         });
+        continue;
       }
 
       await this.prisma.salesOrderLineSetup.update({
@@ -1659,10 +2244,16 @@ export class OrderProductionSetupService {
       });
     }
 
-    await this.prisma.salesOrderProductionSetup.update({
-      where: { id: setup.id },
-      data: { status: SalesOrderProductionSetupStatus.READY_FOR_RELEASE },
+    const prepared = await this.prisma.salesOrderLineSetup.findMany({
+      where: { productionSetupId: setup.id },
+      select: { workflowId: true },
     });
+    if (prepared.length > 0 && prepared.every((row) => Boolean(row.workflowId))) {
+      await this.prisma.salesOrderProductionSetup.update({
+        where: { id: setup.id },
+        data: { status: SalesOrderProductionSetupStatus.READY_FOR_RELEASE },
+      });
+    }
   }
 
   async releasePreview(salesOrderId: string, user?: AuthUser) {
@@ -1759,6 +2350,8 @@ export class OrderProductionSetupService {
 
     const validation = this.validateSetup(setup, {
       requireMaterials: !forPlanOpen,
+      requireWorkflow: !forPlanOpen,
+      requireLinesReady: !forPlanOpen,
     });
     if (!validation.ok) {
       throw new BadRequestException({
@@ -1822,7 +2415,7 @@ export class OrderProductionSetupService {
           },
           tx,
         );
-        if (!snapshot) {
+        if (!snapshot && !forPlanOpen) {
           throw new BadRequestException({
             code: 'WORKFLOW_REQUIRED',
             message: `Could not create workflow snapshot for line ${line.id}.`,
@@ -1924,6 +2517,61 @@ export class OrderProductionSetupService {
     return Boolean(released);
   }
 
+  private async requireEditableLineSetup(salesOrderId: string, lineId: string) {
+    let setup = await this.prisma.salesOrderProductionSetup.findUnique({
+      where: { salesOrderId },
+      include: {
+        lines: { include: { materialRequirements: true, salesOrderLine: true } },
+      },
+    });
+    if (!setup) {
+      await this.ensureSetup(salesOrderId);
+      setup = await this.prisma.salesOrderProductionSetup.findUnique({
+        where: { salesOrderId },
+        include: {
+          lines: { include: { materialRequirements: true, salesOrderLine: true } },
+        },
+      });
+    }
+    if (!setup) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Production setup not found.' });
+    }
+    const line = setup.lines.find((l) => l.salesOrderLineId === lineId || l.id === lineId);
+    if (!line) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Setup line not found.' });
+    }
+    if (await this.isLineProductionLocked(line.salesOrderLineId)) {
+      throw new BadRequestException({
+        code: 'SETUP_LOCKED',
+        message: 'Production has started or been confirmed — setup can no longer be edited.',
+      });
+    }
+    if (setup.status === SalesOrderProductionSetupStatus.SETUP_REQUIRED) {
+      await this.prisma.salesOrderProductionSetup.update({
+        where: { id: setup.id },
+        data: { status: SalesOrderProductionSetupStatus.SETUP_IN_PROGRESS },
+      });
+      setup.status = SalesOrderProductionSetupStatus.SETUP_IN_PROGRESS;
+    }
+    return setup;
+  }
+
+  private async isLineProductionLocked(salesOrderLineId: string): Promise<boolean> {
+    const locked = await this.prisma.productionOrder.findFirst({
+      where: {
+        salesOrderLineId,
+        archivedAt: null,
+        OR: [
+          { releasedToFactoryAt: { not: null } },
+          { actualStartDate: { not: null } },
+          { status: { in: [...STARTED_PRODUCTION_STATUSES] } },
+        ],
+      },
+      select: { id: true },
+    });
+    return Boolean(locked);
+  }
+
   private async requireEditableSetup(salesOrderId: string) {
     let setup = await this.prisma.salesOrderProductionSetup.findUnique({
       where: { salesOrderId },
@@ -1960,8 +2608,14 @@ export class OrderProductionSetupService {
     return setup;
   }
 
-  /** Push line material requirements into the PO workflow snapshot (Preparing edits). */
-  private async syncLineMaterialsToProductionOrders(lineSetupId: string) {
+  /** Push line material requirements into unreleased PO workflow snapshots (Preparing edits). */
+  private async syncLineMaterialsToProductionOrders(
+    lineSetupId: string,
+    quantityModeByItemId?: Map<
+      string,
+      'LINEAR' | 'FIXED' | 'SETUP_PLUS_LINEAR' | 'BATCH' | 'PARALLEL_CAPACITY'
+    >,
+  ) {
     const line = await this.prisma.salesOrderLineSetup.findUnique({
       where: { id: lineSetupId },
       include: {
@@ -1972,7 +2626,13 @@ export class OrderProductionSetupService {
     if (!line?.salesOrderLineId) return;
 
     const pos = await this.prisma.productionOrder.findMany({
-      where: { salesOrderLineId: line.salesOrderLineId },
+      where: {
+        salesOrderLineId: line.salesOrderLineId,
+        archivedAt: null,
+        releasedToFactoryAt: null,
+        actualStartDate: null,
+        status: { notIn: [...STARTED_PRODUCTION_STATUSES] },
+      },
       select: { id: true },
     });
     if (!pos.length) return;
@@ -1985,8 +2645,26 @@ export class OrderProductionSetupService {
         qtyPerUnit: Number(m.expectedQty),
         unit: m.unit || 'pcs',
         required: true as const,
-        quantityMode: 'LINEAR' as const,
+        quantityMode: quantityModeByItemId?.get(m.inventoryItemId!) ?? ('LINEAR' as const),
       }));
+
+    const productId = await this.prisma.salesOrderLine.findUnique({
+      where: { id: line.salesOrderLineId },
+      select: { productId: true },
+    });
+    const catalogInputs = productId?.productId
+      ? await this.prisma.productStageMaterialInput.findMany({
+          where: { productId: productId.productId },
+          select: {
+            inventoryItemId: true,
+            workflowNodeId: true,
+            stageDefinitionId: true,
+            qtyPerUnit: true,
+            unit: true,
+            quantityMode: true,
+          },
+        })
+      : [];
 
     for (const po of pos) {
       const snapshot = await this.prisma.productionOrderWorkflowSnapshot.findUnique({
@@ -2000,10 +2678,18 @@ export class OrderProductionSetupService {
       });
       if (!snapshot?.nodes.length) continue;
 
-      const target =
-        snapshot.nodes.find((n) => n.materialInputs.length > 0) ??
-        snapshot.nodes[0];
-      if (!target) continue;
+      const distributed = distributeMaterialsToSnapshotNodes(
+        snapshot.nodes.map((n) => ({
+          id: n.id,
+          stageCode: n.stageCode,
+          sourceWorkflowNodeId: n.sourceWorkflowNodeId,
+          stageDefinitionId: n.stageDefinitionId,
+          consumesRawMaterials: n.consumesRawMaterials,
+          sortOrder: n.sortOrder,
+        })),
+        catalogInputs,
+        overrides,
+      );
 
       await this.prisma.$transaction(async (tx) => {
         for (const node of snapshot.nodes) {
@@ -2011,11 +2697,11 @@ export class OrderProductionSetupService {
             where: { snapshotNodeId: node.id },
           });
         }
-        if (overrides.length) {
+        if (distributed.length) {
           await tx.productionOrderWorkflowSnapshotMaterialInput.createMany({
-            data: overrides.map((row) => ({
-              snapshotNodeId: target.id,
-              stageCode: target.stageCode,
+            data: distributed.map((row) => ({
+              snapshotNodeId: row.snapshotNodeId,
+              stageCode: row.stageCode,
               inventoryItemId: row.inventoryItemId,
               sku: row.sku,
               qtyPerUnit: row.qtyPerUnit,

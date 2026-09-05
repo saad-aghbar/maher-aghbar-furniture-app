@@ -4,8 +4,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InventoryCategory, Prisma, SalesOrderMaterialRequirementSource } from '@maher/database';
-import type { AuthUser } from '@maher/types';
+import {
+  buildCatalogDiff,
+  normalizeOrderMeasurements,
+  type AuthUser,
+  type CatalogDimRef,
+} from '@maher/types';
 import { PrismaService } from '../../common/prisma.service';
+import {
+  bomMaterialCount,
+  catalogSeedActionAvailable,
+  fabricLabelFromSpec,
+  hasUsableCatalogProductionDefinition,
+  isProductionOrderLocked,
+  modifiedMaterialsReviewRequired,
+  resolveLinePlanType,
+} from './catalog-seed-preview';
 import { canonicalInventoryImageUrl } from '../inventory/inventory-image';
 import {
   behaviorFromFlags,
@@ -200,6 +214,113 @@ export class OrderPlanSetupService {
       'READY_FOR_DELIVERY',
       'COMPLETED',
     ].includes(status);
+  }
+
+  private async describePlanTypeContext(
+    po: {
+      productId?: string | null;
+      product?: {
+        id: string;
+        sku?: string | null;
+        nameEn?: string | null;
+        nameAr?: string | null;
+        nameHe?: string | null;
+      } | null;
+      salesOrderLineId?: string | null;
+      salesOrderLine?: {
+        manufacturingComplexity?: string | null;
+        quantity?: unknown;
+        orderSpec?: unknown;
+        productionSetup?: {
+          manufacturingComplexity?: string | null;
+          requestedFabricLabel?: string | null;
+        } | null;
+      } | null;
+      releasedToFactoryAt: Date | null;
+      actualStartDate: Date | null;
+      status: string;
+    },
+    planEditable: boolean,
+  ) {
+    const storedComplexity =
+      po.salesOrderLine?.manufacturingComplexity ??
+      po.salesOrderLine?.productionSetup?.manufacturingComplexity ??
+      null;
+    const complexity = resolveLinePlanType({
+      manufacturingComplexity: storedComplexity,
+      productId: po.productId,
+    });
+    const requestedFabricLabel =
+      po.salesOrderLine?.productionSetup?.requestedFabricLabel ??
+      fabricLabelFromSpec(po.salesOrderLine?.orderSpec) ??
+      null;
+    const factoryLocked = isProductionOrderLocked(po);
+    const base = {
+      showBoard: true,
+      actionAvailable: false,
+      hasUsableDefinition: false,
+      manufacturingComplexity: complexity,
+      product: po.product
+        ? {
+            id: po.product.id,
+            sku: po.product.sku ?? null,
+            nameEn: po.product.nameEn ?? null,
+            nameAr: po.product.nameAr ?? null,
+            nameHe: po.product.nameHe ?? null,
+          }
+        : null,
+      quantity: Number(po.salesOrderLine?.quantity) || 0,
+      requestedFabricLabel,
+      requestedFabricNeedsReview: Boolean(requestedFabricLabel),
+    };
+    if (complexity === 'CUSTOM' || !po.productId) {
+      return { ...base, showBoard: true };
+    }
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: po.productId },
+      select: {
+        bomDefaults: true,
+        workflowConfiguration: {
+          select: {
+            workflowId: true,
+            workflow: {
+              select: {
+                activeVersion: {
+                  select: {
+                    status: true,
+                    _count: { select: { nodes: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+        _count: {
+          select: { stageMaterialInputs: true, stageInventoryOutputs: true },
+        },
+      },
+    });
+    const version = product?.workflowConfiguration?.workflow?.activeVersion ?? null;
+    const usable = hasUsableCatalogProductionDefinition({
+      workflowId: product?.workflowConfiguration?.workflowId ?? null,
+      published: String(version?.status ?? '').toUpperCase() === 'PUBLISHED',
+      nodeCount: version?._count.nodes ?? 0,
+      stageMaterialInputCount: product?._count.stageMaterialInputs ?? 0,
+      bomMaterialCount: bomMaterialCount(product?.bomDefaults),
+      stageInventoryOutputCount: product?._count.stageInventoryOutputs ?? 0,
+    });
+    return {
+      ...base,
+      hasUsableDefinition: usable,
+      actionAvailable: catalogSeedActionAvailable({
+        manufacturingComplexity: complexity,
+        productId: po.productId,
+        usableDefinition: usable,
+        planEditable,
+        factoryLocked,
+      }),
+    };
   }
 
   async getPlanSetup(productionOrderId: string, user?: AuthUser) {
@@ -398,12 +519,41 @@ export class OrderPlanSetupService {
       return code !== 'DELIVERY';
     });
 
+    const catalogTemplate = await this.describePlanTypeContext(po, planEditable);
+    const catalogDimensions = dimRefFromJson(lineSetup?.catalogDimensions);
+    const orderDimensions = dimRefFromJson(lineSetup?.orderDimensions);
+    const measurements = normalizeOrderMeasurements(lineSetup?.measurements);
+    const manufacturingComplexity = catalogTemplate.manufacturingComplexity;
+    const changesFromCatalog = buildCatalogDiff({
+      complexity: manufacturingComplexity,
+      catalogDimensions,
+      orderDimensions,
+      measurements,
+      orderFabricLabel: catalogTemplate.requestedFabricLabel,
+    });
+    const materialsNeedReview = bomLines.some((m) => m.needsReview);
+    const materialsReviewedAt = lineSetup?.materialsReviewedAt?.toISOString() ?? null;
+    const materialsReviewRequired = modifiedMaterialsReviewRequired({
+      manufacturingComplexity,
+      productId: po.productId,
+      materialsReviewedAt: lineSetup?.materialsReviewedAt ?? null,
+      materialsNeedReview,
+    });
+
     return {
       productionOrderId: po.id,
       salesOrderId: po.salesOrderId,
       salesOrderLineId: po.salesOrderLineId,
+      manufacturingComplexity,
+      catalogDimensions,
+      orderDimensions,
+      measurements,
+      changesFromCatalog,
+      materialsReviewedAt,
+      materialsReviewRequired,
       planEditable,
       factoryReleased: Boolean(po.releasedToFactoryAt),
+      catalogTemplate,
       plannedStartDate: po.plannedStartDate?.toISOString() ?? null,
       requiredDeliveryDate:
         po.requiredDeliveryDate?.toISOString() ??
@@ -470,6 +620,8 @@ export class OrderPlanSetupService {
           hasMaterials: bomLines.length > 0,
           hasExecutableTasks: executableTasks.length > 0,
           hasProductionStart,
+          materialsReviewRequired,
+          materialsReviewed: Boolean(materialsReviewedAt) && !materialsNeedReview,
           assignment: {
             required: executableTasks.length,
             assigned: executableTasks.filter((t) => t.assignedEmployeeId).length,
@@ -487,7 +639,8 @@ export class OrderPlanSetupService {
             executableTasks.length > 0 &&
             hasProductionStart &&
             missingAssignment.length === 0 &&
-            missingDates.length === 0,
+            missingDates.length === 0 &&
+            !materialsReviewRequired,
         };
       })(),
     };
@@ -637,7 +790,11 @@ export class OrderPlanSetupService {
           await tx.salesOrderLineSetup.update({
             where: { id: lineSetup.id },
             data: {
-              materialsReviewedAt: resolved.some((m) => m.needsReview) ? null : new Date(),
+              materialsReviewedAt: resolved.some((m) => m.needsReview)
+                ? null
+                : String(lineSetup.manufacturingComplexity ?? '').toUpperCase() === 'MODIFIED'
+                  ? lineSetup.materialsReviewedAt
+                  : new Date(),
               workflowConfirmedAt: lineSetup.workflowId
                 ? new Date()
                 : lineSetup.workflowConfirmedAt,
@@ -919,6 +1076,22 @@ export class OrderPlanSetupService {
       },
     });
   }
+}
+
+function dimRefFromJson(value: unknown): CatalogDimRef | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  const n = (x: unknown): number | null => {
+    if (x == null || x === '') return null;
+    const num = Number(x);
+    return Number.isFinite(num) ? num : null;
+  };
+  return {
+    width: n(v.width),
+    height: n(v.height),
+    depth: n(v.depth),
+    seatHeight: n(v.seatHeight),
+  };
 }
 
 const INVENTORY_CATEGORIES = new Set<string>(Object.values(InventoryCategory));

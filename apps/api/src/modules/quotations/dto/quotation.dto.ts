@@ -14,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+import { FabricSelectionDto } from '../../../common/dto/fabric-selection.dto';
 
 export class ListQuotationsDto extends PaginationDto {
   @ApiPropertyOptional({ enum: QuotationStatus })
@@ -89,6 +90,13 @@ export class QuotationLineDto {
   @IsString()
   color?: string;
 
+  @ApiPropertyOptional({ type: [FabricSelectionDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FabricSelectionDto)
+  fabrics?: FabricSelectionDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
@@ -114,6 +122,11 @@ export class QuotationLineDto {
   @IsOptional()
   @IsEnum(ManufacturingComplexity)
   manufacturingComplexity?: ManufacturingComplexity;
+
+  @ApiPropertyOptional({ type: [Object] })
+  @IsOptional()
+  @IsArray()
+  customMeasurements?: unknown[];
 }
 
 export class CreateQuotationDto {

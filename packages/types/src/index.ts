@@ -203,6 +203,11 @@ export {
 
 export {
   classifyManufacturingComplexity,
+  parseManufacturingComplexity,
+  rollupOrderType,
+  emptyOrderTypeCounts,
+  manufacturingComplexityToTypeSlug,
+  tallyOrderTypeCounts,
   manufacturingComplexityDisplayKey,
   buildOrderLineSpecSnapshot,
   normalizeOrderMeasurements,
@@ -213,15 +218,32 @@ export {
   type OrderLineSpecSnapshot,
   type OrderMeasurement,
   type CatalogDiffRow,
+  type OrderTypeLineInput,
+  type OrderTypeSlug,
+  type OrderTypeCounts,
 } from './manufacturing-complexity';
+
+export {
+  normalizeOrderFabrics,
+  primaryFabric,
+  fabricLabelFromSelection,
+  fabricSelectionsLabel,
+  emptyFabricSelection,
+  type OrderFabricSelection,
+} from './fabric-selection';
 
 export {
   mapOrderPresentation,
   orderPresentationLabelKey,
   requestStatusesForGroup,
+  classifyRequestInboxChip,
+  emptyRequestInboxCounts,
+  tallyRequestInboxCounts,
   appendReviewHistory,
   type OrderPresentationKey,
   type OrderPresentationInput,
   type RequestStatusGroup,
+  type RequestInboxChip,
+  type RequestInboxCounts,
   type ReviewHistoryEntry,
 } from './order-presentation';

@@ -31,6 +31,7 @@ const TAB_ICON: Record<PurchasingHubTab, keyof typeof Ionicons.glyphMap> = {
   orders: 'cart-outline',
   requests: 'document-text-outline',
   invoices: 'receipt-outline',
+  fabric: 'color-palette-outline',
 };
 
 type TabItem = {
@@ -188,7 +189,9 @@ export function PurchasingTabBar({ tabs, value, onChange }: Props) {
                 ? 'Orders'
                 : item.key === 'requests'
                   ? 'Requests'
-                  : 'Invoices';
+                  : item.key === 'fabric'
+                    ? 'Fabric'
+                    : 'Invoices';
             const short = shortRaw === shortKey ? shortFallback : shortRaw;
             const a11y =
               item.count != null ? `${item.label} (${item.count})` : item.label;

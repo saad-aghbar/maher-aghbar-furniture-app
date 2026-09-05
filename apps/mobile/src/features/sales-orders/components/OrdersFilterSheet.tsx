@@ -117,7 +117,7 @@ export function matchesApprovalFilter(
   return approval === 'notApproved' ? isDraft : !isDraft;
 }
 
-/** Empty kinds = any. Otherwise require manufacturingKind in selection. */
+/** Empty kinds = any. Unused on the admin floor — type lens is server `orderType`. */
 export function matchesKindFilter(
   manufacturingKind: string | null | undefined,
   kinds: OrdersKindFilter[],
@@ -165,7 +165,6 @@ export function countActiveOrderFilters(
   let n = 0;
   if (includeDealers && draft.dealerId !== 'all') n += 1;
   if (includeApproval && draft.approval !== 'any') n += 1;
-  if (draft.kinds.length > 0) n += 1;
   if (draft.deliveryPreset !== 'any' || draft.deliveryFrom || draft.deliveryTo) n += 1;
   if (draft.sortBy !== 'createdAt') n += 1;
   if (draft.sortDir !== 'desc') n += 1;

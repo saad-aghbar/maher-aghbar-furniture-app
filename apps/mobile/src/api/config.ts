@@ -86,7 +86,7 @@ function expoDevHost(): string | undefined {
  *
  * Preview/production EAS builds must set an https:// URL — no silent localhost fallback.
  * When unset in local/dev, reuses the Expo dev-server host (LAN / emulator-friendly).
- * Loopback URLs are ignored on physical devices so Expo Go can reach the Mac API.
+ * Loopback URLs are ignored on physical devices so the phone can reach the Mac API.
  */
 export function getApiBaseUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();

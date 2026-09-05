@@ -19,6 +19,15 @@ export type ProductionAttentionCode =
   | 'TASK_LATE'
   | 'SCHEDULE_CONFLICT'
   | 'WORKER_ISSUE'
+  | 'FABRIC_NOT_ORDERED'
+  | 'FABRIC_AWAITING_SUPPLIER'
+  | 'FABRIC_UNAVAILABLE'
+  | 'FABRIC_PARTIAL'
+  | 'FABRIC_LATE'
+  | 'FABRIC_LOCATION_MISSING'
+  | 'FABRIC_READY_NOT_TAKEN'
+  | 'FABRIC_WRONG_RECEIVED'
+  | 'FABRIC_HOLD_OVERRIDDEN'
   | 'GENERIC';
 
 export type ProductionAttentionCtaKind =
@@ -61,6 +70,15 @@ const CODE_SET = new Set<string>([
   'TASK_LATE',
   'SCHEDULE_CONFLICT',
   'WORKER_ISSUE',
+  'FABRIC_NOT_ORDERED',
+  'FABRIC_AWAITING_SUPPLIER',
+  'FABRIC_UNAVAILABLE',
+  'FABRIC_PARTIAL',
+  'FABRIC_LATE',
+  'FABRIC_LOCATION_MISSING',
+  'FABRIC_READY_NOT_TAKEN',
+  'FABRIC_WRONG_RECEIVED',
+  'FABRIC_HOLD_OVERRIDDEN',
 ]);
 
 /** True when a string is a raw backend token we must not render. */
@@ -89,7 +107,16 @@ function normalizeCode(raw: string | null | undefined): ProductionAttentionCode 
     c === 'TASK_LATE' ||
     c === 'SCHEDULE_CONFLICT' ||
     c === 'WORKER_ISSUE' ||
-    c === 'SEMI_ISSUE'
+    c === 'SEMI_ISSUE' ||
+    c === 'FABRIC_NOT_ORDERED' ||
+    c === 'FABRIC_AWAITING_SUPPLIER' ||
+    c === 'FABRIC_UNAVAILABLE' ||
+    c === 'FABRIC_PARTIAL' ||
+    c === 'FABRIC_LATE' ||
+    c === 'FABRIC_LOCATION_MISSING' ||
+    c === 'FABRIC_READY_NOT_TAKEN' ||
+    c === 'FABRIC_WRONG_RECEIVED' ||
+    c === 'FABRIC_HOLD_OVERRIDDEN'
   ) {
     return c;
   }
@@ -99,6 +126,15 @@ function normalizeCode(raw: string | null | undefined): ProductionAttentionCode 
 function ctaFor(code: ProductionAttentionCode): ProductionAttentionCtaKind {
   switch (code) {
     case 'MATERIALS_HOLD':
+    case 'FABRIC_NOT_ORDERED':
+    case 'FABRIC_AWAITING_SUPPLIER':
+    case 'FABRIC_UNAVAILABLE':
+    case 'FABRIC_PARTIAL':
+    case 'FABRIC_LATE':
+    case 'FABRIC_LOCATION_MISSING':
+    case 'FABRIC_READY_NOT_TAKEN':
+    case 'FABRIC_WRONG_RECEIVED':
+    case 'FABRIC_HOLD_OVERRIDDEN':
       return 'purchasing';
     case 'MISSING_DATE':
     case 'MISSING_PRODUCTION_START':
@@ -235,7 +271,7 @@ export function attentionCtaHref(
 ): Href | null {
   switch (block.ctaKind) {
     case 'purchasing':
-      return '/(app)/(admin)/purchasing' as Href;
+      return '/(app)/(admin)/purchasing?tab=fabric' as Href;
     case 'scheduling':
       return '/(app)/(admin)/scheduling' as Href;
     case 'wip':

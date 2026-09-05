@@ -90,6 +90,9 @@ import {
   type AdminOrderLifecycle,
 } from './adminOrderLifecycle';
 import { useSalesOrderActions, useSalesOrderQuery } from './query';
+import { FabricTrackerBoard } from '@/features/fabric/FabricTrackerBoard';
+import { selectFabricTrackerRows, fabricRowHref } from '@/features/fabric/selectFabricTracker';
+import { useFabricTrackerQuery } from '@/features/purchasing/query';
 import {
   selectOrderDetail,
   type OrderDetailViewModel,
@@ -160,9 +163,11 @@ export function OrderDetailScreen({
   const canInvoice = can(user, 'invoice.read');
   const canDocument = can(user, 'document.read');
   const canReadMfgCost = can(user, 'inventory.cost.read');
+  const canFabricRead = can(user, 'fabric.procurement.read');
 
   const queryClient = useQueryClient();
   const query = useSalesOrderQuery(orderId, allowed && !forceState);
+  const fabricTrackerQuery = useFabricTrackerQuery(orderId, canFabricRead && allowed && !forceState);
   const actions = useSalesOrderActions(orderId);
   const refreshing = query.isRefetching && !query.isLoading;
   const [confirmDeliveryId, setConfirmDeliveryId] = useState<string | null>(null);
@@ -1285,6 +1290,24 @@ export function OrderDetailScreen({
                   </View>
                 ) : null}
               </OrderBoardCard>
+            </ListItemEnter>
+          ) : null}
+
+          {variant === 'admin' && canFabricRead ? (
+            <ListItemEnter index={nextIndex()}>
+              <FabricTrackerBoard
+                variant="order"
+                compact
+                rows={
+                  fabricTrackerQuery.data ? selectFabricTrackerRows(fabricTrackerQuery.data) : []
+                }
+                ready={fabricTrackerQuery.data?.ready}
+                required={fabricTrackerQuery.data?.required}
+                loading={fabricTrackerQuery.isLoading}
+                error={fabricTrackerQuery.isError}
+                onRetry={() => void fabricTrackerQuery.refetch()}
+                onPressItem={(row) => router.push(fabricRowHref(row) as Href)}
+              />
             </ListItemEnter>
           ) : null}
 

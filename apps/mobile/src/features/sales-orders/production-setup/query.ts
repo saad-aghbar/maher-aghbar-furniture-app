@@ -74,8 +74,14 @@ export function useOrderProductionSetupActions(salesOrderId: string) {
       onSuccess: invalidate,
     }),
     seedFromCatalog: useMutation({
-      mutationFn: (lineId: string) =>
-        seedOrderSetupLineFromCatalog(salesOrderId, lineId),
+      mutationFn: ({
+        lineId,
+        confirmWorkflowChange,
+      }: {
+        lineId: string;
+        confirmWorkflowChange?: boolean;
+      }) =>
+        seedOrderSetupLineFromCatalog(salesOrderId, lineId, { confirmWorkflowChange }),
       onSuccess: invalidate,
     }),
     markReady: useMutation({

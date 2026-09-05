@@ -3,6 +3,8 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
 const APP_VERSION = '0.1.0';
 const BUNDLE_ID = 'jo.maheraghbar.furniture';
 const SPLASH_BG = '#E1DFD3';
+/** Saad Aghbar Personal Team on this Mac. Paid / EAS teams override via APPLE_TEAM_ID. */
+const PERSONAL_TEAM_ID = 'NR2ZFUP7R7';
 /** @saad-aghbar/maher-aghbar-furniture — set via `eas init` (2026-08-05). Override with EAS_PROJECT_ID. */
 const DEFAULT_EAS_PROJECT_ID = 'bd5ccf7c-9b99-4bc5-a0bc-2a52d781c023';
 
@@ -16,6 +18,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const associatedDomain = process.env.EXPO_ASSOCIATED_DOMAIN?.trim();
   const isEasBuild = process.env.EAS_BUILD === 'true';
   const profile = process.env.EAS_BUILD_PROFILE ?? 'development';
+  const appleTeamId = process.env.APPLE_TEAM_ID?.trim() || PERSONAL_TEAM_ID;
+  /**
+   * Free Personal Teams cannot create an iOS App Development profile that includes
+   * Push Notifications. Keep APNs on EAS / paid teams. In-app inbox still uses the API.
+   */
+  const stripIosPush = !isEasBuild && appleTeamId === PERSONAL_TEAM_ID;
 
   if (isEasBuild && (profile === 'preview' || profile === 'production')) {
     if (!apiBaseUrl || !/^https:\/\//i.test(apiBaseUrl)) {
@@ -44,6 +52,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ios: {
       supportsTablet: true,
       bundleIdentifier: BUNDLE_ID,
+      appleTeamId,
       infoPlist: {
         NSCameraUsageDescription:
           'Allow Maher Al-Aghbar Furniture to use the camera for QR/barcode scanning, order photos, and returns.',
@@ -58,7 +67,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         NSAppTransportSecurity: {
           NSAllowsLocalNetworking: true,
         },
-        UIBackgroundModes: ['remote-notification'],
+        ...(stripIosPush ? {} : { UIBackgroundModes: ['remote-notification'] }),
       },
       ...(associatedDomain
         ? { associatedDomains: [`applinks:${associatedDomain}`] }
@@ -103,7 +112,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     plugins: [
       'expo-router',
       'expo-secure-store',
-      'expo-localization',
+      [
+        'expo-localization',
+        { supportsRTL: false },
+      ],
       'expo-local-authentication',
       [
         'expo-location',
@@ -136,14 +148,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           iCloudContainerEnvironment: 'Production',
         },
       ],
-      [
-        'expo-notifications',
-        {
-          icon: './assets/icon.png',
-          color: '#776245',
-          defaultChannel: 'default',
-        },
-      ],
+      ...(stripIosPush
+        ? ['./plugins/withPersonalTeamIosCapabilities']
+        : [
+            [
+              'expo-notifications',
+              {
+                icon: './assets/icon.png',
+                color: '#776245',
+                defaultChannel: 'default',
+              },
+            ],
+          ]),
     ],
     experiments: {
       typedRoutes: true,

@@ -102,6 +102,12 @@ export type InventoryTransaction = {
   } | null;
 };
 
+export type WarehouseLocation = {
+  id: string;
+  code: string;
+  name?: string | null;
+};
+
 export type Warehouse = {
   id: string;
   code: string;
@@ -110,6 +116,7 @@ export type Warehouse = {
   type?: string;
   isActive?: boolean;
   isDefault?: boolean;
+  locations?: WarehouseLocation[];
 };
 
 export const WAREHOUSE_TYPES = ['RAW_MATERIALS', 'SEMI_FINISHED', 'FINISHED_GOODS'] as const;
@@ -412,7 +419,30 @@ export async function openInventoryLabelPdf(
   );
 }
 
-/** Fetch warehouse QR print sheet (centered photo + large QR). */
+/** Fetch factory-owner Raw Materials management PDF. */
+export async function openRawMaterialsReportPdf(
+  args: {
+    period: 'today' | 'week' | 'month' | 'custom';
+    from?: string;
+    to?: string;
+  },
+  opts?: PdfDownloadOptions,
+): Promise<void> {
+  const qs = new URLSearchParams();
+  qs.set('period', args.period);
+  if (args.period === 'custom') {
+    if (args.from) qs.set('from', args.from);
+    if (args.to) qs.set('to', args.to);
+  }
+  if (opts?.lang) qs.set('lang', opts.lang);
+  if (opts?.theme) qs.set('theme', opts.theme);
+  await openAuthedPdf(
+    `/inventory/reports/raw-materials/pdf?${qs.toString()}`,
+    'Raw materials report PDF failed',
+    'Raw Materials Report',
+  );
+}
+
 export async function openInventoryQrLabelPdf(
   id: string,
   sku?: string,
@@ -494,17 +524,36 @@ export async function listLowStock() {
 export type SemiFinishedLot = {
   id: string;
   quantity: number | string;
+  /** Unconsumed balance on the lot — fabric bundles are drawn down per take-in. */
+  remainingQty?: number | string | null;
   producedAt: string;
   status: string;
   qrCode?: string | null;
   location?: { id: string; code: string; name?: string | null } | null;
+  locationLabel?: string | null;
   wipKit?: { id: string; qrCode: string } | null;
+  /** `ORDER_FABRIC` for order-linked fabric bundles. */
+  scanKind?: string | null;
+  fabricProcurement?: {
+    id: string;
+    salesOrderId?: string;
+    label?: string | null;
+    role?: string | null;
+    stageCode?: string | null;
+    state?: string | null;
+    derivedStatus?: string | null;
+    expectedQty?: number | null;
+    arrivedQty?: number | null;
+    unit?: string | null;
+    overridden?: boolean;
+  } | null;
   inventoryItem: {
     id: string;
     sku: string;
     nameEn: string;
     nameAr: string;
     nameHe?: string | null;
+    unit?: string | null;
     itemClass?: string | null;
     category?: string | null;
     product?: {
@@ -528,10 +577,12 @@ export type SemiFinishedLot = {
   salesOrderNumber?: string | null;
   salesOrder?: {
     id: string;
+    number?: string | null;
     deliveries?: Array<{ id: string; number?: string; status?: string }>;
   } | null;
   dealerNameEn?: string | null;
   dealerNameAr?: string | null;
+  productImageUrl?: string | null;
   projectName?: string | null;
   nextConsumingStageCode?: string | null;
   nextConsumingStageNameEn?: string | null;
@@ -619,6 +670,50 @@ export async function getInventoryLot(id: string) {
 export async function getInventoryLotByCode(code: string) {
   return apiGet<SemiFinishedLot>(
     `/inventory/lots/by-code/${encodeURIComponent(code)}`,
+  );
+}
+
+export type FabricHoldingRow = {
+  id: string;
+  label: string;
+  role: string | null;
+  sku: string;
+  imageUrl?: string | null;
+  salesOrderId?: string | null;
+  orderNumber: string | null;
+  dealerName: string | null;
+  productName?: string | null;
+  productImageUrl?: string | null;
+  stageCode?: string | null;
+  derivedStatus: string;
+  expectedQty: number | null;
+  arrivedQty: number;
+  unit: string;
+  lots: Array<{
+    id: string;
+    qrCode?: string | null;
+    remainingQty: number;
+    status: string;
+    locationLabel?: string | null;
+    warehouseLabel?: string | null;
+    unitCost?: number | null;
+  }>;
+};
+
+export async function listFabricHolding(q?: string) {
+  const qs = toSearchParams({ q });
+  return apiGet<{ holding: FabricHoldingRow[] }>(`/inventory/fabric-holding${qs}`);
+}
+
+export async function openFabricLotQrLabelPdf(
+  id: string,
+  code?: string,
+  opts?: PdfDownloadOptions,
+): Promise<void> {
+  await openAuthedPdf(
+    withPdfOptions(`/inventory/lots/${encodeURIComponent(id)}/qr-label`, opts),
+    'Fabric bundle QR label PDF failed',
+    code ? `QR label ${code}` : 'Fabric QR label PDF',
   );
 }
 

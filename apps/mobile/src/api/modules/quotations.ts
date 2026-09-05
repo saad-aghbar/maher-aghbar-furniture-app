@@ -13,12 +13,24 @@ export type CreateQuotationLineInput = {
   material?: string;
   fabric?: string;
   color?: string;
+  fabrics?: Array<{
+    key?: string;
+    type?: string | null;
+    code?: string | null;
+    color?: string | null;
+    role?: string | null;
+    photoDocumentId?: string | null;
+    quantity?: number | null;
+    unit?: string | null;
+    notes?: string | null;
+  }>;
   notes?: string;
   taxRate?: number;
   width?: number;
   height?: number;
   depth?: number;
   manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+  customMeasurements?: { label?: string; value?: string; key?: string }[];
 };
 
 export type CreateQuotationInput = {

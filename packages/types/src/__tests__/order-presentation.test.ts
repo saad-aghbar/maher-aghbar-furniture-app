@@ -6,6 +6,7 @@ import {
 import {
   mapOrderPresentation,
   requestStatusesForGroup,
+  classifyRequestInboxChip,
   appendReviewHistory,
 } from '../order-presentation';
 import { classifyDealerLifecycle } from '../dealer-lifecycle';
@@ -26,6 +27,65 @@ describe('classifyManufacturingComplexity', () => {
     ).toBe('STANDARD');
   });
 
+  it('returns STANDARD when fabric, colour, notes, or description are set', () => {
+    expect(
+      classifyManufacturingComplexity({
+        productId: 'p1',
+        fabricType: 'Velvet',
+        fabricColor: 'Navy',
+        notes: 'Gate code 12',
+        description: 'Customer fabric from stock',
+        catalog: { width: 220 },
+      }),
+    ).toBe('STANDARD');
+  });
+
+  it('returns MODIFIED when wood, foam, finish, or accessories are set', () => {
+    expect(
+      classifyManufacturingComplexity({
+        productId: 'p1',
+        woodType: 'Walnut',
+        catalog: { width: 220 },
+      }),
+    ).toBe('MODIFIED');
+    expect(
+      classifyManufacturingComplexity({
+        productId: 'p1',
+        foamDensity: '35',
+        catalog: { width: 220 },
+      }),
+    ).toBe('MODIFIED');
+    expect(
+      classifyManufacturingComplexity({
+        productId: 'p1',
+        finish: 'Matte lacquer',
+        catalog: { width: 220 },
+      }),
+    ).toBe('MODIFIED');
+  });
+
+  it('returns STANDARD when custom measurements match the catalog seed', () => {
+    expect(
+      classifyManufacturingComplexity({
+        productId: 'p1',
+        width: 220,
+        height: 85,
+        depth: 95,
+        customMeasurements: [
+          { label: 'Seat height (cm)', value: '45' },
+          { label: 'Arm', value: '60' },
+        ],
+        catalog: {
+          width: 220,
+          height: 85,
+          depth: 95,
+          seatHeight: 45,
+          customMeasurements: [{ nameEn: 'Arm', nameAr: 'ذراع', value: 60 }],
+        },
+      }),
+    ).toBe('STANDARD');
+  });
+
   it('returns MODIFIED when dimensions differ from catalog', () => {
     expect(
       classifyManufacturingComplexity({
@@ -36,12 +96,31 @@ describe('classifyManufacturingComplexity', () => {
     ).toBe('MODIFIED');
   });
 
-  it('returns MODIFIED when fabric is requested', () => {
+  it('returns MODIFIED when a dimension is set and catalog has no baseline', () => {
     expect(
       classifyManufacturingComplexity({
         productId: 'p1',
-        fabricType: 'Velvet',
-        fabricColor: 'Navy',
+        width: 220,
+        catalog: {},
+      }),
+    ).toBe('MODIFIED');
+  });
+
+  it('returns MODIFIED when a custom measurement is added or changed', () => {
+    expect(
+      classifyManufacturingComplexity({
+        productId: 'p1',
+        customMeasurements: [{ label: 'Arm', value: '70' }],
+        catalog: {
+          customMeasurements: [{ nameEn: 'Arm', value: 60 }],
+        },
+      }),
+    ).toBe('MODIFIED');
+    expect(
+      classifyManufacturingComplexity({
+        productId: 'p1',
+        customMeasurements: [{ label: 'Chaise', value: '160' }],
+        catalog: { width: 220, height: 85, depth: 95 },
       }),
     ).toBe('MODIFIED');
   });
@@ -72,6 +151,26 @@ describe('buildOrderLineSpecSnapshot', () => {
     expect(snap.catalogDimensions?.width).toBe(180);
     expect(snap.requestedDimensions?.width).toBe(200);
     expect(snap.fabric?.type).toBe('Linen');
+    expect(snap.fabrics).toEqual([
+      expect.objectContaining({ type: 'Linen', color: 'Sand' }),
+    ]);
+  });
+
+  it('keeps a multi-fabric list without changing manufacturing complexity', () => {
+    const snap = buildOrderLineSpecSnapshot({
+      productId: 'p1',
+      productName: 'Sofa',
+      quantity: 1,
+      catalog: { width: 180 },
+      width: 180,
+      fabrics: [
+        { key: 'a', type: 'Velvet 302', color: 'Beige', role: 'Main body' },
+        { key: 'b', type: 'Bouclé', color: 'Cream', role: 'Cushions' },
+      ],
+    });
+    expect(snap.manufacturingComplexity).toBe('STANDARD');
+    expect(snap.fabrics).toHaveLength(2);
+    expect(snap.fabric?.type).toBe('Velvet 302');
   });
 });
 
@@ -111,6 +210,17 @@ describe('mapOrderPresentation', () => {
     expect(mapOrderPresentation({ salesOrderStatus: 'READY_FOR_DELIVERY' })).toBe('readyToShip');
     expect(mapOrderPresentation({ deliveryStatus: 'OUT_FOR_DELIVERY' })).toBe('shipped');
     expect(mapOrderPresentation({ deliveryStatus: 'DELIVERED' })).toBe('delivered');
+  });
+});
+
+describe('classifyRequestInboxChip', () => {
+  it('maps factory-review statuses and ignores closed', () => {
+    expect(classifyRequestInboxChip('SUBMITTED')).toBe('waiting');
+    expect(classifyRequestInboxChip('UNDER_REVIEW')).toBe('waiting');
+    expect(classifyRequestInboxChip('NEEDS_INFORMATION')).toBe('needs_info');
+    expect(classifyRequestInboxChip('QUOTED')).toBe('quoted');
+    expect(classifyRequestInboxChip('DRAFT')).toBe('drafts');
+    expect(classifyRequestInboxChip('CLOSED')).toBeNull();
   });
 });
 

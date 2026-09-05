@@ -15,6 +15,7 @@ import { seedPiece3ProductionPlanExamples } from './piece3-production-plan';
 import { seedPiece4ManufacturingSpecExamples } from './piece4-manufacturing-spec';
 import { seedPiece5ManufacturingCostExamples } from './piece5-manufacturing-cost';
 import { seedPiece6PurchasingReceivingExamples } from './piece6-purchasing-receiving';
+import { seedDemoFabricProcurement } from './fabric-procurement';
 import { seedPiece7DealerFinanceExamples } from './piece7-dealer-finance';
 import { seedPiece8FactoryFloorExamples } from './piece8-factory-floor';
 import { seedPiece9QualityPackagingExamples } from './piece9-quality-packaging';
@@ -132,6 +133,13 @@ export async function seedDemoFactory(prisma: PrismaClient): Promise<void> {
 
   console.log('Seeding Piece 6 purchasing / receiving examples…');
   await seedPiece6PurchasingReceivingExamples(prisma, {
+    adminUserId: people.adminId,
+  });
+
+  console.log('Seeding fabric procurement examples…');
+  await seedDemoFabricProcurement(prisma, {
+    dealers: people.dealers,
+    products: catalog.products,
     adminUserId: people.adminId,
   });
 

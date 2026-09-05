@@ -17,8 +17,18 @@ export type CreateRequestItemInput = {
   height?: number;
   depth?: number;
   fabric?: string;
-  description?: string;
   color?: string;
+  fabrics?: Array<{
+    key?: string;
+    type?: string | null;
+    color?: string | null;
+    role?: string | null;
+    code?: string | null;
+    quantity?: number | null;
+    unit?: string | null;
+    notes?: string | null;
+  }>;
+  description?: string;
   customMeasurements?: { label: string; value: string }[];
 };
 
@@ -61,12 +71,36 @@ export type RequestSummary = {
     nameHe?: string | null;
     code?: string | null;
   } | null;
+  /** Worst-line rollup: STANDARD | MODIFIED | CUSTOM */
+  manufacturingComplexity?: 'STANDARD' | 'MODIFIED' | 'CUSTOM' | string | null;
+};
+
+export type RequestTypeCounts = {
+  standard: number;
+  modified: number;
+  custom: number;
+};
+
+export type RequestInboxCounts = {
+  all: number;
+  waiting: number;
+  needs_info: number;
+  quoted: number;
+  drafts: number;
 };
 
 export type ListRequestsFilters = PageParams & {
   status?: string;
   statusGroup?: string;
   q?: string;
+  requestType?: 'STANDARD' | 'MODIFIED' | 'CUSTOM';
+};
+
+export type ListRequestsResponse = PaginatedResponse<RequestSummary> & {
+  meta: PaginatedResponse<RequestSummary>['meta'] & {
+    typeCounts?: RequestTypeCounts;
+    inboxCounts?: RequestInboxCounts;
+  };
 };
 
 export async function createRequest(
@@ -139,13 +173,14 @@ export async function getRequest(id: string): Promise<RequestDetail> {
 
 export async function listRequests(
   filters: ListRequestsFilters = {},
-): Promise<PaginatedResponse<RequestSummary>> {
+): Promise<ListRequestsResponse> {
   const qs = toSearchParams({
     page: filters.page,
     pageSize: filters.pageSize,
     status: filters.status,
     statusGroup: filters.statusGroup,
     q: filters.q,
+    requestType: filters.requestType,
   });
-  return apiGet<PaginatedResponse<RequestSummary>>(`/requests${qs}`);
+  return apiGet<ListRequestsResponse>(`/requests${qs}`);
 }

@@ -10,16 +10,37 @@ type Props = {
   hint?: string;
   error?: string | null;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Fill the sheet body (create/edit item). Turn off for `fitContent` sheets so
+   * the board sizes to its children instead of collapsing to a sliver.
+   */
+  fill?: boolean;
 };
 
 /**
  * Floor form shell for inventory sheets — hint + error + elevated field board.
  */
-export function InventorySheetBody({ children, hint, error, style }: Props) {
+export function InventorySheetBody({
+  children,
+  hint,
+  error,
+  style,
+  fill = true,
+}: Props) {
   const { colors, theme, colorScheme } = useTheme();
+  const pad = {
+    gap: theme.spacing.md,
+    padding: theme.spacing.md,
+    paddingBottom: theme.spacing.lg,
+  };
 
   return (
-    <View style={[{ flex: 1, gap: theme.spacing.md }, style]}>
+    <View
+      style={[
+        { flex: fill ? 1 : undefined, minHeight: fill ? 0 : undefined, gap: theme.spacing.md },
+        style,
+      ]}
+    >
       {hint ? (
         <AppText variant="caption" color="muted">
           {hint}
@@ -32,7 +53,8 @@ export function InventorySheetBody({ children, hint, error, style }: Props) {
       ) : null}
       <View
         style={{
-          flex: 1,
+          flex: fill ? 1 : undefined,
+          minHeight: fill ? 0 : undefined,
           borderRadius: theme.radius.xl,
           borderWidth: 1,
           borderColor: colors.borderStrong,
@@ -41,19 +63,19 @@ export function InventorySheetBody({ children, hint, error, style }: Props) {
           ...orderBoardShadow(colorScheme),
         }}
       >
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          nestedScrollEnabled
-          showsVerticalScrollIndicator={false}
-          style={{ flex: 1 }}
-          contentContainerStyle={{
-            gap: theme.spacing.md,
-            padding: theme.spacing.md,
-            paddingBottom: theme.spacing.lg,
-          }}
-        >
-          {children}
-        </ScrollView>
+        {fill ? (
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+            style={{ flex: 1 }}
+            contentContainerStyle={pad}
+          >
+            {children}
+          </ScrollView>
+        ) : (
+          <View style={pad}>{children}</View>
+        )}
       </View>
     </View>
   );

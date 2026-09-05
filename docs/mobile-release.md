@@ -34,7 +34,8 @@ Companions: [mobile-visual-qa.md](./mobile-visual-qa.md), [store-submission.md](
 
 | Profile | Distribution | Android artifact | API URL (default in eas.json) |
 |---------|--------------|------------------|-------------------------------|
-| `development` | internal + dev client | APK | `http://10.0.2.2:4000` |
+| `development` | internal + dev client | APK | `http://10.0.2.2:4000` (Android emulator / iOS **simulator** EAS) |
+| `development-device` | internal + dev client | APK | localhost (runtime rewrites to Metro LAN host on a physical phone) |
 | `preview` | internal | APK | `https://api.staging.maheraghbar.jo` |
 | `production` | store | App Bundle | `https://api.maheraghbar.jo` |
 

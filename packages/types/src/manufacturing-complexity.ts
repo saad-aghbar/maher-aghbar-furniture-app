@@ -7,6 +7,12 @@
  * CUSTOM    — non-catalog / freeform line
  */
 
+import {
+  normalizeOrderFabrics,
+  primaryFabric,
+  type OrderFabricSelection,
+} from './fabric-selection';
+
 export type ManufacturingComplexityCode = 'STANDARD' | 'MODIFIED' | 'CUSTOM';
 
 /** Extensible order-line measurement row (Piece 4). */
@@ -32,6 +38,8 @@ export type CatalogDimRef = {
   depth?: number | null;
   seatHeight?: number | null;
   material?: string | null;
+  /** Catalog Product.customMeasurements JSON — compared, never presence-only. */
+  customMeasurements?: unknown;
 };
 
 export type OrderLineClassifyInput = {
@@ -81,16 +89,133 @@ function dimDiffers(
   return Math.abs(a - b) > 0.001;
 }
 
-function hasCustomMeasurements(value: unknown): boolean {
-  if (value == null) return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === 'object') return Object.keys(value as object).length > 0;
-  return Boolean(str(value));
+function normalizeMeasurementToken(value: unknown): string | null {
+  const raw = str(value);
+  if (!raw) return null;
+  return raw
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[()[\]{}]/g, ' ')
+    .replace(/[_\-/.,'"`׳״]/g, ' ')
+    .replace(/\b(cm|سم|סמ)\b/g, ' ')
+    .replace(/\s+/g, '');
+}
+
+const SEAT_HEIGHT_TOKENS = new Set([
+  'seat',
+  'seatheight',
+  'seatheightcm',
+  'dimseat',
+  'ارتفاعالمقعد',
+  'גובהמושב',
+]);
+
+function isSeatHeightToken(token: string): boolean {
+  if (SEAT_HEIGHT_TOKENS.has(token)) return true;
+  return token.includes('seatheight') || token.endsWith('seat');
+}
+
+type MeasurementCompareRow = {
+  tokens: Set<string>;
+  value: number | string | null;
+  catalogValue: number | string | null;
+};
+
+function measurementValue(raw: unknown): number | string | null {
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  const asNum = num(raw);
+  if (asNum != null) return asNum;
+  return str(raw);
+}
+
+function valuesDiffer(ordered: number | string | null, catalog: number | string | null): boolean {
+  if (ordered == null) return false;
+  if (catalog == null) return true;
+  if (typeof ordered === 'number' && typeof catalog === 'number') {
+    return Math.abs(ordered - catalog) > 0.001;
+  }
+  return String(ordered).trim().toLowerCase() !== String(catalog).trim().toLowerCase();
+}
+
+function measurementTokensFromRecord(row: Record<string, unknown>): Set<string> {
+  const tokens = new Set<string>();
+  for (const key of ['key', 'id', 'nameEn', 'name', 'label', 'nameAr', 'nameHe'] as const) {
+    const token = normalizeMeasurementToken(row[key]);
+    if (token) tokens.add(token);
+  }
+  return tokens;
+}
+
+function measurementRowsFromUnknown(value: unknown): MeasurementCompareRow[] {
+  if (value == null) return [];
+  const list = Array.isArray(value) ? value : [value];
+  const rows: MeasurementCompareRow[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    const tokens = measurementTokensFromRecord(r);
+    if (tokens.size === 0) continue;
+    rows.push({
+      tokens,
+      value: measurementValue(r.value ?? r.val),
+      catalogValue: measurementValue(r.catalogValue ?? r.catalog),
+    });
+  }
+  return rows;
+}
+
+function tokensOverlap(a: Set<string>, b: Set<string>): boolean {
+  for (const token of a) {
+    if (b.has(token)) return true;
+  }
+  return false;
+}
+
+/**
+ * True when order measurements change manufacturing spec vs catalog.
+ * Catalog-seeded rows (same label + same value) are not a signal.
+ * An added row with no catalog counterpart is a signal.
+ * A row whose value equals its own catalogValue is not a signal.
+ */
+function customMeasurementsDiffer(
+  ordered: unknown,
+  catalog: CatalogDimRef | null,
+): boolean {
+  const orderRows = measurementRowsFromUnknown(ordered);
+  if (!orderRows.length) return false;
+  const catalogRows = measurementRowsFromUnknown(catalog?.customMeasurements);
+  const catalogSeat = num(catalog?.seatHeight);
+
+  for (const row of orderRows) {
+    if (row.value == null) continue;
+    if (row.catalogValue != null && !valuesDiffer(row.value, row.catalogValue)) continue;
+
+    const matched = catalogRows.find((candidate) => tokensOverlap(row.tokens, candidate.tokens));
+    if (matched) {
+      if (valuesDiffer(row.value, matched.value)) return true;
+      continue;
+    }
+
+    const seatRow = [...row.tokens].some(isSeatHeightToken);
+    if (seatRow) {
+      if (valuesDiffer(row.value, catalogSeat)) return true;
+      continue;
+    }
+
+    return true;
+  }
+  return false;
 }
 
 /**
  * Classify an order line relative to an optional catalog product snapshot.
  * Does not read or write the database Product row.
+ *
+ * Fabric, fabric colour, notes, and description are commercial options — not
+ * manufacturing signals. Custom measurements are compared to catalog, not
+ * treated as modified merely because they were seeded from the product.
  */
 export function classifyManufacturingComplexity(
   input: OrderLineClassifyInput,
@@ -103,20 +228,88 @@ export function classifyManufacturingComplexity(
     dimDiffers(input.height, catalog?.height),
     dimDiffers(input.depth, catalog?.depth),
     dimDiffers(input.seatHeight, catalog?.seatHeight),
-    Boolean(str(input.fabricType) || str(input.fabric) || str(input.fabricCode)),
-    Boolean(str(input.fabricColor) || str(input.color)),
     Boolean(str(input.woodType) || str(input.woodColor)),
     Boolean(str(input.foamDensity)),
     Boolean(str(input.finish)),
     Boolean(str(input.accessories)),
-    hasCustomMeasurements(input.customMeasurements),
+    customMeasurementsDiffer(input.customMeasurements, catalog),
     Boolean(str(input.material) && str(input.material) !== str(catalog?.material)),
-    Boolean(str(input.notes)),
-    Boolean(str(input.description)),
   ];
 
   if (manufacturingSignals.some(Boolean)) return 'MODIFIED';
   return 'STANDARD';
+}
+
+export function parseManufacturingComplexity(
+  value: string | null | undefined,
+): ManufacturingComplexityCode | null {
+  const c = String(value ?? '').toUpperCase();
+  if (c === 'STANDARD' || c === 'MODIFIED' || c === 'CUSTOM') return c;
+  return null;
+}
+
+export type OrderTypeLineInput =
+  | string
+  | null
+  | undefined
+  | {
+      manufacturingComplexity?: string | null;
+      productId?: string | null;
+    };
+
+/**
+ * Worst-line-wins rollup: CUSTOM > MODIFIED > STANDARD.
+ * Null complexity with a productId counts as STANDARD; null without productId
+ * counts as CUSTOM. Empty input is STANDARD.
+ */
+export function rollupOrderType(lines: OrderTypeLineInput[]): ManufacturingComplexityCode {
+  let worst: ManufacturingComplexityCode = 'STANDARD';
+  for (const raw of lines) {
+    const line =
+      raw != null && typeof raw === 'object'
+        ? raw
+        : { manufacturingComplexity: raw, productId: null as string | null };
+    const code = parseManufacturingComplexity(line.manufacturingComplexity);
+    if (code === 'CUSTOM') return 'CUSTOM';
+    if (code === 'MODIFIED') {
+      worst = 'MODIFIED';
+      continue;
+    }
+    if (code === 'STANDARD') continue;
+    if (!str(line.productId)) return 'CUSTOM';
+  }
+  return worst;
+}
+
+export type OrderTypeSlug = 'standard' | 'modified' | 'custom';
+
+export type OrderTypeCounts = {
+  standard: number;
+  modified: number;
+  custom: number;
+};
+
+export function emptyOrderTypeCounts(): OrderTypeCounts {
+  return { standard: 0, modified: 0, custom: 0 };
+}
+
+export function manufacturingComplexityToTypeSlug(
+  code: ManufacturingComplexityCode,
+): OrderTypeSlug {
+  if (code === 'CUSTOM') return 'custom';
+  if (code === 'MODIFIED') return 'modified';
+  return 'standard';
+}
+
+/** Facet tally of already-rolled order types. Does not re-classify lines. */
+export function tallyOrderTypeCounts(
+  types: ManufacturingComplexityCode[],
+): OrderTypeCounts {
+  const counts = emptyOrderTypeCounts();
+  for (const type of types) {
+    counts[manufacturingComplexityToTypeSlug(type)] += 1;
+  }
+  return counts;
 }
 
 /** Dealer/admin display key (i18n): standard | customized | custom */
@@ -157,6 +350,8 @@ export type OrderLineSpecSnapshot = {
     code?: string | null;
     color?: string | null;
   } | null;
+  /** Canonical multi-fabric list. Singular `fabric` remains for back-compat. */
+  fabrics?: OrderFabricSelection[];
   material?: string | null;
   notes?: string | null;
   modifications?: string | null;
@@ -183,6 +378,7 @@ export function buildOrderLineSpecSnapshot(input: {
   fabricColor?: string | null;
   fabric?: string | null;
   color?: string | null;
+  fabrics?: unknown;
   material?: string | null;
   notes?: string | null;
   description?: string | null;
@@ -217,6 +413,13 @@ export function buildOrderLineSpecSnapshot(input: {
         ? input.requiredDeliveryDate
         : input.requiredDeliveryDate.toISOString();
 
+  const fabrics = normalizeOrderFabrics(input.fabrics, {
+    type: input.fabricType ?? input.fabric,
+    code: input.fabricCode,
+    color: input.fabricColor ?? input.color,
+  });
+  const primary = primaryFabric(fabrics);
+
   return {
     productId: input.productId ?? null,
     productName: input.productName,
@@ -237,10 +440,11 @@ export function buildOrderLineSpecSnapshot(input: {
       seatHeight: num(input.seatHeight),
     },
     fabric: {
-      type: str(input.fabricType) ?? str(input.fabric),
-      code: str(input.fabricCode),
-      color: str(input.fabricColor) ?? str(input.color),
+      type: primary?.type ?? str(input.fabricType) ?? str(input.fabric),
+      code: primary?.code ?? str(input.fabricCode),
+      color: primary?.color ?? str(input.fabricColor) ?? str(input.color),
     },
+    fabrics,
     material: str(input.material),
     notes: str(input.notes),
     modifications: str(input.description),

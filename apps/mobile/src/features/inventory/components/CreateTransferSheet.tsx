@@ -85,6 +85,7 @@ export function CreateTransferSheet({
   const {
     verifyKind,
     verifyScanned,
+    verifyFabric,
     verifyBusy,
     clearLabelVerify,
     resetLabelVerify,
@@ -248,6 +249,7 @@ export function CreateTransferSheet({
                       allowChangeItem
                       resultKind={verifyKind}
                       resultScanned={verifyScanned}
+                      resultFabric={verifyFabric}
                       onScanPress={() => void runLabelVerify()}
                       onClearResult={clearLabelVerify}
                       onScanAgain={() => void runLabelVerify()}
