@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
@@ -111,6 +111,34 @@ const PLACES: PlaceTileDef[] = [
   },
 ];
 
+/**
+ * Two-up rows. Wide tiles (Schedule) take a full row. A leftover tile fills
+ * the row so there is never a blank column.
+ */
+export function packDealerPlaceRows<T extends { wide?: boolean }>(
+  items: readonly T[],
+): T[][] {
+  const rows: T[][] = [];
+  let i = 0;
+  while (i < items.length) {
+    const cur = items[i]!;
+    if (cur.wide) {
+      rows.push([cur]);
+      i += 1;
+      continue;
+    }
+    const next = items[i + 1];
+    if (next && !next.wide) {
+      rows.push([cur, next]);
+      i += 2;
+    } else {
+      rows.push([cur]);
+      i += 1;
+    }
+  }
+  return rows;
+}
+
 /** 2-column place cards — finance & inbox shortcuts (AI featured separately). */
 export function DealerPlacesDock() {
   const { t, locale, isRTL } = useLocale();
@@ -118,17 +146,14 @@ export function DealerPlacesDock() {
   const { user } = useAuth();
   const router = useRouter();
   const reduce = useReducedMotion();
-  const { width } = useWindowDimensions();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
-  const pad = theme.spacing.lg;
   const gap = theme.spacing.sm;
-  const fullW = width - pad * 2;
-  const halfW = (fullW - gap) / 2;
 
   const places = useMemo(
     () => PLACES.filter((p) => can(user, p.permission)),
     [user],
   );
+  const rows = useMemo(() => packDealerPlaceRows(places), [places]);
 
   const deliveriesBadgeQuery = useQuery({
     queryKey: queryKeys.salesOrders.list({ page: 1, pageSize: 100, dealerPlaces: true }),
@@ -191,32 +216,36 @@ export function DealerPlacesDock() {
         </AppText>
       </View>
 
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          flexWrap: 'wrap',
-          gap,
-        }}
-      >
-        {places.map((place, index) => (
-          <PlaceTile
-            key={place.key}
-            place={place}
-            index={index}
-            width={place.wide ? fullW : halfW}
-            badgeCount={place.badgeCount?.(badgeCtx)}
-            badgeLabel={
-              place.badgeLabelKey && place.badgeCount?.(badgeCtx)
-                ? t(place.badgeLabelKey, { count: place.badgeCount(badgeCtx)! })
-                : undefined
-            }
-            onPress={() => {
-              void haptics.confirmLight();
-              const href =
-                typeof place.href === 'function' ? place.href(badgeCtx) : place.href;
-              router.push(href);
+      <View style={{ gap }}>
+        {rows.map((row, rowIndex) => (
+          <View
+            key={row.map((p) => p.key).join('-')}
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'stretch',
+              gap,
             }}
-          />
+          >
+            {row.map((place, colIndex) => (
+              <PlaceTile
+                key={place.key}
+                place={place}
+                index={rowIndex * 2 + colIndex}
+                badgeCount={place.badgeCount?.(badgeCtx)}
+                badgeLabel={
+                  place.badgeLabelKey && place.badgeCount?.(badgeCtx)
+                    ? t(place.badgeLabelKey, { count: place.badgeCount(badgeCtx)! })
+                    : undefined
+                }
+                onPress={() => {
+                  void haptics.confirmLight();
+                  const href =
+                    typeof place.href === 'function' ? place.href(badgeCtx) : place.href;
+                  router.push(href);
+                }}
+              />
+            ))}
+          </View>
         ))}
       </View>
     </Shell>
@@ -226,14 +255,12 @@ export function DealerPlacesDock() {
 function PlaceTile({
   place,
   index,
-  width,
   badgeCount,
   badgeLabel,
   onPress,
 }: {
   place: PlaceTileDef;
   index: number;
-  width: number;
   badgeCount?: number;
   badgeLabel?: string;
   onPress: () => void;
@@ -269,7 +296,7 @@ function PlaceTile({
   }));
 
   return (
-    <Animated.View style={[{ width }, style]}>
+    <Animated.View style={[{ flex: 1, minWidth: 0 }, style]}>
       <AnimatedPressable
         variant="card"
         accessibilityRole="button"
@@ -278,6 +305,7 @@ function PlaceTile({
         }
         onPress={onPress}
         style={{
+          flex: 1,
           minHeight: 112,
           borderRadius: theme.radius.xl,
           borderWidth: ink ? 0 : 1,
@@ -344,7 +372,13 @@ function PlaceTile({
             />
           </View>
         </View>
-        <View style={{ gap: 2, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+        <View
+          style={{
+            gap: 2,
+            alignSelf: 'stretch',
+            alignItems: isRTL ? 'flex-end' : 'flex-start',
+          }}
+        >
           <AppText variant="label" weight={titleWeight} numberOfLines={1} style={{ color: fg }}>
             {t(place.labelKey)}
           </AppText>

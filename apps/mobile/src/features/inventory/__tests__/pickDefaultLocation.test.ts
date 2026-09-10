@@ -1,9 +1,18 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   pickDefaultLocationId,
   locationPickerLabel,
   warehouseBinLine,
   sortBinsForPicker,
+  pickerViewportHeights,
+  PICKER_WAREHOUSE_MIN,
+  PICKER_WAREHOUSE_MAX,
+  PICKER_BIN_MIN,
+  PICKER_BIN_MAX,
 } from '../pickDefaultLocation';
+
+const inventoryDir = join(__dirname, '..');
 
 describe('pickDefaultLocationId', () => {
   const bins = [
@@ -43,6 +52,37 @@ describe('warehouseBinLine', () => {
 
   it('returns warehouse alone when the bin is empty', () => {
     expect(warehouseBinLine('Raw', '  ')).toBe('Raw');
+  });
+});
+
+describe('pickerViewportHeights', () => {
+  it('keeps warehouse and bin boxes independently scrollable', () => {
+    const short = pickerViewportHeights(700);
+    expect(short.warehouse).toBe(PICKER_WAREHOUSE_MIN);
+    expect(short.bin).toBe(PICKER_BIN_MIN);
+    const tall = pickerViewportHeights(2000);
+    expect(tall.warehouse).toBe(PICKER_WAREHOUSE_MAX);
+    expect(tall.bin).toBe(PICKER_BIN_MAX);
+    expect(tall.sheet).toBeLessThanOrEqual(760);
+  });
+
+  it('wires shared heights into every warehouse+bin pop-up', () => {
+    const sheets = [
+      'components/AddStockSheet.tsx',
+      'components/CreateTransferSheet.tsx',
+      'components/CreateStockCountSheet.tsx',
+      join('..', 'purchasing', 'components', 'DestinationPickSheet.tsx'),
+      join('..', 'purchasing', 'components', 'CreatePurchaseOrderSheet.tsx'),
+      join('..', 'returns', 'components', 'ReturnReceiveSheet.tsx'),
+      join('..', 'purchasing', 'components', 'AddMaterialSheet.tsx'),
+      join('..', 'workflow', 'components', 'ProductionStageSetupSheet.tsx'),
+    ];
+    for (const rel of sheets) {
+      const src = readFileSync(join(inventoryDir, rel), 'utf8');
+      expect(src).toContain('pickerViewportHeights');
+    }
+    const strip = readFileSync(join(inventoryDir, 'components/WarehouseBinBoard.tsx'), 'utf8');
+    expect(strip).toContain('pickerViewportHeights(height).bin');
   });
 });
 

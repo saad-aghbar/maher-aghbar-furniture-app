@@ -1,3 +1,4 @@
+import { stickyCtaBottomInset } from '@/components/layout/stickyCtaInset';
 import { DEALER_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import type { NewOrderStep } from './newOrderSteps';
 import { isFinalWizardStep } from './newOrderStageMath';
@@ -26,23 +27,28 @@ export function newOrderDockShowsSaveDraft(mode: NewOrderDockMode): boolean {
   return mode === 'submit';
 }
 
-/** Approximate dock body height (excluding tab-bar clearance) for scroll padding. */
-export const NEW_ORDER_DOCK_BODY_HEIGHT = 72;
+/**
+ * Dock CTA row — matches `NewOrderFloatingDock` minHeight (padding + 44 touch).
+ * Exclude tab-bar clearance; that lives in `stickyCtaBottomInset`.
+ */
+export const NEW_ORDER_DOCK_BODY_HEIGHT = 76;
 
-/** Extra air under the last field so the page can scroll past the dock. */
-export const NEW_ORDER_DOCK_SCROLL_EXTRA = 40;
+/** `FloatingActionDock` paddingTop (`theme.spacing.sm`). */
+export const NEW_ORDER_DOCK_TOP_PAD = 8;
+
+/** Extra air under the last field so fabric / notes clear the dock. */
+export const NEW_ORDER_DOCK_SCROLL_EXTRA = 48;
 
 /**
- * Bottom inset so wizard content is laid out above the floating dock
- * (and the dealer tab/FAB it sits on). Apply to the screen shell, not only
- * ScrollView content padding — content-only pad leaves short step-1 forms
- * drawn under Back/Continue.
+ * Bottom inset so wizard content can scroll past the floating dock
+ * (and the dealer tab it sits on). Apply to ScrollView `contentContainerStyle`
+ * so tall steps (extra fabric rows) actually extend the scroll range.
  */
-export function newOrderDockScrollPad(spacingMd: number): number {
+export function newOrderDockScrollPad(spacingMd: number, safeBottom = 0): number {
   return (
-    DEALER_TAB_BAR_CLEARANCE +
+    stickyCtaBottomInset(safeBottom, spacingMd, DEALER_TAB_BAR_CLEARANCE) +
+    NEW_ORDER_DOCK_TOP_PAD +
     NEW_ORDER_DOCK_BODY_HEIGHT +
-    NEW_ORDER_DOCK_SCROLL_EXTRA +
-    spacingMd
+    NEW_ORDER_DOCK_SCROLL_EXTRA
   );
 }

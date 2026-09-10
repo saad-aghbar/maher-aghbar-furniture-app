@@ -52,13 +52,13 @@ const base = {
   canScan: true,
   createLabel: 'Add item',
   onCreate: () => undefined,
-  warehouseLabel: 'Add warehouse',
+  warehouseLabel: 'Warehouses',
   onCreateWarehouse: () => undefined,
   onSync: () => undefined,
 };
 
 describe('inventory chrome action placement', () => {
-  it('EN materials items: Scan + Sync on search, Add item + Add warehouse below', async () => {
+  it('EN materials items: Scan + Sync on search, Add item + Warehouses below', async () => {
     const view = await render(
       <InventoryCompositionChrome
         {...base}
@@ -73,7 +73,7 @@ describe('inventory chrome action placement', () => {
     expect(view.getByLabelText('Scan')).toBeTruthy();
     expect(view.getByLabelText('Sync from materials')).toBeTruthy();
     expect(view.getByLabelText('Add item')).toBeTruthy();
-    expect(view.getByLabelText('Add warehouse')).toBeTruthy();
+    expect(view.getByLabelText('Warehouses')).toBeTruthy();
     expect(view.queryByText('Scan')).toBeNull();
   });
 
@@ -92,7 +92,7 @@ describe('inventory chrome action placement', () => {
     expect(view.getByLabelText('Scan')).toBeTruthy();
     expect(view.queryByLabelText('Sync from materials')).toBeNull();
     expect(view.queryByLabelText('Add item')).toBeNull();
-    expect(view.queryByLabelText('Add warehouse')).toBeNull();
+    expect(view.queryByLabelText('Warehouses')).toBeNull();
   });
 
   it('AR materials items: labeled creates and scan a11y, no title-side Scan text', async () => {
@@ -102,7 +102,7 @@ describe('inventory chrome action placement', () => {
         title="المخزون"
         scanLabel="مسح"
         createLabel="إضافة مادة"
-        warehouseLabel="إضافة مستودع"
+        warehouseLabel="المستودعات"
         lifecycle="materials"
         section="items"
         canSync
@@ -113,7 +113,7 @@ describe('inventory chrome action placement', () => {
     );
     expect(view.getByLabelText('مسح')).toBeTruthy();
     expect(view.getByLabelText('إضافة مادة')).toBeTruthy();
-    expect(view.getByLabelText('إضافة مستودع')).toBeTruthy();
+    expect(view.getByLabelText('المستودعات')).toBeTruthy();
     expect(view.queryByText('مسح')).toBeNull();
   });
 });

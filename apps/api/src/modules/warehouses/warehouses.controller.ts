@@ -92,6 +92,54 @@ class LocationPatchDto {
   isActive?: boolean;
 }
 
+const LOCATION_ITEM_SELECT = {
+  id: true,
+  sku: true,
+  nameEn: true,
+  nameAr: true,
+  nameHe: true,
+  unit: true,
+  imageUrl: true,
+} as const;
+
+const STOCKED_LOCATION_BALANCES = {
+  where: {
+    OR: [{ availableQty: { gt: 0 } }, { reservedQty: { gt: 0 } }],
+  },
+  include: {
+    inventoryItem: { select: LOCATION_ITEM_SELECT },
+  },
+  take: 80,
+};
+
+type StockedLocationBalance = {
+  inventoryItemId: string;
+  availableQty: unknown;
+  reservedQty: unknown;
+  inventoryItem: {
+    sku: string;
+    nameEn: string;
+    nameAr: string | null;
+    nameHe: string | null;
+    unit: string;
+    imageUrl: string | null;
+  };
+};
+
+function locationContents(balances: StockedLocationBalance[]) {
+  return balances.map((b) => ({
+    inventoryItemId: b.inventoryItemId,
+    sku: b.inventoryItem.sku,
+    nameEn: b.inventoryItem.nameEn,
+    nameAr: b.inventoryItem.nameAr,
+    nameHe: b.inventoryItem.nameHe,
+    unit: b.inventoryItem.unit,
+    imageUrl: b.inventoryItem.imageUrl,
+    availableQty: Number(b.availableQty),
+    reservedQty: Number(b.reservedQty),
+  }));
+}
+
 @ApiTags('warehouses')
 @Controller('warehouses')
 export class WarehousesController {
@@ -198,25 +246,7 @@ export class WarehousesController {
         warehouse: {
           select: { id: true, code: true, nameEn: true, nameAr: true, nameHe: true, type: true },
         },
-        balances: {
-          where: {
-            OR: [{ availableQty: { gt: 0 } }, { reservedQty: { gt: 0 } }],
-          },
-          include: {
-            inventoryItem: {
-              select: {
-                id: true,
-                sku: true,
-                nameEn: true,
-                nameAr: true,
-                nameHe: true,
-                unit: true,
-                imageUrl: true,
-              },
-            },
-          },
-          take: 80,
-        },
+        balances: STOCKED_LOCATION_BALANCES,
       },
     });
     if (!location) {
@@ -225,30 +255,36 @@ export class WarehousesController {
     return {
       ...location,
       scanCode: binScanPayload(location),
-      contents: location.balances.map((b) => ({
-        inventoryItemId: b.inventoryItemId,
-        sku: b.inventoryItem.sku,
-        nameEn: b.inventoryItem.nameEn,
-        nameAr: b.inventoryItem.nameAr,
-        nameHe: b.inventoryItem.nameHe,
-        unit: b.inventoryItem.unit,
-        imageUrl: b.inventoryItem.imageUrl,
-        availableQty: Number(b.availableQty),
-        reservedQty: Number(b.reservedQty),
-      })),
+      contents: locationContents(location.balances),
     };
   }
 
   @Get(':id')
-  @RequirePermissions('warehouse.manage')
-  get(@Param('id') id: string) {
-    return this.prisma.warehouse.findUniqueOrThrow({
+  @RequireAnyPermissions('warehouse.read', 'warehouse.manage', 'inventory.read', 'inventory.receive')
+  async get(@Param('id') id: string) {
+    const row = await this.prisma.warehouse.findUnique({
       where: { id },
       include: {
-        locations: true,
-        balances: { include: { inventoryItem: true }, take: 50 },
+        locations: {
+          orderBy: [{ isDefault: 'desc' }, { code: 'asc' }],
+          include: { balances: STOCKED_LOCATION_BALANCES },
+        },
       },
     });
+    if (!row) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Warehouse not found.' });
+    }
+    return {
+      ...row,
+      locations: row.locations.map((loc) => {
+        const { balances, ...rest } = loc;
+        return {
+          ...rest,
+          scanCode: binScanPayload(loc),
+          contents: locationContents(balances),
+        };
+      }),
+    };
   }
 
   @Patch(':id')

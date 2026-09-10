@@ -2001,6 +2001,16 @@
       "DealerPreferencesBoard"
     ]
   },
+  "src/features/account/components/PaymentBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.account.payment-board-card"
+    ],
+    "notes": "parent-domain:account",
+    "exportNames": [
+      "PaymentBoardCard"
+    ]
+  },
   "src/features/account/components/StatementActivityCard.tsx": {
     "classification": "REPRESENTED_BY_PARENT",
     "registryIds": [
@@ -5572,6 +5582,69 @@
     "notes": "feature-screen",
     "exportNames": [
       "DealerQuotationsListScreen"
+    ]
+  },
+  "src/features/quotations/components/QuotationBoardCard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quotations.quotation-board-card"
+    ],
+    "notes": "parent-domain:quotations",
+    "exportNames": [
+      "QuotationBoardCard"
+    ]
+  },
+  "src/features/quotations/components/QuotationDecisionSheet.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quotations.quotation-decision-sheet"
+    ],
+    "notes": "parent-domain:quotations",
+    "exportNames": [
+      "QuotationDecisionSheet"
+    ]
+  },
+  "src/features/quotations/components/QuotationDeskRail.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quotations.quotation-desk-rail"
+    ],
+    "notes": "parent-domain:quotations",
+    "exportNames": [
+      "QuotationDeskRail"
+    ]
+  },
+  "src/features/quotations/components/QuotationLineBoard.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quotations.quotation-line-board"
+    ],
+    "notes": "parent-domain:quotations",
+    "exportNames": [
+      "QuotationLineBoard"
+    ]
+  },
+  "src/features/quotations/components/QuotationValidityStub.tsx": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quotations.quotation-validity-stub"
+    ],
+    "notes": "parent-domain:quotations",
+    "exportNames": [
+      "QuotationValidityStub"
+    ]
+  },
+  "src/features/quotations/dealerQuotationUi.ts": {
+    "classification": "REPRESENTED_BY_PARENT",
+    "registryIds": [
+      "feature.quotations.dealer-quotation-ui"
+    ],
+    "notes": "parent-domain:quotations",
+    "exportNames": [
+      "dealerCanDecideQuotation",
+      "dealerQuoteDesk",
+      "filterDealerQuotations",
+      "selectDealerQuoteHub"
     ]
   },
   "src/features/reports/ReportsScreen.tsx": {

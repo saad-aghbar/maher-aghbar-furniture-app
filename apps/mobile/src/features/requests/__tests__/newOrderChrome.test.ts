@@ -74,10 +74,15 @@ describe('newOrderDockMode', () => {
 });
 
 describe('newOrderDockScrollPad', () => {
-  it('clears dock body plus tab clearance and extra air', () => {
-    expect(NEW_ORDER_DOCK_BODY_HEIGHT).toBe(72);
-    expect(NEW_ORDER_DOCK_SCROLL_EXTRA).toBe(40);
-    expect(newOrderDockScrollPad(16)).toBe(108 + 72 + 40 + 16);
+  it('clears dock body, top pad, sticky tab inset, and extra air', () => {
+    expect(NEW_ORDER_DOCK_BODY_HEIGHT).toBe(76);
+    expect(NEW_ORDER_DOCK_SCROLL_EXTRA).toBe(48);
+    // stickyCtaBottomInset(0, 16) = 16 + 108; + top 8 + body 76 + extra 48
+    expect(newOrderDockScrollPad(16)).toBe(16 + 108 + 8 + 76 + 48);
+  });
+
+  it('folds home-indicator inset into the sticky dock stack', () => {
+    expect(newOrderDockScrollPad(16, 34)).toBe(34 + 108 + 8 + 76 + 48);
   });
 
   it('is tall enough that step content cannot sit under the dock body', () => {

@@ -68,6 +68,48 @@ describe('warehouse holding locations', () => {
     expect(prisma.warehouseLocation.delete).not.toHaveBeenCalled();
   });
 
+  it('returns nested stocked bin contents on the warehouse desk', async () => {
+    const { ctrl, prisma } = makeCtrl();
+    prisma.warehouse.findUnique.mockImplementation(async () => ({
+      id: 'wh-1',
+      code: 'RAW',
+      nameEn: 'Raw',
+      nameAr: 'خام',
+      type: 'RAW_MATERIALS',
+      locations: [
+        {
+          id: 'loc-main',
+          code: 'RAW-MAIN',
+          name: 'Main floor',
+          isDefault: true,
+          qrCode: 'BIN-RAW-RAW-MAIN',
+          balances: [
+            {
+              inventoryItemId: 'item-1',
+              availableQty: 4,
+              reservedQty: 1,
+              inventoryItem: {
+                sku: 'BEECH',
+                nameEn: 'Beech',
+                nameAr: 'زان',
+                nameHe: null,
+                unit: 'm',
+                imageUrl: null,
+              },
+            },
+          ],
+        },
+      ],
+    }));
+    const row = await ctrl.get('wh-1');
+    expect(row.locations[0]).toMatchObject({
+      code: 'RAW-MAIN',
+      scanCode: 'BIN-RAW-RAW-MAIN',
+      contents: [{ sku: 'BEECH', availableQty: 4, reservedQty: 1 }],
+    });
+    expect(row.locations[0]).not.toHaveProperty('balances');
+  });
+
   it('resolves a printed BIN-RAW-MAIN scan to the RAW-MAIN bin', async () => {
     const { ctrl, prisma } = makeCtrl();
     prisma.warehouseLocation.findFirst.mockImplementation(async (args: { where?: { OR?: unknown } }) => {

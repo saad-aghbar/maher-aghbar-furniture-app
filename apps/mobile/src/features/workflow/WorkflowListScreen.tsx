@@ -28,6 +28,7 @@ import { useTheme } from '@/theme';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { WorkflowFloorBoard, WorkflowFloorRow } from './components/WorkflowFloorList';
 import { WorkflowPageHeader } from './components/WorkflowPageHeader';
+import { WorkflowScopeTouchBar } from './components/WorkflowScopeTouchBar';
 import {
   useArchiveWorkflowMutation,
   useCreateWorkflowMutation,
@@ -103,67 +104,7 @@ export function WorkflowListScreen() {
           subtitle={t('mobile.production.workflow.simpleSubtitle')}
         />
 
-        <View
-          style={{
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-            gap: theme.spacing.sm,
-          }}
-        >
-          {([
-            [null, t('mobile.production.workflow.scopeAll')],
-            ['STANDARD', t('mobile.production.workflow.scopeStandard')],
-            ['RETURN', t('mobile.production.workflow.scopeReturn')],
-          ] as const).map(([value, label]) => {
-            const selected = scopeFilter === value;
-            return (
-              <AnimatedPressable
-                key={value ?? 'all'}
-                variant="button"
-                onPress={() => {
-                  void haptics.selection();
-                  setScopeFilter(value);
-                }}
-                style={{
-                  flex: 1,
-                  minHeight: 40,
-                  borderRadius: theme.radius.lg,
-                  borderWidth: 1.5,
-                  borderColor: selected ? colors.brand : colors.borderStrong,
-                  backgroundColor: selected ? colors.brandSoft : colors.surface,
-                  paddingHorizontal: theme.spacing.md,
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                }}
-              >
-                {selected ? (
-                  <View
-                    pointerEvents="none"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      bottom: 0,
-                      width: 3,
-                      backgroundColor: colors.brand,
-                      opacity: 0.55,
-                      ...(isRTL ? { right: 0 } : { left: 0 }),
-                    }}
-                  />
-                ) : null}
-                <AppText
-                  weight={locale === 'ar' ? 'medium' : 'semibold'}
-                  style={{
-                    color: selected ? colors.brand : colors.textPrimary,
-                    textAlign: isRTL ? 'right' : 'left',
-                    paddingLeft: selected && !isRTL ? 4 : 0,
-                    paddingRight: selected && isRTL ? 4 : 0,
-                  }}
-                >
-                  {label}
-                </AppText>
-              </AnimatedPressable>
-            );
-          })}
-        </View>
+        <WorkflowScopeTouchBar value={scopeFilter} onChange={setScopeFilter} />
 
         <TextField
           value={query}

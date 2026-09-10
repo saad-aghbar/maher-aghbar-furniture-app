@@ -12,6 +12,7 @@ import { QtyStepperField } from '@/components/forms/QtyStepperField';
 import { TextField } from '@/components/forms/TextField';
 import { BottomSheet } from '@/components/sheets/BottomSheet';
 import { WarehousePickList } from '@/features/inventory/components/WarehousePickList';
+import { pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
 import {
   MaterialPickerSheet,
   type PickedOrderMaterial,
@@ -49,8 +50,9 @@ export function CreatePurchaseOrderSheet({
   const { colors, theme } = useTheme();
   const { showToast } = useToast();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.9), 760);
-  const warehouseListHeight = Math.round(height * 0.22);
+  const pickerHeights = pickerViewportHeights(height);
+  const sheetHeight = pickerHeights.sheet;
+  const warehouseListHeight = pickerHeights.warehouse;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const wasOpen = useRef(false);
 

@@ -26,6 +26,7 @@ import {
   listSemiFinishedLots,
   listWarehouseTransfers,
   listWarehouses,
+  getWarehouseDesk,
   postInventoryStockCount,
   receiveStock,
   syncInventoryFromMaterials,
@@ -129,6 +130,15 @@ export function useWarehousesQuery(enabled: boolean) {
     queryFn: listWarehouses,
     enabled,
     staleTime: 60_000,
+  });
+}
+
+export function useWarehouseDeskQuery(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.inventory.warehouseDesk(id),
+    queryFn: () => getWarehouseDesk(id),
+    enabled: enabled && Boolean(id),
+    staleTime: 15_000,
   });
 }
 

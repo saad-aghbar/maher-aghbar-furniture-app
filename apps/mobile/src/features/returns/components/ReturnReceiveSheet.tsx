@@ -15,7 +15,7 @@ import {
   locationsForWarehouse,
   WarehouseBinStrip,
 } from '@/features/inventory/components/WarehouseBinBoard';
-import { pickDefaultLocationId } from '@/features/inventory/pickDefaultLocation';
+import { pickDefaultLocationId, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
 import { useScanWarehouseBin } from '@/features/inventory/useScanWarehouseBin';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
@@ -44,6 +44,7 @@ export function ReturnReceiveSheet({ open, loading, pieces, onClose, onConfirm }
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { height } = useWindowDimensions();
+  const pickerHeights = pickerViewportHeights(height);
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const awaiting = pieces.filter((piece) => piece.state === 'AWAITING_RECEIPT');
   const [selected, setSelected] = useState<string[]>([]);
@@ -72,7 +73,7 @@ export function ReturnReceiveSheet({ open, loading, pieces, onClose, onConfirm }
     <BottomSheet
       open={open}
       onClose={onClose}
-      sheetHeight={Math.round(height * 0.78)}
+      sheetHeight={pickerHeights.sheet}
       expandable
       title={t('mobile.returns.receivePieces')}
     >
@@ -152,7 +153,7 @@ export function ReturnReceiveSheet({ open, loading, pieces, onClose, onConfirm }
             );
           }}
           label={t('mobile.returns.receiveWarehouse')}
-          listHeight={180}
+          listHeight={pickerHeights.warehouse}
           resetToken={open ? 'receive-wh' : 'closed'}
         />
         {locationsForWarehouse(warehouses.find((wh) => wh.id === warehouseId)).length > 0 ? (
@@ -163,6 +164,7 @@ export function ReturnReceiveSheet({ open, loading, pieces, onClose, onConfirm }
               locationId,
             )}
             onSelect={setLocationId}
+            listHeight={pickerHeights.bin}
             onScanPress={() => {
               void (async () => {
                 const bin = await scanWarehouseBin();

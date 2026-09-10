@@ -15,17 +15,15 @@ export function DealerHomeSkeleton() {
     >
       <DealerSkeleton height={22} width="42%" />
       <DealerSkeleton height={260} width="100%" radius={theme.radius.xl} />
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          flexWrap: 'wrap',
-          gap: theme.spacing.md,
-        }}
-      >
-        <DealerSkeleton height={112} style={{ width: '47%', flexGrow: 1 }} radius={theme.radius.xl} />
-        <DealerSkeleton height={112} style={{ width: '47%', flexGrow: 1 }} radius={theme.radius.xl} />
-        <DealerSkeleton height={112} style={{ width: '47%', flexGrow: 1 }} radius={theme.radius.xl} />
-        <DealerSkeleton height={112} style={{ width: '47%', flexGrow: 1 }} radius={theme.radius.xl} />
+      <View style={{ gap: theme.spacing.md }}>
+        <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.md }}>
+          <DealerSkeleton height={112} style={{ flex: 1 }} radius={theme.radius.xl} />
+          <DealerSkeleton height={112} style={{ flex: 1 }} radius={theme.radius.xl} />
+        </View>
+        <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.md }}>
+          <DealerSkeleton height={112} style={{ flex: 1 }} radius={theme.radius.xl} />
+          <DealerSkeleton height={112} style={{ flex: 1 }} radius={theme.radius.xl} />
+        </View>
       </View>
       <DealerSkeleton height={18} width="45%" />
       <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', gap: theme.spacing.md }}>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import type { Href } from 'expo-router';
 import { can } from '@maher/permissions';
@@ -21,6 +21,7 @@ import { useTheme } from '@/theme';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/api/queryKeys';
+import { StatementRangeSheet } from '@/features/dealers/components/StatementRangeSheet';
 import { StatementActivityCard } from './components/StatementActivityCard';
 import { StatementBalanceBoard } from './components/StatementBalanceBoard';
 import {
@@ -34,6 +35,7 @@ import {
   selectStatementRows,
   selectStatementSummary,
   type StatementDatePreset,
+  type StatementPdfRange,
   type StatementTypeFilter,
 } from './selectStatement';
 
@@ -111,8 +113,11 @@ export function DealerStatementScreen() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<StatementTypeFilter>('all');
   const [datePreset, setDatePreset] = useState<StatementDatePreset>('all');
+  const [customRange, setCustomRange] = useState<StatementPdfRange>({});
   const [dateSheetOpen, setDateSheetOpen] = useState(false);
+  const [pdfRangeOpen, setPdfRangeOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const pendingPdfRange = useRef<StatementPdfRange | null>(null);
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
 
   const query = useQuery({
@@ -131,7 +136,10 @@ export function DealerStatementScreen() {
     [query.data],
   );
 
-  const dateRange = useMemo(() => datePresetRange(datePreset), [datePreset]);
+  const dateRange = useMemo(
+    () => datePresetRange(datePreset, new Date(), customRange),
+    [datePreset, customRange],
+  );
 
   const filteredRows = useMemo(
     () =>
@@ -147,13 +155,23 @@ export function DealerStatementScreen() {
   const filtersActive =
     typeFilter !== 'all' || datePreset !== 'all' || search.trim().length > 0;
 
-  const downloadPdf = async () => {
+  const downloadPdf = () => {
     if (!customerId || pdfBusy) return;
+    pendingPdfRange.current = null;
+    setPdfRangeOpen(true);
+  };
+
+  const continueStatementPdf = async (range: StatementPdfRange) => {
+    if (!customerId) return;
     const opts = await pickPdfOptions();
     if (!opts) return;
     setPdfBusy(true);
     try {
-      await openStatementPdf(customerId, opts);
+      await openStatementPdf(customerId, {
+        ...opts,
+        from: range.from,
+        to: range.to,
+      });
     } catch {
       showToast({ variant: 'error', message: t('mobile.account.pdfFailed') });
     } finally {
@@ -253,6 +271,8 @@ export function DealerStatementScreen() {
             <StatementTypeRail value={typeFilter} onChange={setTypeFilter} />
             <StatementDateTrigger
               value={datePreset}
+              customFrom={customRange.from}
+              customTo={customRange.to}
               onPress={() => setDateSheetOpen(true)}
             />
 
@@ -310,7 +330,29 @@ export function DealerStatementScreen() {
         open={dateSheetOpen}
         onClose={() => setDateSheetOpen(false)}
         value={datePreset}
-        onChange={setDatePreset}
+        customFrom={customRange.from}
+        customTo={customRange.to}
+        onChange={(next, range) => {
+          setDatePreset(next);
+          setCustomRange(next === 'custom' ? (range ?? {}) : {});
+        }}
+      />
+      <StatementRangeSheet
+        open={pdfRangeOpen}
+        onClose={() => {
+          pendingPdfRange.current = null;
+          setPdfRangeOpen(false);
+        }}
+        onConfirm={(range) => {
+          pendingPdfRange.current = range;
+          setPdfRangeOpen(false);
+        }}
+        onClosed={() => {
+          const range = pendingPdfRange.current;
+          pendingPdfRange.current = null;
+          if (!range) return;
+          void continueStatementPdf(range);
+        }}
       />
       {pdfDownloadSheet}
     </AppScreen>

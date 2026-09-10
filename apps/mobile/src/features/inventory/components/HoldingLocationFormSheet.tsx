@@ -26,6 +26,10 @@ type Props = {
   editing?: HoldingLocationOption | null;
   defaultWarehouseId?: string | null;
   onSaved: (locationId: string) => void;
+  /** Inventory bin desk — not fabric-holding copy. */
+  copy?: 'holding' | 'bin';
+  /** Skip the warehouse picker and keep this warehouse. */
+  lockWarehouseId?: string;
 };
 
 /**
@@ -40,6 +44,8 @@ export function HoldingLocationFormSheet({
   editing,
   defaultWarehouseId,
   onSaved,
+  copy = 'holding',
+  lockWarehouseId,
 }: Props) {
   const { t, locale } = useLocale();
   const { theme } = useTheme();
@@ -52,7 +58,11 @@ export function HoldingLocationFormSheet({
   const [warehouseSheet, setWarehouseSheet] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const rawWarehouses = warehouses.filter((w) => !w.type || w.type === 'RAW_MATERIALS');
+  const rawWarehouses = lockWarehouseId
+    ? warehouses.filter((w) => w.id === lockWarehouseId)
+    : copy === 'bin'
+      ? warehouses
+      : warehouses.filter((w) => !w.type || w.type === 'RAW_MATERIALS');
   const selectedWh = rawWarehouses.find((w) => w.id === warehouseId);
   const editingId = editing?.id ?? '';
 
@@ -65,10 +75,10 @@ export function HoldingLocationFormSheet({
       setName(editing.name?.trim() || editing.label);
       return;
     }
-    setWarehouseId(defaultWarehouseId || '');
+    setWarehouseId(lockWarehouseId || defaultWarehouseId || '');
     setName('');
     // Omit `warehouses` so a refetch after create does not wipe the form.
-  }, [open, editing, editingId, defaultWarehouseId]);
+  }, [open, editing, editingId, defaultWarehouseId, lockWarehouseId]);
 
   const warehouseLabel = selectedWh
     ? locale === 'ar'
@@ -95,7 +105,10 @@ export function HoldingLocationFormSheet({
             void haptics.confirmLight();
             showToast({
               variant: 'success',
-              message: t('mobile.purchasing.fabricHoldingUpdated'),
+              message:
+                copy === 'bin'
+                  ? t('mobile.inventory.binUpdated')
+                  : t('mobile.purchasing.fabricHoldingUpdated'),
             });
             onSaved(row.id);
             onClose();
@@ -110,10 +123,13 @@ export function HoldingLocationFormSheet({
       {
         onSuccess: (row) => {
           void haptics.confirmLight();
-          showToast({
-            variant: 'success',
-            message: t('mobile.purchasing.fabricHoldingCreated'),
-          });
+            showToast({
+              variant: 'success',
+              message:
+                copy === 'bin'
+                  ? t('mobile.inventory.binCreated')
+                  : t('mobile.purchasing.fabricHoldingCreated'),
+            });
           onSaved(row.id);
           onClose();
         },
@@ -138,35 +154,45 @@ export function HoldingLocationFormSheet({
         onClose={onClose}
         title={
           editing
-            ? t('mobile.purchasing.fabricHoldingEdit')
-            : t('mobile.purchasing.fabricHoldingAdd')
+            ? copy === 'bin'
+              ? t('mobile.inventory.editBin')
+              : t('mobile.purchasing.fabricHoldingEdit')
+            : copy === 'bin'
+              ? t('mobile.inventory.addBin')
+              : t('mobile.purchasing.fabricHoldingAdd')
         }
         fitContent
         overlay={overlay}
       >
         <View style={{ gap: theme.spacing.md }}>
           <AppText variant="caption" color="muted">
-            {t('mobile.purchasing.holdingLocationHint')}
+            {copy === 'bin'
+              ? t('mobile.inventory.addBinHint')
+              : t('mobile.purchasing.holdingLocationHint')}
           </AppText>
           {error ? (
             <AppText variant="caption" color="error">
               {error}
             </AppText>
           ) : null}
-          {rawWarehouses.length > 1 && !editing ? (
+          {rawWarehouses.length > 1 && !editing && !lockWarehouseId ? (
             <InventoryPickerRow
               label={t('mobile.purchasing.fabricHoldingWarehouse')}
               value={warehouseLabel}
               icon="business-outline"
               onPress={() => setWarehouseSheet(true)}
             />
-          ) : warehouseLabel ? (
+          ) : warehouseLabel && !lockWarehouseId ? (
             <AppText variant="caption" color="muted">
               {t('mobile.purchasing.fabricHoldingWarehouse')}: {warehouseLabel}
             </AppText>
           ) : null}
           <TextField
-            label={t('mobile.purchasing.fabricHoldingName')}
+            label={
+              copy === 'bin'
+                ? t('mobile.inventory.binName')
+                : t('mobile.purchasing.fabricHoldingName')
+            }
             value={name}
             onChangeText={setName}
           />

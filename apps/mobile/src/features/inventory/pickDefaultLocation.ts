@@ -38,6 +38,24 @@ export function locationPickerLabel(loc: BinLike | null | undefined): string {
   return name || code;
 }
 
+export const PICKER_WAREHOUSE_MIN = 220;
+export const PICKER_WAREHOUSE_MAX = 280;
+export const PICKER_BIN_MIN = 200;
+export const PICKER_BIN_MAX = 260;
+
+/** Independent scroll viewports for warehouse + bin boxes inside sheets. */
+export function pickerViewportHeights(windowHeight: number) {
+  const h = Math.max(0, windowHeight);
+  return {
+    sheet: Math.min(Math.round(h * 0.88), 760),
+    warehouse: Math.max(
+      PICKER_WAREHOUSE_MIN,
+      Math.min(PICKER_WAREHOUSE_MAX, Math.round(h * 0.22)),
+    ),
+    bin: Math.max(PICKER_BIN_MIN, Math.min(PICKER_BIN_MAX, Math.round(h * 0.2))),
+  };
+}
+
 const LRI = '\u2066';
 const PDI = '\u2069';
 

@@ -3,7 +3,7 @@ import { FlatList, InteractionManager, RefreshControl, View } from 'react-native
 import { useRouter, type Href } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { localizedName } from '@maher/i18n';
-import { can } from '@maher/permissions';
+import { can, canAny } from '@maher/permissions';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/feedback/EmptyState';
@@ -61,7 +61,6 @@ import { useReceivablePurchaseOrdersQuery } from '@/features/purchasing/query';
 import { CreateInventoryItemSheet } from './CreateInventoryItemSheet';
 import { CreateStockCountSheet } from './CreateStockCountSheet';
 import { CreateTransferSheet } from './CreateTransferSheet';
-import { CreateWarehouseSheet } from './CreateWarehouseSheet';
 import { EditInventoryItemSheet } from './EditInventoryItemSheet';
 import { InventoryLowStockFocus } from './InventoryLowStockFocus';
 import { InventoryMaterialRow } from './InventoryMaterialRow';
@@ -202,7 +201,11 @@ export function InventorySignatureHome({
   const canLabelPdf = can(user, 'inventory.read');
   const canEditCost = can(user, 'inventory.cost.read');
   const canRawReport = canOpenRawMaterialsReport(user);
-  const canCreateWarehouse = can(user, 'warehouse.manage');
+  const canOpenWarehouses = canAny(user, [
+    'warehouse.read',
+    'warehouse.manage',
+    'inventory.read',
+  ]);
   const receivableQuery = useReceivablePurchaseOrdersQuery(canReceive);
 
   const [section, setSection] = useState<InventoryHomeSection>('items');
@@ -236,7 +239,6 @@ export function InventorySignatureHome({
   const [inspectKitSeed, setInspectKitSeed] = useState<WipKitCard | null>(null);
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createOpsOpen, setCreateOpsOpen] = useState(false);
-  const [createWarehouseOpen, setCreateWarehouseOpen] = useState(false);
   const [rawReportOpen, setRawReportOpen] = useState(false);
   const pendingRawReportRef = useRef<RawMaterialsReportRequest | null>(null);
   const [inspectLot, setInspectLot] = useState<SemiFinishedLot | null>(null);
@@ -920,9 +922,11 @@ export function InventorySignatureHome({
         }
         canCreate={canCreate}
         createLabel={createLabel}
-        canCreateWarehouse={canCreateWarehouse}
-        warehouseLabel={t('mobile.inventory.newWarehouse')}
-        onCreateWarehouse={() => setCreateWarehouseOpen(true)}
+        canCreateWarehouse={canOpenWarehouses}
+        warehouseLabel={t('mobile.inventory.warehousesSection')}
+        onCreateWarehouse={() =>
+          router.push('/(app)/(admin)/inventory/warehouses' as Href)
+        }
         canReceiveOrders={canReceive}
         receiveOrdersLabel={t('mobile.inventory.receiveOrders')}
         receiveOrdersCount={receivableQuery.data?.length ?? 0}
@@ -1355,13 +1359,6 @@ export function InventorySignatureHome({
             />
           )
         }
-      />
-
-      <CreateWarehouseSheet
-        open={createWarehouseOpen}
-        onClose={() => setCreateWarehouseOpen(false)}
-        defaultType={warehouseTypeForLifecycle(lifecycle)}
-        onCreated={() => setCreateWarehouseOpen(false)}
       />
 
       <CreateInventoryItemSheet

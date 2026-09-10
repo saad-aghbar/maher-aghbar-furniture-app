@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/forms/AppTextInput';
@@ -13,6 +13,7 @@ import { resolveAppFontStyle, useTheme } from '@/theme';
 import {
   locationPickerLabel,
   pickDefaultLocationId,
+  pickerViewportHeights,
   sortBinsForPicker,
   type BinLike,
 } from '../pickDefaultLocation';
@@ -255,7 +256,7 @@ export function WarehouseBinStrip({
   onSelect,
   label,
   searchPlaceholder,
-  listHeight = 180,
+  listHeight: listHeightProp,
   emptyText,
   onScanPress,
 }: {
@@ -270,6 +271,8 @@ export function WarehouseBinStrip({
 }) {
   const { t, isRTL, locale } = useLocale();
   const { colors, theme } = useTheme();
+  const { height } = useWindowDimensions();
+  const listHeight = listHeightProp ?? pickerViewportHeights(height).bin;
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const [binQuery, setBinQuery] = useState('');
   const locationRows = useMemo(() => {

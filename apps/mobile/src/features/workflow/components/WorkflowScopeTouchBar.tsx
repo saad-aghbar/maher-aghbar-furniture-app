@@ -1,0 +1,186 @@
+import { useCallback, useMemo, useState } from 'react';
+import { View, type LayoutChangeEvent } from 'react-native';
+import { GestureDetector, Pressable } from 'react-native-gesture-handler';
+import Animated, { interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
+import type { WorkflowScope } from '@/api/modules/workflow';
+import { AppText } from '@/components/AppText';
+import { useLocale } from '@/i18n';
+import { rowDirection } from '@/i18n/rtl';
+import { haptics, useDraggablePillBar, useReducedMotion } from '@/motion';
+import { useTheme } from '@/theme';
+
+export type WorkflowScopeFocus = WorkflowScope | 'all';
+
+const SCOPES: WorkflowScopeFocus[] = ['all', 'STANDARD', 'RETURN'];
+
+const SHELL_PAD_Y = 6;
+const SHELL_PAD_X = 6;
+const PILL_HEIGHT = 34;
+const BUBBLE_SPRING = { damping: 20, stiffness: 110, mass: 1.15 } as const;
+
+const FILL_LIGHT = ['#F3EEE5', '#EEEAE4', '#E9EBE3'] as const;
+const BORDER_LIGHT = ['#8F7A58', '#6E6254', '#5A6348'] as const;
+const FILL_DARK = [
+  'rgba(168,144,108,0.22)',
+  'rgba(181,164,140,0.20)',
+  'rgba(154,170,122,0.18)',
+] as const;
+const BORDER_DARK = ['#A8906C', '#B5A48C', '#9AAA7A'] as const;
+
+type ChipLayout = { x: number; width: number };
+
+type Props = {
+  value: WorkflowScope | null;
+  onChange: (next: WorkflowScope | null) => void;
+};
+
+function focusFromFilter(value: WorkflowScope | null): WorkflowScopeFocus {
+  return value ?? 'all';
+}
+
+function filterFromFocus(value: WorkflowScopeFocus): WorkflowScope | null {
+  return value === 'all' ? null : value;
+}
+
+function labelKey(scope: WorkflowScopeFocus): string {
+  if (scope === 'all') return 'mobile.production.workflow.scopeAll';
+  if (scope === 'STANDARD') return 'mobile.production.workflow.scopeStandard';
+  return 'mobile.production.workflow.scopeReturn';
+}
+
+/** Three-cell All / Normal / Return·recovery wood bubble. */
+export function WorkflowScopeTouchBar({ value, onChange }: Props) {
+  const { t, isRTL, locale } = useLocale();
+  const { colors, colorScheme } = useTheme();
+  const reduce = useReducedMotion();
+  const [layouts, setLayouts] = useState<Partial<Record<WorkflowScopeFocus, ChipLayout>>>({});
+  const dark = colorScheme === 'dark';
+  const focus = focusFromFilter(value);
+  const activeIdx = Math.max(0, SCOPES.indexOf(focus));
+  const fills = dark ? FILL_DARK : FILL_LIGHT;
+  const borders = dark ? BORDER_DARK : BORDER_LIGHT;
+
+  const orderedLayouts = useMemo(
+    () => SCOPES.map((scope) => layouts[scope]),
+    [layouts],
+  );
+
+  const onSelectIndex = useCallback(
+    (index: number) => {
+      const next = SCOPES[index];
+      if (!next || next === focus) return;
+      void haptics.selection();
+      onChange(filterFromFocus(next));
+    },
+    [focus, onChange],
+  );
+
+  const { pillX, pillW, dragging, hoverIndex, gesture } = useDraggablePillBar({
+    layouts: orderedLayouts,
+    activeIndex: activeIdx,
+    onSelectIndex,
+    reduceMotion: reduce,
+    enabled: true,
+    spring: BUBBLE_SPRING,
+  });
+
+  const onChipLayout = useCallback((name: WorkflowScopeFocus, e: LayoutChangeEvent) => {
+    const { x, width } = e.nativeEvent.layout;
+    setLayouts((prev) => {
+      const cur = prev[name];
+      if (cur && cur.x === x && cur.width === width) return prev;
+      return { ...prev, [name]: { x, width } };
+    });
+  }, []);
+
+  const pillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: pillX.value }, { scale: 1 + dragging.value * 0.04 }],
+    width: pillW.value,
+    backgroundColor: interpolateColor(hoverIndex.value, [0, 1, 2], [...fills]),
+    borderColor: interpolateColor(hoverIndex.value, [0, 1, 2], [...borders]),
+  }));
+
+  const shellH = SHELL_PAD_Y * 2 + PILL_HEIGHT;
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <View
+        style={{
+          flexDirection: rowDirection(isRTL),
+          alignItems: 'center',
+          height: shellH,
+          borderRadius: shellH / 2,
+          backgroundColor: dark ? 'rgba(42,36,37,0.92)' : colors.surfaceSecondary,
+          borderWidth: 1,
+          borderColor: colors.borderStrong,
+          paddingVertical: SHELL_PAD_Y,
+          paddingHorizontal: SHELL_PAD_X,
+          shadowColor: dark ? '#000000' : '#1E1A1B',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: dark ? 0.22 : 0.07,
+          shadowRadius: 8,
+          elevation: 2,
+        }}
+      >
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: 'absolute',
+              top: SHELL_PAD_Y,
+              height: PILL_HEIGHT,
+              left: 0,
+              borderRadius: PILL_HEIGHT / 2,
+              borderWidth: 1.5,
+              shadowColor: dark ? '#000000' : '#1E1A1B',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: dark ? 0.25 : 0.08,
+              shadowRadius: 4,
+              elevation: 2,
+            },
+            pillStyle,
+          ]}
+        />
+        {SCOPES.map((scope) => {
+          const focused = focus === scope;
+          const label = t(labelKey(scope));
+          return (
+            <Pressable
+              key={scope}
+              accessibilityRole="button"
+              accessibilityState={{ selected: focused }}
+              accessibilityLabel={label}
+              onLayout={(e) => onChipLayout(scope, e)}
+              onPress={() => onSelectIndex(SCOPES.indexOf(scope))}
+              style={{
+                flex: 1,
+                height: PILL_HEIGHT,
+                paddingHorizontal: 6,
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 2,
+              }}
+            >
+              <AppText
+                variant="caption"
+                weight={focused ? (locale === 'ar' ? 'medium' : 'semibold') : 'medium'}
+                numberOfLines={1}
+                align="center"
+                adjustsFontSizeToFit
+                minimumFontScale={0.78}
+                style={{
+                  color: focused ? colors.brand : colors.textSecondary,
+                  fontSize: 12,
+                  lineHeight: 16,
+                  opacity: focused ? 1 : 0.82,
+                }}
+              >
+                {label}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </View>
+    </GestureDetector>
+  );
+}

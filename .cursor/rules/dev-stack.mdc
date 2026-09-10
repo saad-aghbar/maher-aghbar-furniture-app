@@ -1,0 +1,11 @@
+---
+description: Slash commands /run /fix /stop for local API, admin-web, and Expo Metro
+alwaysApply: true
+---
+
+When the user types `/run`, `/fix`, or `/stop`, follow `.cursor/skills/dev-stack/SKILL.md` immediately.
+
+- `/run` and `/fix`: start missing API / admin / Metro as **three background Shells** (`block_until_ms: 0`). Do not rely on `stack.sh run` alone — those children die when the command ends.
+- `/stop`: `bash .cursor/skills/dev-stack/scripts/stack.sh stop`
+- Health: `bash .cursor/skills/dev-stack/scripts/stack.sh status`
+- Do not ask first.

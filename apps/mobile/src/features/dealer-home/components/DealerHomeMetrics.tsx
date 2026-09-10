@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { packOverflowPlaceRows } from '@/features/admin-home/adminOverflowModules';
 import { DealerGlassCard } from '@/features/dealer-ui/DealerGlassCard';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -28,16 +29,21 @@ export function DealerHomeMetrics({ cards }: Props) {
   const { colors, theme, colorScheme } = useTheme();
   const titleWeight = locale === 'ar' ? 'medium' : 'semibold';
   const dark = colorScheme === 'dark';
+  const gap = theme.spacing.md;
+  const rows = packOverflowPlaceRows(cards);
 
   return (
-    <View
-      style={{
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        flexWrap: 'wrap',
-        gap: theme.spacing.md,
-      }}
-    >
-      {cards.map((card) => (
+    <View style={{ gap }}>
+      {rows.map((row) => (
+        <View
+          key={row.map((card) => card.id).join('-')}
+          style={{
+            flexDirection: isRTL ? 'row-reverse' : 'row',
+            alignItems: 'stretch',
+            gap,
+          }}
+        >
+          {row.map((card) => (
         <AnimatedPressable
           key={card.id}
           onPress={() => {
@@ -46,7 +52,7 @@ export function DealerHomeMetrics({ cards }: Props) {
           }}
           accessibilityRole="button"
           accessibilityLabel={`${card.title} ${card.value}`}
-          style={{ width: '47%', flexGrow: 1, minWidth: 140, height: TILE_H }}
+          style={{ flex: 1, minWidth: 0, height: TILE_H }}
         >
           <DealerGlassCard
             intensity="soft"
@@ -154,6 +160,8 @@ export function DealerHomeMetrics({ cards }: Props) {
             </View>
           </DealerGlassCard>
         </AnimatedPressable>
+          ))}
+        </View>
       ))}
     </View>
   );

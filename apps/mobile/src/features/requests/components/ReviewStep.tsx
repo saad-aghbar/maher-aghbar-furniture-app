@@ -250,18 +250,22 @@ export function ReviewStep({
         </View>
       ) : null}
 
-      {docs.length > 0 ? (
-        <View style={{ gap: theme.spacing.sm }}>
-          <AppText variant="label" weight="semibold">
-            {t('mobile.newOrder.review.attachments')}
-          </AppText>
-          {docs.map((d) => (
+      <View style={{ gap: theme.spacing.sm }}>
+        <AppText variant="label" weight="semibold">
+          {t('mobile.newOrder.review.attachments')}
+        </AppText>
+        {docs.length > 0 ? (
+          docs.map((d) => (
             <AppText key={d.id} variant="caption" color="secondary">
               {d.fileName}
             </AppText>
-          ))}
-        </View>
-      ) : null}
+          ))
+        ) : images.length === 0 ? (
+          <AppText variant="caption" color="muted">
+            {t('mobile.newOrder.attachmentsEmpty')}
+          </AppText>
+        ) : null}
+      </View>
 
       {error ? (
         <AppText variant="caption" color="error">

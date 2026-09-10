@@ -12,7 +12,7 @@ import {
   locationsForWarehouse,
   WarehouseBinStrip,
 } from '@/features/inventory/components/WarehouseBinBoard';
-import { pickDefaultLocationId } from '@/features/inventory/pickDefaultLocation';
+import { pickDefaultLocationId, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
@@ -467,7 +467,8 @@ export function ProductionStageSetupSheet({
 
   const warehouseType = produce === 'finished' ? 'FINISHED_GOODS' : 'SEMI_FINISHED';
   const makesSomething = produce !== 'none';
-  const sheetMaxHeight = Math.round(Dimensions.get('window').height * 0.92);
+  const pickerHeights = pickerViewportHeights(Dimensions.get('window').height);
+  const sheetMaxHeight = pickerHeights.sheet;
   const effectiveConsumeSemi = canTakeSemi && consumeSemi;
   const productLabel = product
     ? localizedName(locale, product)
@@ -1510,7 +1511,7 @@ export function ProductionStageSetupSheet({
                   />
                   <ScrollView
                     nestedScrollEnabled
-                    style={{ maxHeight: 260 }}
+                    style={{ maxHeight: pickerHeights.warehouse }}
                     contentContainerStyle={{ gap: theme.spacing.sm }}
                     keyboardShouldPersistTaps="handled"
                   >
@@ -1538,6 +1539,7 @@ export function ProductionStageSetupSheet({
                         locationId,
                       )}
                       onSelect={setLocationId}
+                      listHeight={pickerHeights.bin}
                       label={t('production.setup.warehouseBin')}
                     />
                   ) : null}

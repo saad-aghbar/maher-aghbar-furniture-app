@@ -2,7 +2,7 @@ import type { AccountStatement, Payment, StatementEntry } from '@/api/modules/pa
 
 export type StatementTypeFilter = 'all' | 'INVOICE' | 'PAYMENT';
 
-export type StatementDatePreset = 'all' | '30d' | '90d';
+export type StatementDatePreset = 'all' | '30d' | '90d' | 'custom';
 
 export type StatementPdfRange = {
   from?: string;
@@ -155,8 +155,13 @@ export function selectStatementRows(stmt: AccountStatement): StatementActivityRo
 export function datePresetRange(
   preset: StatementDatePreset,
   now = new Date(),
+  custom?: StatementPdfRange,
 ): { dateFrom?: string; dateTo?: string } {
   if (preset === 'all') return {};
+  if (preset === 'custom') {
+    const range = statementRangeFromDraft('custom', custom?.from ?? '', custom?.to ?? '');
+    return { dateFrom: range.from, dateTo: range.to };
+  }
   const days = preset === '30d' ? 30 : 90;
   const from = new Date(now);
   from.setHours(0, 0, 0, 0);

@@ -115,6 +115,7 @@ export const queryKeys = {
     transactions: (id: string, filters: unknown = {}) =>
       [...queryKeys.inventory.detail(id), 'transactions', filters] as const,
     warehouses: () => [...queryKeys.inventory.all, 'warehouses'] as const,
+    warehouseDesk: (id: string) => [...queryKeys.inventory.warehouses(), 'desk', id] as const,
     transfers: () => [...queryKeys.inventory.all, 'transfers'] as const,
     transfersList: (filters: unknown = {}) =>
       [...queryKeys.inventory.transfers(), filters] as const,

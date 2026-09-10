@@ -36,6 +36,8 @@ type UploadsStepProps = {
   onAttachmentsQueued?: () => void;
   /** When false, omit section title (parent provides combined step title). */
   showTitle?: boolean;
+  /** Override the attachments caption (details vs review). */
+  sectionHint?: string;
 };
 
 async function ensureLibraryPermission(
@@ -126,6 +128,7 @@ export function UploadsStep({
   onRetry,
   onAttachmentsQueued,
   showTitle = true,
+  sectionHint,
 }: UploadsStepProps) {
   const { t, isRTL } = useLocale();
   const { theme } = useTheme();
@@ -310,7 +313,7 @@ export function UploadsStep({
             {t('mobile.newOrder.attachmentsSection')}
           </AppText>
           <AppText variant="caption" color="muted">
-            {t('mobile.newOrder.attachmentsSectionHint')}
+            {sectionHint ?? t('mobile.newOrder.attachmentsSectionHint')}
           </AppText>
           <DealerUploadGrid
             items={gridItems}

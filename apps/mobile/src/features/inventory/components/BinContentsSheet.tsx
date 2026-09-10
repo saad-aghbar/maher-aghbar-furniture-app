@@ -16,8 +16,9 @@ type Props = {
   open: boolean;
   bin: WarehouseBinContents | null;
   onClose: () => void;
-  onScanAgain: () => void;
+  onScanAgain?: () => void;
   onViewItem?: (inventoryItemId: string) => void;
+  onPrintLabel?: () => void;
 };
 
 function formatQty(n: number): string {
@@ -25,7 +26,14 @@ function formatQty(n: number): string {
   return n.toFixed(2).replace(/\.?0+$/, '');
 }
 
-export function BinContentsSheet({ open, bin, onClose, onScanAgain, onViewItem }: Props) {
+export function BinContentsSheet({
+  open,
+  bin,
+  onClose,
+  onScanAgain,
+  onViewItem,
+  onPrintLabel,
+}: Props) {
   const { t, locale, isRTL } = useLocale();
   const { colors, theme, colorScheme } = useTheme();
   const { height } = useWindowDimensions();
@@ -120,9 +128,14 @@ export function BinContentsSheet({ open, bin, onClose, onScanAgain, onViewItem }
                     >
                       {name}
                     </AppText>
-                    <AppText variant="caption" color="muted" dir="ltr" numberOfLines={1}>
+                    <AppText variant="caption" color="muted" dir="ltr" numberOfLines={2}>
                       {row.sku}
-                      {row.unit ? ` · ${formatQty(row.availableQty)} ${row.unit}` : ''}
+                      {row.unit
+                        ? ` · ${formatQty(row.availableQty)} ${row.unit}`
+                        : ` · ${formatQty(row.availableQty)}`}
+                      {Number(row.reservedQty) > 0
+                        ? ` · ${t('mobile.inventory.reservedLabel')} ${formatQty(row.reservedQty)}`
+                        : ''}
                     </AppText>
                   </View>
                 </View>
@@ -167,8 +180,14 @@ export function BinContentsSheet({ open, bin, onClose, onScanAgain, onViewItem }
         </ScrollView>
 
         <InventorySheetFooter
-          primaryLabel={t('mobile.inventory.scanAgain')}
-          onPrimary={onScanAgain}
+          primaryLabel={
+            onPrintLabel
+              ? t('mobile.inventory.printLabel')
+              : onScanAgain
+                ? t('mobile.inventory.scanAgain')
+                : undefined
+          }
+          onPrimary={onPrintLabel ?? onScanAgain}
           secondaryLabel={t('mobile.inventory.done')}
           onSecondary={onClose}
         />

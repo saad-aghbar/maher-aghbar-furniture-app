@@ -154,6 +154,8 @@ export type CreateWarehouseLocationInput = {
 export type UpdateWarehouseLocationInput = {
   code?: string;
   name?: string | null;
+  isActive?: boolean;
+  isDefault?: boolean;
 };
 
 export type Warehouse = {
@@ -165,6 +167,15 @@ export type Warehouse = {
   isActive?: boolean;
   isDefault?: boolean;
   locations?: WarehouseLocation[];
+};
+
+export type WarehouseDeskLocation = WarehouseLocation & {
+  scanCode?: string;
+  contents: WarehouseBinContents['contents'];
+};
+
+export type WarehouseDesk = Omit<Warehouse, 'locations'> & {
+  locations: WarehouseDeskLocation[];
 };
 
 export const WAREHOUSE_TYPES = ['RAW_MATERIALS', 'SEMI_FINISHED', 'FINISHED_GOODS'] as const;
@@ -210,6 +221,26 @@ export async function updateWarehouseLocation(
 export async function getWarehouseLocationByCode(code: string) {
   return apiGet<WarehouseBinContents>(
     `/warehouses/locations/by-code/${encodeURIComponent(code)}`,
+  );
+}
+
+export async function getWarehouseDesk(id: string) {
+  return apiGet<WarehouseDesk>(`/warehouses/${encodeURIComponent(id)}`);
+}
+
+export async function openWarehouseLocationQrLabelPdf(
+  warehouseId: string,
+  locationId: string,
+  code?: string,
+  opts?: PdfDownloadOptions,
+): Promise<void> {
+  await openAuthedPdf(
+    withPdfOptions(
+      `/warehouses/${encodeURIComponent(warehouseId)}/locations/${encodeURIComponent(locationId)}/qr-label`,
+      opts,
+    ),
+    'Bin QR label PDF failed',
+    code ? `Bin ${code}` : 'Bin QR label PDF',
   );
 }
 

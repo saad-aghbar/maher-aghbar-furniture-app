@@ -12,6 +12,7 @@ import { listSalesOrders } from '@/api/modules/sales-orders';
 import { useDealerHomeQuery } from '../query';
 import { AppText } from '@/components/AppText';
 import { deliveryStatusFromCustomerStatus } from '@/features/sales-orders/stageCounts';
+import { packOverflowPlaceRows } from '@/features/admin-home/adminOverflowModules';
 import { useLocale } from '@/i18n';
 import { AnimatedPressable, haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -80,6 +81,8 @@ export function DealerHomeDestinations() {
     () => DESTINATIONS.filter((d) => can(user, d.permission)),
     [user],
   );
+  const rows = useMemo(() => packOverflowPlaceRows(places), [places]);
+  const gap = theme.spacing.sm;
 
   const homeQuery = useDealerHomeQuery(Boolean(user?.customerId));
   const badgeQuery = useQuery({
@@ -139,45 +142,47 @@ export function DealerHomeDestinations() {
         </AppText>
       </View>
 
-      <View
-        style={{
-          flexDirection: isRTL ? 'row-reverse' : 'row',
-          flexWrap: 'wrap',
-          gap: theme.spacing.sm,
-        }}
-      >
-        {places.map((place) => {
-          const badge = place.badgeCount?.(badgeCtx);
-          return (
-            <AnimatedPressable
-              key={place.key}
-              variant="card"
-              accessibilityRole="button"
-              accessibilityLabel={
-                badge
-                  ? `${t(place.labelKey)}. ${t('mobile.dealerAccount.deliveriesAwaitingBadge', { count: badge })}`
-                  : t(place.labelKey)
-              }
-              onPress={() => {
-                void haptics.confirmLight();
-                const href =
-                  typeof place.href === 'function' ? place.href(badgeCtx) : place.href;
-                router.push(href);
-              }}
-              style={{
-                width: '47%',
-                flexGrow: 1,
-                minWidth: 140,
-                minHeight: 96,
-                borderRadius: theme.radius.xl,
-                borderWidth: 1,
-                borderColor: colors.borderStrong,
-                backgroundColor: colors.surface,
-                padding: theme.spacing.md,
-                gap: theme.spacing.xs,
-                ...theme.elevation.card,
-              }}
-            >
+      <View style={{ gap }}>
+        {rows.map((row) => (
+          <View
+            key={row.map((p) => p.key).join('-')}
+            style={{
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              alignItems: 'stretch',
+              gap,
+            }}
+          >
+            {row.map((place) => {
+              const badge = place.badgeCount?.(badgeCtx);
+              return (
+                <AnimatedPressable
+                  key={place.key}
+                  variant="card"
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    badge
+                      ? `${t(place.labelKey)}. ${t('mobile.dealerAccount.deliveriesAwaitingBadge', { count: badge })}`
+                      : t(place.labelKey)
+                  }
+                  onPress={() => {
+                    void haptics.confirmLight();
+                    const href =
+                      typeof place.href === 'function' ? place.href(badgeCtx) : place.href;
+                    router.push(href);
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: 96,
+                    borderRadius: theme.radius.xl,
+                    borderWidth: 1,
+                    borderColor: colors.borderStrong,
+                    backgroundColor: colors.surface,
+                    padding: theme.spacing.md,
+                    gap: theme.spacing.xs,
+                    ...theme.elevation.card,
+                  }}
+                >
               <View
                 style={{
                   flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -238,8 +243,10 @@ export function DealerHomeDestinations() {
                 {t(place.hintKey)}
               </AppText>
             </AnimatedPressable>
-          );
-        })}
+              );
+            })}
+          </View>
+        ))}
       </View>
     </View>
   );

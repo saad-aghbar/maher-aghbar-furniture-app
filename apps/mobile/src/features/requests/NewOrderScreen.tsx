@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { can } from '@maher/permissions';
 import { extractPreview, linkAiJobToRequest } from '@/api/modules/ai-intake';
@@ -112,6 +113,7 @@ export function NewOrderScreen() {
   const { user } = useAuth();
   const { t, locale, isRTL, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
   const params = useLocalSearchParams<{
@@ -956,9 +958,13 @@ export function NewOrderScreen() {
   const dealer = dealerTokens(colors);
   const successVisible = Boolean(submittedNumber || draftSavedNumber);
   const dockMode = newOrderDockMode({ step, submitted: successVisible });
-  const scrollPad = newOrderDockScrollPad(theme.spacing.md);
-  const dockVisible = !keyboardOpen && !successVisible;
+  const scrollPad = newOrderDockScrollPad(theme.spacing.md, insets.bottom);
   const dockDisabled = busy || uploading;
+  const contentBottomPad = successVisible
+    ? theme.spacing['3xl']
+    : keyboardOpen
+      ? Math.max(scrollPad, theme.spacing['3xl'])
+      : scrollPad;
 
   const onDockPrimary = () => {
     if (dockMode === 'submit') {
@@ -967,6 +973,33 @@ export function NewOrderScreen() {
     }
     goNext();
   };
+
+  const uploadsEditor = (hint: string) => (
+    <UploadsStep
+      attachments={attachments}
+      onChange={(next) => {
+        attachmentsRef.current = next;
+        setAttachments(next);
+      }}
+      canUpload={canUpload}
+      aiState={aiState}
+      error={error}
+      overallProgress={overallProgress}
+      uploading={uploading}
+      onUploadAll={() => void uploadAll(draftSaved?.id)}
+      onAttachmentsQueued={() => {
+        if (uploadQueueTimer.current) clearTimeout(uploadQueueTimer.current);
+        uploadQueueTimer.current = setTimeout(() => {
+          uploadQueueTimer.current = null;
+          void uploadAll(draftSaved?.id);
+        }, 250);
+      }}
+      onCancelUploads={cancelUploads}
+      onRetry={retryOne}
+      showTitle={false}
+      sectionHint={hint}
+    />
+  );
 
   const stepTitles: Record<NewOrderStep, string> = {
     1: t('mobile.newOrder.step1Title'),
@@ -984,13 +1017,8 @@ export function NewOrderScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAwareScreen
-        style={dockVisible ? { paddingBottom: scrollPad } : undefined}
         contentContainerStyle={{
-          paddingBottom: keyboardOpen
-            ? theme.spacing.md
-            : successVisible
-              ? theme.spacing['3xl']
-              : theme.spacing.md,
+          paddingBottom: contentBottomPad,
         }}
         header={
           <View style={{ gap: theme.spacing.md }}>
@@ -1297,6 +1325,15 @@ export function NewOrderScreen() {
                         </AppText>
                       </View>
                     </View>
+
+                    <View
+                      style={{
+                        height: StyleSheet.hairlineWidth * 2,
+                        backgroundColor: colors.border,
+                      }}
+                    />
+
+                    {uploadsEditor(t('mobile.newOrder.attachmentsDetailsHint'))}
                   </DealerGlassCard>
                 </View>
               ) : null}
@@ -1396,29 +1433,7 @@ export function NewOrderScreen() {
                       title={stepTitles[4]}
                       subtitle={stepBodies[4]}
                     />
-                    <UploadsStep
-                      attachments={attachments}
-                      onChange={(next) => {
-                        attachmentsRef.current = next;
-                        setAttachments(next);
-                      }}
-                      canUpload={canUpload}
-                      aiState={aiState}
-                      error={error}
-                      overallProgress={overallProgress}
-                      uploading={uploading}
-                      onUploadAll={() => void uploadAll(draftSaved?.id)}
-                      onAttachmentsQueued={() => {
-                        if (uploadQueueTimer.current) clearTimeout(uploadQueueTimer.current);
-                        uploadQueueTimer.current = setTimeout(() => {
-                          uploadQueueTimer.current = null;
-                          void uploadAll(draftSaved?.id);
-                        }, 250);
-                      }}
-                      onCancelUploads={cancelUploads}
-                      onRetry={retryOne}
-                      showTitle={false}
-                    />
+                    {uploadsEditor(t('mobile.newOrder.attachmentsReviewHint'))}
                   </DealerGlassCard>
                   <DealerGlassCard contentStyle={{ paddingTop: theme.spacing.md }}>
                     <ReviewStep

@@ -11,7 +11,7 @@ import {
   locationsForWarehouse,
   WarehouseBinStrip,
 } from '@/features/inventory/components/WarehouseBinBoard';
-import { locationPickerLabel, pickDefaultLocationId } from '@/features/inventory/pickDefaultLocation';
+import { locationPickerLabel, pickDefaultLocationId, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
 import { useLocale } from '@/i18n';
 import { haptics } from '@/motion';
 import { useTheme } from '@/theme';
@@ -52,6 +52,7 @@ export function AddMaterialSheet({
   const { t, locale, formatCurrency } = useLocale();
   const { colors, theme } = useTheme();
   const { height } = useWindowDimensions();
+  const pickerHeights = pickerViewportHeights(height);
   const fabric = isFabricCategory(material?.category);
   const [step, setStep] = useState<Step>('destination');
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId);
@@ -209,7 +210,7 @@ export function AddMaterialSheet({
                 <WarehousePickList
                   warehouses={warehouses}
                   selectedId={warehouseId}
-                  listHeight={180}
+                  listHeight={pickerHeights.warehouse}
                   resetToken={`${open}-${material?.id ?? ''}`}
                   onSelect={(id) => {
                     const wh = warehouses.find((w) => w.id === id);
@@ -231,6 +232,7 @@ export function AddMaterialSheet({
                   <WarehouseBinStrip
                     locations={locationsForWarehouse(warehouses.find((w) => w.id === warehouseId))}
                     selectedId={locationId}
+                    listHeight={pickerHeights.bin}
                     onSelect={(id) => {
                       const loc = locationsForWarehouse(
                         warehouses.find((w) => w.id === warehouseId),

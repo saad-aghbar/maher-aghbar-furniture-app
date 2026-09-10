@@ -32,7 +32,7 @@ import {
   locationsForWarehouse,
   WarehouseBinStrip,
 } from './WarehouseBinBoard';
-import { pickDefaultLocationId } from '../pickDefaultLocation';
+import { pickDefaultLocationId, pickerViewportHeights } from '../pickDefaultLocation';
 import { useScanWarehouseBin } from '../useScanWarehouseBin';
 import { orderBoardShadow } from '@/features/sales-orders/components/orderFloorStyle';
 import {
@@ -124,8 +124,9 @@ export function AddStockSheet({
   const { user } = useAuth();
   const router = useRouter();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.round(height * 0.88);
-  const warehouseListHeight = Math.round(height * 0.16);
+  const pickerHeights = pickerViewportHeights(height);
+  const sheetHeight = pickerHeights.sheet;
+  const warehouseListHeight = pickerHeights.warehouse;
   const canAddWarehouse = can(user, 'warehouse.manage');
 
   const [item, setItem] = useState<StockMoveItem | null>(null);
@@ -568,6 +569,7 @@ export function AddStockSheet({
                 setLocationId(id);
                 setError(null);
               }}
+              listHeight={pickerHeights.bin}
               onScanPress={() => {
                 void (async () => {
                   const bin = await scanWarehouseBin();

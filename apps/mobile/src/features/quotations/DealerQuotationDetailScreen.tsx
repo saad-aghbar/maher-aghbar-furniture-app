@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Image, RefreshControl, ScrollView, View } from 'react-native';
+import { RefreshControl, ScrollView, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
 import { can } from '@maher/permissions';
 import { presentQuotationStatus } from '@maher/i18n';
+import type { Locale } from '@maher/types';
 import { isApiError } from '@/api/errors';
 import {
   acceptQuotation,
@@ -11,19 +12,17 @@ import {
   openQuotationPdf,
   rejectQuotation,
   requestQuotationRevision,
-  type QuotationLine,
 } from '@/api/modules/quotations';
 import { queryKeys } from '@/api/queryKeys';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppText } from '@/components/AppText';
 import { StatusBadge } from '@/components/badges/StatusBadge';
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '@/components/buttons/PrimaryButton';
-import { EmptyState } from '@/components/feedback/EmptyState';
+import { DealerEmptyState } from '@/features/dealer-ui';
 import { ErrorState } from '@/components/feedback/ErrorState';
 import { useToast } from '@/components/feedback/Toast';
 import { AppScreen } from '@/components/layout/AppScreen';
 import { ScreenBackLead } from '@/components/layout/ScreenBackLead';
-import { ConfirmationSheet } from '@/components/sheets/ConfirmationSheet';
 import { usePdfDownload } from '@/features/pdf/usePdfDownload';
 import { DealerBoard } from '@/features/dealers/components/DealerBoard';
 import { useLocale } from '@/i18n';
@@ -31,35 +30,70 @@ import { formatNumber } from '@/i18n/format';
 import { haptics, ListItemEnter } from '@/motion';
 import { SURFACE_TAB_BAR_CLEARANCE } from '@/navigation/tabBarClearance';
 import { useTheme } from '@/theme';
-import { quotationComplexity, quotationLineNet } from './presentAdminQuotation';
-import { dealerCanDecideQuotation } from './dealerQuotationUi';
+import { QuotationDecisionSheet, type QuotationDecisionKind } from './components/QuotationDecisionSheet';
+import { QuotationLineBoard } from './components/QuotationLineBoard';
+import { QuotationValidityStub } from './components/QuotationValidityStub';
+import { dealerCanDecideQuotation, dealerQuoteRailTone } from './dealerQuotationUi';
 
 type Props = {
   quotationId: string;
   backFallback: Href;
 };
 
-type ConfirmKind = 'accept' | 'reject' | 'revision' | null;
-
-function lineSpecs(line: QuotationLine): string {
-  const parts = [line.material, line.fabric, line.color].filter(Boolean);
-  return parts.length ? parts.join(' / ') : '';
+function money(locale: Locale, value: number): string {
+  return `${formatNumber(locale, value, { maximumFractionDigits: 2 })} ₪`;
 }
 
-function lineDims(line: QuotationLine): string {
-  const parts = [line.width, line.height, line.depth].filter((v) => v != null && v !== '');
-  return parts.length ? parts.map(String).join('×') : '';
+function DetailTitle({
+  title,
+  titleWeight,
+  backFallback,
+}: {
+  title: string;
+  titleWeight: 'medium' | 'semibold';
+  backFallback: Href;
+}) {
+  const { isRTL } = useLocale();
+  const { theme } = useTheme();
+  const leadSize = theme.sizes.touch.min;
+
+  return (
+    <View style={{ minHeight: leadSize, justifyContent: 'center' }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          ...(isRTL ? { right: 0 } : { left: 0 }),
+          zIndex: 1,
+          justifyContent: 'center',
+        }}
+      >
+        <ScreenBackLead fallback={backFallback} />
+      </View>
+      <AppText
+        variant="largeTitle"
+        weight={titleWeight}
+        align="center"
+        numberOfLines={1}
+        dir="ltr"
+        style={{ paddingHorizontal: leadSize + theme.spacing.sm }}
+      >
+        {title}
+      </AppText>
+    </View>
+  );
 }
 
 export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props) {
   const { user } = useAuth();
-  const { t, locale, formatCurrency, isRTL } = useLocale();
+  const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const router = useRouter();
   const qc = useQueryClient();
   const { showToast } = useToast();
   const { pickPdfOptions, pdfDownloadSheet } = usePdfDownload();
-  const [confirm, setConfirm] = useState<ConfirmKind>(null);
+  const [confirm, setConfirm] = useState<QuotationDecisionKind | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const allowed = can(user, 'quotation.read');
   const canAccept = can(user, 'quotation.accept');
@@ -80,6 +114,17 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
     : '';
   const taxValue = Number(detail?.taxAmount ?? detail?.taxTotal ?? 0);
   const so = detail?.salesOrders?.[0];
+  const tone = detail
+    ? dealerQuoteRailTone(detail.status, detail.commerciallyExpired)
+    : 'brand';
+  const accent =
+    tone === 'warning'
+      ? colors.warning
+      : tone === 'success'
+        ? colors.success
+        : tone === 'error'
+          ? colors.error
+          : colors.brand;
 
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: queryKeys.quotations.all });
@@ -147,10 +192,27 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
     };
   }, [detail, taxValue]);
 
+  const totalLabel = money(locale, Number(detail?.total ?? 0));
+  const pill = {
+    borderRadius: theme.radius.full,
+    minHeight: theme.sizes.touch.min,
+    paddingVertical: 0,
+    alignSelf: 'stretch' as const,
+    width: '100%' as const,
+  };
+
   if (!allowed) {
     return (
       <AppScreen>
-        <EmptyState title={t('mobile.noModules')} description={t('mobile.noModulesHint')} />
+        <DetailTitle
+          title={t('mobile.dealerQuotations.title')}
+          titleWeight={titleWeight}
+          backFallback={backFallback}
+        />
+        <DealerEmptyState
+          title={t('mobile.noModules')}
+          body={t('mobile.noModulesHint')}
+        />
       </AppScreen>
     );
   }
@@ -158,6 +220,11 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
   if (query.isError && !detail) {
     return (
       <AppScreen>
+        <DetailTitle
+          title={t('mobile.dealerQuotations.title')}
+          titleWeight={titleWeight}
+          backFallback={backFallback}
+        />
         <ErrorState
           title={t('mobile.adminQuotation.errorTitle')}
           description={t('mobile.adminQuotation.errorBody')}
@@ -168,236 +235,307 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
     );
   }
 
+  const lines = detail?.lines ?? [];
+
   return (
     <AppScreen edges={{ top: true, bottom: false }}>
-      <View style={{ paddingHorizontal: theme.spacing.lg, flex: 1 }}>
-        <View style={{ minHeight: theme.sizes.touch.min, justifyContent: 'center' }}>
-          <View style={{ position: 'absolute', top: 0, bottom: 0, zIndex: 1, justifyContent: 'center' }}>
-            <ScreenBackLead fallback={backFallback} />
-          </View>
-          <AppText variant="largeTitle" weight={titleWeight} style={{ textAlign: 'center' }} numberOfLines={1}>
-            {detail?.number ?? t('mobile.dealerQuotations.title')}
-          </AppText>
-        </View>
+      <DetailTitle
+        title={detail?.number ?? t('mobile.dealerQuotations.title')}
+        titleWeight={titleWeight}
+        backFallback={backFallback}
+      />
 
-        <ScrollView
-          contentContainerStyle={{
-            paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
-            gap: theme.spacing.md,
-            paddingTop: theme.spacing.md,
-          }}
-          refreshControl={
-            <RefreshControl
-              refreshing={query.isRefetching}
-              onRefresh={() => void query.refetch()}
-              tintColor={colors.brand}
-            />
-          }
-        >
-          {detail ? (
-            <>
-              <ListItemEnter index={0}>
-                <DealerBoard
-                  title={t('mobile.adminQuotation.detail')}
-                  titleWeight={titleWeight}
-                  trailing={<StatusBadge status={detail.status} label={statusLabel} dot />}
+      <ScrollView
+        contentContainerStyle={{
+          paddingBottom: theme.spacing['3xl'] + SURFACE_TAB_BAR_CLEARANCE,
+          gap: theme.spacing.md,
+          paddingTop: theme.spacing.sm,
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={query.isRefetching}
+            onRefresh={() => void query.refetch()}
+            tintColor={colors.brand}
+          />
+        }
+      >
+        {detail ? (
+          <>
+            <ListItemEnter index={0}>
+              <DealerBoard
+                title={t('mobile.adminQuotation.detail')}
+                titleWeight={titleWeight}
+                accentColor={accent}
+                trailing={<StatusBadge status={detail.status} label={statusLabel} dot />}
+              >
+                <View
+                  style={{
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'stretch',
+                    gap: theme.spacing.md,
+                  }}
                 >
-                  <View style={{ gap: theme.spacing.md }}>
-                    {detail.expirationDate ? (
-                      <AppText variant="caption" color="muted">
-                        {t('quotations.validUntil')}: {String(detail.expirationDate).slice(0, 10)}
-                      </AppText>
-                    ) : null}
-                    {detail.paymentTerms ? (
-                      <View style={{ gap: 2 }}>
-                        <AppText variant="caption" color="muted">
-                          {t('mobile.adminQuotation.paymentTerms')}
-                        </AppText>
-                        <AppText variant="body">{detail.paymentTerms}</AppText>
-                      </View>
-                    ) : null}
-                    {detail.deliveryTerms ? (
-                      <View style={{ gap: 2 }}>
-                        <AppText variant="caption" color="muted">
-                          {t('mobile.adminQuotation.deliveryTerms')}
-                        </AppText>
-                        <AppText variant="body">{detail.deliveryTerms}</AppText>
-                      </View>
-                    ) : null}
-                    {detail.customerNotes ? (
-                      <View style={{ gap: 2 }}>
-                        <AppText variant="caption" color="muted">
-                          {t('quotations.notes')}
-                        </AppText>
-                        <AppText variant="body">{detail.customerNotes}</AppText>
-                      </View>
-                    ) : null}
-                    {totals ? (
-                      <View style={{ gap: theme.spacing.xs, paddingTop: theme.spacing.sm }}>
-                        <MoneyRow
-                          isRTL={isRTL}
-                          label={t('mobile.adminQuotation.subtotal')}
-                          value={formatCurrency(totals.subtotal)}
-                        />
-                        {totals.discount > 0 ? (
-                          <MoneyRow
-                            isRTL={isRTL}
-                            label={t('quotations.discount')}
-                            value={formatCurrency(totals.discount)}
-                          />
-                        ) : null}
-                        {totals.tax > 0 ? (
-                          <MoneyRow
-                            isRTL={isRTL}
-                            label={t('mobile.adminQuotation.tax')}
-                            value={formatCurrency(totals.tax)}
-                          />
-                        ) : null}
-                        <MoneyRow
-                          isRTL={isRTL}
-                          label={t('mobile.adminQuotation.total')}
-                          value={formatCurrency(totals.total)}
-                          strong
-                        />
-                      </View>
-                    ) : null}
-                    <SecondaryButton
-                      label={t('mobile.adminQuotation.pdf')}
-                      disabled={pdfBusy}
-                      onPress={() => void openPdf()}
-                      style={{ alignSelf: 'stretch', width: '100%' }}
-                    />
-                    {so ? (
-                      <PrimaryButton
-                        label={`${t('mobile.adminQuotation.openSalesOrder')} · ${so.number}`}
-                        onPress={() => {
-                          void haptics.selection();
-                          router.push(`/(app)/(customer)/orders/${so.id}` as Href);
-                        }}
-                        style={{ alignSelf: 'stretch', width: '100%' }}
-                      />
-                    ) : null}
+                  <View style={{ flex: 1, minWidth: 0, gap: 6, justifyContent: 'center' }}>
+                    <AppText
+                      variant="caption"
+                      color="muted"
+                      style={{
+                        textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                        letterSpacing: locale === 'ar' ? 0 : 0.55,
+                        fontSize: 10,
+                        textAlign: isRTL ? 'right' : 'left',
+                      }}
+                    >
+                      {t('mobile.dealerQuotations.folioEyebrow')}
+                    </AppText>
+                    <AppText
+                      weight={titleWeight}
+                      dir="ltr"
+                      numberOfLines={1}
+                      style={{
+                        fontSize: 22,
+                        lineHeight: locale === 'ar' ? 32 : 28,
+                        textAlign: isRTL ? 'right' : 'left',
+                      }}
+                    >
+                      {detail.number}
+                    </AppText>
                     {(detail.version ?? 1) > 1 ? (
-                      <AppText variant="caption" color="secondary">
+                      <AppText
+                        variant="caption"
+                        style={{ color: colors.warning, textAlign: isRTL ? 'right' : 'left' }}
+                      >
                         {t('mobile.dealerQuotations.revisedBanner')}
                       </AppText>
                     ) : null}
-                    {detail.commerciallyExpired ? (
-                      <AppText variant="caption" color="secondary">
-                        {t('mobile.dealerQuotations.expired')}
-                      </AppText>
-                    ) : null}
-                    {detail.rejectionReason ? (
-                      <AppText variant="caption" color="secondary">
-                        {t('mobile.adminQuotation.rejectionReason')}: {detail.rejectionReason}
-                      </AppText>
-                    ) : null}
                   </View>
-                </DealerBoard>
-              </ListItemEnter>
+                  <QuotationValidityStub
+                    expirationDate={detail.expirationDate}
+                    commerciallyExpired={detail.commerciallyExpired}
+                  />
+                </View>
 
-              <ListItemEnter index={1}>
-                <DealerBoard title={t('mobile.adminQuotation.lines')} titleWeight={titleWeight}>
-                  <View style={{ gap: theme.spacing.md }}>
-                    {(detail.lines ?? []).map((line, i) => {
-                      const complexity = quotationComplexity(line.manufacturingComplexity);
-                      const net = quotationLineNet(line.unitPrice, line.quantity);
-                      const photo = line.product?.imageUrl;
-                      const sku = line.product?.sku;
-                      return (
-                      <View
-                        key={line.id}
+                {totals ? (
+                  <View
+                    style={{
+                      borderRadius: theme.radius.lg,
+                      backgroundColor: colors.surfaceSecondary,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <View
+                      style={{
+                        paddingHorizontal: theme.spacing.md,
+                        paddingVertical: theme.spacing.md,
+                        gap: 4,
+                      }}
+                    >
+                      <AppText
+                        variant="caption"
+                        color="muted"
                         style={{
-                          gap: theme.spacing.xs,
-                          paddingTop: i === 0 ? 0 : theme.spacing.sm,
-                          borderTopWidth: i === 0 ? 0 : 1,
-                          borderTopColor: colors.border,
+                          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+                          letterSpacing: locale === 'ar' ? 0 : 0.55,
+                          fontSize: 10,
+                          textAlign: isRTL ? 'right' : 'left',
                         }}
                       >
-                        <View
-                          style={{
-                            flexDirection: isRTL ? 'row-reverse' : 'row',
-                            gap: theme.spacing.sm,
-                          }}
-                        >
-                          {photo ? (
-                            <Image
-                              source={{ uri: photo }}
-                              style={{ width: 56, height: 56, borderRadius: theme.radius.md }}
-                            />
-                          ) : null}
-                          <View style={{ flex: 1, gap: 4 }}>
-                        <AppText variant="body" weight={titleWeight}>
-                          {line.description}
-                        </AppText>
-                        <StatusBadge
-                          status={complexity}
-                          label={t(`mobile.adminQuotation.complexity.${complexity}`)}
-                        />
-                        {sku ? (
-                          <AppText variant="caption" color="muted" dir="ltr">
-                            {t('mobile.adminQuotation.sku')} {sku}
-                          </AppText>
-                        ) : null}
-                        {lineSpecs(line) ? (
-                          <AppText variant="caption" color="muted">
-                            {lineSpecs(line)}
-                          </AppText>
-                        ) : null}
-                        {lineDims(line) ? (
-                          <AppText variant="caption" color="muted" dir="ltr">
-                            {lineDims(line)}
-                          </AppText>
-                        ) : null}
-                          </View>
-                        </View>
-                        <View
-                          style={{
-                            flexDirection: isRTL ? 'row-reverse' : 'row',
-                            justifyContent: 'space-between',
-                          }}
-                        >
-                          <AppText variant="caption" color="muted" dir="ltr">
-                            {t('mobile.adminQuotation.qty')} {String(line.quantity)} ·{' '}
-                            {`${formatNumber(locale, Number(line.unitPrice), { maximumFractionDigits: 2 })} ₪`}
-                          </AppText>
-                          <AppText variant="body" weight="medium" dir="ltr">
-                            {net == null
-                              ? '—'
-                              : `${formatNumber(locale, net, { maximumFractionDigits: 2 })} ₪`}
-                          </AppText>
-                        </View>
-                      </View>
-                      );
-                    })}
+                        {t('mobile.dealerQuotations.offer')}
+                      </AppText>
+                      <AppText
+                        weight={titleWeight}
+                        dir="ltr"
+                        style={{
+                          fontSize: 24,
+                          lineHeight: locale === 'ar' ? 36 : 30,
+                          textAlign: isRTL ? 'right' : 'left',
+                          fontVariant: ['tabular-nums'],
+                        }}
+                      >
+                        {money(locale, totals.total)}
+                      </AppText>
+                    </View>
+                    <MoneyRow
+                      isRTL={isRTL}
+                      locale={locale}
+                      label={t('mobile.adminQuotation.subtotal')}
+                      value={money(locale, totals.subtotal)}
+                    />
+                    {totals.discount > 0 ? (
+                      <MoneyRow
+                        isRTL={isRTL}
+                        locale={locale}
+                        label={t('quotations.discount')}
+                        value={money(locale, totals.discount)}
+                      />
+                    ) : null}
+                    {totals.tax > 0 ? (
+                      <MoneyRow
+                        isRTL={isRTL}
+                        locale={locale}
+                        label={t('mobile.adminQuotation.tax')}
+                        value={money(locale, totals.tax)}
+                      />
+                    ) : null}
                   </View>
+                ) : null}
+
+                {detail.paymentTerms || detail.deliveryTerms || detail.customerNotes ? (
+                  <View
+                    style={{
+                      borderRadius: theme.radius.lg,
+                      backgroundColor: colors.surfaceSecondary,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      padding: theme.spacing.md,
+                      gap: theme.spacing.sm,
+                    }}
+                  >
+                    {detail.paymentTerms ? (
+                      <TermBlock
+                        label={t('mobile.adminQuotation.paymentTerms')}
+                        value={detail.paymentTerms}
+                        isRTL={isRTL}
+                      />
+                    ) : null}
+                    {detail.deliveryTerms ? (
+                      <TermBlock
+                        label={t('mobile.adminQuotation.deliveryTerms')}
+                        value={detail.deliveryTerms}
+                        isRTL={isRTL}
+                      />
+                    ) : null}
+                    {detail.customerNotes ? (
+                      <TermBlock
+                        label={t('quotations.notes')}
+                        value={detail.customerNotes}
+                        isRTL={isRTL}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
+
+                {detail.rejectionReason ? (
+                  <AppText
+                    variant="caption"
+                    style={{ color: colors.error, textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {t('mobile.adminQuotation.rejectionReason')}: {detail.rejectionReason}
+                  </AppText>
+                ) : null}
+
+                <SecondaryButton
+                  label={t('mobile.adminQuotation.pdf')}
+                  disabled={pdfBusy}
+                  onPress={() => void openPdf()}
+                  style={pill}
+                />
+                {so ? (
+                  <PrimaryButton
+                    label={`${t('mobile.adminQuotation.openSalesOrder')} · ${so.number}`}
+                    onPress={() => {
+                      void haptics.selection();
+                      router.push(`/(app)/(customer)/orders/${so.id}` as Href);
+                    }}
+                    style={pill}
+                  />
+                ) : null}
+              </DealerBoard>
+            </ListItemEnter>
+
+            <View
+              style={{
+                flexDirection: isRTL ? 'row-reverse' : 'row',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <AppText variant="label" weight={titleWeight}>
+                {t('mobile.adminQuotation.lines')}
+              </AppText>
+              <AppText variant="caption" color="muted">
+                {String(lines.length)}
+              </AppText>
+            </View>
+
+            {lines.length === 0 ? (
+              <DealerEmptyState title={t('mobile.adminQuotation.noLines')} />
+            ) : (
+              lines.map((line, i) => (
+                <ListItemEnter key={line.id} index={i + 1}>
+                  <QuotationLineBoard line={line} />
+                </ListItemEnter>
+              ))
+            )}
+
+            {detail.status === 'ACCEPTED' ? (
+              <ListItemEnter index={lines.length + 2}>
+                <DealerBoard
+                  title={t('mobile.dealerQuotations.accepted')}
+                  titleWeight={titleWeight}
+                  accentColor={colors.success}
+                >
+                  <AppText
+                    variant="body"
+                    color="secondary"
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {t('mobile.dealerQuotations.accepted')}
+                  </AppText>
                 </DealerBoard>
               </ListItemEnter>
+            ) : null}
+            {detail.status === 'REJECTED' ? (
+              <ListItemEnter index={lines.length + 2}>
+                <DealerBoard
+                  title={t('mobile.dealerQuotations.rejected')}
+                  titleWeight={titleWeight}
+                  accentColor={colors.error}
+                >
+                  <AppText
+                    variant="body"
+                    color="secondary"
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {t('mobile.dealerQuotations.rejected')}
+                  </AppText>
+                </DealerBoard>
+              </ListItemEnter>
+            ) : null}
+            {detail.status === 'REVISION_REQUESTED' ? (
+              <ListItemEnter index={lines.length + 2}>
+                <DealerBoard
+                  title={t('mobile.dealerQuotations.awaitingRevision')}
+                  titleWeight={titleWeight}
+                  accentColor={colors.warning}
+                >
+                  <AppText
+                    variant="body"
+                    color="secondary"
+                    style={{ textAlign: isRTL ? 'right' : 'left' }}
+                  >
+                    {t('mobile.dealerQuotations.awaitingRevision')}
+                  </AppText>
+                </DealerBoard>
+              </ListItemEnter>
+            ) : null}
 
-              {detail.status === 'ACCEPTED' ? (
-                <AppText variant="body" color="secondary">
-                  {t('mobile.dealerQuotations.accepted')}
-                </AppText>
-              ) : null}
-              {detail.status === 'REJECTED' ? (
-                <AppText variant="body" color="secondary">
-                  {t('mobile.dealerQuotations.rejected')}
-                </AppText>
-              ) : null}
-              {detail.status === 'REVISION_REQUESTED' ? (
-                <AppText variant="body" color="secondary">
-                  {t('mobile.dealerQuotations.awaitingRevision')}
-                </AppText>
-              ) : null}
-
-              {canDecide ? (
-                <View style={{ gap: theme.spacing.sm, paddingTop: theme.spacing.sm }}>
+            {canDecide ? (
+              <ListItemEnter index={lines.length + 3}>
+                <DealerBoard
+                  title={t('mobile.dealerQuotations.needsReply')}
+                  titleWeight={titleWeight}
+                  accentColor={colors.warning}
+                >
                   {canAccept ? (
                     <PrimaryButton
                       label={t('mobile.dealerQuotations.acceptCta')}
                       disabled={busy}
                       onPress={() => setConfirm('accept')}
-                      style={{ alignSelf: 'stretch', width: '100%' }}
+                      style={pill}
                     />
                   ) : null}
                   {canReject ? (
@@ -405,7 +543,7 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
                       label={t('mobile.dealerQuotations.rejectCta')}
                       disabled={busy}
                       onPress={() => setConfirm('reject')}
-                      style={{ alignSelf: 'stretch', width: '100%' }}
+                      style={pill}
                     />
                   ) : null}
                   {canAccept ? (
@@ -413,56 +551,31 @@ export function DealerQuotationDetailScreen({ quotationId, backFallback }: Props
                       label={t('mobile.dealerQuotations.revisionCta')}
                       disabled={busy}
                       onPress={() => setConfirm('revision')}
-                      style={{ alignSelf: 'stretch', width: '100%' }}
+                      style={pill}
                     />
                   ) : null}
-                </View>
-              ) : null}
-            </>
-          ) : null}
-        </ScrollView>
-      </View>
+                </DealerBoard>
+              </ListItemEnter>
+            ) : null}
+          </>
+        ) : null}
+      </ScrollView>
 
-      <ConfirmationSheet
-        open={confirm === 'accept'}
+      <QuotationDecisionSheet
+        open={confirm != null}
+        kind={confirm}
         onClose={() => setConfirm(null)}
-        title={t('mobile.dealerQuotations.acceptTitle')}
-        message={t('mobile.dealerQuotations.acceptBody', {
-          number: detail?.number ?? '',
-          total: formatCurrency(Number(detail?.total ?? 0)),
-        })}
-        confirmLabel={t('mobile.dealerQuotations.acceptCta')}
-        cancelLabel={t('mobile.adminQuotation.cancel')}
-        onConfirm={() => {
-          setConfirm(null);
-          acceptMutation.mutate();
-        }}
-      />
-      <ConfirmationSheet
-        open={confirm === 'reject'}
-        onClose={() => setConfirm(null)}
-        title={t('mobile.dealerQuotations.rejectTitle')}
-        message={t('mobile.dealerQuotations.rejectBody')}
-        confirmLabel={t('mobile.dealerQuotations.rejectCta')}
-        cancelLabel={t('mobile.adminQuotation.cancel')}
-        destructive
-        reasonLabel={t('mobile.dealerQuotations.rejectReasonOptional')}
+        number={detail?.number ?? ''}
+        totalLabel={totalLabel}
+        expirationDate={detail?.expirationDate}
+        commerciallyExpired={detail?.commerciallyExpired}
+        busy={busy}
         onConfirm={(reason) => {
+          const kind = confirm;
           setConfirm(null);
-          rejectMutation.mutate(reason);
-        }}
-      />
-      <ConfirmationSheet
-        open={confirm === 'revision'}
-        onClose={() => setConfirm(null)}
-        title={t('mobile.dealerQuotations.revisionTitle')}
-        message={t('mobile.dealerQuotations.revisionBody')}
-        confirmLabel={t('mobile.dealerQuotations.revisionCta')}
-        cancelLabel={t('mobile.adminQuotation.cancel')}
-        reasonLabel={t('quotations.revisionComment')}
-        onConfirm={(reason) => {
-          setConfirm(null);
-          revisionMutation.mutate(reason);
+          if (kind === 'accept') acceptMutation.mutate();
+          else if (kind === 'reject') rejectMutation.mutate(reason);
+          else if (kind === 'revision') revisionMutation.mutate(reason);
         }}
       />
       {pdfDownloadSheet}
@@ -474,25 +587,70 @@ function MoneyRow({
   label,
   value,
   isRTL,
-  strong,
+  locale,
 }: {
   label: string;
   value: string;
   isRTL: boolean;
-  strong?: boolean;
+  locale: Locale;
 }) {
+  const { colors, theme } = useTheme();
   return (
     <View
       style={{
         flexDirection: isRTL ? 'row-reverse' : 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: theme.spacing.md,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm + 2,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
       }}
     >
-      <AppText variant={strong ? 'body' : 'caption'} color={strong ? 'primary' : 'muted'} weight={strong ? 'semibold' : 'regular'}>
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{
+          textTransform: locale === 'ar' ? 'none' : 'uppercase',
+          letterSpacing: locale === 'ar' ? 0 : 0.45,
+          fontSize: 10,
+          textAlign: isRTL ? 'right' : 'left',
+        }}
+      >
         {label}
       </AppText>
-      <AppText variant={strong ? 'body' : 'caption'} weight="medium" dir="ltr">
+      <AppText
+        variant="caption"
+        weight="semibold"
+        dir="ltr"
+        style={{ fontVariant: ['tabular-nums'] }}
+      >
+        {value}
+      </AppText>
+    </View>
+  );
+}
+
+function TermBlock({
+  label,
+  value,
+  isRTL,
+}: {
+  label: string;
+  value: string;
+  isRTL: boolean;
+}) {
+  return (
+    <View style={{ gap: 2 }}>
+      <AppText
+        variant="caption"
+        color="muted"
+        style={{ textAlign: isRTL ? 'right' : 'left' }}
+      >
+        {label}
+      </AppText>
+      <AppText variant="body" style={{ textAlign: isRTL ? 'right' : 'left' }}>
         {value}
       </AppText>
     </View>

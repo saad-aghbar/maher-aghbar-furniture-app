@@ -16,7 +16,7 @@ import {
   locationsForWarehouse,
   WarehouseBinStrip,
 } from '@/features/inventory/components/WarehouseBinBoard';
-import { pickDefaultLocationId, locationPickerLabel } from '@/features/inventory/pickDefaultLocation';
+import { pickDefaultLocationId, locationPickerLabel, pickerViewportHeights } from '@/features/inventory/pickDefaultLocation';
 
 type Props = {
   open: boolean;
@@ -46,8 +46,8 @@ export function DestinationPickSheet({
   const { t, locale, isRTL } = useLocale();
   const { colors, theme } = useTheme();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(Math.round(height * 0.72), 620);
-  const listHeight = Math.round(height * 0.42);
+  const pickerHeights = pickerViewportHeights(height);
+  const sheetHeight = pickerHeights.sheet;
   const holding = mode === 'location';
   const [query, setQuery] = useState('');
   const [pickedWarehouseId, setPickedWarehouseId] = useState(selectedWarehouseId);
@@ -180,7 +180,7 @@ export function DestinationPickSheet({
           <HoldingLocationPickList
             locations={locations}
             selectedId={selectedLocationId ?? ''}
-            listHeight={listHeight}
+            listHeight={pickerHeights.warehouse}
             onSelect={(loc) => {
               onSelectLocation?.(loc.id, loc.warehouseId);
               onClose();
@@ -188,23 +188,10 @@ export function DestinationPickSheet({
           />
         ) : (
           <>
-            {pickedWarehouseId ? (
-              <WarehouseBinStrip
-                locations={locationsForWarehouse(
-                  warehouses.find((wh) => wh.id === pickedWarehouseId),
-                )}
-                selectedId={selectedLocationId ?? ''}
-                listHeight={Math.round(listHeight * 0.38)}
-                onSelect={(id) => {
-                  onSelectLocation?.(id, pickedWarehouseId);
-                  onClose();
-                }}
-              />
-            ) : null}
             <PurchasingWarehousePickList
               warehouses={warehouseRows}
               selectedId={pickedWarehouseId}
-              listHeight={Math.round(listHeight * 0.42)}
+              listHeight={pickerHeights.warehouse}
               onSelect={(id) => {
                 onSelectWarehouse(id);
                 setPickedWarehouseId(id);
@@ -217,6 +204,19 @@ export function DestinationPickSheet({
                 if (def) onSelectLocation?.(def, id);
               }}
             />
+            {pickedWarehouseId ? (
+              <WarehouseBinStrip
+                locations={locationsForWarehouse(
+                  warehouses.find((wh) => wh.id === pickedWarehouseId),
+                )}
+                selectedId={selectedLocationId ?? ''}
+                listHeight={pickerHeights.bin}
+                onSelect={(id) => {
+                  onSelectLocation?.(id, pickedWarehouseId);
+                  onClose();
+                }}
+              />
+            ) : null}
           </>
         )}
       </View>

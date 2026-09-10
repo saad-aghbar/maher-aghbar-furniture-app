@@ -20,7 +20,7 @@ import {
   locationsForWarehouse,
   WarehouseBinStrip,
 } from './WarehouseBinBoard';
-import { pickDefaultLocationId } from '../pickDefaultLocation';
+import { pickDefaultLocationId, pickerViewportHeights } from '../pickDefaultLocation';
 import { useScanWarehouseBin } from '../useScanWarehouseBin';
 import { KnownItemLabelConfirm } from './KnownItemLabelConfirm';
 import {
@@ -62,8 +62,9 @@ export function CreateStockCountSheet({
   const { theme, colors, colorScheme } = useTheme();
   const { user } = useAuth();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.round(height * 0.82);
-  const warehouseListHeight = Math.round(height * 0.2);
+  const pickerHeights = pickerViewportHeights(height);
+  const sheetHeight = pickerHeights.sheet;
+  const warehouseListHeight = pickerHeights.warehouse;
   const canAddWarehouse = can(user, 'warehouse.manage');
   const copy = inventoryPickCopyKey(lifecycle);
   const defaultWarehouseType = warehouseTypeForLifecycle(lifecycle);
@@ -244,6 +245,7 @@ export function CreateStockCountSheet({
                     locations={countBins}
                     selectedId={countLocationId}
                     onSelect={setLocationId}
+                    listHeight={pickerHeights.bin}
                     onScanPress={() => {
                       void (async () => {
                         const bin = await scanWarehouseBin();

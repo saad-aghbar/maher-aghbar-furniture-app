@@ -20,7 +20,7 @@ import {
   locationsForWarehouse,
   WarehouseBinStrip,
 } from './WarehouseBinBoard';
-import { pickDefaultLocationId } from '../pickDefaultLocation';
+import { pickDefaultLocationId, pickerViewportHeights } from '../pickDefaultLocation';
 import { useScanWarehouseBin } from '../useScanWarehouseBin';
 import { KnownItemLabelConfirm } from './KnownItemLabelConfirm';
 import {
@@ -71,8 +71,9 @@ export function CreateTransferSheet({
   const { theme, colors, colorScheme } = useTheme();
   const { user } = useAuth();
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.round(height * 0.78);
-  const warehouseListHeight = Math.round(height * 0.2);
+  const pickerHeights = pickerViewportHeights(height);
+  const sheetHeight = Math.round(height * 0.82);
+  const warehouseListHeight = pickerHeights.warehouse;
   const canAddWarehouse = can(user, 'warehouse.manage');
   const copy = inventoryPickCopyKey(lifecycle);
   const defaultWarehouseType = warehouseTypeForLifecycle(lifecycle);
@@ -269,6 +270,7 @@ export function CreateTransferSheet({
                     selectedId={effectiveFromLoc}
                     onSelect={setFromLocationId}
                     label={t('mobile.inventory.binShelf')}
+                    listHeight={pickerHeights.bin}
                     onScanPress={() => void applyScannedBin('from')}
                   />
                 ) : null}
@@ -295,6 +297,7 @@ export function CreateTransferSheet({
                     selectedId={effectiveToLoc}
                     onSelect={setToLocationId}
                     label={t('mobile.inventory.binShelf')}
+                    listHeight={pickerHeights.bin}
                     onScanPress={() => void applyScannedBin('to')}
                   />
                 ) : null}

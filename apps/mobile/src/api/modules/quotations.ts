@@ -61,6 +61,13 @@ export type QuotationSummary = {
   version?: number;
   total?: number | string | null;
   commerciallyExpired?: boolean;
+  createdAt?: string | null;
+  sentAt?: string | null;
+  expirationDate?: string | null;
+  request?: {
+    number?: string | null;
+    externalOrderNumber?: string | null;
+  } | null;
 };
 
 export type QuotationLine = {

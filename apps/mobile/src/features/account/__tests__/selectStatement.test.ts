@@ -126,6 +126,15 @@ describe('selectStatementRows + filters', () => {
     const filtered = filterStatementRows(rows, { dateFrom });
     expect(filtered.map((r) => r.reference)).toEqual(['PAY-1']);
   });
+
+  it('filters by a custom from/to calendar range', () => {
+    const rows = selectStatementRows(stmt);
+    const range = datePresetRange('custom', new Date(), {
+      from: '2026-07-01',
+      to: '2026-07-31',
+    });
+    expect(filterStatementRows(rows, range).map((r) => r.reference)).toEqual(['INV-1']);
+  });
 });
 
 describe('statement helpers', () => {
